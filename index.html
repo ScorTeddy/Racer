@@ -109,6 +109,10 @@
   .rc-body { flex: 1; overflow-y: auto; padding: 0.8rem; }
   .rc-pane { display: flex; flex-direction: column; gap: 0.6rem; animation: paneIn 260ms ease both; }
   .rc-pane[hidden] { display: none !important; }
+  .crowd-warn { margin: 0; grid-column: 1 / -1; font-size: 0.82rem; font-weight: 600; line-height: 1.35; padding: 0.45rem 0.6rem; border-radius: 0.6rem; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.5); color: var(--ink); }
+  .crowd-warn.bad { background: rgba(229,57,53,0.14); border-color: rgba(229,57,53,0.6); }
+  .tp .wear { font-size: 0.78rem; font-weight: 700; color: var(--ink); }
+  .tp .wear small { color: var(--soft); font-weight: 600; }
   .teams-list { display: flex; flex-direction: column; gap: 0.45rem; }
   .team-card { border: 1.5px solid var(--edge); border-radius: 0.8rem; padding: 0.45rem 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; animation: pop 300ms cubic-bezier(.2,.9,.3,1.5) both; }
   .team-card.mine { border-color: var(--yellow); background: rgba(255,204,31,0.07); }
@@ -432,6 +436,7 @@
         <div class="settings-grid">
           <label class="f">Laps <select id="sLaps"><option>3</option><option selected>5</option><option>8</option><option>10</option><option>15</option></select></label>
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
+          <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
           <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option></select></label>
           <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
@@ -863,7 +868,10 @@
       const nm = document.createElement("div"); nm.className = "nm"; nm.append(badge(k), T.name);
       const stat = (label, v) => { const d = document.createElement("div"); d.className = "stat"; d.append(label); const i = document.createElement("i"); const bb = document.createElement("b"); bb.style.width = v * 100 + "%"; i.appendChild(bb); d.appendChild(i); return d; };
       const note = document.createElement("div"); note.className = "note"; note.textContent = T.note;
-      b.append(nm, stat("Speed", T.speed), stat(k === "wet" ? "Rain grip" : "Grip", T.grip), stat("Lasts", T.life), note);
+      const est = p.perLap && p.perLap[k];
+      const wear = document.createElement("div"); wear.className = "wear";
+      if (est) { wear.textContent = `~${Math.round(est * 100)}% per lap `; const sm = document.createElement("small"); sm.textContent = `(lasts ~${(1 / est).toFixed(1)} laps)`; wear.appendChild(sm); }
+      b.append(nm, stat("Speed", T.speed), stat(k === "wet" ? "Rain grip" : "Grip", T.grip), stat("Lasts", T.life), wear, note);
       b.addEventListener("click", () => { S.startPick = k; socket.emit("compound", k); markPick(); sfx("tick"); });
       row.appendChild(b);
     }
@@ -968,6 +976,7 @@
   socket.on("xp", ({ label }) => popup(label));
   socket.on("levelUp", ({ level }) => { popup(`Team level ${level}!`); sfx("level"); });
   socket.on("offer", (o) => showCards(o));
+  socket.on("offerCleared", () => { S.offer = null; S.cardsLater = false; hideCards(); renderPill(); S.up = null; $("garage").textContent = ""; });
   socket.on("picked", ({ key, up }) => { S.up = up; S.justPicked = key; renderGarage(); popup(`${S.upInfo[key].name} ${S.upInfo[key].kind === "Driver" ? "learned" : "installed"}!`); });
   socket.on("results", (r) => showResults(r));
   // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
@@ -1104,6 +1113,12 @@
       pl.appendChild(li);
     }
     renderTeams(l);
+    // warn when the grid gets big
+    const total = l.players.length + (l.settings.ai || 0), cw = $("crowdWarn");
+    cw.classList.toggle("hidden", total <= 20); cw.classList.toggle("bad", total > 40);
+    cw.textContent = total > 40 ? `⚠ ${total} drivers is a LOT. Expect traffic jams, messy starts, and lag on slower phones and laptops.`
+      : `⚠ ${total} drivers: races get crowded and starts get messy. Slower phones or laptops might lag.`;
+    if (total > 20 && S.host && S.track && l.phase === "lobby") $("hostNote").textContent = `Heads up: ${total} drivers on the grid.`;
     $("resetChampBtn").classList.toggle("hidden", !S.host);
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
@@ -1242,9 +1257,25 @@
         // bridges: the raised part of the track drawn on top, with a shadow and railings
         if (T && T.elev) {
           for (const seg of elevSegments(T)) {
-            const bp = seg.map((i) => smooth[i]);
-            const draw = (lw, col, dx = 0, dy = 0) => { c.beginPath(); bp.forEach((q, k) => (k ? c.lineTo(q[0] + dx, q[1] + dy) : c.moveTo(q[0] + dx, q[1] + dy))); c.lineWidth = lw; c.strokeStyle = col; c.lineCap = "butt"; c.stroke(); };
-            draw(roadW + 10, "rgba(0,0,0,0.35)", 5, 7); draw(roadW + 8, "#cfd4da"); draw(roadW, th.asphalt);
+            const n = smooth.length, first = seg[0], last = seg[seg.length - 1];
+            const ids = [(first - 2 + n) % n, (first - 1 + n) % n, ...seg, (last + 1) % n, (last + 2) % n];
+            // soft shadow where it's actually raised
+            for (let k = 0; k < ids.length - 1; k++) {
+              const e = (T.elev[ids[k]] + T.elev[ids[k + 1]]) / 2; if (e < 0.1) continue;
+              c.globalAlpha = 0.3 * e; c.strokeStyle = "#000"; c.lineWidth = roadW + 6; c.lineCap = "butt";
+              c.beginPath(); c.moveTo(smooth[ids[k]][0] + 5 * e, smooth[ids[k]][1] + 7 * e); c.lineTo(smooth[ids[k + 1]][0] + 5 * e, smooth[ids[k + 1]][1] + 7 * e); c.stroke();
+            }
+            c.globalAlpha = 1;
+            const draw = (lw, col) => { c.beginPath(); ids.forEach((i, k) => (k ? c.lineTo(smooth[i][0], smooth[i][1]) : c.moveTo(smooth[i][0], smooth[i][1]))); c.lineWidth = lw; c.strokeStyle = col; c.lineCap = "butt"; c.stroke(); };
+            draw(roadW + 14, th.runoff); draw(roadW + 5, th.curbB); draw(roadW, th.asphalt);
+            // concrete barriers on the raised part only
+            for (let k = 0; k < ids.length - 1; k++) {
+              const e = (T.elev[ids[k]] + T.elev[ids[k + 1]]) / 2; if (e < 0.3) continue;
+              c.globalAlpha = Math.min(1, e * 1.5); c.strokeStyle = "#c7ccd2"; c.lineWidth = roadW + 8;
+              c.beginPath(); c.moveTo(smooth[ids[k]][0], smooth[ids[k]][1]); c.lineTo(smooth[ids[k + 1]][0], smooth[ids[k + 1]][1]); c.stroke();
+              c.globalAlpha = 1; c.strokeStyle = th.asphalt; c.lineWidth = roadW; c.stroke();
+            }
+            c.globalAlpha = 1;
           }
         }
         if (T && T.pitLane) {
@@ -1602,10 +1633,31 @@
     }
     g.entry = lanePointW(t, 2); g.exit = lanePointW(t, pl.len - 2);
     // bridge decks (drawn above the road they cross)
+    // Bridges: the raised stretch is redrawn in exactly the same style as the rest of the
+    // track (so the ramp ends blend in with no seams), then concrete barriers and a shadow
+    // fade in as the road climbs.
+    const cum = [0];
+    for (let i = 1; i <= t.N; i++) cum.push(cum[i - 1] + Math.hypot(t.pts[i % t.N].x - t.pts[i - 1].x, t.pts[i % t.N].y - t.pts[i - 1].y));
+    const P = (i, off, e, shift) => ({ x: t.pts[i].x + t.nor[i].x * off + (shift ? 18 * e : 0), y: t.pts[i].y + t.nor[i].y * off + (shift ? 26 * e : 0) });
+    const poly = (list) => { const p = new Path2D(); list.forEach((q, k) => (k ? p.lineTo(q.x, q.y) : p.moveTo(q.x, q.y))); p.closePath(); return p; };
     g.bridges = elevSegments(t).map((seg) => {
-      const path = new Path2D(), shadow = new Path2D(), mid = seg[Math.floor(seg.length / 2)];
-      seg.forEach((i, k) => { const p = t.pts[i], e = t.elev[i]; k ? path.lineTo(p.x, p.y) : path.moveTo(p.x, p.y); k ? shadow.lineTo(p.x + 16 * e, p.y + 22 * e) : shadow.moveTo(p.x + 16 * e, p.y + 22 * e); });
-      return { path, shadow, mid };
+      const first = seg[0], last = seg[seg.length - 1], w = (i) => (i + t.N) % t.N;
+      const idxs = [w(first - 2), w(first - 1), ...seg, w(last + 1), w(last + 2)];
+      const topIdx = [w(first - 3), ...idxs, w(last + 3)];         // road surface reaches a bit further, hiding the cut
+      const low = new Path2D(), top = new Path2D();
+      idxs.forEach((i, k) => (k ? low.lineTo(t.pts[i].x, t.pts[i].y) : low.moveTo(t.pts[i].x, t.pts[i].y)));
+      topIdx.forEach((i, k) => (k ? top.lineTo(t.pts[i].x, t.pts[i].y) : top.moveTo(t.pts[i].x, t.pts[i].y)));
+      // one smooth shadow shape: slides further out the higher the road is
+      const shadow = poly([...idxs.map((i) => P(i, hw + 10, t.elev[i], true)), ...idxs.slice().reverse().map((i) => P(i, -(hw + 10), t.elev[i], true))]);
+      // barrier walls: one continuous piece along the part that's properly raised
+      const high = idxs.filter((i) => t.elev[i] >= 0.5), walls = [];
+      if (high.length > 1) for (const side of [-1, 1]) {
+        walls.push({
+          fill: poly([...high.map((i) => P(i, side * (hw + 7))), ...high.slice().reverse().map((i) => P(i, side * (hw + 17)))]),
+          top: (() => { const p = new Path2D(); high.forEach((i, k) => { const q = P(i, side * (hw + 16)); k ? p.lineTo(q.x, q.y) : p.moveTo(q.x, q.y); }); return p; })(),
+        });
+      }
+      return { low, top, shadow, walls, dash: cum[idxs[0]], dashTop: cum[topIdx[0]] };
     });
     return g;
   }
@@ -1733,12 +1785,18 @@
     for (const c of list) c.lvl = elevOf(c);
     const drawBridges = () => {
       for (const br of G.bridges || []) {
+        ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill(br.shadow);                 // shadow on the road below
         ctx.lineCap = "butt"; ctx.lineJoin = "round";
-        ctx.lineWidth = t.trackW + 26; ctx.strokeStyle = "rgba(0,0,0,0.32)"; ctx.stroke(br.shadow);
-        ctx.lineWidth = t.trackW + 20; ctx.strokeStyle = "#9aa3ad"; ctx.stroke(br.path);          // railings
-        ctx.lineWidth = t.trackW + 12; ctx.strokeStyle = "#e8ecf0"; ctx.stroke(br.path);
-        ctx.lineWidth = t.trackW; ctx.strokeStyle = th.asphalt; ctx.stroke(br.path);              // deck
-        ctx.setLineDash([26, 30]); ctx.lineWidth = 3; ctx.strokeStyle = th.line; ctx.stroke(br.path); ctx.setLineDash([]);
+        ctx.lineWidth = t.trackW + 24; ctx.strokeStyle = th.runoff; ctx.stroke(br.low);
+        ctx.lineWidth = t.trackW + 14; ctx.strokeStyle = th.curbA; ctx.stroke(br.low);
+        ctx.lineDashOffset = br.dash; ctx.setLineDash([22, 22]); ctx.strokeStyle = th.curbB; ctx.stroke(br.low);
+        ctx.setLineDash([]); ctx.lineWidth = t.trackW; ctx.strokeStyle = th.asphalt; ctx.stroke(br.top);
+        ctx.lineDashOffset = br.dashTop; ctx.setLineDash([26, 30]); ctx.lineWidth = 3; ctx.strokeStyle = th.line; ctx.stroke(br.top);
+        ctx.setLineDash([]); ctx.lineDashOffset = 0;
+        for (const wl of br.walls) {                                              // concrete barriers
+          ctx.fillStyle = "#c7ccd2"; ctx.fill(wl.fill);
+          ctx.lineWidth = 3; ctx.strokeStyle = "#7d858d"; ctx.stroke(wl.top);
+        }
         ctx.lineCap = "round";
       }
     };
@@ -1862,6 +1920,20 @@
       const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
       pill.textContent = W.raining ? `🌧 Raining, track ${Math.round(W.wet * 100)}% wet` : W.wet > 0.05 ? `⛅ Drying, track ${Math.round(W.wet * 100)}% wet` : "☀ Dry";
       if (W.change >= 0 && W.change <= 20) { const s2 = document.createElement("span"); s2.className = "fc"; s2.textContent = W.raining ? `Clearing in ${W.change}s` : `Rain in ${W.change}s`; pill.appendChild(s2); }
+    }
+    // predicted wear: measure how fast YOUR tires are dropping over the last part of a lap
+    let perLap = S.xp?.perLap?.[me.comp] || 0;
+    if (S.track && me.id === S.myCar && !me.fin) {
+      const W2 = S.wearWin = S.wearWin || [];
+      if (W2.length && me.tire > W2[W2.length - 1].tire + 0.05) W2.length = 0;          // new tires: start over
+      if (!W2.length || me.prog - W2[W2.length - 1].prog >= 2) W2.push({ prog: me.prog, tire: me.tire });
+      while (W2.length > 2 && me.prog - W2[0].prog > S.track.N * 0.6) W2.shift();
+      const a = W2[0], b = W2[W2.length - 1];
+      if (b.prog - a.prog > S.track.N * 0.2 && a.tire > b.tire) perLap = (a.tire - b.tire) / ((b.prog - a.prog) / S.track.N);
+    }
+    if (perLap > 0 && !me.punct) {
+      const lapsLeft = me.tire / perLap;
+      $("tireName").textContent += `  ·  ~${Math.round(perLap * 100)}%/lap, ${lapsLeft < 10 ? lapsLeft.toFixed(1) : "10+"} laps left`;
     }
     const tp = Math.round((me.tire || 0) * 100), tc = me.tire > 0.6 ? "#3ecf6a" : me.tire > 0.35 ? "#ffcc1f" : "#e53935";
     $("tirePct").textContent = tp + "%" + (me.tire < 0.35 && !S.box && !me.fin ? " (box soon!)" : "");

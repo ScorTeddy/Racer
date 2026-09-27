@@ -356,6 +356,11 @@ class Room {
     if (!this.track || this.phase !== "lobby") return;
     const t = this.track, s = this.settings;
     const humans = [...this.players.values()];
+    // every race starts fresh: team level, XP and upgrades reset (unpicked cards are cleared too)
+    for (const h of humans) {
+      h.level = 1; h.xp = 0; h.up = blankUp(); h.pendingPicks = 0; h.offer = null;
+      io.to(h.id).emit("offerCleared");
+    }
     const aiCount = clamp(s.ai, 0, MAX_AI);
     this.ensureRoster(aiCount);
     const total = humans.length + aiCount;
@@ -424,7 +429,7 @@ class Room {
 
     this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team })), laps: s.laps, raceNo: this.raceNo });
     for (const p of this.players.values()) this.resendOffer(p);     // unpicked upgrades are still waiting
-    this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS });
+    this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS, perLap: this.perLapAll() });
     this.sendLobby();
   }
   avgLevel() { const ps = [...this.players.values()]; return ps.length ? ps.reduce((a, p) => a + p.level - 1, 0) / ps.length : 0; }
@@ -473,6 +478,14 @@ class Room {
     };
   }
 
+  // How much of a tire set one lap roughly uses (for the prediction shown to players).
+  // (checked against real races: this lands within a few percent of actual wear)
+  perLap(key) {
+    const C = COMPOUNDS[key];
+    const k = key === "wet" ? C.dryWear + (C.wear - C.dryWear) * clamp(this.wet * 1.6, 0, 1) : C.wear;
+    return this.wearPerLap * WEAR_LEVELS[this.settings.wear] * k;
+  }
+  perLapAll() { return Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.perLap(k) * 1000) / 1000])); }
   // AI tire choices: wets in the rain, otherwise a mix (short races favour fast tires)
   // AI tire choice: wets in the rain. Otherwise the quickest tire that will last the laps
   // they still need to cover in this stint (plus a little safety margin), with some variety.
@@ -987,7 +1000,7 @@ class Room {
     const base = { weather, t: r2(this.time), phase: this.phase, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) };
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
-      io.to(p.id).emit("state", { ...base, me: c ? { id: c.id, order: p.order, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, compound: c.compound, next: p.nextCompound, picked: p.compound } : null });
+      io.to(p.id).emit("state", { ...base, me: c ? { id: c.id, order: p.order, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap: this.perLapAll() } : null });
     }
   }
 }
