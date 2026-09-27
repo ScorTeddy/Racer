@@ -33,7 +33,10 @@ Run locally: `npm install`, then `npm start`, then open http://localhost:3000
   **Smooth** makes straights straighter and curves smoother (rebuilds the current track too).
   **F1 tracks** loads a real circuit.
 - Car setup: **Paint your own design** (24 x 12 pixels over your color/livery, mirror, fill, undo).
-- Settings: **⚙** on the team radio panel, or **O**, any time (also mid-race).
+- Settings: **⚙** on the team radio panel, or **O**, any time (also mid-race). **UI size**
+  (Auto/S/M/L/XL) scales all menus and the HUD (Auto = a bit smaller on phones).
+- Phones: compact lobby (hint and tools above/below the board), round Boost button bottom-right,
+  small upgrade cards, no keyboard hints on touchscreens.
 
 ---
 
@@ -49,7 +52,7 @@ calls, upgrade picks, start reaction, boost held on/off).
 **Socket events (client → server):** `create(profile, {public})`, `join {code, profile}`,
 `menuInfo`, `setPublic(bool)`, `settings {...}`, `track {stroke, map}` (stroke = `[[x, y, width], ...]`
 in board units, width in world px 84-260), `randomTrack {map}`, `setStart`, `reverse`, `clearTrack`,
-`f1Track {id}`, `gridPos {id, pos}` (host; 0 = back of the grid), `start`, `react(ms)`, `nitro(bool)`, `box`, `compound(key)`, `pick(i)`, `retire`, `setTeam`, `kick`, `setHost`.
+`draft [[x,y,w],...]|null` (host's drawing in progress, relayed live to everyone), `f1Track {id}`, `gridPos {id, pos}` (host; 0 = back of the grid), `start`, `react(ms)`, `nitro(bool)`, `box`, `compound(key)`, `pick(i)`, `retire`, `setTeam`, `kick`, `setHost`.
 **Server → client:** `menuInfo {online, racing, lobbies}` (to sockets on the menu, every 1.5s when
 changed), `joined`, `lobby`, `track`, `trackResult`, `race`, `tirePick`, `lights*`, `state`, `me`,
 `offer`, `picked`, `results`, `feed`, `toast`, ...
@@ -63,7 +66,7 @@ changed), `joined`, `lobby`, `track`, `trackResult`, `race`, `tirePick`, `lights
 `GRIP 14`, `CORNER_GRIP 1700` (what drivers plan for), `LAT_GRIP` (what the car can really do,
 1.3x), `CRASH_SPEED 430`, `PIT_LIMIT 170`, `TRACK_W 130` (default width), `MIN_W 84`/`MAX_W 260`,
 `SCALE 3.0`, `MAX_AI 60`, `SLIP_TIME 0.5` / `SLIP_BONUS 0.30` (slipstream: within 0.5s of the car
-ahead = +30% top speed), `NITRO_POWER 0.20`, `NITRO_DRAIN 0.12`/s, `NITRO_REGEN 0.03` every 1.5s,
+ahead = +30% top speed), `NITRO_POWER 0.12` (+12% top speed, accel x(1.15 + power)), `NITRO_DRAIN 0.12`/s, `NITRO_REGEN 0.03` every 1.5s,
 XP per second: host setting 10-50 (default 10), `xpForLevel = 100 + (lvl-1)*50`.
 All timings are race-time, so at 3x speed the boost drains 3x faster in real seconds.
 
@@ -99,7 +102,7 @@ f1-circuits, MIT License, Copyright (c) 2019-2025 Tomislav Bacinger (unofficial,
 Master +6% corner speed, Late Braker (brakes use 72% → up to 94% of the car's braking), Racecraft
 (+0.1s slipstream reach, overtakes more), Focus, Tire Whisperer, Quick Reflexes, Big Engine +7%
 top speed, Turbo +25% accel, Sticky Setup +15% grip, Hard Compound, Carbon Brakes +30%,
-Pro Pit Crew, Nitro Power (+8% boost), Nitro Tank (drains 25% slower, refills 50% faster).
+Pro Pit Crew, Nitro Power (+5% boost per level), Nitro Tank (drains 25% slower, refills 50% faster).
 (Hard Compound was removed: Tire Whisperer is the one tire-wear upgrade, max 4.)
 `stats(c)` turns levels into numbers.
 
@@ -120,7 +123,10 @@ no too-tight hairpins, twistiness). `bestStart` puts the start/pit lane on a cle
 braking for every upcoming corner using its own brakes; overtaking in track coordinates
 (`c.lat`, `c.tOff`): when close (or much faster) it picks a side (inside of the next corner
 first), checks it's clear (`laneClear`), commits while side by side, then rejoins the line.
-AI uses boost on straights when chasing, fighting, defending or on the last lap. Drivers
+AI boost: fires when flat out with at least ~0.8s before the next braking point, holds it until
+the braking zone (min 0.8s), never boosts into the car right ahead (pulls out first), backs off
+if it's about to rear-end someone (then waits 1.5s), keeps a 15% reserve for fights, and empties
+the tank on the last lap. Drivers
 decide 30x/s (staggered), physics runs 60x/s. Cars near each other are found through
 track-index buckets (`around`), collisions through a 64px spatial hash.
 
@@ -131,7 +137,9 @@ out of trouble. They can't be hit and the AI ignores them; they're drawn see-thr
 painted straight into the tiles). The road is drawn as "width runs". Cars are drawn a moment
 in the past and moved along a curve using their velocity (`interpCars`), so they follow
 corners at 2x/3x. Bridges are sorted low to high and each car is drawn right after the bridge
-it's on (from the server's track index), so cars on ramps are never hidden by their own bridge.
+it's on (from the server's track index), so cars on ramps are never hidden by their own bridge. `segOf` covers the whole drawn deck
+(ramps + 5 points either side) and the layer uses the track index of the snapshot the car is
+drawn from (`drawIdx`), so there's no flicker getting on or off a ramp.
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over

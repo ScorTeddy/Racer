@@ -25,7 +25,7 @@ const CORNER_GRIP = 1700;              // how hard drivers PLAN to corner (px/s^
 const LAT_GRIP = CORNER_GRIP * 1.3;    // how hard the car CAN corner (a safety margin above the plan)
 const BRAKE_PLAN = 936;                // how hard drivers plan to brake before a corner (72% of BRAKE)
 const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahead: +30% top speed
-const NITRO_POWER = 0.20, NITRO_DRAIN = 0.12, NITRO_REGEN = 0.03, NITRO_REGEN_EVERY = 1.5;
+const NITRO_POWER = 0.12, NITRO_DRAIN = 0.12, NITRO_REGEN = 0.03, NITRO_REGEN_EVERY = 1.5;
 const XP_RATE_MIN = 10, XP_RATE_MAX = 50, XP_RATE_DEFAULT = 10;   // passive XP per race-second (host setting)
 // Tire life depends on race length: a fresh set lasts about 60% of the race
 // (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
@@ -75,7 +75,7 @@ const UPGRADES = {
   grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+15% grip, +2% corner speed",            max: 4, fx: (n) => `+${15 * n}% grip` },
   brakes:  { kind: "Car",    name: "Carbon Brakes",  desc: "+30% braking power",                     max: 3, fx: (n) => `+${30 * n}% braking` },
   pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
-  nitro:   { kind: "Car",    name: "Nitro Power",    desc: "Boost pushes 8% harder",                 max: 3, fx: (n) => `+${20 + 8 * n}% boost speed` },
+  nitro:   { kind: "Car",    name: "Nitro Power",    desc: "Boost pushes 5% harder",                 max: 3, fx: (n) => `+${12 + 5 * n}% boost speed` },
   tank:    { kind: "Car",    name: "Nitro Tank",     desc: "Boost drains 25% slower, refills 50% faster", max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% slower drain` },
 };
 const upgradeInfo = () => Object.fromEntries(Object.entries(UPGRADES).map(([k, u]) => [k, { kind: u.kind, name: u.name, desc: u.desc, max: u.max, levels: Array.from({ length: u.max + 1 }, (_, n) => u.fx(n)) }]));
@@ -708,6 +708,7 @@ class Room {
     socket.emit("joined", { code: this.code, you: socket.id, upgrades: upgradeInfo(), f1: f1List() });
     this.sendLobby();
     if (this.track) socket.emit("track", this.trackMsg());
+    if (this.draft) socket.emit("draft", this.draft);
     if (this.phase !== "lobby") socket.emit("toast", "A race is on! You'll be on the grid for the next one.");
   }
   removePlayer(id) {
@@ -744,7 +745,7 @@ class Room {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
-    this.shape = shape; this.trackKind = kind; this.trackName = name;
+    this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null;
     // random and real tracks put the start line on their best straight; drawn ones start where you started drawing
     this.track = finalizeTrack(shape, kind === "drawn" ? 0 : bestStart(shape), false, this.allTeams());
     this.stroke = stroke.slice(0, 8000).map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10, Math.round(clamp(Number(q[2]) || TRACK_W, MIN_W, MAX_W))]);
@@ -758,7 +759,7 @@ class Room {
     const r = makeRandomTrack(board);
     if (!r) return "Couldn't make a random track. Try again!";
     if (!this.settings.smooth) {
-      this.shape = r.shape; this.trackKind = "random"; this.trackName = null;
+      this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null;
       this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
@@ -821,7 +822,7 @@ class Room {
         passOff: 0, passT: 0, gridLane: lat, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
         cleanLap: true, launchAt: 0, boostUntil: 0, slide: 0, speed: 0, surface: 0, punct: false, compound: "inter", laneKey: 0,
         nitro: 1, nitroOn: false, regenT: 0, aiNitro: false, slip: false, yawMax: STEER_LOCK, gripF: 1, chase: false, attack: false,
-        aggr: 0.8 + Math.random() * 0.5, nitroMin: 0.3 + Math.random() * 0.3, power: 1,
+        aggr: 0.8 + Math.random() * 0.5, nitroMin: 0.25 + Math.random() * 0.25, power: 1,
       };
       if (slot.human) {
         const h = slot.human;
@@ -919,7 +920,7 @@ class Room {
       gripMul: 1 + 0.15 * u.grip,
       planBrake: BRAKE * (1 + 0.3 * u.brakes) * (0.72 + 0.055 * u.late),   // drivers plan to use 72% of the brakes (Late Braker: up to 94%)
       slipTime: SLIP_TIME + 0.1 * u.craft,
-      nitroPow: NITRO_POWER + 0.08 * u.nitro, nitroDrain: NITRO_DRAIN * Math.pow(0.75, u.tank), nitroRegen: NITRO_REGEN * (1 + 0.5 * u.tank),
+      nitroPow: NITRO_POWER + 0.05 * u.nitro, nitroDrain: NITRO_DRAIN * Math.pow(0.75, u.tank), nitroRegen: NITRO_REGEN * (1 + 0.5 * u.tank),
       mistakes: Math.pow(0.6, u.focus),
     };
   }
@@ -1221,11 +1222,13 @@ class Room {
       const dec = st.planBrake * (1 - 0.3 * this.wet * (dryTires ? 1 : 0.4)) * (c.attack ? 1.08 : 1);
       const K = Math.min(60, Math.ceil((speed * speed) / (2 * dec) / t.spacing) + 3);
       let v = t.vcorner[c.idx] * cp, straight = t.vcorner[c.idx] * cp;
-      const K2 = Math.ceil((speed * 1.1 + 150) / t.spacing);
-      for (let k = 1; k <= Math.max(K, K2); k++) {
-        const vc = t.vcorner[(c.idx + k) % N] * cp;
-        if (k <= K) v = Math.min(v, Math.sqrt(vc * vc + 2 * dec * Math.max(0, k * t.spacing - c.tOff)));
+      const K2 = Math.ceil((speed * 1.1 + 150) / t.spacing), K3 = p ? 0 : Math.min(90, Math.ceil((speed * 2.2 + 300) / t.spacing));
+      let brakeIn = Infinity;                                   // (AI) distance until it has to start braking
+      for (let k = 1; k <= Math.max(K, K2, K3); k++) {
+        const vc = t.vcorner[(c.idx + k) % N] * cp, d = Math.max(0, k * t.spacing - c.tOff);
+        if (k <= K) v = Math.min(v, Math.sqrt(vc * vc + 2 * dec * d));
         if (k <= K2) straight = Math.min(straight, vc);
+        if (k <= K3 && vc < speed) brakeIn = Math.min(brakeIn, d - (speed * speed - vc * vc) / (2 * dec));
       }
       targetSpeed = v;
       if (calm) targetSpeed = Math.min(targetSpeed, st.maxSpeed * 0.92);
@@ -1238,13 +1241,23 @@ class Room {
         if (leadAlong < gap && !pulledOut && theirV < speed) targetSpeed = Math.min(targetSpeed, Math.max(0, theirV * (leadAlong < gap * 0.6 ? 0.94 : 1)));
       }
       if (c.punct) targetSpeed = Math.min(targetSpeed, 190);
-      // AI boost: on straights, when chasing, fighting, defending, or on the last lap
+      // AI boost, used like a real driver would: fire it when flat out with no braking coming up,
+      // hold it until the braking zone (no little taps), spend the tank regularly but keep a small
+      // reserve for fights, and dump everything on the last lap.
       if (!p) {
-        const onStraight = straight > st.maxSpeed * 1.05 && !calm && !cooldown && !c.punct;
-        const boxedIn = lead && leadAlong < speed * 0.6 && Math.abs(c.lat - lead.lat) < 30;   // would just boost into their gearbox
-        if (c.aiNitro) { if (!onStraight || c.nitro < 0.03 || boxedIn) c.aiNitro = false; }
-        else if (boxedIn) { /* wait until pulled out */ }
-        else if (onStraight && c.nitro > c.nitroMin && (c.chase || c.passT > 0 || pressure || (c.lapsDone >= laps - 1 && c.nitro > 0.15) || Math.random() < 0.25 * dt)) c.aiNitro = true;
+        const flatOut = v > speed * 1.06 + 20 && speed > st.maxSpeed * 0.55 && !calm && !cooldown && !c.punct;
+        const inLine = lead && Math.abs(c.lat - lead.lat) < 30;
+        const boxedIn = inLine && leadAlong < speed * 1.0 && lead.speed < speed * 1.08;   // someone right ahead in my lane: pull out first, then boost past
+        const danger = inLine && leadAlong < speed * 0.3 && lead.speed < speed * 0.97;                     // about to rear-end them
+        const lastLap = c.lapsDone >= laps - 1;
+        const fight = c.chase || c.passT > 0 || !!pressure;
+        const reserve = lastLap ? 0.01 : fight ? 0.03 : 0.15;
+        if (c.nitroWait > 0) c.nitroWait -= dt;
+        if (c.aiNitro) {
+          c.nitroT = (c.nitroT || 0) + dt;
+          const braking = v < speed * 1.015;                                      // corner coming: let go now
+          if (braking || danger || c.nitro <= reserve || (c.nitroT > 0.8 && !flatOut)) { c.aiNitro = false; c.nitroWait = braking ? 0.3 : 1.5; }
+        } else if (flatOut && brakeIn > speed * 0.8 && !boxedIn && !danger && !(c.nitroWait > 0) && c.nitro > 0.12 && (fight || lastLap || c.nitro >= c.nitroMin || c.nitro > 0.9)) { c.aiNitro = true; c.nitroT = 0; }
       }
       // mistakes: rare, mostly in corners, more with worn tires / slicks in the rain / pushing hard
       if (!calm && !cooldown && av < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
@@ -1330,7 +1343,7 @@ class Room {
     const wantN = p ? p.nitroHeld : c.aiNitro;
     c.nitroOn = !!wantN && c.nitro > 0 && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
-      maxSp *= 1 + st.nitroPow; accel *= 1.35 + st.nitroPow;
+      maxSp *= 1 + st.nitroPow; accel *= 1.15 + st.nitroPow;
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt); c.regenT = 0;
     } else if (c.nitro < 1) {
       c.regenT += dt;
@@ -1675,6 +1688,14 @@ io.on("connection", (socket) => {
     const err = r.setTrack(d?.stroke, d?.map, "drawn");
     socket.emit("trackResult", { error: err });
   });
+  // the host's drawing in progress, passed on live so everyone can watch the track being drawn
+  socket.on("draft", (d) => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    let pts = null;
+    if (Array.isArray(d) && d.length) pts = d.slice(0, 3000).map((q) => [Math.round(Number(q?.[0]) || 0), Math.round(Number(q?.[1]) || 0), clamp(Math.round(Number(q?.[2]) || TRACK_W), MIN_W, MAX_W)]);
+    r.draft = pts;
+    socket.to(r.code).emit("draft", pts);
+  });
   socket.on("f1Track", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const err = r.setF1Track(String(d?.id || ""));
@@ -1692,7 +1713,7 @@ io.on("connection", (socket) => {
     const err = r.setRandomTrack(d?.map);
     socket.emit("trackResult", { error: err, random: true, bridges: r.track?.bridges, maxLevel: r.track?.maxLevel });
   });
-  socket.on("clearTrack", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; r.track = null; r.stroke = null; r.trackName = null; r.emit("track", null); r.sendLobby(); });
+  socket.on("clearTrack", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; r.track = null; r.stroke = null; r.trackName = null; r.draft = null; r.emit("draft", null); r.emit("track", null); r.sendLobby(); });
   socket.on("aiEdit", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const i = Math.round(Number(d?.i)); if (!(i >= 0 && i < r.roster.length)) return;
