@@ -121,6 +121,32 @@
   .draw-mode .seg2 button[aria-pressed="true"] { background: var(--yellow); color: #1b1b1b; }
   .draw-mode .btn { background: var(--panel-solid); font-size: 0.82rem; padding: 0.4rem 0.7rem; }
 
+  /* ---------- Tires + weather ---------- */
+  .tire-pick { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(46rem, calc(100vw - 2rem)); padding: 1rem 1.1rem; pointer-events: auto; display: flex; flex-direction: column; gap: 0.7rem; animation: rise 420ms cubic-bezier(.2,.9,.3,1.2) both; z-index: 3; }
+  .tire-pick h2 { margin: 0; font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.4rem; display: flex; justify-content: space-between; align-items: baseline; }
+  .tire-pick h2 small { font-family: "Chakra Petch", sans-serif; font-size: 0.9rem; color: var(--soft); }
+  .tp-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.55rem; }
+  .tp { cursor: pointer; text-align: left; background: var(--panel-solid); border: 2px solid var(--edge); border-radius: 0.9rem; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; transition: transform 140ms ease, border-color 140ms ease; animation: flip 520ms cubic-bezier(.2,.9,.3,1.25) both; }
+  .tp:nth-child(2) { animation-delay: 70ms; } .tp:nth-child(3) { animation-delay: 140ms; } .tp:nth-child(4) { animation-delay: 210ms; }
+  .tp:hover { transform: translateY(-3px); }
+  .tp[aria-pressed="true"] { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(255,204,31,0.35); }
+  .tp .nm { display: flex; align-items: center; gap: 0.45rem; font-weight: 700; }
+  .badge { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 50%; font-weight: 800; font-size: 0.75rem; border: 3px solid; background: #111; color: #fff; flex-shrink: 0; }
+  .badge.sm { width: 1.05rem; height: 1.05rem; font-size: 0.6rem; border-width: 2px; }
+  .stat { font-size: 0.72rem; color: var(--soft); display: grid; grid-template-columns: 4.3rem 1fr; align-items: center; gap: 0.3rem; }
+  .stat i { display: block; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; }
+  .stat i b { display: block; height: 100%; background: var(--yellow); border-radius: 3px; }
+  .tp .note { font-size: 0.75rem; color: var(--soft); min-height: 2.1em; }
+  .tp-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; } .tp-bar b { display: block; height: 100%; background: var(--yellow); }
+  .next-tires { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--soft); font-weight: 600; }
+  .next-tires button { cursor: pointer; background: none; border: 0; padding: 0; border-radius: 50%; opacity: 0.45; transition: transform 120ms ease, opacity 120ms ease; }
+  .next-tires button[aria-pressed="true"] { opacity: 1; transform: scale(1.18); }
+  .weather { position: absolute; left: 50%; transform: translateX(-50%); top: calc(0.6rem + env(safe-area-inset-top, 0px)); padding: 0.2rem 0.8rem; font-weight: 700; font-size: 0.88rem; white-space: nowrap; }
+  .weather.rain { background: rgba(30,60,110,0.9); color: #fff; }
+  .weather .fc { color: var(--yellow); margin-left: 0.4rem; }
+  .board-tools .btn.on { background: var(--yellow); color: #1b1b1b; }
+  @media (max-width: 860px) { .tp-row { grid-template-columns: repeat(2, 1fr); } }
+
   /* ---------- Race HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
   .standing { position: absolute; left: 1rem; top: calc(1rem + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 0.8rem; padding: 0.45rem 0.8rem; animation: inL 420ms cubic-bezier(.2,.9,.3,1.1) both; }
@@ -320,6 +346,7 @@
       <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option></select></label>
       <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
       <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
+      <label class="f">Weather <select id="sWeather"><option value="sunny">Always sunny</option><option value="rain">Always rainy</option><option value="dynamic">Dynamic (changes mid-race)</option></select></label>
     </div>
     <label class="f">Team colors <select id="sTeamColors"><option value="off">Off (everyone keeps their paint)</option><option value="on">On (teammates share paint)</option></select></label>
     <details class="box" id="pointsBox">
@@ -364,6 +391,8 @@
     </div>
     <div class="board-tools" id="boardTools">
       <button type="button" class="btn" id="randomBtn">Random track</button>
+      <button type="button" class="btn" id="startLineBtn" title="Then click on the track">Move start line</button>
+      <button type="button" class="btn" id="reverseBtn">Reverse direction</button>
       <button type="button" class="btn" id="clearBtn">Clear</button>
     </div>
   </div>
@@ -376,6 +405,13 @@
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel"></canvas>
   <div class="feed" id="feed" aria-live="polite"></div>
+  <div class="weather panel hidden" id="weatherPill"></div>
+  <div class="tire-pick panel hidden" id="tirePick" role="dialog" aria-labelledby="tpTitle">
+    <h2><span id="tpTitle">Pick your starting tires</span><small id="tpTime">10s</small></h2>
+    <div class="tp-bar"><b id="tpBar"></b></div>
+    <div class="tp-row" id="tpRow"></div>
+    <div class="hint" id="tpHint" style="min-height:0"></div>
+  </div>
   <div class="lights panel hidden" id="lights">
     <div class="bulbs"><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div></div>
     <div class="say" id="lightsSay">Press <kbd>Space</kbd> the moment the lights go out!</div>
@@ -392,11 +428,12 @@
       <button type="button" class="order" data-o="save" role="radio"><kbd>E</kbd> Save tires</button>
     </div>
     <div class="hint" id="orderHint"></div>
+    <div class="next-tires" id="nextTires"><span>Next tires:</span></div>
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
   </div>
   <div class="bottom">
-    <div class="panel"><div class="meter-label"><span>Tires</span><span id="tirePct">100%</span></div><div class="meter"><div id="tireFill"></div></div></div>
+    <div class="panel"><div class="meter-label"><span id="tireName">Tires</span><span id="tirePct">100%</span></div><div class="meter"><div id="tireFill"></div></div></div>
     <div class="panel"><div class="meter-label"><span id="lvlText">Team Lv 1</span><span id="xpText">0 / 100</span></div><div class="meter"><div id="xpFill"></div></div></div>
   </div>
   <div class="garage panel" id="garage"></div>
@@ -447,6 +484,18 @@
     snow:   { ground: "#e8eef3", speck: ["rgba(255,255,255,0.6)", "rgba(120,150,180,0.12)"], runoff: "#cfd9e1", asphalt: "#4b5159", curbA: "#f4f4f4", curbB: "#1e88e5", line: "rgba(255,255,255,0.5)" },
     night:  { ground: "#17241b", speck: ["rgba(255,255,255,0.03)", "rgba(0,0,0,0.2)"], runoff: "#3a3527", asphalt: "#26282e", curbA: "#9aa0a6", curbB: "#b71c1c", line: "rgba(255,255,255,0.3)", night: true },
   };
+  const TIRES = {
+    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.2, grip: 0.35, life: 1.0, note: "Lasts way longer, but it's the slowest." },
+    inter:   { name: "Intermediate", short: "I", color: "#ffcc1f", speed: 0.55, grip: 0.6, life: 0.55, note: "Right in the middle. A safe pick." },
+    fast:    { name: "Fast", short: "F", color: "#e53935", speed: 1.0, grip: 0.85, life: 0.2, note: "The quickest, but they wear out fast." },
+    wet:     { name: "Wets", short: "W", color: "#1e88e5", speed: 0.3, grip: 1.0, life: 0.5, note: "For rain. Slow and wear out fast on a dry track." },
+  };
+  const SHORT_TO_KEY = { D: "durable", I: "inter", F: "fast", W: "wet" };
+  function badge(key, small) {
+    const b = document.createElement("span"); const T = TIRES[key];
+    b.className = "badge" + (small ? " sm" : ""); b.style.borderColor = T.color; b.textContent = T.short; b.title = T.name;
+    return b;
+  }
   const ORDER_HINT = {
     push: "Risky! A little faster, but tires wear 75% quicker and big mistakes are 3x as likely.",
     normal: "A steady pace. Good default.",
@@ -665,7 +714,7 @@
     $("lobby").classList.toggle("hidden", screen !== "lobby");
     $("hud").classList.toggle("hidden", screen !== "race");
     $("results").classList.toggle("hidden", screen !== "results");
-    if (screen !== "race") engineSound(0, false);
+    if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
   }
 
@@ -678,11 +727,16 @@
   });
   socket.on("track", (t) => {
     S.track = t;
-    S.linePath = null;
+    S.linePath = null; S.geo = null;
     if (t) { S.trackPath = new Path2D(); t.pts.forEach((p, i) => (i ? S.trackPath.lineTo(p.x, p.y) : S.trackPath.moveTo(p.x, p.y))); S.trackPath.closePath(); S.pattern = null; }
     drawBoard();
   });
-  socket.on("trackResult", (r) => { if (r.error) boardHint(r.error, true); else boardHint("Nice track! Press Start race when everyone's ready.", false); });
+  socket.on("trackResult", (r) => {
+    if (r.error) boardHint(r.error, true);
+    else if (r.moved) boardHint("Start/finish line moved!", false);
+    else if (r.reversed !== undefined) boardHint(r.reversed ? "Track reversed: racing the other way!" : "Back to the original direction.", false);
+    else boardHint("Nice track! Press Start race when everyone's ready.", false);
+  });
   socket.on("toast", (t) => popup(t, true));
 
   socket.on("race", (r) => {
@@ -693,11 +747,44 @@
     setOrder("normal", true); updateBox(); disarmLeave();
     $("feed").textContent = ""; $("popups").textContent = "";
     show("race");
-    const L = $("lights"); L.classList.remove("hidden");
+    const L = $("lights"); L.classList.add("hidden");
     L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
     $("lightsSay").innerHTML = S.myCar ? "Press <kbd>Space</kbd> the moment the lights go out!" : "Watching this race. You're in the next one!";
     $("goBtn").classList.toggle("hidden", !S.myCar);
     resize();
+  });
+  let tpTimer = null;
+  socket.on("tirePick", (p) => {
+    const box = $("tirePick"); box.classList.toggle("hidden", !S.myCar);
+    const row = $("tpRow"); row.textContent = "";
+    S.startPick = p.raining ? "wet" : "inter";
+    for (const [k, T] of Object.entries(TIRES)) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "tp"; b.dataset.k = k;
+      const nm = document.createElement("div"); nm.className = "nm"; nm.append(badge(k), T.name);
+      const stat = (label, v) => { const d = document.createElement("div"); d.className = "stat"; d.append(label); const i = document.createElement("i"); const bb = document.createElement("b"); bb.style.width = v * 100 + "%"; i.appendChild(bb); d.appendChild(i); return d; };
+      const note = document.createElement("div"); note.className = "note"; note.textContent = T.note;
+      b.append(nm, stat("Speed", T.speed), stat(k === "wet" ? "Rain grip" : "Grip", T.grip), stat("Lasts", T.life), note);
+      b.addEventListener("click", () => { S.startPick = k; socket.emit("compound", k); markPick(); sfx("tick"); });
+      row.appendChild(b);
+    }
+    markPick();
+    $("tpHint").textContent = p.raining ? "🌧 It's raining! Anything but Wets will slide all over the place." : p.weather === "dynamic" ? "⛅ The weather could change mid-race." : "☀ Dry track today.";
+    const end = performance.now() + p.until;
+    clearInterval(tpTimer);
+    tpTimer = setInterval(() => {
+      const left = Math.max(0, end - performance.now());
+      $("tpTime").textContent = Math.ceil(left / 1000) + "s"; $("tpBar").style.width = (left / p.until) * 100 + "%";
+      if (left <= 0) clearInterval(tpTimer);
+    }, 100);
+  });
+  function markPick() { document.querySelectorAll(".tp").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.startPick))); }
+  socket.on("lightsBegin", () => {
+    clearInterval(tpTimer); $("tirePick").classList.add("hidden");
+    const L = $("lights"); L.classList.remove("hidden"); L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
+  });
+  socket.on("puncture", () => {
+    banner("PUNCTURE!", "#e53935"); sfx("jump"); addShake(12);
+    popup("Limping back to the pits...", true);
   });
   socket.on("lights", ({ n }) => {
     const bulbs = $("lights").querySelectorAll(".bulb");
@@ -739,13 +826,15 @@
     const now = performance.now();
     S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.standings = st.standings; S.gaps = st.gaps || [];
     for (const a of st.cars) {
-      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best] = a;
+      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { tx: x, ty: y, th: h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best });
+      Object.assign(c, { tx: x, ty: y, th: h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit });
     }
+    S.weather = st.weather;
     if (st.me) {
-      S.xp = st.me; S.box = st.me.box; S.up = st.me.up;
+      S.xp = st.me; S.box = st.me.box; S.up = st.me.up; S.myComp = st.me.compound; S.nextComp = st.me.next;
+      renderNextTires();
       if (S.order !== st.me.order && now - (S.orderAt || 0) > 800) setOrder(st.me.order, true);
       updateBox();
     }
@@ -757,7 +846,9 @@
     }
   });
   socket.on("feed", (f) => {
-    const txt = f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : "";
+    if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
+    if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
+    const txt = f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "forecastRain" ? "⛅ Rain expected in about 15s" : f.t === "forecastDry" ? "⛅ Rain easing in about 15s" : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -774,7 +865,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors" };
+  const sel = { sLaps: "laps", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather" };
   for (const [id, key] of Object.entries(sel)) {
     $(id).addEventListener("change", () => {
       if (!S.host) return;
@@ -919,9 +1010,10 @@
     c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1 / B.s;
     for (let x = 0; x <= B.bw; x += 100) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, B.bh); c.stroke(); }
     for (let y = 0; y <= B.bh; y += 100) { c.beginPath(); c.moveTo(0, y); c.lineTo(B.bw, y); c.stroke(); }
-    const pts = S.stroke || S.lobby?.stroke;
+    const T = S.track;
+    const pts = S.stroke || (T ? T.pts.map((q) => [(q.x - T.pad) / T.scale + T.minX, (q.y - T.pad) / T.scale + T.minY]) : S.lobby?.stroke);
     if (pts && pts.length > 2) {
-      const smooth = S.stroke ? pts : chaikin(pts.filter((_, i) => i % 3 === 0), 3);
+      const smooth = S.stroke || T ? pts : chaikin(pts.filter((_, i) => i % 3 === 0), 3);
       const roadW = 130 / 3;
       c.lineJoin = "round"; c.lineCap = "round";
       const path = () => { c.beginPath(); smooth.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]))); if (!S.stroke) c.closePath(); };
@@ -938,6 +1030,13 @@
         c.save(); c.translate(a[0], a[1]); c.rotate(ang);
         for (let q = 0; q < 6; q++) { c.fillStyle = q % 2 ? "#111" : "#fff"; c.fillRect(-4, -roadW / 2 + q * roadW / 6, 8, roadW / 6); }
         c.restore();
+        c.fillStyle = "#fff"; c.font = `700 ${12 / B.s}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.fillText("START", a[0], a[1] - roadW);
+        if (T && T.pitLane) {
+          const pl = T.pitLane, lp = [];
+          for (let k = 0; k <= pl.len; k += 1) { const q = lanePointW(T, k); lp.push([(q.x - T.pad) / T.scale + T.minX, (q.y - T.pad) / T.scale + T.minY]); }
+          c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 10 / B.s; c.setLineDash([6 / B.s, 5 / B.s]);
+          c.beginPath(); lp.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); c.setLineDash([]);
+        }
       } else { c.lineWidth = 3 / B.s; c.strokeStyle = "#ffcc1f"; path(); c.stroke(); }
     }
     // straight-line helpers: the corner points so far, and a rubber band to the pointer
@@ -986,10 +1085,18 @@
   }
   $("undoPt").addEventListener("click", () => { if (poly) { poly.pop(); if (!poly.length) poly = null; drawBoard(); } });
   $("closeLoop").addEventListener("click", finishPoly);
+  let startMode = false;
+  $("startLineBtn").addEventListener("click", () => {
+    if (!S.track) { boardHint("Draw a track first.", true); return; }
+    startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
+    boardHint(startMode ? "Click anywhere on the track to put the start/finish line there." : "", false);
+  });
+  $("reverseBtn").addEventListener("click", () => { if (S.track) socket.emit("reverse"); else boardHint("Draw a track first.", true); });
   const toBoard = (e) => { const r = board.getBoundingClientRect(); return [clamp((e.clientX - r.left - B.ox) / B.s, 0, B.bw), clamp((e.clientY - r.top - B.oy) / B.s, 0, B.bh)]; };
   board.addEventListener("pointerdown", (e) => {
     if (!S.host || S.lobby?.phase !== "lobby") return;
     const p = toBoard(e);
+    if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (drawMode === "line") {
       if (poly && poly.length >= 3 && Math.hypot(p[0] - poly[0][0], p[1] - poly[0][1]) * B.s < 18) { finishPoly(); return; }
       poly = poly || []; poly.push(p); drawBoard(); return;
@@ -1045,6 +1152,17 @@
     document.querySelectorAll(".order").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.o === o)));
     $("orderHint").textContent = ORDER_HINT[o];
     if (!silent) { S.orderAt = performance.now(); socket.emit("order", o); sfx("tick"); popup(o === "push" ? `"Push push push!"` : o === "save" ? `"Look after those tires."` : `"Settle into a rhythm."`); }
+  }
+  function renderNextTires() {
+    const box = $("nextTires");
+    if (box.childElementCount === 1) {
+      for (const k of Object.keys(TIRES)) {
+        const b = document.createElement("button"); b.type = "button"; b.dataset.k = k; b.appendChild(badge(k)); b.setAttribute("aria-label", "Next tires: " + TIRES[k].name);
+        b.addEventListener("click", () => { socket.emit("compound", k); S.nextComp = k; renderNextTires(); sfx("tick"); popup(`Next stop: ${TIRES[k].name} tires`); });
+        box.appendChild(b);
+      }
+    }
+    box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.nextComp)));
   }
   function updateBox() {
     const b = $("boxBtn"); b.classList.toggle("on", S.box);
@@ -1218,6 +1336,51 @@
   }
   window.addEventListener("resize", resize);
   const cam = { x: 0, y: 0, z: 1 };
+  // same pit lane math as the server
+  function lanePointW(t, k) {
+    const pl = t.pitLane, i = ((pl.entry + Math.floor(k)) % t.N + t.N) % t.N, j = (i + 1) % t.N, f = k - Math.floor(k);
+    const ramp = clamp(Math.min(k, pl.len - k) / 5, 0, 1), off = pl.side * pl.off * ramp;
+    return { x: t.pts[i].x + (t.pts[j].x - t.pts[i].x) * f + t.nor[i].x * off, y: t.pts[i].y + (t.pts[j].y - t.pts[i].y) * f + t.nor[i].y * off, i };
+  }
+  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341" };
+  // Build the gravel traps, pit lane, pit wall and garages once per track.
+  function buildGeo(t) {
+    const g = { gravel: new Path2D(), lane: new Path2D(), wall: new Path2D(), garages: [] };
+    const N = t.N, hw = t.trackW / 2;
+    const segs = [];
+    let i = 0;
+    while (i < N) {
+      if (!t.gravel[i]) { i++; continue; }
+      const side = t.gravel[i], from = i;
+      while (i < N && t.gravel[i] === side) i++;
+      segs.push([from, i - 1, side]);
+    }
+    for (const [a, b, side] of segs) {
+      const inner = [], outer = [];
+      for (let k = a; k <= b; k++) {
+        const p = t.pts[k], n = t.nor[k];
+        inner.push([p.x + n.x * side * (hw + 14), p.y + n.y * side * (hw + 14)]);
+        outer.push([p.x + n.x * side * (hw + 140), p.y + n.y * side * (hw + 140)]);
+      }
+      [...inner, ...outer.reverse()].forEach((q, j) => (j ? g.gravel.lineTo(q[0], q[1]) : g.gravel.moveTo(q[0], q[1])));
+      g.gravel.closePath();
+    }
+    const pl = t.pitLane;
+    for (let k = 0; k <= pl.len; k += 0.5) { const q = lanePointW(t, k); k ? g.lane.lineTo(q.x, q.y) : g.lane.moveTo(q.x, q.y); }
+    for (let k = 5; k <= pl.len - 5; k += 0.5) {
+      const q = lanePointW(t, k), n = t.nor[q.i];
+      const px = t.pts[q.i].x + n.x * pl.side * (hw + 24), py = t.pts[q.i].y + n.y * pl.side * (hw + 24);
+      k > 5 ? g.wall.lineTo(px, py) : g.wall.moveTo(px, py);
+    }
+    const teamColor = {};
+    for (const c of (S.race?.info ? S.race.info.values() : [])) if (!teamColor[c.team]) teamColor[c.team] = c.color;
+    for (const [team, k] of Object.entries(pl.boxes || {})) {
+      const q = lanePointW(t, k), n = t.nor[q.i], tn = t.tan[q.i];
+      g.garages.push({ x: q.x + n.x * pl.side * 52, y: q.y + n.y * pl.side * 52, sx: q.x, sy: q.y, ang: Math.atan2(tn.y, tn.x), team, color: teamColor[team] || "#666" });
+    }
+    g.entry = lanePointW(t, 2); g.exit = lanePointW(t, pl.len - 2);
+    return g;
+  }
   function groundPattern(th) {
     if (S.pattern && S.patternTheme === th) return S.pattern;
     const cv = document.createElement("canvas"); cv.width = cv.height = 256;
@@ -1258,9 +1421,20 @@
     ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 - cam.x * z + shx), dpr * (h / 2 - cam.y * z + shy));
     const pat = groundPattern(th);
     ctx.fillStyle = pat; ctx.fillRect(cam.x - w / z, cam.y - h / z, (w / z) * 2, (h / z) * 2);
+    if (!S.geo) S.geo = buildGeo(t);
+    const G = S.geo;
+    // gravel traps (with a little texture)
+    ctx.fillStyle = GRAVEL[t.theme] || GRAVEL.grass; ctx.fill(G.gravel);
+    ctx.save(); ctx.clip(G.gravel); ctx.fillStyle = "rgba(0,0,0,0.1)";
+    for (let k = 0; k < 500; k++) { const gx = Math.floor(cam.x / 40) * 40 + ((k * 97) % 1200 - 600) / Math.min(1, z), gy = Math.floor(cam.y / 40) * 40 + ((k * 61) % 1200 - 600) / Math.min(1, z); ctx.fillRect(gx, gy, 3, 3); }
+    ctx.restore();
+    // pit lane: white edges and asphalt
+    ctx.lineJoin = "round"; ctx.lineCap = "butt";
+    ctx.lineWidth = 58; ctx.strokeStyle = "#f4f4f4"; ctx.stroke(G.lane);
+    ctx.lineWidth = 50; ctx.strokeStyle = th.asphalt; ctx.stroke(G.lane);
+    ctx.lineCap = "round";
     // track, drawn fresh each frame (so maps can be any size)
-    ctx.lineJoin = "round"; ctx.lineCap = "round";
-    ctx.lineWidth = t.trackW + 40; ctx.strokeStyle = th.runoff; ctx.stroke(S.trackPath);
+    ctx.lineWidth = t.trackW + 24; ctx.strokeStyle = th.runoff; ctx.stroke(S.trackPath);
     ctx.lineWidth = t.trackW + 14; ctx.strokeStyle = th.curbA; ctx.stroke(S.trackPath);
     ctx.setLineDash([22, 22]); ctx.strokeStyle = th.curbB; ctx.stroke(S.trackPath); ctx.setLineDash([]);
     ctx.lineWidth = t.trackW; ctx.strokeStyle = th.asphalt; ctx.stroke(S.trackPath);
@@ -1270,13 +1444,30 @@
       if (!S.linePath) { S.linePath = new Path2D(); t.pts.forEach((p, i) => { const x = p.x + t.nor[i].x * t.line[i], y = p.y + t.nor[i].y * t.line[i]; i ? S.linePath.lineTo(x, y) : S.linePath.moveTo(x, y); }); S.linePath.closePath(); }
       ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = "rgba(62,207,106,0.55)"; ctx.stroke(S.linePath); ctx.setLineDash([]);
     }
-    // pit box + start line
-    const p = t.pit;
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.ang);
-    ctx.fillStyle = th.asphalt; ctx.fillRect(-p.len / 2, -p.depth / 2, p.len, p.depth);
-    ctx.strokeStyle = "#ffcc1f"; ctx.lineWidth = 5; ctx.setLineDash([14, 10]); ctx.strokeRect(-p.len / 2 + 4, -p.depth / 2 + 4, p.len - 8, p.depth - 8); ctx.setLineDash([]);
-    ctx.fillStyle = "#ffcc1f"; ctx.font = "28px 'Russo One', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("PIT", 0, 0);
-    ctx.restore();
+    // pit wall between the track and the pit lane (concrete with a red-and-white top)
+    ctx.lineWidth = 12; ctx.strokeStyle = "#8d949b"; ctx.stroke(G.wall);
+    ctx.lineWidth = 4; ctx.setLineDash([16, 16]); ctx.strokeStyle = "#d32f2f"; ctx.stroke(G.wall); ctx.setLineDash([]);
+    // team garages and their stop boxes
+    for (const gr of G.garages) {
+      ctx.save(); ctx.translate(gr.x, gr.y); ctx.rotate(gr.ang);
+      ctx.fillStyle = "#2a2d33"; ctx.fillRect(-40, -22, 80, 44);
+      ctx.fillStyle = gr.color; ctx.fillRect(-40, -22, 80, 8);
+      ctx.fillStyle = "#fff"; ctx.font = "700 11px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.save(); if (Math.cos(gr.ang) < 0) ctx.rotate(Math.PI); ctx.fillText(gr.team.slice(0, 14), 0, 4); ctx.restore();
+      ctx.restore();
+      ctx.save(); ctx.translate(gr.sx, gr.sy); ctx.rotate(gr.ang);
+      ctx.strokeStyle = "#ffcc1f"; ctx.lineWidth = 3; ctx.strokeRect(-24, -16, 48, 32);
+      ctx.restore();
+    }
+    // pit entry / exit markings with the speed limit
+    for (const [pt, label] of [[G.entry, "PIT 60"], [G.exit, "PIT EXIT"]]) {
+      const ang = Math.atan2(t.tan[pt.i].y, t.tan[pt.i].x);
+      ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(ang);
+      ctx.fillStyle = "#fff"; ctx.fillRect(-3, -26, 6, 52);
+      ctx.fillStyle = "#ffcc1f"; ctx.font = "16px 'Russo One', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.save(); ctx.translate(-22, 0); ctx.rotate(Math.cos(ang) < 0 ? Math.PI / 2 : -Math.PI / 2); ctx.fillText(label, 0, 0); ctx.restore();
+      ctx.restore();
+    }
     const s0 = t.pts[0], tn = t.tan[0];
     ctx.save(); ctx.translate(s0.x, s0.y); ctx.rotate(Math.atan2(tn.y, tn.x));
     for (let r = 0; r < 2; r++) for (let q = 0; q < Math.ceil(t.trackW / 10); q++) { ctx.fillStyle = (r + q) % 2 ? "#111" : "#fff"; ctx.fillRect(-10 + r * 10, -t.trackW / 2 + q * 10, 10, 10); }
@@ -1295,7 +1486,12 @@
     const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" ? 0.35 : 1;
     for (const c of S.cars.values()) {
       if (S.phase !== "race") break;
-      if (!c.onTrack && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(130,100,60,0.45)");
+      if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
+      else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
+      if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (c.punct && c.speed > 30 && Math.random() < 0.9 * fxLevel) {
+        S.particles.push({ x: c.x - Math.cos(c.h) * 18, y: c.y - Math.sin(c.h) * 18, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, life: 0.25, age: 0, r: 2, color: Math.random() < 0.5 ? "#ffcc1f" : "#ff7043" });
+      }
       if (c.slide && Math.random() < 0.35 * fxLevel) puff(c, "rgba(230,230,230,0.5)");
       if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
     }
@@ -1325,6 +1521,16 @@
     }
     // screen-space effects
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (S.weather && S.weather.wet > 0.02) {
+      const wv = S.weather.wet;
+      ctx.fillStyle = `rgba(30,45,70,${0.22 * wv})`; ctx.fillRect(0, 0, w, h);
+      if (S.weather.raining && !reducedMotion) {
+        ctx.strokeStyle = "rgba(200,215,235,0.45)"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let k = 0; k < 160 * wv; k++) { const rx = Math.random() * w, ry = Math.random() * h; ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 20); }
+        ctx.stroke();
+      }
+    }
     if (th.night) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h); }
     if (settings.lines === "on" && !reducedMotion && sp > 480) {
       const a = clamp((sp - 480) / 200, 0, 1) * 0.35;
@@ -1369,6 +1575,15 @@
     $("bestText").textContent = "Best " + fmt(me.best);
     const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
     $("speedText").textContent = `${Math.round(spd)} ${settings.units === "mph" ? "mph" : "km/h"}`;
+    $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}`;
+    $("tireName").style.color = me.punct ? "#ff8a80" : "";
+    if (me.inPit) $("speedText").textContent = "PIT LIMITER";
+    const W = S.weather;
+    if (W) {
+      const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
+      pill.textContent = W.raining ? `🌧 Raining, track ${Math.round(W.wet * 100)}% wet` : W.wet > 0.05 ? `⛅ Drying, track ${Math.round(W.wet * 100)}% wet` : "☀ Dry";
+      if (W.change >= 0 && W.change <= 20) { const s2 = document.createElement("span"); s2.className = "fc"; s2.textContent = W.raining ? `Clearing in ${W.change}s` : `Rain in ${W.change}s`; pill.appendChild(s2); }
+    }
     const tp = Math.round((me.tire || 0) * 100), tc = me.tire > 0.6 ? "#3ecf6a" : me.tire > 0.35 ? "#ffcc1f" : "#e53935";
     $("tirePct").textContent = tp + "%" + (me.tire < 0.35 && !S.box && !me.fin ? " (box soon!)" : "");
     $("tireFill").style.width = tp + "%"; $("tireFill").style.background = tc;
@@ -1381,7 +1596,7 @@
     $("gapAhead").textContent = gi > 0 && ga !== undefined ? (ga < 0 ? "Ahead +1 lap" : `Ahead ${ga.toFixed(1)}s`) : gi === 0 ? "Leading!" : "";
     $("gapBehind").textContent = gb !== undefined && gi < S.standings.length - 1 ? (gb < 0 ? "Behind +1 lap" : `Behind ${gb.toFixed(1)}s`) : "";
     // live standings list
-    const key = S.standings.join(",") + S.gaps.join(",") + [...S.cars.values()].map((c) => (c.pit >= 0 ? "p" : "") + Math.round(c.tire * 100)).join("");
+    const key = S.standings.join(",") + S.gaps.join(",") + [...S.cars.values()].map((c) => (c.pit >= 0 ? "p" : "") + (c.punct ? "x" : "") + c.comp + Math.round(c.tire * 100)).join("");
     if (key !== lastHudStand) {
       lastHudStand = key;
       const ol = $("standList"); ol.textContent = "";
@@ -1394,8 +1609,9 @@
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
         g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);
-        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : `${Math.round(c.tire * 100)}%`;
-        li.append(p, d, n, g, x); ol.appendChild(li);
+        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : `${Math.round(c.tire * 100)}%`;
+        if (c.punct) x.style.color = "#ff8a80";
+        li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
     }
     if (!$("garage").childElementCount && S.up) renderGarage();
