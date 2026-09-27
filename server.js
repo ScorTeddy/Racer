@@ -16,9 +16,12 @@ const TRACK_W = 130;
 const MARGIN = 420;
 const CAR_R = 17;
 const CAR_HL = 23, CAR_HW = 12;        // half length / half width of a car's box hitbox
-const CRASH_SPEED = 330;               // closing speed (px/s) that turns contact into a crash (about 120 km/h faster)
-const MAX_SPEED = 640, ACCEL = 380, BRAKE = 950, REVERSE_MAX = 160;
-const TURN_RATE = 2.7, GRIP = 9;
+const CRASH_SPEED = 430;               // closing speed (px/s) that turns contact into a crash (about 155 km/h faster)
+// Cars are about 35% faster than before, with more grip, braking and corner speed to match.
+const MAX_SPEED = 860, ACCEL = 560, BRAKE = 1300, REVERSE_MAX = 180;
+const TURN_RATE = 3.1, GRIP = 11.5;
+const CORNER_GRIP = 1700;              // how hard cars can corner (higher = faster through bends)
+const BRAKE_PLAN = 900;                // how hard drivers plan to brake before a corner
 // Tire life depends on race length: a fresh set lasts about 60% of the race
 // (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
 // Short races chew through tires fast, long races wear them slower.
@@ -112,6 +115,66 @@ function chaikinClosed(pts, rounds) {
   }
   return p;
 }
+// Joining the end of the drawing back to its start, nicely:
+// 1) if you overshot past where you started, trim the extra bit off either end
+// 2) bridge the gap with a smooth curve that follows the direction you were drawing
+//    (instead of a straight line with a kink in it)
+// Trim a little "hook" at the very end (or start) of a drawing: when you lift your finger or
+// mouse, the last bit often flicks off in a random direction. Only looks at the last ~8%.
+function trimHooks(pts) {
+  const dirAt = (i, k) => Math.atan2(pts[i + k].y - pts[i].y, pts[i + k].x - pts[i].x);
+  const n = pts.length, zone = Math.max(4, Math.floor(n * 0.08)), k = 4;
+  for (let i = n - 1 - k; i > n - zone - k && i > k; i--) {
+    const turn = Math.abs(wrapAngle(dirAt(i, k) - dirAt(i - k, k)));
+    if (turn > 0.8) { pts = pts.slice(0, i + 1); break; }
+  }
+  const m = pts.length;
+  for (let i = k; i < Math.min(zone, m - 2 * k); i++) {
+    const turn = Math.abs(wrapAngle(dirAt(i, k) - dirAt(i - k, k)));
+    if (turn > 0.8) { pts = pts.slice(i); break; }
+  }
+  return pts;
+}
+function closeSmoothly(pts) {
+  pts = trimHooks(pts);
+  const n = pts.length, win = Math.floor(n * 0.3);
+  let best = -1, bd = 70;
+  for (let j = n - win; j < n - 2; j++) { const d = dist(pts[j], pts[0]); if (d < bd) { bd = d; best = j; } }
+  if (best > 0) pts = pts.slice(0, best + 1);
+  const end = pts[pts.length - 1];
+  best = -1; bd = 70;
+  for (let i = 2; i < Math.floor(pts.length * 0.3); i++) { const d = dist(pts[i], end); if (d < bd) { bd = d; best = i; } }
+  if (best > 0) pts = pts.slice(best);
+  const A = pts[pts.length - 1], B = pts[0], gap = dist(A, B);
+  if (gap < 8) return pts;
+  // directions you were drawing at the end and at the start
+  const a0 = pts[Math.max(0, pts.length - 6)], b1 = pts[Math.min(pts.length - 1, 5)];
+  const ta = { x: A.x - a0.x, y: A.y - a0.y }, tb = { x: b1.x - B.x, y: b1.y - B.y };
+  const la = Math.hypot(ta.x, ta.y) || 1, lb = Math.hypot(tb.x, tb.y) || 1, m = gap * 1.1;
+  const TA = { x: (ta.x / la) * m, y: (ta.y / la) * m }, TB = { x: (tb.x / lb) * m, y: (tb.y / lb) * m };
+  const steps = Math.max(3, Math.ceil(gap / 6)), bridge = [];
+  for (let k = 1; k < steps; k++) {                     // Hermite curve from the end back to the start
+    const t = k / steps, t2 = t * t, t3 = t2 * t;
+    const h1 = 2 * t3 - 3 * t2 + 1, h2 = -2 * t3 + 3 * t2, h3 = t3 - 2 * t2 + t, h4 = t3 - t2;
+    bridge.push({ x: h1 * A.x + h2 * B.x + h3 * TA.x + h4 * TB.x, y: h1 * A.y + h2 * B.y + h3 * TA.y + h4 * TB.y });
+  }
+  return [...pts, ...bridge];
+}
+// extra smoothing right around the start/finish joint (the loop wraps at index 0)
+function smoothJoin(pts) {
+  const n = pts.length, R = Math.min(18, Math.floor(n / 6));
+  for (let it = 0; it < 8; it++) {
+    const next = pts.map((p) => ({ ...p }));
+    for (let d = -R; d <= R; d++) {
+      const i = (d + n) % n, a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+      const w = 0.5 * (1 - Math.abs(d) / (R + 1));
+      next[i] = { x: pts[i].x + ((a.x + b.x) / 2 - pts[i].x) * w, y: pts[i].y + ((a.y + b.y) / 2 - pts[i].y) * w };
+    }
+    pts = next;
+  }
+  return pts;
+}
+
 function buildTrack(stroke, board) {
   if (!Array.isArray(stroke) || stroke.length < 4) return { error: "Draw a loop to make a track." };
   const [BW, BH] = board;
@@ -119,8 +182,10 @@ function buildTrack(stroke, board) {
   let pts = resample(raw, 6, false);
   let len = 0; for (let i = 1; i < pts.length; i++) len += dist(pts[i - 1], pts[i]);
   if (len < 700) return { error: "Too small! Draw a bigger track." };
+  pts = closeSmoothly(pts);
   pts = chaikinClosed(pts, 3);
   pts = resample(pts, 10, true);
+  pts = smoothJoin(pts);
   if (pts.length < 40) return { error: "Too small! Draw a bigger track." };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
@@ -159,12 +224,12 @@ function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
   for (let i = 0; i < N; i++) {
     const a = lp[(i - k + N) % N], m = lp[i], b = lp[(i + k) % N];
     const turn = Math.abs(wrapAngle(Math.atan2(b.y - m.y, b.x - m.x) - Math.atan2(m.y - a.y, m.x - a.x)));
-    vmax.push(Math.min(MAX_SPEED, Math.sqrt(1150 / (turn / (dist(a, m) + dist(m, b) || 1) + 1e-6))));
+    vmax.push(Math.min(MAX_SPEED, Math.sqrt(CORNER_GRIP / (turn / (dist(a, m) + dist(m, b) || 1) + 1e-6))));
     const t1 = tan[(i - k + N) % N], t2 = tan[(i + k) % N];
     turnAt.push(wrapAngle(Math.atan2(t2.y, t2.x) - Math.atan2(t1.y, t1.x)));
   }
   for (let pass = 0; pass < 2; pass++) for (let i = N - 1; i >= 0; i--) {
-    const next = vmax[(i + 1) % N]; vmax[i] = Math.min(vmax[i], Math.sqrt(next * next + 2 * 650 * spacing));
+    const next = vmax[(i + 1) % N]; vmax[i] = Math.min(vmax[i], Math.sqrt(next * next + 2 * BRAKE_PLAN * spacing));
   }
   // Bridges: wherever the track crosses itself, the later pass climbs a ramp and goes over.
   // elev[i] is 0 on the ground and 1 on top of a bridge (ramps in between).
@@ -763,7 +828,7 @@ class Room {
     else if (input.brake) { if (vF > 20) vF -= st.brake * dt; else if (vF > -REVERSE_MAX) vF -= accel * 0.6 * dt; }
     else vF -= vF * 0.55 * dt;
     if (vF > maxSp) vF -= Math.min(vF - maxSp, (c.surface >= 2 && c.surface < 4 ? 900 : 300) * dt);
-    const speedFrac = clamp(Math.abs(vF) / 180, 0, 1), hi = 1 - 0.28 * clamp(Math.abs(vF) / MAX_SPEED, 0, 1);
+    const speedFrac = clamp(Math.abs(vF) / 200, 0, 1), hi = 1 - 0.28 * clamp(Math.abs(vF) / MAX_SPEED, 0, 1);
     const control = c.crashT > 0 ? 0.25 : 1;                 // dazed right after a crash
     c.heading += input.steer * TURN_RATE * speedFrac * hi * Math.sign(vF || 1) * dt * control;
     let grip = st.grip * this.tireGrip(c.tire) * this.weatherGrip(c);
@@ -871,6 +936,9 @@ class Room {
     for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) {
       const a = cs[i], b = cs[j];
       if (a.pitting > 0 || b.pitting > 0) continue;
+      // in the pit lane cars pass straight through each other (no pit lane pile-ups)
+      const inLane = (c) => c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut";
+      if (inLane(a) || inLane(b)) continue;
       if (Math.abs(a.x - b.x) > 60 || Math.abs(a.y - b.y) > 60) continue;           // quick skip
       if (Math.abs(this.level(a) - this.level(b)) > 0.45) continue;                   // one is on a bridge above the other
       const hit = this.overlap(a, b);

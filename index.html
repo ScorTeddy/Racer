@@ -1071,7 +1071,7 @@
       const turn = Math.abs(wrapAngle(Math.atan2(b.y, b.x) - Math.atan2(a.y, a.x)));
       if (turn > 0.6 && !inCorner) { corners++; inCorner = true; } else if (turn < 0.3) inCorner = false;
     }
-    const km = (t.length / 10 / 1000).toFixed(2), lap = t.length / 470;
+    const km = (t.length / 10 / 1000).toFixed(2), lap = t.length / 640;
     card.textContent = "";
     for (const [v, l] of [[`${km} km`, "Lap length"], [corners, "Corners"], [t.bridges || 0, t.bridges === 1 ? "Bridge" : "Bridges"], [`~${Math.round(lap)}s`, "Lap time"], [t.reverse ? "Reversed" : "Normal", "Direction"], [t.pitLane.side > 0 ? "Right" : "Left", "Pit lane side"]]) {
       const d = document.createElement("div"); const b = document.createElement("b"); b.textContent = v; const s2 = document.createElement("span"); s2.textContent = l;
@@ -1688,7 +1688,7 @@
     if (!target) return;
     const sp = Math.max(0, target.speed || 0);
     const zoomBase = { close: 1.25, normal: 1, far: 0.72 }[settings.zoom] || 1;
-    const tz = Math.min(w, h) / 760 * zoomBase * (1.05 - 0.2 * clamp(sp / 640, 0, 1));
+    const tz = Math.min(w, h) / 760 * zoomBase * (1.05 - 0.22 * clamp(sp / 860, 0, 1));
     cam.z += (tz - cam.z) * Math.min(1, dt * 3);
     const lx = Math.cos(target.h) * sp * 0.28, ly = Math.sin(target.h) * sp * 0.28;
     if (!cam.x) { cam.x = target.x; cam.y = target.y; }
@@ -1863,8 +1863,8 @@
       }
     }
     if (th.night) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h); }
-    if (settings.lines === "on" && !reducedMotion && sp > 480) {
-      const a = clamp((sp - 480) / 200, 0, 1) * 0.35;
+    if (settings.lines === "on" && !reducedMotion && sp > 640) {
+      const a = clamp((sp - 640) / 240, 0, 1) * 0.35;
       ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 2;
       for (let i = 0; i < 14; i++) {
         const ang = Math.random() * Math.PI * 2, r1 = Math.min(w, h) * (0.42 + Math.random() * 0.1), r2 = r1 + 40 + Math.random() * 60;
