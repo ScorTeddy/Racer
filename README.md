@@ -8,12 +8,13 @@ plus up to 60 AI drivers. Rooms can be private (invite code) or public (listed o
 ## Files
 ```
 server.js          Node server: rooms, lobbies, track building, the whole race simulation
+f1-tracks.json     39 real F1 circuit layouts (loaded by server.js; keep it next to it)
 package.json       dependencies (express, socket.io)
 public/index.html  the entire client (menu, room screen, race view, HUD, settings) in one file
 ```
 
 ## Put it online (Render, free)
-1. GitHub repo with `server.js` and `package.json` in the main folder, `index.html` inside `public/`.
+1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, `index.html` inside `public/`.
 2. render.com > New > Web Service > pick the repo. Language Node.
 3. Build command `npm install`, start command `npm start`, instance type Free.
 
@@ -22,11 +23,17 @@ Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 
 ## Controls
 - **Space**: start reaction at the lights, then **hold to boost** (also **N**, or hold the Boost button)
-- **B** box this lap, **1/2/3** pick upgrade, **U** cards later, **Tab** watch another car, **O** settings
+- **B** box this lap: big tire cards pop up (keys **1-4**) showing how many laps each set lasts.
+  If you don't pick before your garage, the "Next tires" choice on the team radio goes on.
+- **1/2/3** pick upgrade (click the cards while the tire picker is open), **U** cards later, **Tab** watch another car, **O** settings
 - Drawing board: Freehand (drag) and Straight (click) add to the **same** drawing, mix them freely.
   Shift while dragging = straight bit. Width brush (4 sizes, or **[** / **]**) sets how wide the road is
   for what you draw next. **Undo** (Ctrl+Z) removes the last piece, **Finish loop** closes it
   (or come back to the green dot). Esc clears the drawing.
+  **Smooth** makes straights straighter and curves smoother (rebuilds the current track too).
+  **F1 tracks** loads a real circuit.
+- Car setup: **Paint your own design** (24 x 12 pixels over your color/livery, mirror, fill, undo).
+- Settings: **⚙** on the team radio panel, or **O**, any time (also mid-race).
 
 ---
 
@@ -42,7 +49,7 @@ calls, upgrade picks, start reaction, boost held on/off).
 **Socket events (client → server):** `create(profile, {public})`, `join {code, profile}`,
 `menuInfo`, `setPublic(bool)`, `settings {...}`, `track {stroke, map}` (stroke = `[[x, y, width], ...]`
 in board units, width in world px 84-260), `randomTrack {map}`, `setStart`, `reverse`, `clearTrack`,
-`start`, `react(ms)`, `nitro(bool)`, `box`, `compound(key)`, `pick(i)`, `retire`, `setTeam`, `kick`, `setHost`.
+`f1Track {id}`, `gridPos {id, pos}` (host; 0 = back of the grid), `start`, `react(ms)`, `nitro(bool)`, `box`, `compound(key)`, `pick(i)`, `retire`, `setTeam`, `kick`, `setHost`.
 **Server → client:** `menuInfo {online, racing, lobbies}` (to sockets on the menu, every 1.5s when
 changed), `joined`, `lobby`, `track`, `trackResult`, `race`, `tirePick`, `lights*`, `state`, `me`,
 `offer`, `picked`, `results`, `feed`, `toast`, ...
@@ -60,11 +67,40 @@ ahead = +30% top speed), `NITRO_POWER 0.20`, `NITRO_DRAIN 0.12`/s, `NITRO_REGEN 
 XP per second: host setting 10-50 (default 10), `xpForLevel = 100 + (lvl-1)*50`.
 All timings are race-time, so at 3x speed the boost drains 3x faster in real seconds.
 
+**Settings:** laps, AI count, map, theme, speed, wear, weather (dynamic = no forecast), teams
+on/off, team colors, `xpRate` 10-50, `season` (0 = endless, or 3/5/8/10 races: after the last one
+`results.season` has the driver + team champions and the points reset), `smooth`.
+
+**Pit stops:** `PIT_MISTAKE_CHANCE` 5% adds `PIT_MISTAKE_TIME` 1s. Durables wear x0.72 (a set
+lasts ~83% of the race). The `me` message has `life` (laps each compound lasts for this car),
+`lapsLeft` (after the stop), `heading`/`pitLane`/`pitting` for the pit tire picker.
+
+**AI strategy (`aiPlan`, `lifeLaps`, `safeLaps`):** tries 0-3 more stops for the laps left and
+picks the plan that loses least time (pit loss vs. slower tires), in whole-lap stints. In the last
+30% of each lap it decides: planned stop, tires won't reach the next window / the flag (uses the
+real measured wear per lap, `lapWearMeas`), wrong tires for the weather, damage, or an undercut
+when the car ahead pits. Teammates don't stop together unless it's urgent.
+
+**AI upgrades (`aiUpgrade`):** AI teams earn XP each race-second (xpRate x 1.3-1.7) and pick
+weighted-random upgrades, so they speed up during the race like you do.
+
+**Racing line:** minimum-curvature (coarse-to-fine smoothing in `finalizeTrack`, up to 18px
+from the road edge): wide in, apex, wide out. Drivers leave "racing room" (never swing across
+onto a car beside them), only count as "pulled out" to pass once a full car width across, and
+don't fire boost into the back of the car ahead.
+
+**Track building extras:** `narrowCloseRoads` narrows the road where two separate parts of the
+track run side by side; `straighten` (Smooth track) simplifies the loop to its corners and rounds
+each one. F1 tracks (`setF1Track`) are scaled by real length (~4200 px per km) onto the smallest
+map that fits, with the start on the best straight (`bestStart`). Layout data: github.com/bacinger/
+f1-circuits, MIT License, Copyright (c) 2019-2025 Tomislav Bacinger (unofficial, not endorsed by F1).
+
 **Upgrades (`UPGRADES`, each has `fx(level)` text shown on cards as "Now → Next"):** Corner
 Master +6% corner speed, Late Braker (brakes use 72% → up to 94% of the car's braking), Racecraft
 (+0.1s slipstream reach, overtakes more), Focus, Tire Whisperer, Quick Reflexes, Big Engine +7%
 top speed, Turbo +25% accel, Sticky Setup +15% grip, Hard Compound, Carbon Brakes +30%,
 Pro Pit Crew, Nitro Power (+8% boost), Nitro Tank (drains 25% slower, refills 50% faster).
+(Hard Compound was removed: Tire Whisperer is the one tire-wear upgrade, max 4.)
 `stats(c)` turns levels into numbers.
 
 **Track building (server):** `buildTrack` removes tiny accidental loops, trims hooks (not on
@@ -100,4 +136,5 @@ it's on (from the server's track index), so cars on ramps are never hidden by th
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
 host, reset championship, move start line, reverse track, public/private rooms.
-Client settings saved in `tb-settings`, profile in `tb-profile`, brush size in `tb-brush`.
+Client settings saved in `tb-settings`, profile (with `design`) in `tb-profile`, brush size in `tb-brush`.
+Upgrade cards only appear during a race (they're cleared at the flag).
