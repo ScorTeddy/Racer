@@ -17,10 +17,13 @@ const MARGIN = 420;
 const CAR_R = 17;
 const MAX_SPEED = 640, ACCEL = 380, BRAKE = 950, REVERSE_MAX = 160;
 const TURN_RATE = 2.7, GRIP = 9;
-const TIRE_WEAR_PER_LAP = 0.2;
+// Tire life depends on race length: a fresh set lasts about 60% of the race
+// (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
+// Short races chew through tires fast, long races wear them slower.
+const tireLifeLaps = (laps) => clamp(laps * 0.6, 1.8, 8);
 const PIT_TIME = 2.8;
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
-const WEAR_LEVELS = { low: 0.6, normal: 1, high: 1.5 };
+const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
 const MAX_PLAYERS = 6;
 const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno", "Ziggy", "Pip"];
 const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00acc1", "#ec407a", "#6d4c41", "#546e7a", "#c0ca33"];
@@ -44,11 +47,13 @@ const UPGRADES = {
 };
 const blankUp = () => Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0]));
 const ORDERS = {
-  push:   { speed: 1.05, wear: 1.35, mistakes: 2.0 },
+  // Push is risky: a small speed gain, but tires die much faster and mistakes are
+  // 3x as likely (and worse), especially once the tires are worn.
+  push:   { speed: 1.04, wear: 1.75, mistakes: 3.2 },
   normal: { speed: 1.0,  wear: 1.0,  mistakes: 1.0 },
   save:   { speed: 0.93, wear: 0.65, mistakes: 0.5 },
 };
-const xpForLevel = (lvl) => 100 + (lvl - 1) * 45;
+const xpForLevel = (lvl) => 80 + (lvl - 1) * 35;
 
 // ======================= Web server =======================
 const app = express();
@@ -259,6 +264,9 @@ class Room {
       this.cars.push(base);
     });
     this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity;
+    this.wearPerLap = 1 / tireLifeLaps(s.laps);
+    this.bucket = Math.max(1, Math.floor(t.N / 60));      // ~60 timing points per lap, used for gaps
+    for (const c of this.cars) c.cp = new Map();
     // start lights: 5 lights, one per second, then a random pause before they go out
     this.phase = "lights";
     const now = Date.now();
@@ -285,7 +293,8 @@ class Room {
       p.reaction = clamp(ms, 80, 2000);
       const good = p.reaction < 300;
       io.to(p.id).emit("startResult", { ms: Math.round(p.reaction), good });
-      if (good) this.addXp(p, 30, `Rocket start! ${Math.round(p.reaction)}ms +30 XP`);
+      if (good) this.addXp(p, 50, `Rocket start! ${Math.round(p.reaction)}ms +50 XP`);
+      else if (p.reaction < 450) this.addXp(p, 20, `Good start +20 XP`);
     }
     // the lights are already out: launch this car now based on the reaction
     if (this.phase === "race") this.applyLaunch(c, p);
@@ -347,7 +356,7 @@ class Room {
       if (pos < p.lastPos) {
         for (let i = pos; i < p.lastPos; i++) {
           const rival = order[i];
-          if (this.time - (p.passCd.get(rival.id) || -99) > 8) { p.passCd.set(rival.id, this.time); this.addXp(p, 35, `${c.name} passed ${rival.name}! +35 XP`); }
+          if (this.time - (p.passCd.get(rival.id) || -99) > 8) { p.passCd.set(rival.id, this.time); this.addXp(p, 55, `${c.name} passed ${rival.name}! +55 XP`); }
         }
       } else if (pos > p.lastPos) {
         const by = order[pos - 2];
@@ -383,7 +392,12 @@ class Room {
       tx = t.pit.x; ty = t.pit.y;
       const dp = Math.hypot(tx - c.x, ty - c.y);
       targetSpeed = dp < 45 ? 0 : clamp(dp * 1.4, 60, 260);
-      if (c.inPit && speed < 30) { c.pitting = this.stats(c).pitTime; c.pitTotal = c.pitting; c.aiMode = "pitting"; this.emit("feed", { t: "pit", name: c.name, id: c.id }); }
+      if (c.inPit && speed < 30) {
+        c.pitting = this.stats(c).pitTime; c.pitTotal = c.pitting; c.aiMode = "pitting";
+        this.emit("feed", { t: "pit", name: c.name, id: c.id });
+        // well-timed stop (tires were actually worn): bonus XP
+        if (p && c.tire < 0.35) this.addXp(p, 30, "Well-timed pit stop +30 XP");
+      }
     } else if (c.aiMode === "exit") {
       const i = 11 % N;
       tx = t.pts[i].x; ty = t.pts[i].y; targetSpeed = 260;
@@ -407,8 +421,11 @@ class Room {
       if (v < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
         let rate = p ? 0.1 * (1 - 0.3 * c.up.focus) * ORDERS[p.order].mistakes : 0.06;
         if (c.tire < 0.25) rate *= 2;
+        if (p && p.order === "push" && c.tire < 0.45) rate *= 1.6;   // pushing on worn tires is asking for trouble
         if (Math.random() < rate * dt) {
-          c.mistakeT = 0.55; c.mistakeDir = Math.random() < 0.5 ? -1 : 1;
+          const pushing = p && p.order === "push";
+          c.mistakeT = pushing ? 0.85 : 0.55;              // pushing mistakes are bigger
+          c.mistakeDir = Math.random() < 0.5 ? -1 : 1;
           this.emit("feed", { t: "mistake", name: c.name, id: c.id });
         }
       }
@@ -464,7 +481,7 @@ class Room {
     c.vx = nfx * vF - nfy * vS; c.vy = nfy * vF + nfx * vS;
     c.x = clamp(c.x + c.vx * dt, 20, t.W - 20); c.y = clamp(c.y + c.vy * dt, 20, t.H - 20);
     const moved = Math.hypot(c.vx, c.vy) * dt, slide = Math.abs(vS);
-    let wear = (TIRE_WEAR_PER_LAP / t.length) * moved * (1 + clamp(slide / 110, 0, 3)) * WEAR_LEVELS[this.settings.wear];
+    let wear = (this.wearPerLap / t.length) * moved * (1 + clamp(slide / 110, 0, 3)) * WEAR_LEVELS[this.settings.wear];
     if (input.brake && vF > 250) wear *= 1.4;
     const p = c.owner && this.players.get(c.owner);
     if (p) wear *= ORDERS[p.order].wear;
@@ -491,6 +508,8 @@ class Room {
     c.idx = best; c.inPit = inPitBox(t, c.x, c.y);
     c.onTrack = bestD < TRACK_W / 2 + 4 || c.inPit;
     c.progress = c.lapsDone * N + c.idx;
+    // remember when this car passed each timing point (for gap times)
+    if (c.cp) { const b = Math.floor(c.progress / this.bucket); if (!c.cp.has(b)) c.cp.set(b, this.time); }
   }
 
   onLap(c) {
@@ -500,9 +519,9 @@ class Room {
       if (lt < c.bestLap) c.bestLap = lt;
       if (lt < this.fastest) {
         this.fastest = lt;
-        if (c.lapsDone > 1) { this.emit("feed", { t: "fastest", name: c.name, time: lt }); if (p) this.addXp(p, 50, "Fastest lap! +50 XP"); }
+        if (c.lapsDone > 1) { this.emit("feed", { t: "fastest", name: c.name, time: lt }); if (p) this.addXp(p, 80, "Fastest lap! +80 XP"); }
       }
-      if (p) { this.addXp(p, 20, "Lap done +20 XP"); if (c.cleanLap) this.addXp(p, 40, "Clean lap +40 XP"); }
+      if (p) { this.addXp(p, 30, "Lap done +30 XP"); if (c.cleanLap) this.addXp(p, 60, "Clean lap +60 XP"); }
     }
     c.lapStart = this.time; c.cleanLap = true;
     if (c.lapsDone >= this.settings.laps && !c.finished) {
@@ -570,6 +589,21 @@ class Room {
     setTimeout(() => { if (this.phase === "results") { this.phase = "lobby"; this.cars = null; this.sendLobby(); } }, 12000);
   }
 
+  // Gap from each car to the car directly ahead, in seconds.
+  // -1 means "a lap or more behind".
+  gaps(order) {
+    const N = this.track.N;
+    return order.map((b, i) => {
+      if (i === 0) return 0;
+      const a = order[i - 1];
+      if (a.finished && b.finished) return Math.round((b.finishTime - a.finishTime) * 10) / 10;
+      if (a.progress - b.progress >= N) return -1;
+      const when = a.cp && a.cp.get(Math.floor(b.progress / this.bucket));
+      if (when === undefined) return 0;
+      return Math.round(Math.max(0, this.time - when) * 10) / 10;
+    });
+  }
+
   sendState() {
     if (!this.cars || (this.phase !== "race" && this.phase !== "lights")) return;
     const r2 = (v) => Math.round(v * 100) / 100;
@@ -578,7 +612,8 @@ class Room {
       c.pits, c.pitting > 0 ? r2(1 - c.pitting / (c.pitTotal || 1)) : -1, c.mistakeT > 0 ? 1 : 0, c.finished ? 1 : 0,
       c.slide > 70 && c.onTrack ? 1 : 0, c.onTrack ? 1 : 0, c.boosting ? 1 : 0, Math.round(c.progress), isFinite(c.bestLap) ? r2(c.bestLap) : 0,
     ]);
-    const base = { t: r2(this.time), phase: this.phase, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: this.standings().map((c) => c.id) };
+    const order = this.standings();
+    const base = { t: r2(this.time), phase: this.phase, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) };
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
       io.to(p.id).emit("state", { ...base, me: c ? { id: c.id, order: p.order, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up } : null });

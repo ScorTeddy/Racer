@@ -116,15 +116,21 @@
   .feed div.out { animation: feedOut 400ms ease forwards; }
   @keyframes feedIn { from { opacity: 0; transform: translateX(30px); } }
   @keyframes feedOut { to { opacity: 0; transform: translateX(30px); } }
-  .standings { position: absolute; left: 1rem; top: calc(5.6rem + env(safe-area-inset-top, 0px)); width: 12.5rem; padding: 0.4rem 0.5rem; font-size: 0.82rem; animation: inL 420ms cubic-bezier(.2,.9,.3,1.1) 60ms both; }
+  .standings { position: absolute; left: 1rem; top: calc(7rem + env(safe-area-inset-top, 0px)); width: 15rem; padding: 0.4rem 0.5rem; font-size: 0.82rem; animation: inL 420ms cubic-bezier(.2,.9,.3,1.1) 60ms both; }
   .standings ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
   .standings li { display: flex; align-items: center; gap: 0.35rem; transition: transform 200ms ease; }
   .standings li .p { width: 1.3rem; color: var(--soft); font-weight: 700; text-align: right; }
   .standings li .d { width: 0.65rem; height: 0.65rem; border-radius: 3px; }
   .standings li .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .standings li .x { color: var(--soft); font-size: 0.75rem; }
+  .standings li .tw { color: var(--soft); font-size: 0.75rem; width: 2.3rem; text-align: right; }
+  .standings li .gap { font-variant-numeric: tabular-nums; font-size: 0.78rem; width: 3.2rem; text-align: right; color: var(--ink); }
+  .standings li .gap.close { color: #ff8a80; font-weight: 700; }
+  .standings .head { display: flex; justify-content: flex-end; gap: 0.35rem; font-size: 0.68rem; color: var(--soft); padding-bottom: 0.1rem; }
+  .standings .head span:first-child { width: 3.2rem; text-align: right; } .standings .head span:last-child { width: 2.3rem; text-align: right; }
+  .gapline { display: flex; gap: 0.6rem; font-size: 0.78rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gapline .a { color: #ff8a80; } .gapline .b { color: #9ad0ff; }
   .standings li.me { color: var(--yellow); font-weight: 700; }
-  .standings li.pit .x { color: var(--yellow); }
+  .standings li.pit .tw { color: var(--yellow); }
   .radio { position: absolute; left: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); width: 18rem; padding: 0.7rem; display: flex; flex-direction: column; gap: 0.45rem; pointer-events: auto; animation: inUp 460ms cubic-bezier(.2,.9,.3,1.2) 100ms both; }
   .meter-label { display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 600; color: var(--soft); }
   .orders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem; }
@@ -300,8 +306,8 @@
 <!-- ============ Race HUD ============ -->
 <div id="hud" class="hidden">
   <div class="flash" id="flash"></div>
-  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span></div></div>
-  <div class="standings panel" id="standings"><ol id="standList"></ol></div>
+  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div></div>
+  <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel"></canvas>
   <div class="feed" id="feed" aria-live="polite"></div>
   <div class="lights panel hidden" id="lights">
@@ -369,7 +375,7 @@
     night:  { ground: "#17241b", speck: ["rgba(255,255,255,0.03)", "rgba(0,0,0,0.2)"], runoff: "#3a3527", asphalt: "#26282e", curbA: "#9aa0a6", curbB: "#b71c1c", line: "rgba(255,255,255,0.3)", night: true },
   };
   const ORDER_HINT = {
-    push: "Faster, but tires wear 35% quicker and mistakes are twice as likely.",
+    push: "Risky! A little faster, but tires wear 75% quicker and big mistakes are 3x as likely.",
     normal: "A steady pace. Good default.",
     save: "Slower, but tires last way longer and mistakes are rare.",
   };
@@ -654,7 +660,7 @@
 
   socket.on("state", (st) => {
     const now = performance.now();
-    S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.standings = st.standings;
+    S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.standings = st.standings; S.gaps = st.gaps || [];
     for (const a of st.cars) {
       const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best] = a;
       let c = S.cars.get(id);
@@ -1093,6 +1099,7 @@
     }
   }
   let lastHudStand = "";
+  const fmtGap = (g, i) => (i === 0 ? "Leader" : g < 0 ? "+1 lap" : "+" + g.toFixed(1) + "s");
   function updateHud(now) {
     const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
     if (!me) return;
@@ -1111,8 +1118,12 @@
     $("pitRing").classList.toggle("hidden", !(me.pit >= 0 && me.id === S.myCar));
     if (me.pit >= 0) { $("pitPct").textContent = Math.round(me.pit * 100) + "%"; $("pitFill").style.width = me.pit * 100 + "%"; }
     $("radio").classList.toggle("hidden", !S.myCar);
+    // my gap to the car ahead and the car behind
+    const gi = S.standings.indexOf(me.id), ga = S.gaps[gi], gb = S.gaps[gi + 1];
+    $("gapAhead").textContent = gi > 0 && ga !== undefined ? (ga < 0 ? "Ahead +1 lap" : `Ahead ${ga.toFixed(1)}s`) : gi === 0 ? "Leading!" : "";
+    $("gapBehind").textContent = gb !== undefined && gi < S.standings.length - 1 ? (gb < 0 ? "Behind +1 lap" : `Behind ${gb.toFixed(1)}s`) : "";
     // live standings list
-    const key = S.standings.join(",") + [...S.cars.values()].map((c) => c.pit >= 0 ? "p" : "").join("");
+    const key = S.standings.join(",") + S.gaps.join(",") + [...S.cars.values()].map((c) => (c.pit >= 0 ? "p" : "") + Math.round(c.tire * 100)).join("");
     if (key !== lastHudStand) {
       lastHudStand = key;
       const ol = $("standList"); ol.textContent = "";
@@ -1122,8 +1133,11 @@
         const p = document.createElement("span"); p.className = "p"; p.textContent = i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
         const n = document.createElement("span"); n.className = "n"; n.textContent = c.name;
-        const x = document.createElement("span"); x.className = "x"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : `${Math.round(c.tire * 100)}%`;
-        li.append(p, d, n, x); ol.appendChild(li);
+        const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
+        g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
+        g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);
+        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : `${Math.round(c.tire * 100)}%`;
+        li.append(p, d, n, g, x); ol.appendChild(li);
       });
     }
     if (!$("garage").childElementCount && S.up) renderGarage();
