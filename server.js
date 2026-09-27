@@ -41,7 +41,7 @@ const COMPOUND_KEYS = Object.keys(COMPOUNDS);
 const TIRE_PICK_TIME = 10000;      // ms to choose your starting tires
 const PIT_LIMIT = 170;             // pit lane speed limit (world px/s, about 60 km/h)
 const PIT_OFF = TRACK_W / 2 + 62;  // how far the pit lane sits from the track center
-const PASSIVE_XP_EVERY = 12, PASSIVE_XP = 10;   // a little XP every 12 race-seconds
+const PASSIVE_XP_EVERY = 1, PASSIVE_XP = 5;     // +5 XP every race-second your driver is out there
 const DEFAULT_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 const MAX_AI = 60;                 // "no cap" in practice: 60 AI keeps races smooth
 const AI_TEAMS = ["Thunder Racing", "Apex Motors", "Nitro Works", "Comet GP", "Vortex", "Blue Falcon", "Red Arrow", "Iron Wolf", "Solar Speed", "Night Owl"];
@@ -69,7 +69,7 @@ const ORDERS = {
   normal: { speed: 1.0,  wear: 1.0,  mistakes: 1.0 },
   save:   { speed: 0.93, wear: 0.65, mistakes: 0.5 },
 };
-const xpForLevel = (lvl) => 80 + (lvl - 1) * 35;
+const xpForLevel = (lvl) => 100 + (lvl - 1) * 50;   // spaced out a bit more now that XP flows faster
 
 // ======================= Web server =======================
 const app = express();
@@ -373,7 +373,7 @@ class Room {
         id: g + 1, x: p.x + n.x * lat, y: p.y + n.y * lat, heading: Math.atan2(tn.y, tn.x), vx: 0, vy: 0,
         idx, lapsDone: -1, progress: 0, finished: false, finishTime: 0, lapStart: 0, bestLap: Infinity, pits: 0,
         tire: 1, onTrack: true, inPit: false, pitting: 0, pitTotal: 0, mistakeT: 0, mistakeDir: 1, spin: 0, crashT: 0, damage: 0,
-        lane: 0, laneT: 0, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
+        lane: lat, laneT: 3, gridLane: lat, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
         cleanLap: true, launchAt: 0, boostUntil: 0, slide: 0, speed: 0, surface: 0, punct: false, compound: "inter", laneKey: 0,
       };
       if (slot.human) {
@@ -401,6 +401,12 @@ class Room {
       }
     }
     this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity;
+    // "calm zone": everyone stays in line until the field is through the first corner
+    let fc = -1;
+    for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
+    let fcEnd = fc < 0 ? Math.round(t.N / 5) : fc;
+    while (fc >= 0 && fcEnd < t.N - 1 && t.vmax[fcEnd] < MAX_SPEED * 0.9) fcEnd++;
+    this.calmEnd = Math.min(t.N * 0.6, fcEnd + 6);
     this.wearPerLap = 1 / tireLifeLaps(s.laps);
     this.bucket = Math.max(1, Math.floor(t.N / 60));      // ~60 timing points per lap, used for gaps
     for (const c of this.cars) c.cp = new Map();
@@ -538,7 +544,7 @@ class Room {
     }
     for (const c of this.cars) {
       if (this.time < c.launchAt) { c.vx = c.vy = 0; c.speed = 0; continue; }
-      const input = c.finished ? { gas: false, brake: true, steer: 0 } : this.drive(c, dt);
+      const input = this.drive(c, dt);        // finished cars keep driving (a slow cool-down lap)
       this.physics(c, input, dt);
       this.trackPos(c);
       if (c.owner && !c.onTrack && !c.inPit) c.cleanLap = false;
@@ -575,7 +581,7 @@ class Room {
     const laps = this.settings.laps;
     const pl = t.pitLane, dryTires = c.compound !== "wet";
     if (p) {
-      if (c.aiMode === "race" && p.boxCall) c.aiMode = "wantPit";
+      if (c.aiMode === "race" && p.boxCall && !c.finished) c.aiMode = "wantPit";
       if (c.aiMode === "wantPit" && !p.boxCall && !c.punct) c.aiMode = "race";
       // radio warnings (your driver won't pit on their own until the tire actually gives up)
       if (c.tire < 0.3 && p.warned < 1 && !p.boxCall) { p.warned = 1; io.to(p.id).emit("toast", `${c.name}: "Tires are going off, box soon!"`); }
@@ -592,79 +598,97 @@ class Room {
       const worn = !lastLap && (c.tire < c.pitAt || c.tire < lapWear);
       if (worn || wrongTires) c.aiMode = "wantPit";
     }
-    if (c.punct && c.aiMode === "race") c.aiMode = "wantPit";      // puncture: limp to the pits
+    if (c.punct && c.aiMode === "race" && !c.finished) c.aiMode = "wantPit";      // puncture: limp to the pits
     if (!p && c.damage > 0.5 && c.aiMode === "race" && c.lapsDone < laps - 1) c.aiMode = "wantPit";
     // turn into the pit lane when you reach its entry
     const kNow = laneK(t, c.idx);
+    if (c.finished && c.aiMode === "wantPit") c.aiMode = "race";
     if (c.aiMode === "wantPit" && kNow >= 0 && kNow < 4) { c.aiMode = "pitLane"; c.laneKey = pl.boxes[c.team] ?? Math.round(pl.len / 2); }
 
     let tx, ty, targetSpeed;
     if (c.aiMode === "pitLane" || c.aiMode === "pitOut") {
-      // drive down the pit lane at the speed limit, stop at your team's garage
-      const k = kNow < 0 ? pl.len : kNow;
-      const aim = lanePoint(t, Math.min(pl.len, k + 2.5));
-      tx = aim.x; ty = aim.y; targetSpeed = PIT_LIMIT;
-      if (c.aiMode === "pitLane") {
-        const box = lanePoint(t, c.laneKey), db = Math.hypot(box.x - c.x, box.y - c.y);
-        // a teammate is still in the box: queue behind them
-        const busy = this.cars.some((o) => o !== c && o.team === c.team && o.pitting > 0);
-        if (k >= c.laneKey - 3) { tx = box.x; ty = box.y; targetSpeed = busy ? Math.max(0, (db - 55) * 2) : clamp(db * 2.2, 0, PIT_LIMIT); }
-        if (!busy && db < 22 && speed < 40) {
-          c.pitting = this.stats(c).pitTime * (c.punct ? 1.4 : 1); c.pitTotal = c.pitting; c.aiMode = "pitting";
-          c.vx = c.vy = 0;
-          this.emit("feed", { t: "pit", name: c.name, id: c.id });
-          if (p && c.tire < 0.35 && !c.punct) this.addXp(p, 30, "Well-timed pit stop +30 XP");
-        }
-      } else if (kNow < 0 || k >= pl.len - 1) c.aiMode = "race";
+      // Pit lane: always aim AHEAD along the lane (never back at something behind you,
+      // which is what made cars turn around and drive in circles).
+      if (kNow < 0) {                                    // somehow left the lane: back to racing, try again next lap
+        c.aiMode = "race";
+        tx = t.pts[(c.idx + 4) % N].x; ty = t.pts[(c.idx + 4) % N].y; targetSpeed = PIT_LIMIT;
+      } else {
+        const k = kNow;
+        const aim = lanePoint(t, Math.min(pl.len, k + 2.5));
+        tx = aim.x; ty = aim.y; targetSpeed = PIT_LIMIT;
+        if (c.aiMode === "pitLane") {
+          const busy = this.cars.some((o) => o !== c && o.team === c.team && o.pitting > 0);
+          const stopAt = c.laneKey - (busy ? 2.2 : 0);                    // queue behind a teammate
+          const dk = stopAt - k;                                           // track points left to the stop
+          // brake smoothly so you arrive at the box at walking pace
+          targetSpeed = dk > 0 ? Math.min(PIT_LIMIT, Math.sqrt(2 * 520 * dk * t.spacing)) : 0;
+          if (!busy && dk <= 0.9 && speed < 70) {
+            // snap neatly into the box and change tires
+            const box = lanePoint(t, c.laneKey), bi = (pl.entry + Math.round(c.laneKey)) % N;
+            c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
+            c.pitting = this.stats(c).pitTime * (c.punct ? 1.4 : 1); c.pitTotal = c.pitting; c.aiMode = "pitting";
+            c.vx = c.vy = 0;
+            this.emit("feed", { t: "pit", name: c.name, id: c.id });
+            if (p && c.tire < 0.35 && !c.punct) this.addXp(p, 30, "Well-timed pit stop +30 XP");
+          }
+        } else if (k >= pl.len - 1) c.aiMode = "race";
+      }
     } else {
       const look = 3 + Math.floor(Math.max(0, speed) / 95);
       const i = (c.idx + look) % N;
-      // pull out of the racing line to pass a slower car, then drift back onto it
+      const lvl = this.level(c), hx = Math.cos(c.heading), hy = Math.sin(c.heading);
+      // first corner: everyone holds their grid lane, no overtaking, extra space
+      const calm = !c.finished && c.lapsDone <= 0 && (c.lapsDone < 0 || c.idx < this.calmEnd) && this.time < 25;
+      const cooldown = c.finished;
+      // pull out to pass a slower car, but ONLY if the space beside you is clear
       const spot = 90 + 25 * c.up.craft;
       if (c.laneT > 0) c.laneT -= dt;
-      else c.lane *= Math.exp(-dt * 1.2);
-      for (const o of this.cars) {
-        if (o === c) continue;
-        const rx = o.x - c.x, ry = o.y - c.y;
-        const ahead = rx * Math.cos(c.heading) + ry * Math.sin(c.heading);
-        const sideSigned = -rx * Math.sin(c.heading) + ry * Math.cos(c.heading);
-        if (ahead > 0 && ahead < spot && Math.abs(sideSigned) < 26 && Math.hypot(o.vx, o.vy) < speed) {
-          const nx = t.nor[c.idx].x, ny = t.nor[c.idx].y;
-          const theirSide = rx * nx + ry * ny;                       // which side of me they are on
-          c.lane = theirSide > 0 ? -34 : 34; c.laneT = 1.1; break;
+      else c.lane *= Math.exp(-dt * (calm ? 0.25 : 1.2));
+      if (!calm && !cooldown && c.laneT <= 0) {
+        for (const o of this.cars) {
+          if (o === c || Math.abs(this.level(o) - lvl) > 0.45) continue;
+          const rx = o.x - c.x, ry = o.y - c.y, ahead = rx * hx + ry * hy, sideSigned = -rx * hy + ry * hx;
+          if (ahead > 0 && ahead < spot && Math.abs(sideSigned) < 26 && Math.hypot(o.vx, o.vy) < speed - 15) {
+            const nx = t.nor[c.idx].x, ny = t.nor[c.idx].y;
+            const want = (rx * nx + ry * ny) > 0 ? -34 : 34;
+            // is anyone alongside or just behind in the lane we want to move into?
+            const blocked = this.cars.some((q) => {
+              if (q === c || q === o || Math.abs(this.level(q) - lvl) > 0.45) return false;
+              const qx = q.x - c.x, qy = q.y - c.y, along = qx * hx + qy * hy, lat = qx * nx + qy * ny;
+              return along > -70 && along < spot && Math.abs(lat - (want - (c.lane || 0))) < 34;
+            });
+            if (!blocked) { c.lane = want; c.laneT = 1.1; }
+            break;
+          }
         }
       }
+      // cool-down lap: cruise along the outside of the racing line, out of everyone's way
+      const coolLane = cooldown ? (t.line[i] > 0 ? -44 : 44) : 0;
       const lim = TRACK_W / 2 - 16;
-      const off = clamp(t.line[i] + c.lane + c.lineJit, -lim, lim);
+      const off = cooldown ? clamp(coolLane, -lim, lim) : clamp(t.line[i] * (calm ? 0.35 : 1) + c.lane + c.lineJit, -lim, lim);
       tx = t.pts[i].x + t.nor[i].x * off; ty = t.pts[i].y + t.nor[i].y * off;
       const lookCorner = 6 - Math.min(3, c.up.late);
       let v = Infinity;
       for (let k = 0; k < lookCorner; k++) v = Math.min(v, t.vmax[(c.idx + k) % N]);
-      const pace = c.skill * (1 + 0.04 * c.up.corner) * (p ? ORDERS[p.order].speed : 1) * this.compoundSpeed(c);
+      const pace = c.skill * (1 + 0.04 * c.up.corner) * this.compoundSpeed(c);
       targetSpeed = Math.min(v * pace * Math.sqrt(this.tireGrip(c.tire) * this.weatherGrip(c)), MAX_SPEED * Math.min(1.1, pace));
-      // don't drive into the back of someone: if a slower car is right ahead and we can't get
-      // around it yet, slow down to its speed (drivers with Racecraft cut it a bit finer)
-      const lvl = this.level(c);
+      if (calm) targetSpeed *= 0.9;
+      if (cooldown) targetSpeed = Math.min(targetSpeed, 240);
+      // don't drive into the back of someone: brake early enough to match their speed
       for (const o of this.cars) {
         if (o === c || Math.abs(this.level(o) - lvl) > 0.45) continue;
-        const rx = o.x - c.x, ry = o.y - c.y;
-        const ahead = rx * Math.cos(c.heading) + ry * Math.sin(c.heading);
-        const side = Math.abs(-rx * Math.sin(c.heading) + ry * Math.cos(c.heading));
-        const theirSpeed = o.vx * Math.cos(c.heading) + o.vy * Math.sin(c.heading);
-        let gap = 50 + speed * (0.14 - 0.015 * c.up.craft);
-        if (p && p.order === "push") gap *= 0.55;       // pushing = following way too close (crash risk!)
-        if (ahead > 0 && ahead < gap && side < 30 && theirSpeed < speed) targetSpeed = Math.min(targetSpeed, Math.max(0, theirSpeed * 0.97));
+        const rx = o.x - c.x, ry = o.y - c.y, ahead = rx * hx + ry * hy, side = Math.abs(-rx * hy + ry * hx);
+        const theirSpeed = o.vx * hx + o.vy * hy, closing = speed - theirSpeed;
+        const gap = (50 + speed * (0.14 - 0.015 * c.up.craft)) * (calm ? 1.5 : 1) + Math.max(0, closing) * 0.45;
+        if (ahead > 0 && ahead < gap && side < 32 && theirSpeed < speed) targetSpeed = Math.min(targetSpeed, Math.max(0, theirSpeed * 0.97));
       }
       if (c.punct) targetSpeed = Math.min(targetSpeed, 190);
-      if (v < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
-        let rate = p ? 0.1 * (1 - 0.3 * c.up.focus) * ORDERS[p.order].mistakes : 0.06;
+      if (!calm && !cooldown && v < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
+        let rate = p ? 0.07 * (1 - 0.3 * c.up.focus) : 0.035;
         if (dryTires) rate *= 1 + 4 * this.wet;          // slicks in the rain = spins
         if (c.tire < 0.25) rate *= 2;
-        if (p && p.order === "push" && c.tire < 0.45) rate *= 1.6;   // pushing on worn tires is asking for trouble
         if (Math.random() < rate * dt) {
-          const pushing = p && p.order === "push";
-          c.mistakeT = pushing ? 0.85 : 0.55;              // pushing mistakes are bigger
-          c.mistakeDir = Math.random() < 0.5 ? -1 : 1;
+          c.mistakeT = 0.55; c.mistakeDir = Math.random() < 0.5 ? -1 : 1;
           this.emit("feed", { t: "mistake", name: c.name, id: c.id });
         }
       }
@@ -740,7 +764,7 @@ class Room {
     let wear = (this.wearPerLap / t.length) * moved * (1 + clamp(slide / 110, 0, 3)) * WEAR_LEVELS[this.settings.wear];
     if (input.brake && vF > 250) wear *= 1.4;
     const p = c.owner && this.players.get(c.owner);
-    if (p) wear *= ORDERS[p.order].wear;
+
     const C = COMPOUNDS[c.compound];
     wear *= c.compound === "wet" ? C.dryWear + (C.wear - C.dryWear) * clamp(this.wet * 1.6, 0, 1) : C.wear;   // wets cook on a dry track
     if (c.surface === 3) wear *= 2;
@@ -845,7 +869,7 @@ class Room {
       if (rel >= 0) continue;
       const imp = -rel * 0.5;                                                          // no bounce
       a.vx -= nx * imp; a.vy -= ny * imp; b.vx += nx * imp; b.vy += ny * imp;
-      if (-rel > CRASH_SPEED) this.crash(a, b, -rel, nx, ny);
+      if (-rel > CRASH_SPEED && !a.finished && !b.finished) this.crash(a, b, -rel, nx, ny);
       else { const loss = 1 - Math.min(0.06, -rel / 2500); a.vx *= loss; a.vy *= loss; b.vx *= loss; b.vy *= loss; }
     }
   }
@@ -1025,9 +1049,28 @@ io.on("connection", (socket) => {
     socket.emit("trackResult", { error: null, reversed: r.track.reverse });
   });
   socket.on("compound", (k) => { const r = room(), p = me(); if (r && p && r.cars) r.pickCompound(p, k); });
+  socket.on("kick", (id) => {
+    const r = room(); if (!r || !isHost() || id === socket.id || !r.players.has(id)) return;
+    const name = r.players.get(id).name;
+    const target = io.sockets.sockets.get(id);
+    if (target) { target.emit("kicked", { by: r.players.get(socket.id)?.name }); target.leave(r.code); target.data.room = null; }
+    r.removePlayer(id);
+    r.emit("toast", `${name} was removed from the room`);
+  });
+  socket.on("resetChamp", () => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    r.champ = {}; r.teamChamp = {}; r.raceNo = 0; r.sendLobby();
+    r.emit("toast", "Championship reset. Fresh season!");
+  });
+  socket.on("setTeam", (t) => {
+    const r = room(), p = me(); if (!r || !p) return;
+    p.team = cleanTeam(t) || `${p.name} Racing`;
+    if (r.track && r.phase === "lobby") assignBoxes(r.track.pitLane, r.allTeams());
+    r.sendLobby();
+  });
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
-  socket.on("order", (o) => { const p = me(); if (p && ORDERS[o]) p.order = o; });
+  // (team orders were removed: how fast you go comes from your tires now)
   socket.on("box", () => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "race") return;
     const c = r.carOf(p.id); if (!c || c.finished || c.pitting > 0 || c.aiMode === "pitLane" || c.aiMode === "pitOut") return;

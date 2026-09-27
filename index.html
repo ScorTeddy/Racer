@@ -109,6 +109,23 @@
   .rc-body { flex: 1; overflow-y: auto; padding: 0.8rem; }
   .rc-pane { display: flex; flex-direction: column; gap: 0.6rem; animation: paneIn 260ms ease both; }
   .rc-pane[hidden] { display: none !important; }
+  .teams-list { display: flex; flex-direction: column; gap: 0.45rem; }
+  .team-card { border: 1.5px solid var(--edge); border-radius: 0.8rem; padding: 0.45rem 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; animation: pop 300ms cubic-bezier(.2,.9,.3,1.5) both; }
+  .team-card.mine { border-color: var(--yellow); background: rgba(255,204,31,0.07); }
+  .team-card .th { display: flex; align-items: center; gap: 0.45rem; }
+  .team-card .th b { flex: 1; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .team-card .th .you { font-size: 0.7rem; font-weight: 700; color: #1b1b1b; background: var(--yellow); border-radius: 99px; padding: 0.05rem 0.45rem; }
+  .team-card .members { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .team-card .m { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 99px; background: rgba(255,255,255,0.06); }
+  .team-card .m i { width: 0.55rem; height: 0.55rem; border-radius: 2px; display: inline-block; }
+  .team-card .m.ai { color: var(--soft); }
+  .join-btn { cursor: pointer; font-size: 0.75rem; font-weight: 700; border-radius: 99px; padding: 0.2rem 0.7rem; border: 0; background: var(--yellow); color: #1b1b1b; }
+  .new-team { display: flex; gap: 0.35rem; }
+  .new-team input { flex: 1; min-width: 0; }
+  .plist .mk.kick:hover { border-color: var(--red); color: #ff8a80; }
+  .danger-btn { cursor: pointer; font-weight: 700; font-size: 0.82rem; border-radius: 0.6rem; padding: 0.45rem 0.7rem; border: 1.5px solid rgba(229,57,53,0.6); background: none; color: #ff8a80; margin-top: 0.4rem; }
+  .danger-btn.armed { background: var(--red); color: #fff; }
+  .finish-tag { font-family: "Russo One", sans-serif; }
   body.in-lobby .credit { top: auto; bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px)); right: 1.2rem; font-size: 0.8rem; }
   @keyframes paneIn { from { opacity: 0; transform: translateY(6px); } }
   .pane-lead { margin: 0; font-size: 0.82rem; color: var(--soft); line-height: 1.35; }
@@ -404,8 +421,12 @@
     </nav>
     <div class="rc-body">
       <section class="rc-pane" data-pane="drivers">
-        <p class="pane-lead">Everyone in the room is the boss of their own team. Same team name = teammates.</p>
+        <p class="pane-lead">Everyone in the room is the boss of their own team.</p>
         <ul class="plist" id="plist"></ul>
+        <div class="sect">TEAMS</div>
+        <p class="pane-lead" style="margin-top:-0.3rem">Tap <b>Join</b> to team up with someone (friends or AI). Teammates share a garage and score together.</p>
+        <div class="teams-list" id="teamsList"></div>
+        <div class="new-team"><input type="text" id="newTeamIn" maxlength="20" placeholder="Start a new team..." autocomplete="off"><button type="button" class="join-btn" id="newTeamBtn">Create</button></div>
       </section>
       <section class="rc-pane" data-pane="race" hidden>
         <div class="settings-grid">
@@ -449,6 +470,7 @@
         <div class="sect" id="champTitle">CHAMPIONSHIP</div>
         <div class="champ-tabs"><button type="button" id="champDrivers" aria-pressed="true">Drivers</button><button type="button" id="champTeams" aria-pressed="false">Teams</button></div>
         <table class="champ"><tbody id="champBody"></tbody></table>
+        <button type="button" class="danger-btn" id="resetChampBtn">Reset championship</button>
       </section>
     </div>
     <footer class="rc-foot">
@@ -504,12 +526,6 @@
   <div class="popups" id="popups"></div>
   <div class="radio panel" id="radio">
     <div class="meter-label"><span>Team radio</span><span id="speedText">0 km/h</span></div>
-    <div class="orders" role="radiogroup" aria-label="Driving orders">
-      <button type="button" class="order" data-o="push" role="radio"><kbd>Q</kbd> Push</button>
-      <button type="button" class="order" data-o="normal" role="radio"><kbd>W</kbd> Balanced</button>
-      <button type="button" class="order" data-o="save" role="radio"><kbd>E</kbd> Save tires</button>
-    </div>
-    <div class="hint" id="orderHint"></div>
     <div class="next-tires" id="nextTires"><span>Next tires:</span></div>
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
@@ -954,6 +970,17 @@
   socket.on("offer", (o) => showCards(o));
   socket.on("picked", ({ key, up }) => { S.up = up; S.justPicked = key; renderGarage(); popup(`${S.upInfo[key].name} ${S.upInfo[key].kind === "Driver" ? "learned" : "installed"}!`); });
   socket.on("results", (r) => showResults(r));
+  // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
+  let fireworks = [];
+  socket.on("feed", (f) => {
+    if (f.t !== "winner") return;
+    const w = [...S.cars.values()].find((c) => c.name === f.name);
+    banner(`🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
+    if (w) {
+      S.camTarget = w.id; S.winnerCamUntil = performance.now() + 4000;
+      if (!reducedMotion) for (let k = 0; k < 5; k++) setTimeout(() => fireworks.push({ x: w.x + (Math.random() - 0.5) * 300, y: w.y + (Math.random() - 0.5) * 220, t: performance.now(), hue: Math.floor(Math.random() * 360) }), k * 450);
+    }
+  });
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
@@ -1065,10 +1092,19 @@
         const mk = document.createElement("button"); mk.type = "button"; mk.className = "mk"; mk.textContent = "Make host";
         mk.title = "Let them draw the track and start races";
         mk.addEventListener("click", () => socket.emit("setHost", p.id));
-        li.appendChild(mk);
+        const kk = document.createElement("button"); kk.type = "button"; kk.className = "mk kick"; kk.textContent = "Kick";
+        kk.title = "Remove them from the room";
+        kk.addEventListener("click", () => {
+          if (kk.dataset.armed) { socket.emit("kick", p.id); return; }
+          kk.dataset.armed = "1"; kk.textContent = "Sure?"; setTimeout(() => { kk.dataset.armed = ""; kk.textContent = "Kick"; }, 2500);
+        });
+        const col = document.createElement("div"); col.style.cssText = "display:flex;flex-direction:column;gap:0.2rem";
+        col.append(mk, kk); li.appendChild(col);
       }
       pl.appendChild(li);
     }
+    renderTeams(l);
+    $("resetChampBtn").classList.toggle("hidden", !S.host);
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
@@ -1113,6 +1149,52 @@
     if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
     drawBoard();
   }
+  // Teams: every team with its drivers (players + AI), and a Join button
+  function renderTeams(l) {
+    const box = $("teamsList"); if (!box) return;
+    const me = l.players.find((p) => p.id === S.me);
+    const teams = new Map();
+    const add = (team, m) => { if (!team) return; if (!teams.has(team)) teams.set(team, []); teams.get(team).push(m); };
+    for (const p of l.players) add(p.team, { name: p.name, color: p.color, ai: false });
+    for (const r of l.roster) add(r.team, { name: r.name, color: r.color, ai: true });
+    const key = JSON.stringify([...teams]) + me?.team;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key; box.textContent = "";
+    // your team first, then teams with players, then AI teams
+    const order = [...teams.entries()].sort((a, b) => (b[0] === me?.team) - (a[0] === me?.team) || b[1].filter((m) => !m.ai).length - a[1].filter((m) => !m.ai).length);
+    for (const [team, members] of order) {
+      const card = document.createElement("div"); card.className = "team-card" + (team === me?.team ? " mine" : "");
+      const th = document.createElement("div"); th.className = "th";
+      const b = document.createElement("b"); b.textContent = team; th.appendChild(b);
+      if (team === me?.team) { const y = document.createElement("span"); y.className = "you"; y.textContent = "YOUR TEAM"; th.appendChild(y); }
+      else {
+        const j = document.createElement("button"); j.type = "button"; j.className = "join-btn"; j.textContent = "Join";
+        j.addEventListener("click", () => joinTeam(team));
+        th.appendChild(j);
+      }
+      const ms = document.createElement("div"); ms.className = "members";
+      for (const m of members) {
+        const s2 = document.createElement("span"); s2.className = "m" + (m.ai ? " ai" : "");
+        const i2 = document.createElement("i"); i2.style.background = m.color; s2.append(i2, m.name + (m.ai ? " (AI)" : ""));
+        ms.appendChild(s2);
+      }
+      card.append(th, ms); box.appendChild(card);
+    }
+  }
+  function joinTeam(team) {
+    prof.team = team; teamIn.value = team;
+    try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {}
+    socket.emit("setTeam", team); sfx("tick"); popup(`Joined ${team}!`);
+  }
+  $("newTeamBtn").addEventListener("click", () => { const v = $("newTeamIn").value.trim(); if (v) { joinTeam(v); $("newTeamIn").value = ""; } });
+  $("newTeamIn").addEventListener("keydown", (e) => { if (e.key === "Enter") $("newTeamBtn").click(); });
+  $("resetChampBtn").addEventListener("click", () => {
+    const b = $("resetChampBtn");
+    if (b.classList.contains("armed")) { socket.emit("resetChamp"); b.classList.remove("armed"); b.textContent = "Reset championship"; return; }
+    b.classList.add("armed"); b.textContent = "Click again to wipe all points";
+    setTimeout(() => { b.classList.remove("armed"); b.textContent = "Reset championship"; }, 3000);
+  });
+  socket.on("kicked", (d) => { S.code = null; S.track = null; show("menu"); menuErr.textContent = `You were removed from the room${d?.by ? " by " + d.by : ""}.`; });
   function boardHint(t, bad) { const h = $("boardHint"); h.textContent = t; h.style.color = bad ? "#ff8a80" : ""; }
   // the drawing board shows the whole map; bigger maps = more room to draw
   const B = { w: 0, h: 0, s: 1, ox: 0, oy: 0, bw: 1600, bh: 1000 };
@@ -1281,12 +1363,7 @@
   $("clearBtn").addEventListener("click", () => socket.emit("clearTrack"));
 
   // ======================= Race HUD pieces =======================
-  function setOrder(o, silent) {
-    S.order = o;
-    document.querySelectorAll(".order").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.o === o)));
-    $("orderHint").textContent = ORDER_HINT[o];
-    if (!silent) { S.orderAt = performance.now(); socket.emit("order", o); sfx("tick"); popup(o === "push" ? `"Push push push!"` : o === "save" ? `"Look after those tires."` : `"Settle into a rhythm."`); }
-  }
+  function setOrder() {}      // team orders were removed: your tires decide how fast you go
   function renderNextTires() {
     const box = $("nextTires");
     if (box.childElementCount === 1) {
@@ -1552,6 +1629,7 @@
       c.h += wrapAngle(c.th - c.h) * k;
     }
     // camera target: my car, the leader, or whoever you tabbed to
+    if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; }
     let target = S.camTarget && S.cars.get(S.camTarget);
     if (!target) target = settings.cam === "leader" || !S.myCar ? S.cars.get(S.standings[0]) : S.cars.get(S.myCar);
     if (!target) target = [...S.cars.values()][0];
@@ -1677,6 +1755,18 @@
         ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(c.x + 16 * c.lvl, c.y + 22 * c.lvl, 26, 15, c.h, 0, Math.PI * 2); ctx.fill();
       }
       drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * c.lvl, { boost: c.boost, glow: c.id === S.myCar });
+      // finished: a little checkered flag with their finishing position
+      if (c.fin) {
+        if (!c.finPos) {
+          c.finPos = [...S.cars.values()].filter((o) => o.finPos).length + 1;
+          if (c.id === S.myCar) { banner(c.finPos === 1 ? "YOU WIN!" : `P${c.finPos}!`, "#ffcc1f"); addShake(6); }
+        }
+        ctx.save(); ctx.translate(c.x, c.y - 44);
+        for (let r2 = 0; r2 < 2; r2++) for (let q = 0; q < 3; q++) { ctx.fillStyle = (r2 + q) % 2 ? "#111" : "#fff"; ctx.fillRect(-22 + q * 6, -8 + r2 * 6, 6, 6); }
+        ctx.fillStyle = c.finPos === 1 ? "#ffcc1f" : "#fff"; ctx.font = "15px 'Russo One', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText("P" + c.finPos, 0, -2); ctx.fillText("P" + c.finPos, 0, -2);
+        ctx.restore();
+      }
       if (c.dmg > 0.05) {     // damaged: a little smoke
         if (Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
       }
@@ -1692,6 +1782,16 @@
         ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
       }
     }
+    // fireworks (in the world, around the winner)
+    fireworks = fireworks.filter((fw) => {
+      const k = (now - fw.t) / 1300; if (k > 1) return false;
+      for (let n = 0; n < 24; n++) {
+        const a = (n / 24) * Math.PI * 2, r = 20 + k * 150;
+        ctx.globalAlpha = 1 - k; ctx.fillStyle = `hsl(${fw.hue + n * 6} 90% 60%)`;
+        ctx.beginPath(); ctx.arc(fw.x + Math.cos(a) * r, fw.y + Math.sin(a) * r + k * k * 60, 4 * (1 - k) + 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1; return true;
+    });
     // screen-space effects
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (S.weather && S.weather.wet > 0.02) {
@@ -1807,9 +1907,6 @@
     if (S.screen !== "race") return;
     if (e.code === "Escape") { leaveRace(); return; }
     if (e.code === "Space") { e.preventDefault(); if (!e.repeat) react(); }
-    if (e.code === "KeyQ") setOrder("push");
-    if (e.code === "KeyW") setOrder("normal");
-    if (e.code === "KeyE") setOrder("save");
     if (e.code === "KeyB" && !e.repeat) { socket.emit("box"); sfx("tick"); }
     if (e.code === "Tab") {       // spectate: cycle who the camera follows
       e.preventDefault();
