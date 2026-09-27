@@ -180,7 +180,7 @@
   @keyframes flash { 0% { opacity: 0.55; } 100% { opacity: 0; } }
 
   /* cards */
-  .cards { position: absolute; left: 50%; transform: translateX(-50%); top: calc(4.8rem + env(safe-area-inset-top, 0px)); width: min(40rem, calc(100vw - 2rem)); display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: auto; perspective: 900px; }
+  .cards { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); top: calc(4.8rem + env(safe-area-inset-top, 0px)); width: min(40rem, calc(100vw - 2rem)); display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: auto; perspective: 900px; }
   .cards h2 { margin: 0; font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.05rem; color: var(--yellow); text-shadow: 0 2px 0 rgba(0,0,0,0.5); animation: pop 380ms cubic-bezier(.2,.9,.3,1.5) both; }
   .card-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; width: 100%; }
   .card { text-align: left; cursor: pointer; background: var(--panel-solid); border: 2px solid var(--edge); border-radius: 0.9rem; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.15rem; position: relative; overflow: hidden; animation: flip 560ms cubic-bezier(.2,.9,.3,1.25) both; transition: transform 140ms ease, border-color 140ms ease; }
@@ -190,6 +190,18 @@
   @keyframes sweep { to { transform: translateX(120%); } }
   .card:hover { transform: translateY(-4px) scale(1.03); border-color: var(--yellow); }
   .card .top { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; }
+  .cards .later { cursor: pointer; font-weight: 700; font-size: 0.8rem; padding: 0.25rem 0.8rem; border-radius: 99px; border: 1.5px solid var(--edge); background: var(--panel-solid); color: var(--soft); }
+  .up-pill {
+    position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); top: calc(4.8rem + env(safe-area-inset-top, 0px));
+    cursor: pointer; font-weight: 700; font-size: 0.95rem; padding: 0.35rem 1rem; border-radius: 99px; border: 0;
+    background: var(--yellow); color: #1b1b1b; box-shadow: 0 4px 14px rgba(0,0,0,0.3); animation: pillIn 420ms cubic-bezier(.2,.9,.3,1.5) both, wiggle 2.4s ease-in-out 1s infinite;
+  }
+  @keyframes pillIn { from { opacity: 0; transform: translate(-50%, -20px) scale(.7); } }
+  @keyframes wiggle { 0%, 88%, 100% { transform: translateX(-50%) rotate(0); } 92% { transform: translateX(-50%) rotate(-4deg); } 96% { transform: translateX(-50%) rotate(4deg); } }
+  #leaveRaceBtn { font-size: 0.78rem; color: var(--soft); background: none; }
+  #leaveRaceBtn.armed { color: #fff; background: var(--red); border-color: var(--red); }
+  .plist .mk { cursor: pointer; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 99px; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.06); color: var(--soft); }
+  .plist .mk:hover { color: var(--ink); border-color: var(--yellow); }
   .card .top kbd { background: var(--yellow); color: #1b1b1b; border-color: var(--yellow); opacity: 1; }
   .card .desc { font-size: 0.84rem; color: var(--soft); }
   .card .kind { margin-left: auto; font-size: 0.66rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 99px; color: #fff; }
@@ -315,7 +327,6 @@
     <div class="say" id="lightsSay">Press <kbd>Space</kbd> the moment the lights go out!</div>
     <button type="button" id="goBtn">GO!</button>
   </div>
-  <div class="cards hidden" id="cards"><h2 id="cardsTitle">Level up! Upgrade your team</h2><div class="card-row" id="cardRow"></div></div>
   <div class="banner" id="banner"></div>
   <div class="pitring panel hidden" id="pitRing"><div class="meter-label"><span>Pit stop</span><span id="pitPct">0%</span></div><div class="meter"><div id="pitFill"></div></div></div>
   <div class="popups" id="popups"></div>
@@ -328,6 +339,7 @@
     </div>
     <div class="hint" id="orderHint"></div>
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
+    <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
   </div>
   <div class="bottom">
     <div class="panel"><div class="meter-label"><span>Tires</span><span id="tirePct">100%</span></div><div class="meter"><div id="tireFill"></div></div></div>
@@ -335,6 +347,10 @@
   </div>
   <div class="garage panel" id="garage"></div>
 </div>
+
+<!-- upgrade cards live outside the race HUD so they can wait for you (race, podium or lobby) -->
+<div class="cards hidden" id="cards"><h2 id="cardsTitle">Level up! Upgrade your team</h2><div class="card-row" id="cardRow"></div><button type="button" class="later" id="laterBtn">Later <kbd>U</kbd></button></div>
+<button type="button" class="up-pill hidden" id="upPill"></button>
 
 <!-- ============ Results ============ -->
 <div id="results" class="hidden">
@@ -613,7 +629,7 @@
     S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
     S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99;
     for (const c of r.cars) if (c.owner === S.me) S.myCar = c.id;
-    hideCards(); setOrder("normal", true); updateBox();
+    setOrder("normal", true); updateBox(); disarmLeave();
     $("feed").textContent = ""; $("popups").textContent = "";
     show("race");
     const L = $("lights"); L.classList.remove("hidden");
@@ -680,7 +696,7 @@
     }
   });
   socket.on("feed", (f) => {
-    const txt = f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : "";
+    const txt = f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -707,7 +723,7 @@
     });
   }
   $("startBtn").addEventListener("click", () => socket.emit("start"));
-  $("leaveBtn").addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; show("menu"); });
+  $("leaveBtn").addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; hideCards(); show("menu"); });
   $("garageBtn").addEventListener("click", () => { $("menu").classList.remove("hidden"); $("soloBtn").classList.add("hidden"); $("createBtn").parentElement.classList.add("hidden"); document.querySelector(".sep-or").classList.add("hidden"); addDoneBtn(); });
   function addDoneBtn() {
     if ($("doneBtn")) { $("doneBtn").classList.remove("hidden"); return; }
@@ -730,14 +746,22 @@
       drawCar(cv.getContext("2d"), p, 56, 32, 0, 1.9);
       const n = document.createElement("span"); n.className = "nm"; n.textContent = `#${p.number} ${p.name}`;
       const t = document.createElement("span"); t.className = "tg"; t.textContent = (p.id === l.hostId ? "host " : "") + (p.id === S.me ? "(you)" : "") + ` Lv ${p.level}`;
-      li.append(cv, n, t); pl.appendChild(li);
+      li.append(cv, n, t);
+      if (S.host && p.id !== S.me) {
+        const mk = document.createElement("button"); mk.type = "button"; mk.className = "mk"; mk.textContent = "Make host";
+        mk.title = "Let them draw the track and start races";
+        mk.addEventListener("click", () => socket.emit("setHost", p.id));
+        li.appendChild(mk);
+      }
+      pl.appendChild(li);
     }
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) { $(id).value = String(s[key]); $(id).disabled = !S.host || l.phase !== "lobby"; }
     $("sMap").disabled = !S.host || l.phase !== "lobby";
     $("startBtn").classList.toggle("hidden", !S.host);
     $("startBtn").disabled = !S.track || l.phase !== "lobby";
-    $("hostNote").textContent = S.host ? (S.track ? "" : "Draw a track on the board to start.") : "The host draws the track and starts the race. Customize your car with My car.";
+    $("hostNote").textContent = l.phase === "race" || l.phase === "lights" ? "A race is running. You'll be on the grid for the next one." :
+      S.host ? (S.track ? "" : "Draw a track on the board to start.") : "The host draws the track and starts the race. Customize your car with My car.";
     $("boardTools").classList.toggle("hidden", !S.host);
     const cb = $("champBody"); cb.textContent = "";
     $("champTitle").textContent = l.raceNo ? `CHAMPIONSHIP (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "CHAMPIONSHIP";
@@ -846,10 +870,31 @@
   }
   document.querySelectorAll(".order").forEach((b) => b.addEventListener("click", () => setOrder(b.dataset.o)));
   $("boxBtn").addEventListener("click", () => { socket.emit("box"); sfx("tick"); });
+  // Leave race: click twice (so you don't do it by accident)
+  let leaveArmed = 0;
+  function disarmLeave() { leaveArmed = 0; const b = $("leaveRaceBtn"); b.classList.remove("armed"); b.textContent = "Leave race"; }
+  function leaveRace() {
+    if (!S.myCar) { show("lobby"); return; }
+    if (performance.now() - leaveArmed > 3000) {
+      leaveArmed = performance.now(); const b = $("leaveRaceBtn");
+      b.classList.add("armed"); b.textContent = "Click again to leave (the AI takes over)";
+      setTimeout(() => { if (performance.now() - leaveArmed >= 2900) disarmLeave(); }, 3000);
+      return;
+    }
+    socket.emit("retire"); disarmLeave();
+  }
+  $("leaveRaceBtn").addEventListener("click", leaveRace);
+  socket.on("retired", () => {
+    S.myCar = null; engineSound(0, false);
+    show("lobby"); renderLobby();
+    popup("You left the race. Back in the room.");
+  });
 
   let offerSeq = 0;
+  S.cardsLater = false;
   function showCards(o) {
     S.offer = o; offerSeq++;
+    if (S.cardsLater || S.screen === "results" || S.screen === "menu") { renderPill(); return; }
     $("cardsTitle").textContent = o.pending > 1 ? `Level up! Upgrade your team (${o.pending} to pick)` : "Level up! Upgrade your team";
     const row = $("cardRow"); row.textContent = "";
     o.cards.forEach((c, i) => {
@@ -867,8 +912,21 @@
       row.appendChild(b);
     });
     $("cards").classList.add("hidden"); void $("cards").offsetWidth; $("cards").classList.remove("hidden");
+    $("upPill").classList.add("hidden");
     sfx("card");
   }
+  // tuck the cards away into a little "upgrades waiting" pill
+  function renderPill() {
+    const n = S.offer ? S.offer.pending || 1 : 0;
+    const pill = $("upPill");
+    pill.textContent = `🎁 ${n} upgrade${n > 1 ? "s" : ""} waiting (U)`;
+    pill.classList.toggle("hidden", !n || S.screen === "menu");
+    $("cards").classList.add("hidden");
+  }
+  function laterCards() { if (!S.offer) return; S.cardsLater = true; renderPill(); }
+  function openCards() { if (!S.offer) { socket.emit("wantOffer"); return; } S.cardsLater = false; showCards(S.offer); }
+  $("laterBtn").addEventListener("click", laterCards);
+  $("upPill").addEventListener("click", openCards);
   function pickCard(i) {
     if (!S.offer || !S.offer.cards[i]) return;
     socket.emit("pick", i);
@@ -876,7 +934,7 @@
     S.offer = null; const seq = offerSeq;
     setTimeout(() => { if (seq === offerSeq) hideCards(); }, 340);
   }
-  function hideCards() { S.offer = null; $("cards").classList.add("hidden"); }
+  function hideCards() { S.offer = null; $("cards").classList.add("hidden"); $("upPill").classList.add("hidden"); }
   function renderGarage() {
     const g = $("garage"); g.textContent = "";
     if (!S.up || !S.upInfo) return;
@@ -906,7 +964,8 @@
   // ======================= Results + podium =======================
   let confetti = [];
   function showResults(r) {
-    S.results = r; hideCards();
+    S.results = r;
+    if (S.offer) renderPill();          // keep waiting upgrades, just tucked away during the podium
     $("resTitle").innerHTML = "";
     const mine = r.rows.findIndex((x) => x.owner === S.me);
     $("resTitle").append(mine >= 0 ? `${r.rows[mine].name} finished ` : `Race ${r.raceNo} results `);
@@ -924,7 +983,7 @@
     if (!reducedMotion) for (let i = 0; i < 120; i++) confetti.push({ x: Math.random(), y: -Math.random() * 0.6, vx: (Math.random() - 0.5) * 0.15, vy: 0.2 + Math.random() * 0.3, r: Math.random() * 6, c: ["#ffcc1f", "#e53935", "#3b82f6", "#3ecf6a", "#fff"][i % 5], s: 4 + Math.random() * 5 });
     sfx(mine === 0 ? "win" : "level");
     S.resultsAt = performance.now();
-    setTimeout(() => show("results"), 1400);
+    setTimeout(() => { show("results"); if (S.offer) renderPill(); }, 1400);
   }
   function drawPodium(now) {
     const cv = $("podium"), r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1148,14 +1207,16 @@
     if (e.target.tagName === "INPUT") return;
     if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }
     if (e.code === "KeyO") { setEl.classList.contains("hidden") ? openSettings() : closeSettings(); return; }
+    if (e.code === "KeyU" && S.screen !== "menu") { $("cards").classList.contains("hidden") ? openCards() : laterCards(); return; }
+    const pick = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+    if (pick !== undefined && !e.repeat && !$("cards").classList.contains("hidden")) { pickCard(pick); return; }
     if (S.screen !== "race") return;
+    if (e.code === "Escape") { leaveRace(); return; }
     if (e.code === "Space") { e.preventDefault(); if (!e.repeat) react(); }
     if (e.code === "KeyQ") setOrder("push");
     if (e.code === "KeyW") setOrder("normal");
     if (e.code === "KeyE") setOrder("save");
     if (e.code === "KeyB" && !e.repeat) { socket.emit("box"); sfx("tick"); }
-    const pk = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
-    if (pk !== undefined && !e.repeat) pickCard(pk);
     if (e.code === "Tab") {       // spectate: cycle who the camera follows
       e.preventDefault();
       const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);

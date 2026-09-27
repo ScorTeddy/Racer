@@ -274,6 +274,7 @@ class Room {
     this.outAt = now + 5000 + 400 + Math.random() * 2000;
     this.lightsShown = 0;
     this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner })), laps: s.laps, raceNo: this.raceNo });
+    for (const p of this.players.values()) this.resendOffer(p);     // unpicked upgrades are still waiting
     this.sendLobby();
   }
   avgLevel() { const ps = [...this.players.values()]; return ps.length ? ps.reduce((a, p) => a + p.level - 1, 0) / ps.length : 0; }
@@ -567,6 +568,22 @@ class Room {
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", { pending: p.pendingPicks, cards: p.offer.map((k) => ({ key: k, ...UPGRADES[k], level: p.up[k] })) });
   }
+  // Upgrades you haven't picked never expire: send them again whenever needed.
+  resendOffer(p) {
+    if (p.offer) io.to(p.id).emit("offer", { pending: p.pendingPicks, cards: p.offer.map((k) => ({ key: k, ...UPGRADES[k], level: p.up[k] })) });
+    else if (p.pendingPicks > 0) this.makeOffer(p);
+  }
+  // Leave the race: the AI takes over your car and you go back to the room.
+  retire(p) {
+    const c = this.carOf(p.id);
+    if (!c || this.phase === "lobby" || this.phase === "results") return;
+    c.owner = null; c.retiredBy = p.id; c.name = c.name + " (AI)";
+    c.aiReaction = 0.3;                                         // in case they left during the start lights
+    if (this.phase === "race" && this.time < c.launchAt) c.launchAt = this.time + 0.3;
+    p.boxCall = false;
+    this.emit("feed", { t: "retire", name: p.name });
+    io.to(p.id).emit("retired");
+  }
   pick(p, i) {
     if (!p.offer) return;
     const k = p.offer[Number(i)]; if (!k) return;
@@ -582,11 +599,16 @@ class Room {
     const rows = order.map((c, i) => {
       const pts = POINTS[i] || 0;
       this.champ[c.name] = (this.champ[c.name] || 0) + pts;
-      return { name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
+      return { name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
     });
     this.emit("results", { rows, champ: this.champOrder(), raceNo: this.raceNo });
     // back to the lobby after the podium
-    setTimeout(() => { if (this.phase === "results") { this.phase = "lobby"; this.cars = null; this.sendLobby(); } }, 12000);
+    setTimeout(() => {
+      if (this.phase === "results") {
+        this.phase = "lobby"; this.cars = null; this.sendLobby();
+        for (const p of this.players.values()) this.resendOffer(p);
+      }
+    }, 12000);
   }
 
   // Gap from each car to the car directly ahead, in seconds.
@@ -663,6 +685,14 @@ io.on("connection", (socket) => {
     p.boxCall = !p.boxCall;
   });
   socket.on("pick", (i) => { const r = room(), p = me(); if (r && p) r.pick(p, i); });
+  socket.on("wantOffer", () => { const r = room(), p = me(); if (r && p) r.resendOffer(p); });
+  socket.on("retire", () => { const r = room(), p = me(); if (r && p) r.retire(p); });
+  // the host can hand the host role (drawing the track, settings, starting) to someone else
+  socket.on("setHost", (id) => {
+    const r = room(); if (!r || !isHost() || !r.players.has(id)) return;
+    r.hostId = id; r.sendLobby();
+    r.emit("toast", `${r.players.get(id).name} is the host now`);
+  });
   socket.on("leave", leave);
   socket.on("disconnect", leave);
 });
