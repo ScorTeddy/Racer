@@ -28,7 +28,9 @@ const MAX_PLAYERS = 6;
 const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno", "Ziggy", "Pip"];
 const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00acc1", "#ec407a", "#6d4c41", "#546e7a", "#c0ca33"];
 const LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
-const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+const DEFAULT_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+const MAX_AI = 60;                 // "no cap" in practice: 60 AI keeps races smooth
+const AI_TEAMS = ["Thunder Racing", "Apex Motors", "Nitro Works", "Comet GP", "Vortex", "Blue Falcon", "Red Arrow", "Iron Wolf", "Solar Speed", "Night Owl"];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 const UPGRADES = {
@@ -118,12 +120,26 @@ function buildTrack(stroke, board) {
   }
   let length = 0; for (let i = 0; i < N; i++) length += dist(world[i], world[(i + 1) % N]);
   const spacing = length / N;
-  // how fast you can take each part of the track
+  // Racing line: start on the center and repeatedly "pull the string tight" while staying
+  // inside the track. That gives the classic line: wide on entry, clip the apex, wide on exit.
+  const lim = TRACK_W / 2 - 20;
+  const line = new Array(N).fill(0);
+  const lp = world.map((p) => ({ x: p.x, y: p.y }));
+  for (let it = 0; it < 400; it++) {
+    for (let i = 0; i < N; i++) {
+      const a = lp[(i - 1 + N) % N], b = lp[(i + 1) % N];
+      const want = ((a.x + b.x) / 2 - world[i].x) * nor[i].x + ((a.y + b.y) / 2 - world[i].y) * nor[i].y;
+      line[i] = clamp(line[i] + (want - line[i]) * 0.6, -lim, lim);
+      lp[i].x = world[i].x + nor[i].x * line[i]; lp[i].y = world[i].y + nor[i].y * line[i];
+    }
+  }
+  // how fast you can take each part of the track (measured along the racing line)
   const k = 3, vmax = [];
   for (let i = 0; i < N; i++) {
-    const t1 = tan[(i - k + N) % N], t2 = tan[(i + k) % N];
-    const turn = Math.abs(wrapAngle(Math.atan2(t2.y, t2.x) - Math.atan2(t1.y, t1.x)));
-    vmax.push(Math.min(MAX_SPEED, Math.sqrt(1150 / (turn / (2 * k * spacing) + 1e-6))));
+    const a = lp[(i - k + N) % N], m = lp[i], b = lp[(i + k) % N];
+    const turn = Math.abs(wrapAngle(Math.atan2(b.y - m.y, b.x - m.x) - Math.atan2(m.y - a.y, m.x - a.x)));
+    const segLen = dist(a, m) + dist(m, b) || 1;
+    vmax.push(Math.min(MAX_SPEED, Math.sqrt(1150 / (turn / segLen + 1e-6))));
   }
   for (let pass = 0; pass < 2; pass++) for (let i = N - 1; i >= 0; i--) {
     const next = vmax[(i + 1) % N];
@@ -144,7 +160,7 @@ function buildTrack(stroke, board) {
     y: world[pitIdx].y + nor[pitIdx].y * side * (TRACK_W / 2 + pitDepth / 2),
     ang: Math.atan2(tan[pitIdx].y, tan[pitIdx].x), len: pitLen, depth: pitDepth, side,
   };
-  return { pts: world, tan, nor, N, length, spacing, vmax, W, H, pit, trackW: TRACK_W };
+  return { pts: world, tan, nor, N, length, spacing, vmax, W, H, pit, trackW: TRACK_W, line };
 }
 function inPitBox(t, x, y) {
   const p = t.pit, dx = x - p.x, dy = y - p.y, c = Math.cos(-p.ang), s = Math.sin(-p.ang);
@@ -165,7 +181,13 @@ function cleanProfile(p) {
     color: HEX.test(p?.color) ? p.color : "#ffcc1f",
     livery: LIVERIES.includes(p?.livery) ? p.livery : "stripes",
     number: clamp(Math.round(Number(p?.number) || 7), 0, 99),
+    team: cleanTeam(p?.team) || `${name || "Racer"} Racing`,
   };
+}
+function cleanTeam(t) { return typeof t === "string" ? t.trim().replace(/\s+/g, " ").slice(0, 20) : ""; }
+function parsePoints(v) {
+  const arr = (Array.isArray(v) ? v : String(v || "").split(/[,\s]+/)).map((x) => Math.round(Number(x))).filter((x) => Number.isFinite(x) && x >= 0);
+  return arr.slice(0, 80).map((x) => Math.min(999, x));
 }
 
 class Room {
@@ -174,21 +196,38 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | lights | race | results
-    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal" };
+    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false };
     this.stroke = null; this.track = null;
-    this.champ = {};            // name -> points this session
+    this.champ = {};            // driver name -> points this session
+    this.teamChamp = {};        // team name -> points this session
+    this.roster = [];           // AI drivers the host can rename
+    this.ensureRoster(this.settings.ai);
     this.raceNo = 0;
   }
   emit(ev, d) { io.to(this.code).emit(ev, d); }
   lobbyMsg() {
     return {
       code: this.code, hostId: this.hostId, phase: this.phase, settings: this.settings, raceNo: this.raceNo,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level })),
-      stroke: this.stroke, champ: this.champOrder(),
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team })),
+      stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
+      roster: this.roster.slice(0, this.settings.ai),
     };
   }
   sendLobby() { this.emit("lobby", this.lobbyMsg()); }
+  // make sure there's a named AI driver for every slot
+  ensureRoster(n) {
+    while (this.roster.length < n) {
+      const i = this.roster.length, round = Math.floor(i / AI_NAMES.length);
+      this.roster.push({
+        name: AI_NAMES[i % AI_NAMES.length] + (round ? ` ${round + 1}` : ""),
+        number: (10 + i * 7) % 90 + 10 > 99 ? i % 99 : (10 + i * 7) % 90 + 10,
+        team: AI_TEAMS[Math.floor(i / 2) % AI_TEAMS.length] + (i >= AI_TEAMS.length * 2 ? ` ${Math.floor(i / (AI_TEAMS.length * 2)) + 1}` : ""),
+        color: AI_COLORS[i % AI_COLORS.length], livery: LIVERIES[(i * 3 + 1) % LIVERIES.length],
+      });
+    }
+  }
   champOrder() { return Object.entries(this.champ).map(([n, p]) => ({ n, p })).sort((a, b) => b.p - a.p); }
+  teamOrder() { return Object.entries(this.teamChamp).map(([n, p]) => ({ n, p })).sort((a, b) => b.p - a.p); }
 
   addPlayer(socket, profile) {
     const p = { id: socket.id, ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null };
@@ -210,7 +249,7 @@ class Room {
     if (p) this.emit("toast", `${p.name} left`);
     this.sendLobby();
   }
-  trackMsg() { const t = this.track; return { pts: t.pts, tan: t.tan, nor: t.nor, N: t.N, W: t.W, H: t.H, pit: t.pit, length: t.length, trackW: t.trackW, theme: this.settings.theme }; }
+  trackMsg() { const t = this.track; return { pts: t.pts, tan: t.tan, nor: t.nor, N: t.N, W: t.W, H: t.H, pit: t.pit, length: t.length, trackW: t.trackW, theme: this.settings.theme, line: t.line.map((v) => Math.round(v)) }; }
 
   setTrack(stroke, map) {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
@@ -229,7 +268,9 @@ class Room {
     if (!this.track || this.phase !== "lobby") return;
     const t = this.track, s = this.settings;
     const humans = [...this.players.values()];
-    const total = Math.min(12, humans.length + clamp(s.ai, 0, 9));
+    const aiCount = clamp(s.ai, 0, MAX_AI);
+    this.ensureRoster(aiCount);
+    const total = humans.length + aiCount;
     this.raceNo++;
     this.cars = [];
     // grid: humans start at the back so there's always someone to chase
@@ -244,18 +285,17 @@ class Room {
         id: g + 1, x: p.x + n.x * lat, y: p.y + n.y * lat, heading: Math.atan2(tn.y, tn.x), vx: 0, vy: 0,
         idx, lapsDone: -1, progress: 0, finished: false, finishTime: 0, lapStart: 0, bestLap: Infinity, pits: 0,
         tire: 1, onTrack: true, inPit: false, pitting: 0, pitTotal: 0, mistakeT: 0, mistakeDir: 1,
-        lane: (Math.random() - 0.5) * 40, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
+        lane: 0, laneT: 0, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
         cleanLap: true, launchAt: 0, boostUntil: 0, slide: 0, speed: 0,
       };
       if (slot.human) {
         const h = slot.human;
-        Object.assign(base, { owner: h.id, name: h.name, color: h.color, livery: h.livery, number: h.number, up: h.up, skill: 0.9 });
+        Object.assign(base, { owner: h.id, name: h.name, color: h.color, livery: h.livery, number: h.number, up: h.up, skill: 0.9, team: h.team });
         h.order = "normal"; h.boxCall = false; h.reaction = null; h.jump = false; h.lastPos = total; h.passCd = new Map(); h.lostCd = new Map();
       } else {
-        const a = slot.ai;
+        const a = slot.ai, R = this.roster[a];
         Object.assign(base, {
-          owner: null, name: AI_NAMES[a % AI_NAMES.length], color: AI_COLORS[a % AI_COLORS.length],
-          livery: LIVERIES[(a * 3 + 1) % LIVERIES.length], number: 10 + a * 7 % 90, up: blankUp(),
+          owner: null, name: R.name, color: R.color, livery: R.livery, number: R.number, team: R.team, up: blankUp(),
           // rivals get sharper as the season goes on and as the teams level up
           skill: 0.85 + Math.random() * 0.09 + Math.min(0.07, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
           aiReaction: 0.18 + Math.random() * 0.3,
@@ -263,6 +303,14 @@ class Room {
       }
       this.cars.push(base);
     });
+    // team colors: everyone on a team uses the paint job of the team's first driver (humans first)
+    if (s.teamColors) {
+      const paint = {};
+      for (const c of [...this.cars].sort((a, b) => (b.owner ? 1 : 0) - (a.owner ? 1 : 0))) {
+        if (!paint[c.team]) paint[c.team] = { color: c.color, livery: c.livery };
+        else Object.assign(c, paint[c.team]);
+      }
+    }
     this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity;
     this.wearPerLap = 1 / tireLifeLaps(s.laps);
     this.bucket = Math.max(1, Math.floor(t.N / 60));      // ~60 timing points per lap, used for gaps
@@ -273,7 +321,7 @@ class Room {
     this.lightsStart = now;
     this.outAt = now + 5000 + 400 + Math.random() * 2000;
     this.lightsShown = 0;
-    this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner })), laps: s.laps, raceNo: this.raceNo });
+    this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team })), laps: s.laps, raceNo: this.raceNo });
     for (const p of this.players.values()) this.resendOffer(p);     // unpicked upgrades are still waiting
     this.sendLobby();
   }
@@ -406,14 +454,24 @@ class Room {
     } else {
       const look = 3 + Math.floor(Math.max(0, speed) / 95);
       const i = (c.idx + look) % N;
+      // pull out of the racing line to pass a slower car, then drift back onto it
       const spot = 90 + 25 * c.up.craft;
+      if (c.laneT > 0) c.laneT -= dt;
+      else c.lane *= Math.exp(-dt * 1.2);
       for (const o of this.cars) {
         if (o === c) continue;
-        const ahead = (o.x - c.x) * Math.cos(c.heading) + (o.y - c.y) * Math.sin(c.heading);
-        const side = Math.abs(-(o.x - c.x) * Math.sin(c.heading) + (o.y - c.y) * Math.cos(c.heading));
-        if (ahead > 0 && ahead < spot && side < 26 && Math.hypot(o.vx, o.vy) < speed) { c.lane = c.lane > 0 ? -32 : 32; break; }
+        const rx = o.x - c.x, ry = o.y - c.y;
+        const ahead = rx * Math.cos(c.heading) + ry * Math.sin(c.heading);
+        const sideSigned = -rx * Math.sin(c.heading) + ry * Math.cos(c.heading);
+        if (ahead > 0 && ahead < spot && Math.abs(sideSigned) < 26 && Math.hypot(o.vx, o.vy) < speed) {
+          const nx = t.nor[c.idx].x, ny = t.nor[c.idx].y;
+          const theirSide = rx * nx + ry * ny;                       // which side of me they are on
+          c.lane = theirSide > 0 ? -34 : 34; c.laneT = 1.1; break;
+        }
       }
-      tx = t.pts[i].x + t.nor[i].x * c.lane; ty = t.pts[i].y + t.nor[i].y * c.lane;
+      const lim = TRACK_W / 2 - 16;
+      const off = clamp(t.line[i] + c.lane + c.lineJit, -lim, lim);
+      tx = t.pts[i].x + t.nor[i].x * off; ty = t.pts[i].y + t.nor[i].y * off;
       const lookCorner = 6 - Math.min(3, c.up.late);
       let v = Infinity;
       for (let k = 0; k < lookCorner; k++) v = Math.min(v, t.vmax[(c.idx + k) % N]);
@@ -505,7 +563,10 @@ class Room {
       if (Math.abs(delta) < 40) { best = g; bestD = Math.sqrt(gd); }
     }
     const delta = best - c.idx;
-    if (delta < -N / 2) { c.lapsDone++; this.onLap(c); } else if (delta > N / 2) c.lapsDone--;
+    // a lap only counts the FIRST time a car gets that far (being shoved back over the line and
+    // crossing it again must not count as another lap)
+    if (delta < -N / 2) { c.lapsDone++; if (c.lapsDone > (c.maxLaps ?? -1)) { c.maxLaps = c.lapsDone; this.onLap(c); } }
+    else if (delta > N / 2) c.lapsDone--;
     c.idx = best; c.inPit = inPitBox(t, c.x, c.y);
     c.onTrack = bestD < TRACK_W / 2 + 4 || c.inPit;
     c.progress = c.lapsDone * N + c.idx;
@@ -538,10 +599,18 @@ class Room {
       if (a.pitting > 0 || b.pitting > 0) continue;
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), min = CAR_R * 2;
       if (d > 0 && d < min) {
-        const nx = dx / d, ny = dy / d, push = (min - d) / 2;
+        // Contact: cars push against each other instead of bouncing apart.
+        // Overlap is corrected gently, and the closing speed is simply shared (no rebound),
+        // with a little speed lost to the hit so contact always costs something.
+        const nx = dx / d, ny = dy / d, push = Math.min(3, (min - d) / 2);
         a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
         const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-        if (rel < 0) { const imp = -rel * 0.6; a.vx -= nx * imp; a.vy -= ny * imp; b.vx += nx * imp; b.vy += ny * imp; }
+        if (rel < 0) {
+          const imp = -rel * 0.5;                                        // inelastic: no bounce
+          a.vx -= nx * imp; a.vy -= ny * imp; b.vx += nx * imp; b.vy += ny * imp;
+          const loss = 1 - Math.min(0.06, -rel / 2500);                  // harder hits cost more
+          a.vx *= loss; a.vy *= loss; b.vx *= loss; b.vy *= loss;
+        }
       }
     }
   }
@@ -596,12 +665,14 @@ class Room {
     if (this.phase !== "race") return;
     this.phase = "results";
     const order = this.standings();
+    const table = this.settings.points;
     const rows = order.map((c, i) => {
-      const pts = POINTS[i] || 0;
+      const pts = table[i] || 0;
       this.champ[c.name] = (this.champ[c.name] || 0) + pts;
-      return { name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
+      if (c.team) this.teamChamp[c.team] = (this.teamChamp[c.team] || 0) + pts;
+      return { name: c.name, team: c.team, color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
     });
-    this.emit("results", { rows, champ: this.champOrder(), raceNo: this.raceNo });
+    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo });
     // back to the lobby after the podium
     setTimeout(() => {
       if (this.phase === "results") {
@@ -662,7 +733,9 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const S = r.settings;
     if ([3, 5, 8, 10, 15].includes(Number(s?.laps))) S.laps = Number(s.laps);
-    if (Number.isInteger(Number(s?.ai))) S.ai = clamp(Number(s.ai), 0, 9);
+    if (s?.ai !== undefined && Number.isFinite(Number(s.ai))) { S.ai = clamp(Math.round(Number(s.ai)), 0, MAX_AI); r.ensureRoster(S.ai); }
+    if (s?.points !== undefined) { const p = parsePoints(s.points); if (p.length) S.points = p; }
+    if (s?.teamColors !== undefined) S.teamColors = s.teamColors === true || s.teamColors === "on";
     if (["grass", "desert", "snow", "night"].includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
     if ([1, 2, 3].includes(Number(s?.speed))) S.speed = Number(s.speed);
     if (WEAR_LEVELS[s?.wear]) S.wear = s.wear;
@@ -675,6 +748,17 @@ io.on("connection", (socket) => {
     socket.emit("trackResult", { error: err });
   });
   socket.on("clearTrack", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; r.track = null; r.stroke = null; r.emit("track", null); r.sendLobby(); });
+  // host renames an AI driver / changes their number or team
+  socket.on("aiEdit", (d) => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    const i = Math.round(Number(d?.i)); if (!(i >= 0 && i < r.roster.length)) return;
+    const R = r.roster[i];
+    if (typeof d.name === "string" && d.name.trim()) R.name = d.name.trim().slice(0, 12);
+    if (d.number !== undefined && Number.isFinite(Number(d.number))) R.number = clamp(Math.round(Number(d.number)), 0, 99);
+    if (typeof d.team === "string") R.team = cleanTeam(d.team) || R.team;
+    if (HEX.test(d.color)) R.color = d.color;
+    r.sendLobby();
+  });
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("order", (o) => { const p = me(); if (p && ORDERS[o]) p.order = o; });

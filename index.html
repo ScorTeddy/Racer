@@ -100,6 +100,27 @@
   .board-tools { position: absolute; left: 0.8rem; bottom: 0.8rem; display: flex; gap: 0.4rem; }
   .board-tools .btn { background: var(--panel-solid); }
 
+  /* ---------- Teams, AI roster, points, drawing tools ---------- */
+  .plist .team { display: block; font-size: 0.72rem; color: var(--soft); font-weight: 600; }
+  details.box { border: 1.5px solid var(--edge); border-radius: 0.8rem; padding: 0.35rem 0.6rem; }
+  details.box summary { cursor: pointer; font-family: "Russo One", sans-serif; font-size: 0.82rem; color: var(--yellow); letter-spacing: 0.04em; list-style: none; }
+  details.box summary::before { content: "▸ "; } details.box[open] summary::before { content: "▾ "; }
+  .roster { display: flex; flex-direction: column; gap: 0.3rem; max-height: 16rem; overflow-y: auto; margin-top: 0.4rem; padding-right: 0.2rem; }
+  .ai-row { display: grid; grid-template-columns: 0.7rem 1fr 2.6rem 1fr; gap: 0.3rem; align-items: center; }
+  .ai-row .sw { width: 0.7rem; height: 0.7rem; border-radius: 3px; }
+  .ai-row input { font-size: 0.8rem; padding: 0.25rem 0.35rem; min-width: 0; }
+  .ai-head { display: grid; grid-template-columns: 0.7rem 1fr 2.6rem 1fr; gap: 0.3rem; font-size: 0.68rem; color: var(--soft); margin-top: 0.3rem; }
+  input[type="number"] { background: rgba(255,255,255,0.07); border: 1.5px solid var(--edge); border-radius: 0.6rem; padding: 0.45rem 0.55rem; font-weight: 600; color: var(--ink); min-width: 0; }
+  .pts-preview { font-size: 0.75rem; color: var(--soft); margin-top: 0.25rem; line-height: 1.35; }
+  .champ-tabs { display: flex; gap: 0.3rem; }
+  .champ-tabs button { cursor: pointer; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.6rem; border-radius: 99px; border: 1.5px solid var(--edge); background: none; color: var(--soft); }
+  .champ-tabs button[aria-pressed="true"] { background: var(--yellow); color: #1b1b1b; border-color: var(--yellow); }
+  .draw-mode { position: absolute; right: 0.8rem; bottom: 0.8rem; display: flex; gap: 0.4rem; align-items: center; }
+  .draw-mode .seg2 { display: inline-flex; border: 1.5px solid var(--edge); border-radius: 99px; padding: 2px; background: var(--panel-solid); }
+  .draw-mode .seg2 button { cursor: pointer; border: 0; background: none; font-size: 0.82rem; font-weight: 700; padding: 0.35rem 0.7rem; border-radius: 99px; color: var(--soft); }
+  .draw-mode .seg2 button[aria-pressed="true"] { background: var(--yellow); color: #1b1b1b; }
+  .draw-mode .btn { background: var(--panel-solid); font-size: 0.82rem; padding: 0.4rem 0.7rem; }
+
   /* ---------- Race HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
   .standing { position: absolute; left: 1rem; top: calc(1rem + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 0.8rem; padding: 0.45rem 0.8rem; animation: inL 420ms cubic-bezier(.2,.9,.3,1.1) both; }
@@ -267,6 +288,7 @@
       <div style="flex:1;display:flex;flex-direction:column;gap:0.5rem">
         <label class="f">Driver name <input type="text" id="nameIn" maxlength="12" autocomplete="off" spellcheck="false"></label>
         <label class="f">Car number <input type="text" id="numIn" maxlength="2" inputmode="numeric" autocomplete="off"></label>
+        <label class="f">Team <input type="text" id="teamIn" maxlength="20" autocomplete="off" list="teamList" placeholder="Same name as a friend = teammates"></label>
       </div>
     </div>
     <div><div class="f" style="margin-bottom:0.25rem">Car color</div><div class="swatches" id="swatches"></div></div>
@@ -293,21 +315,53 @@
     <div class="sect">RACE SETTINGS</div>
     <div class="settings-grid">
       <label class="f">Laps <select id="sLaps"><option>3</option><option selected>5</option><option>8</option><option>10</option><option>15</option></select></label>
-      <label class="f">AI rivals <select id="sAi"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>7</option><option>9</option></select></label>
+      <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
       <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
       <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option></select></label>
       <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
       <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
     </div>
+    <label class="f">Team colors <select id="sTeamColors"><option value="off">Off (everyone keeps their paint)</option><option value="on">On (teammates share paint)</option></select></label>
+    <details class="box" id="pointsBox">
+      <summary>POINTS SYSTEM</summary>
+      <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.4rem">
+        <label class="f">Preset
+          <select id="sPreset">
+            <option value="25,18,15,12,10,8,6,4,2,1">Classic (25, 18, 15...)</option>
+            <option value="16,8,4,2,1">Halving (16, 8, 4, 2, 1)</option>
+            <option value="10,6,4,3,2,1">Top 6 (10, 6, 4, 3, 2, 1)</option>
+            <option value="1">Winner takes all (1)</option>
+            <option value="everyone">Everyone scores (last gets 1)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label class="f">Points for 1st, 2nd, 3rd... <input type="text" id="sPoints" placeholder="e.g. 16, 8, 4, 2, 1" autocomplete="off"></label>
+        <div class="pts-preview" id="ptsPreview"></div>
+      </div>
+    </details>
+    <details class="box" id="aiBox">
+      <summary id="aiSummary">AI DRIVERS</summary>
+      <div class="ai-head"><span></span><span>Name</span><span>#</span><span>Team</span></div>
+      <div class="roster" id="roster"></div>
+    </details>
     <p class="err" id="hostNote" style="color:var(--soft)"></p>
     <button type="button" class="btn go" id="startBtn">Start race</button>
     <div class="sect" id="champTitle">CHAMPIONSHIP</div>
+    <div class="champ-tabs"><button type="button" id="champDrivers" aria-pressed="true">Drivers</button><button type="button" id="champTeams" aria-pressed="false">Teams</button></div>
     <table class="champ"><tbody id="champBody"></tbody></table>
     <button type="button" class="btn" id="leaveBtn">Leave room</button>
   </div>
   <div class="board-wrap panel">
     <canvas id="board" aria-label="Track drawing board"></canvas>
     <div class="board-hint panel" id="boardHint">Draw your track in one loop</div>
+    <div class="draw-mode" id="drawMode">
+      <div class="seg2" role="radiogroup" aria-label="Drawing mode">
+        <button type="button" data-dm="free" aria-pressed="true">Freehand</button>
+        <button type="button" data-dm="line" aria-pressed="false">Straight lines</button>
+      </div>
+      <button type="button" class="btn hidden" id="undoPt">Undo point</button>
+      <button type="button" class="btn hidden" id="closeLoop">Close loop</button>
+    </div>
     <div class="board-tools" id="boardTools">
       <button type="button" class="btn" id="randomBtn">Random track</button>
       <button type="button" class="btn" id="clearBtn">Clear</button>
@@ -357,7 +411,9 @@
   <div class="res-card panel">
     <h2 id="resTitle">Race 1 results</h2>
     <canvas id="podium" aria-hidden="true"></canvas>
-    <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
+    <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
+    <div class="sect">TEAM STANDINGS</div>
+    <table class="res"><tbody id="resTeams"></tbody></table>
     <div class="back" id="backText">Back to the garage in 12s</div>
   </div>
 </div>
@@ -370,6 +426,7 @@
   </div>
 </div>
 
+<datalist id="teamList"></datalist>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (() => {
@@ -409,6 +466,7 @@
     { key: "lines", label: "Speed lines", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "shake", label: "Screen shake", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "minimap", label: "Minimap", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { key: "theme", label: "Menu theme", def: "dark", opts: [["dark", "Dark"], ["light", "Light"]] },
     { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
   ];
@@ -543,13 +601,15 @@
   }
 
   // ======================= Profile / garage =======================
-  const prof = { name: "Ace", color: COLORS[0], livery: "stripes", number: 7 };
+  const prof = { name: "Ace", color: COLORS[0], livery: "stripes", number: 7, team: "" };
   try { Object.assign(prof, JSON.parse(localStorage.getItem("tb-profile") || "{}")); } catch (e) {}
   const nameIn = $("nameIn"), numIn = $("numIn"), codeIn = $("codeIn");
-  nameIn.value = prof.name; numIn.value = prof.number;
+  const teamIn = $("teamIn");
+  nameIn.value = prof.name; numIn.value = prof.number; teamIn.value = prof.team || "";
   function saveProfile() {
     prof.name = nameIn.value.trim().slice(0, 12) || "Ace";
     prof.number = clamp(parseInt(numIn.value, 10) || 0, 0, 99);
+    prof.team = teamIn.value.trim().slice(0, 20);
     try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {}
     if (S.code) socket.emit("profile", prof);
   }
@@ -570,7 +630,7 @@
     lv.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === prof.livery)));
   }
   function rgbToHex(rgb) { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => (+n).toString(16).padStart(2, "0")).join("") : rgb; }
-  nameIn.addEventListener("input", saveProfile); numIn.addEventListener("input", saveProfile);
+  nameIn.addEventListener("input", saveProfile); numIn.addEventListener("input", saveProfile); teamIn.addEventListener("change", saveProfile);
   refreshGarage();
   const pv = $("carPreview"), pctx = pv.getContext("2d");
   function drawPreview(now) {
@@ -618,6 +678,7 @@
   });
   socket.on("track", (t) => {
     S.track = t;
+    S.linePath = null;
     if (t) { S.trackPath = new Path2D(); t.pts.forEach((p, i) => (i ? S.trackPath.lineTo(p.x, p.y) : S.trackPath.moveTo(p.x, p.y))); S.trackPath.closePath(); S.pattern = null; }
     drawBoard();
   });
@@ -713,7 +774,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear" };
+  const sel = { sLaps: "laps", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors" };
   for (const [id, key] of Object.entries(sel)) {
     $(id).addEventListener("change", () => {
       if (!S.host) return;
@@ -722,6 +783,42 @@
       if (key === "map") setTimeout(drawBoard, 50);
     });
   }
+  // points system
+  const ordinal = (n) => n + (["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || "th");
+  function sendPoints(text) { if (S.host) socket.emit("settings", { points: text }); }
+  $("sPreset").addEventListener("change", () => {
+    const v = $("sPreset").value;
+    if (v === "custom") { $("sPoints").focus(); return; }
+    const total = (S.lobby?.players.length || 1) + (S.lobby?.settings.ai || 0);
+    const text = v === "everyone" ? Array.from({ length: total }, (_, i) => total - i).join(",") : v;
+    $("sPoints").value = text.split(",").join(", "); sendPoints(text);
+  });
+  $("sPoints").addEventListener("change", () => { $("sPreset").value = "custom"; sendPoints($("sPoints").value); });
+  let champView = "drivers";
+  $("champDrivers").addEventListener("click", () => { champView = "drivers"; renderLobby(); });
+  $("champTeams").addEventListener("click", () => { champView = "teams"; renderLobby(); });
+  // AI roster: host renames AI drivers, numbers and teams
+  function renderRoster(l) {
+    const box = $("roster"), open = $("aiBox").open;
+    $("aiSummary").textContent = `AI DRIVERS (${l.roster.length})${S.host ? ": tap to rename" : ""}`;
+    if (!open && box.childElementCount === l.roster.length) return;
+    if (box.contains(document.activeElement)) return;          // don't wipe what you're typing
+    box.textContent = "";
+    l.roster.forEach((r, i) => {
+      const row = document.createElement("div"); row.className = "ai-row";
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = r.color;
+      const mk = (val, type, key, extra) => {
+        const inp = document.createElement("input"); inp.type = type; inp.value = val; inp.disabled = !S.host || l.phase !== "lobby";
+        inp.setAttribute("aria-label", `AI ${i + 1} ${key}`); Object.assign(inp, extra || {});
+        inp.addEventListener("change", () => socket.emit("aiEdit", { i, [key]: inp.value }));
+        return inp;
+      };
+      row.append(sw, mk(r.name, "text", "name", { maxLength: 12 }), mk(r.number, "number", "number", { min: 0, max: 99 }), mk(r.team, "text", "team", { maxLength: 20 }));
+      row.lastChild.setAttribute("list", "teamList");
+      box.appendChild(row);
+    });
+  }
+  $("aiBox").addEventListener("toggle", () => S.lobby && renderRoster(S.lobby));
   $("startBtn").addEventListener("click", () => socket.emit("start"));
   $("leaveBtn").addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; hideCards(); show("menu"); });
   $("garageBtn").addEventListener("click", () => { $("menu").classList.remove("hidden"); $("soloBtn").classList.add("hidden"); $("createBtn").parentElement.classList.add("hidden"); document.querySelector(".sep-or").classList.add("hidden"); addDoneBtn(); });
@@ -745,6 +842,7 @@
       const cv = document.createElement("canvas"); cv.width = 112; cv.height = 64;
       drawCar(cv.getContext("2d"), p, 56, 32, 0, 1.9);
       const n = document.createElement("span"); n.className = "nm"; n.textContent = `#${p.number} ${p.name}`;
+      const tm = document.createElement("span"); tm.className = "team"; tm.textContent = p.team || ""; n.appendChild(tm);
       const t = document.createElement("span"); t.className = "tg"; t.textContent = (p.id === l.hostId ? "host " : "") + (p.id === S.me ? "(you)" : "") + ` Lv ${p.level}`;
       li.append(cv, n, t);
       if (S.host && p.id !== S.me) {
@@ -756,24 +854,45 @@
       pl.appendChild(li);
     }
     const s = l.settings;
-    for (const [id, key] of Object.entries(sel)) { $(id).value = String(s[key]); $(id).disabled = !S.host || l.phase !== "lobby"; }
+    for (const [id, key] of Object.entries(sel)) {
+      if (document.activeElement === $(id)) continue;
+      $(id).value = key === "teamColors" ? (s.teamColors ? "on" : "off") : String(s[key]);
+      $(id).disabled = !S.host || l.phase !== "lobby";
+    }
+    // points
+    if (document.activeElement !== $("sPoints")) $("sPoints").value = s.points.join(", ");
+    const presetMatch = [...$("sPreset").options].find((o) => o.value === s.points.join(","));
+    if (document.activeElement !== $("sPreset")) $("sPreset").value = presetMatch ? presetMatch.value : "custom";
+    $("sPoints").disabled = $("sPreset").disabled = !S.host || l.phase !== "lobby";
+    $("ptsPreview").textContent = s.points.slice(0, 10).map((p, i) => `${ordinal(i + 1)}: ${p}`).join(", ") + (s.points.length > 10 ? `, ... (${s.points.length} places score)` : "") + ". Everyone else: 0.";
+    renderRoster(l);
+    // team names you can pick from when typing yours
+    const teams = new Set([...l.players.map((p) => p.team), ...l.roster.map((r) => r.team)].filter(Boolean));
+    $("teamList").textContent = "";
+    for (const t of teams) { const o = document.createElement("option"); o.value = t; $("teamList").appendChild(o); }
     $("sMap").disabled = !S.host || l.phase !== "lobby";
     $("startBtn").classList.toggle("hidden", !S.host);
     $("startBtn").disabled = !S.track || l.phase !== "lobby";
     $("hostNote").textContent = l.phase === "race" || l.phase === "lights" ? "A race is running. You'll be on the grid for the next one." :
       S.host ? (S.track ? "" : "Draw a track on the board to start.") : "The host draws the track and starts the race. Customize your car with My car.";
     $("boardTools").classList.toggle("hidden", !S.host);
+    $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     const cb = $("champBody"); cb.textContent = "";
     $("champTitle").textContent = l.raceNo ? `CHAMPIONSHIP (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "CHAMPIONSHIP";
-    const champ = l.champ.length ? l.champ : l.players.map((p) => ({ n: p.name, p: 0 }));
-    champ.slice(0, 10).forEach((x, i) => {
-      const tr = document.createElement("tr"); if (x.n === prof.name) tr.className = "me";
+    $("champDrivers").setAttribute("aria-pressed", String(champView === "drivers"));
+    $("champTeams").setAttribute("aria-pressed", String(champView === "teams"));
+    const myTeam = l.players.find((p) => p.id === S.me)?.team;
+    const champ = champView === "teams"
+      ? (l.teamChamp.length ? l.teamChamp : [...new Set(l.players.map((p) => p.team))].map((t) => ({ n: t, p: 0 })))
+      : (l.champ.length ? l.champ : l.players.map((p) => ({ n: p.name, p: 0 })));
+    champ.slice(0, 12).forEach((x, i) => {
+      const tr = document.createElement("tr"); if (x.n === (champView === "teams" ? myTeam : prof.name)) tr.className = "me";
       const a = document.createElement("td"); a.textContent = i + 1;
       const b = document.createElement("td"); b.textContent = x.n;
       const c = document.createElement("td"); c.className = "n"; c.textContent = x.p + " pts";
       tr.append(a, b, c); cb.appendChild(tr);
     });
-    if (!S.track && S.host) boardHint("Draw your track in one loop. Lift up to finish.", false);
+    if (!S.track && S.host && !poly) boardHint(drawMode === "line" ? "Click to place corners. Click the first point (or Close loop) to finish." : "Draw your track in one loop. Hold Shift for straight lines.", false);
     if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
     drawBoard();
   }
@@ -821,24 +940,87 @@
         c.restore();
       } else { c.lineWidth = 3 / B.s; c.strokeStyle = "#ffcc1f"; path(); c.stroke(); }
     }
+    // straight-line helpers: the corner points so far, and a rubber band to the pointer
+    const rubber = (a, b) => { c.setLineDash([10 / B.s, 8 / B.s]); c.lineWidth = 3 / B.s; c.strokeStyle = "#ffcc1f"; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]); };
+    if (poly && poly.length) {
+      c.lineWidth = 130 / 3; c.strokeStyle = "rgba(61,63,69,0.85)"; c.lineJoin = "round"; c.lineCap = "round";
+      c.beginPath(); poly.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]))); c.stroke();
+      if (hover) rubber(poly[poly.length - 1], hover);
+      poly.forEach((p, i) => { c.fillStyle = i === 0 ? "#3ecf6a" : "#ffcc1f"; c.beginPath(); c.arc(p[0], p[1], (i === 0 ? 9 : 6) / B.s, 0, Math.PI * 2); c.fill(); });
+    }
+    if (S.stroke && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, S.shiftEnd);
     c.restore();
     c.strokeStyle = "rgba(255,255,255,0.25)"; c.lineWidth = 2; c.strokeRect(B.ox, B.oy, B.bw * B.s, B.bh * B.s);
     c.fillStyle = "rgba(255,255,255,0.5)"; c.font = "600 12px 'Chakra Petch', sans-serif"; c.textAlign = "right";
     c.fillText(`Map: ${S.lobby?.settings.map || "normal"}`, B.ox + B.bw * B.s, B.oy + B.bh * B.s + 16);
   }
+  // Drawing modes: Freehand (hold Shift for a straight bit) or Straight lines (click corners).
+  let drawMode = "free", poly = null, shiftAnchor = null, hover = null;
+  document.querySelectorAll("[data-dm]").forEach((b) => b.addEventListener("click", () => {
+    drawMode = b.dataset.dm; poly = null;
+    document.querySelectorAll("[data-dm]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    $("undoPt").classList.toggle("hidden", drawMode !== "line"); $("closeLoop").classList.toggle("hidden", drawMode !== "line");
+    boardHint(drawMode === "line" ? "Click to place corners. Click the first point (or Close loop) to finish." : "Draw in one loop. Hold Shift for straight lines.", false);
+    drawBoard();
+  }));
+  // round off the sharp corners of a straight-line loop so cars can actually drive it
+  function roundCorners(pts) {
+    const out = [], n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[(i - 1 + n) % n], b = pts[i], c2 = pts[(i + 1) % n];
+      const la = Math.hypot(b[0] - a[0], b[1] - a[1]), lc = Math.hypot(c2[0] - b[0], c2[1] - b[1]);
+      const r = Math.min(70, la * 0.45, lc * 0.45);
+      const p1 = [b[0] + (a[0] - b[0]) * (r / la), b[1] + (a[1] - b[1]) * (r / la)];
+      const p2 = [b[0] + (c2[0] - b[0]) * (r / lc), b[1] + (c2[1] - b[1]) * (r / lc)];
+      for (let k = 0; k <= 8; k++) {           // little curve through the corner
+        const t = k / 8, u = 1 - t;
+        out.push([u * u * p1[0] + 2 * u * t * b[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * b[1] + t * t * p2[1]]);
+      }
+    }
+    return out;
+  }
+  function finishPoly() {
+    if (!poly || poly.length < 3) { boardHint("Place at least 3 corners.", true); return; }
+    const stroke = roundCorners(poly); poly = null; hover = null;
+    socket.emit("track", { stroke, map: S.lobby.settings.map }); boardHint("Building track...", false); drawBoard();
+  }
+  $("undoPt").addEventListener("click", () => { if (poly) { poly.pop(); if (!poly.length) poly = null; drawBoard(); } });
+  $("closeLoop").addEventListener("click", finishPoly);
   const toBoard = (e) => { const r = board.getBoundingClientRect(); return [clamp((e.clientX - r.left - B.ox) / B.s, 0, B.bw), clamp((e.clientY - r.top - B.oy) / B.s, 0, B.bh)]; };
   board.addEventListener("pointerdown", (e) => {
     if (!S.host || S.lobby?.phase !== "lobby") return;
+    const p = toBoard(e);
+    if (drawMode === "line") {
+      if (poly && poly.length >= 3 && Math.hypot(p[0] - poly[0][0], p[1] - poly[0][1]) * B.s < 18) { finishPoly(); return; }
+      poly = poly || []; poly.push(p); drawBoard(); return;
+    }
     board.setPointerCapture(e.pointerId);
-    S.stroke = [toBoard(e)]; drawBoard();
+    S.stroke = [p]; shiftAnchor = e.shiftKey ? p : null; drawBoard();
   });
   board.addEventListener("pointermove", (e) => {
+    const p = toBoard(e);
+    if (drawMode === "line") { hover = p; if (poly) drawBoard(); return; }
     if (!S.stroke) return;
-    const p = toBoard(e), l = S.stroke[S.stroke.length - 1];
+    // hold Shift: a straight line from where Shift was pressed to the pointer
+    if (e.shiftKey) {
+      if (!shiftAnchor) shiftAnchor = S.stroke[S.stroke.length - 1];
+      S.shiftEnd = p; drawBoard(); return;
+    }
+    if (shiftAnchor) { commitShift(); }
+    const l = S.stroke[S.stroke.length - 1];
     if (Math.hypot(p[0] - l[0], p[1] - l[1]) * B.s >= 3) { S.stroke.push(p); drawBoard(); }
   });
+  function commitShift() {
+    if (!shiftAnchor || !S.shiftEnd) { shiftAnchor = null; return; }
+    const a = shiftAnchor, b = S.shiftEnd, L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.floor(L / 8));
+    for (let k = 1; k <= n; k++) S.stroke.push([a[0] + (b[0] - a[0]) * (k / n), a[1] + (b[1] - a[1]) * (k / n)]);
+    shiftAnchor = null; S.shiftEnd = null;
+  }
+  window.addEventListener("keyup", (e) => { if (e.key === "Shift" && S.stroke && shiftAnchor) { commitShift(); drawBoard(); } });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && poly) { poly = null; drawBoard(); } });
   const endDraw = () => {
     if (!S.stroke) return;
+    if (shiftAnchor) commitShift();
     const st = S.stroke; S.stroke = null;
     if (st.length > 4) { socket.emit("track", { stroke: st, map: S.lobby.settings.map }); boardHint("Building track...", false); }
     drawBoard();
@@ -963,7 +1145,19 @@
 
   // ======================= Results + podium =======================
   let confetti = [];
+  function renderTeamResults(r) {
+    const tb = $("resTeams"); tb.textContent = "";
+    const earned = {};
+    for (const x of r.rows) if (x.team) earned[x.team] = (earned[x.team] || 0) + x.pts;
+    (r.teamChamp || []).slice(0, 8).forEach((t, i) => {
+      const tr = document.createElement("tr");
+      const mine = r.rows.find((x) => x.owner === S.me)?.team === t.n; if (mine) tr.className = "me";
+      for (const [v, cls] of [[i + 1], [t.n], [`+${earned[t.n] || 0}`, "n"], [`${t.p} pts`, "n"]]) { const d = document.createElement("td"); d.textContent = v; if (cls) d.className = cls; tr.appendChild(d); }
+      tb.appendChild(tr);
+    });
+  }
   function showResults(r) {
+    renderTeamResults(r);
     S.results = r;
     if (S.offer) renderPill();          // keep waiting upgrades, just tucked away during the podium
     $("resTitle").innerHTML = "";
@@ -975,7 +1169,7 @@
       const tr = document.createElement("tr"); if (x.owner === S.me) tr.className = "me"; tr.style.animationDelay = (0.4 + i * 0.06) + "s";
       const td = (t, cls) => { const d = document.createElement("td"); d.textContent = t; if (cls) d.className = cls; return d; };
       const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}`);
-      tr.append(td(i + 1), nm, td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
+      tr.append(td(i + 1), nm, td(x.team || ""), td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
       body.appendChild(tr);
     });
     S.podium = r.rows.slice(0, 3); S.podiumAt = performance.now();
@@ -1071,6 +1265,11 @@
     ctx.setLineDash([22, 22]); ctx.strokeStyle = th.curbB; ctx.stroke(S.trackPath); ctx.setLineDash([]);
     ctx.lineWidth = t.trackW; ctx.strokeStyle = th.asphalt; ctx.stroke(S.trackPath);
     ctx.setLineDash([26, 30]); ctx.lineWidth = 3; ctx.strokeStyle = th.line; ctx.stroke(S.trackPath); ctx.setLineDash([]);
+    // optional: the racing line the drivers aim for
+    if (settings.raceline === "on" && t.line) {
+      if (!S.linePath) { S.linePath = new Path2D(); t.pts.forEach((p, i) => { const x = p.x + t.nor[i].x * t.line[i], y = p.y + t.nor[i].y * t.line[i]; i ? S.linePath.lineTo(x, y) : S.linePath.moveTo(x, y); }); S.linePath.closePath(); }
+      ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = "rgba(62,207,106,0.55)"; ctx.stroke(S.linePath); ctx.setLineDash([]);
+    }
     // pit box + start line
     const p = t.pit;
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.ang);
