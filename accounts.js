@@ -289,6 +289,30 @@ const STORE = [
   { id: "trail_sparks", slot: "trail", name: "Spark trail", look: "sparks", price: 140 },
   { id: "trail_hearts", slot: "trail", name: "Heart trail", look: "hearts", price: 140 },
   { id: "trail_stars", slot: "trail", name: "Star trail", look: "stars", price: 160 },
+  // more shop stuff
+  { id: "glow_purple", slot: "glow", name: "Purple underglow", look: "#a855f7", price: 80 },
+  { id: "glow_white", slot: "glow", name: "Ice-white underglow", look: "#e8f6ff", price: 90 },
+  { id: "wing_swan", slot: "wing", name: "Swan-neck wing", look: "swan", price: 150 },
+  { id: "flame_ice", slot: "flame", name: "Ice-blue boost flame", look: "#9be7ff", price: 60 },
+  { id: "flame_red", slot: "flame", name: "Red boost flame", look: "#ff3b30", price: 60 },
+  { id: "rims_black", slot: "rims", name: "Black rims", look: "#2a2c31", price: 40 },
+  { id: "rims_bronze", slot: "rims", name: "Bronze rims", look: "#b87333", price: 70 },
+  { id: "helmet_purple", slot: "helmet", name: "Purple helmet", look: "#8e44ad", price: 30 },
+  { id: "helmet_pink", slot: "helmet", name: "Pink helmet", look: "#ff6fb5", price: 30 },
+  { id: "helmet_black", slot: "helmet", name: "Black helmet", look: "#17181c", price: 30 },
+  { id: "helmet_orange", slot: "helmet", name: "Orange helmet", look: "#ff8a1f", price: 30 },
+  { id: "helmet_chrome", slot: "helmet", name: "Chrome helmet", look: "#dfe6ee", price: 120 },
+  { id: "num_red", slot: "num", name: "Red number plate", look: "red", price: 40 },
+  { id: "num_rainbow", slot: "num", name: "Rainbow number plate", look: "rainbow", price: 160 },
+  { id: "trail_bubbles", slot: "trail", name: "Bubble trail", look: "bubbles", price: 120 },
+  { id: "trail_notes", slot: "trail", name: "Music note trail", look: "notes", price: 140 },
+  { id: "trail_bolts", slot: "trail", name: "Lightning trail", look: "bolts", price: 160 },
+  { id: "decal_star", slot: "decal", name: "Star decal", look: "star", price: 50 },
+  { id: "decal_bolt", slot: "decal", name: "Lightning decal", look: "bolt", price: 60 },
+  { id: "decal_target", slot: "decal", name: "Target decal", look: "target", price: 60 },
+  { id: "decal_eyes", slot: "decal", name: "Cartoon eyes", look: "eyes", price: 70 },
+  { id: "decal_teeth", slot: "decal", name: "Shark teeth", look: "teeth", price: 90 },
+  { id: "decal_crown", slot: "decal", name: "Crown decal", look: "crown", price: 150 },
 ];
 // loot-box-only items: the "trash" commons, plus special liveries (all original designs)
 STORE.push(
@@ -312,6 +336,26 @@ STORE.push(
   { id: "liv_gold", slot: "livery", name: "Gold Rush livery", look: "gold", loot: true, rarity: "legendary" },
   { id: "liv_dragon", slot: "livery", name: "Dragon Scale livery", look: "dragon", loot: true, rarity: "legendary" },
   { id: "liv_midnight", slot: "livery", name: "Midnight Comet livery", look: "midnight", loot: true, rarity: "legendary" },
+  // more chest stuff
+  { id: "wing_card", slot: "wing", name: "Cardboard spoiler", look: "card", loot: true },
+  { id: "decal_tape", slot: "decal", name: "Duct tape repair", look: "tape", loot: true },
+  { id: "trail_dust", slot: "trail", name: "Dust trail", look: "dust", loot: true },
+  { id: "helmet_mud", slot: "helmet", name: "Muddy helmet", look: "#6d5436", loot: true },
+  { id: "liv_camo", slot: "livery", name: "Camo livery", look: "camo", loot: true, rarity: "rare" },
+  { id: "liv_zebra", slot: "livery", name: "Zebra livery", look: "zebra", loot: true, rarity: "rare" },
+  { id: "liv_sunset", slot: "livery", name: "Sunset livery", look: "sunset", loot: true, rarity: "epic" },
+  { id: "liv_lava", slot: "livery", name: "Lava livery", look: "lava", loot: true, rarity: "epic" },
+  { id: "liv_ice", slot: "livery", name: "Frost livery", look: "ice", loot: true, rarity: "epic" },
+  { id: "trail_fire", slot: "trail", name: "Fire trail", look: "fire", loot: true, rarity: "epic" },
+  { id: "decal_wings", slot: "decal", name: "Angel wings decal", look: "wings", loot: true, rarity: "epic" },
+  { id: "liv_pixel", slot: "livery", name: "Pixel livery", look: "pixel", loot: true, rarity: "legendary" },
+  { id: "liv_rainbow", slot: "livery", name: "Rainbow Road livery", look: "rainbow", loot: true, rarity: "legendary" },
+  // car bodies: ONLY in the Legendary chest. The open-wheel racer is the rarest thing in the game.
+  { id: "body_kart", slot: "body", name: "Go-kart body", look: "kart", loot: true, rarity: "legendary", box: "legend" },
+  { id: "body_muscle", slot: "body", name: "Muscle car body", look: "muscle", loot: true, rarity: "legendary", box: "legend" },
+  { id: "body_rally", slot: "body", name: "Rally hatch body", look: "rally", loot: true, rarity: "legendary", box: "legend" },
+  { id: "body_lmp", slot: "body", name: "Endurance prototype body", look: "lmp", loot: true, rarity: "legendary", box: "legend" },
+  { id: "body_f1", slot: "body", name: "Open-wheel racer (F1 style)", look: "f1", loot: true, rarity: "mythic", box: "legend" },
 );
 // rarity: set on the item, or from its store price
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
@@ -322,9 +366,9 @@ const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
 const BOXES = [
   { id: "basic", name: "Basic chest", price: 100, odds: { common: 72, rare: 22, epic: 5, legendary: 1 } },
   { id: "mid", name: "Intermediate chest", price: 500, odds: { common: 40, rare: 38, epic: 17, legendary: 5 } },
-  { id: "legend", name: "Legendary chest", price: 1000, odds: { common: 15, rare: 30, epic: 35, legendary: 20 } },
+  { id: "legend", name: "Legendary chest", price: 1000, odds: { common: 15, rare: 30, epic: 34, legendary: 20, mythic: 1 } },
 ];
-const DUP_REFUND = { common: 10, rare: 30, epic: 80, legendary: 200 };
+const DUP_REFUND = { common: 10, rare: 30, epic: 80, legendary: 200, mythic: 600 };
 function openBox(u, boxId) {
   const box = BOXES.find((b) => b.id === boxId);
   if (!box) return { error: "Unknown chest" };
@@ -332,7 +376,7 @@ function openBox(u, boxId) {
   u.coins -= box.price;
   let roll = Math.random() * 100, rarity = "common";
   for (const [r, w] of Object.entries(box.odds)) { if (roll < w) { rarity = r; break; } roll -= w; }
-  const pool = STORE.filter((x) => x.rarity === rarity);
+  const pool = STORE.filter((x) => x.rarity === rarity && (!x.box || x.box === box.id));
   // favour things you don't own yet (but duplicates can still happen)
   const fresh = pool.filter((x) => !u.owned.includes(x.id));
   const from = fresh.length && Math.random() < 0.75 ? fresh : pool;
@@ -406,6 +450,13 @@ function recordRace(u, r) {
   if (r.kind === "f1" && r.trackId && !s.realTracks.includes(r.trackId)) s.realTracks.push(r.trackId);
   s.bestComeback = Math.max(s.bestComeback, (r.grid || 0) - r.pos);
   if (r.best && (!s.bestLap || r.best < s.bestLap)) s.bestLap = Math.round(r.best * 1000) / 1000;
+  // personal best per track
+  if (r.best && r.trackKey) {
+    s.pbs = s.pbs || {};
+    const old = s.pbs[r.trackKey]?.t;
+    if (!old || r.best < old) { r.newPb = true; r.oldPb = old || 0; s.pbs[r.trackKey] = { t: Math.round(r.best * 1000) / 1000, name: r.trackName || null, at: Date.now() }; }
+    const keys = Object.keys(s.pbs); if (keys.length > 200) delete s.pbs[keys.sort((a, b) => s.pbs[a].at - s.pbs[b].at)[0]];
+  }
   if (r.champDriver) s.champDriver++;
   if (r.champTeam) s.champTeam++;
   const got = checkAch(u, r);
@@ -413,6 +464,16 @@ function recordRace(u, r) {
   return got;
 }
 
+// daily login reward: 50 coins, +10 for every day in a row (up to 150)
+function dailyReward(u) {
+  const day = Math.floor(Date.now() / 86400000);
+  if (u.dailyDay === day) return null;
+  u.streak = u.dailyDay === day - 1 ? (u.streak || 0) + 1 : 1;
+  u.dailyDay = day;
+  const coins = Math.min(150, 40 + u.streak * 10);
+  u.coins += coins; saveSoon(u);
+  return { coins, streak: u.streak };
+}
 function publicUser(u) {
   if (!u) return null;
   return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
@@ -438,6 +499,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

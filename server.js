@@ -86,7 +86,6 @@ const UPGRADES = {
   craft:   { kind: "Driver", name: "Racecraft",      desc: "Slipstream from further back, attacks harder", max: 4, fx: (n) => `+${(0.1 * n).toFixed(1)}s slipstream reach` },
   focus:   { kind: "Driver", name: "Focus",          desc: "40% fewer mistakes",                     max: 3, fx: (n) => `${pct(1 - Math.pow(0.6, n))}% fewer mistakes` },
   whisper: { kind: "Driver", name: "Tire Whisperer", desc: "Wears tires 15% slower",                 max: 4, fx: (n) => `${pct(1 - Math.pow(0.85, n))}% less tire wear` },
-  reflex:  { kind: "Driver", name: "Quick Reflexes", desc: "Much bigger launch off the line",        max: 3, fx: (n) => `+${70 * n}% launch boost` },
   engine:  { kind: "Car",    name: "Big Engine",     desc: "+7% top speed per level",                max: 5, fx: (n) => `+${7 * n}% top speed` },
   turbo:   { kind: "Car",    name: "Turbo",          desc: "+25% acceleration per level",            max: 4, fx: (n) => `+${25 * n}% acceleration` },
   grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+15% grip, +2% corner speed",            max: 4, fx: (n) => `+${15 * n}% grip` },
@@ -94,6 +93,14 @@ const UPGRADES = {
   pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
   refill:  { kind: "Car",    name: "Nitro Refill",   desc: "+5% boost back every lap",               max: 3, fx: (n) => `${pct(NITRO_LAP_REFILL + 0.05 * n)}% boost back per lap` },
   pitlane: { kind: "Car",    name: "Pit Lane Rocket", desc: "Drives 25% faster down the pit lane",   max: 3, fx: (n) => `+${25 * n}% pit lane speed` },
+  enhance: { kind: "Car",    name: "Enhancer",       desc: "+3% to EVERY stat (the ones you have and any you get later)", max: 4, fx: (n) => `+${3 * n}% to everything` },
+};
+// AI difficulty (Race tab): how good the AI drivers are, how quickly they upgrade, how often they slip up
+const AI_LEVELS = {
+  easy:    { skill: [0.8, 0.86], power: 0.96, xp: 0.75, mistakes: 1.8, aggr: 0.8, react: [0.3, 0.6] },
+  medium:  { skill: [0.88, 0.95], power: 0.99, xp: 1.5, mistakes: 1, aggr: 1, react: [0.18, 0.48] },
+  hard:    { skill: [0.95, 1.0], power: 1.01, xp: 2.1, mistakes: 0.6, aggr: 1.15, react: [0.12, 0.3] },
+  extreme: { skill: [1.0, 1.05], power: 1.04, xp: 2.8, mistakes: 0.3, aggr: 1.3, react: [0.08, 0.18] },
 };
 const upgradeInfo = () => Object.fromEntries(Object.entries(UPGRADES).map(([k, u]) => [k, { kind: u.kind, name: u.name, desc: u.desc, max: u.max, levels: Array.from({ length: u.max + 1 }, (_, n) => u.fx(n)) }]));
 const blankUp = () => Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0]));
@@ -754,7 +761,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0 };
+    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium" };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -838,6 +845,8 @@ class Room {
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
     this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.trackId = null;
+    // a short fingerprint of the drawing, so personal bests are kept per track (same track = same key)
+    { let h = 2166136261; for (let i = 0; i < stroke.length; i += 3) { h = Math.imul(h ^ Math.round(stroke[i][0]), 16777619); h = Math.imul(h ^ Math.round(stroke[i][1]), 16777619); } this.trackKey = "d" + (h >>> 0).toString(36) + "_" + map; }
     this.trackBy = kind === "drawn" ? this.players.get(this.hostId)?.uid || null : null;   // for the "Architect" achievement
     // random and real tracks put the start line on their best straight; drawn ones start where you started drawing
     this.track = finalizeTrack(shape, kind === "drawn" ? 0 : bestStart(shape), false, this.allTeams());
@@ -873,7 +882,7 @@ class Room {
     s = Math.min(s, BW * 0.9 / tr.w, BH * 0.9 / tr.h);
     const ox = (BW - tr.w * s) / 2, oy = (BH - tr.h * s) / 2;
     const err = this.setTrack(tr.pts.map(([x, y]) => [ox + x * s, oy + y * s, TRACK_W]), map, "f1", tr.name);
-    if (!err) this.trackId = tr.id;
+    if (!err) { this.trackId = tr.id; this.trackKey = "f1_" + tr.id; }
     return err;
   }
   // "Smooth track" switched on/off: rebuild the current track from the same drawing
@@ -925,6 +934,7 @@ class Room {
       rest = [...byKey.values()];
     }
     for (let i = 0; i < total; i++) if (!order[i]) order[i] = rest.shift();
+    const DL = AI_LEVELS[s.aiLevel] || AI_LEVELS.medium;
     order.forEach((slot, g) => {
       const { idx, lat } = gridSlot(t, g, total);
       const p = t.pts[idx], n = t.nor[idx], tn = t.tan[idx];
@@ -949,11 +959,12 @@ class Room {
         Object.assign(base, {
           owner: null, name: R.name, color: R.color, livery: R.livery, number: R.number, team: R.team, up: blankUp(),
           // rivals get sharper as the season goes on and as the teams level up
-          skill: 0.88 + Math.random() * 0.07 + Math.min(0.06, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
-          power: 0.975 + Math.random() * 0.03 + Math.min(0.05, this.avgLevel() * 0.006),
-          aiReaction: 0.18 + Math.random() * 0.3,
+          skill: DL.skill[0] + Math.random() * (DL.skill[1] - DL.skill[0]) + Math.min(0.06, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
+          power: DL.power - 0.015 + Math.random() * 0.03 + Math.min(0.05, this.avgLevel() * 0.006),
+          aiReaction: DL.react[0] + Math.random() * (DL.react[1] - DL.react[0]),
+          aggr: (0.8 + Math.random() * 0.5) * DL.aggr, aiMist: DL.mistakes,
           // AI teams level up during the race too (they don't get lap/pass bonuses, so a bit more per second)
-          aiXp: 0, aiLvl: 1, aiXpAt: 1, aiXpMul: 1.3 + Math.random() * 0.4,
+          aiXp: 0, aiLvl: 1, aiXpAt: 1, aiXpMul: DL.xp * (0.87 + Math.random() * 0.26),
         });
       }
       this.cars.push(base);
@@ -1018,7 +1029,7 @@ class Room {
     if (p.jump) { c.launchAt = 3.0; c.boostUntil = 0; return; }
     if (p.reaction === null) { c.launchAt = 1.2; return; }
     c.launchAt = Math.max(this.time, p.reaction / 1000);
-    c.boostUntil = c.launchAt + clamp(0.9 - p.reaction / 700, 0, 0.8) * (1 + 0.7 * c.up.reflex);
+    c.boostUntil = c.launchAt + clamp(0.9 - p.reaction / 700, 0, 0.8);
   }
   launchCars() {
     for (const c of this.cars) {
@@ -1028,7 +1039,15 @@ class Room {
   }
   // what a car's upgrades add up to
   stats(c) {
-    const u = c.up;
+    const u = c.up, e = 1 + 0.03 * (u.enhance || 0);        // Enhancer: +3% per level to everything below
+    const base = this.baseStats(c, u);
+    if (e === 1) return base;
+    return { ...base, maxSpeed: base.maxSpeed * e, accel: base.accel * e, grip: base.grip * e, wear: base.wear / e, brake: base.brake * e,
+      pitTime: base.pitTime / e, cornerPace: base.cornerPace * e, gripMul: base.gripMul * e, planBrake: base.planBrake * e,
+      slipTime: base.slipTime * e, nitroPow: base.nitroPow * e, nitroDrain: base.nitroDrain / e, nitroRefill: base.nitroRefill * e,
+      pitLimit: base.pitLimit * e, mistakes: base.mistakes / e };
+  }
+  baseStats(c, u) {
     return {
       maxSpeed: MAX_SPEED * (1 + 0.07 * u.engine) * (c.power || 1), accel: ACCEL * (1 + 0.25 * u.turbo), grip: GRIP * (1 + 0.15 * u.grip),
       wear: Math.pow(0.85, u.whisper), brake: BRAKE * (1 + 0.3 * u.brakes),
@@ -1458,7 +1477,7 @@ class Room {
       }
       // mistakes: rare, mostly in corners, more with worn tires / slicks in the rain / pushing hard
       if (!calm && !cooldown && av < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
-        let rate = (p ? 0.03 : 0.015) * st.mistakes;
+        let rate = (p ? 0.03 : 0.015 * (c.aiMist || 1)) * st.mistakes;
         if (dryTires) rate *= 1 + 2 * this.wet;
         if (c.tire < 0.25) rate *= 2;
         if (c.attack) rate *= 1.5;
@@ -1650,8 +1669,10 @@ class Room {
       if (c.cleanLap && c.rs) c.rs.cleanLaps++;
     }
     c.lapStart = this.time; c.cleanLap = true;
+    // qualifying: a full tank every lap, so every lap is a fair shot at pole
+    if (this.qualifying && c.lapsDone >= 1) { if (p && c.nitro < 0.995) io.to(p.id).emit("xp", { label: "⚡ Boost full!" }); c.nitro = 1; }
     // boost: half a tank back every time you cross the line (more with Nitro Refill)
-    if (c.lapsDone >= 1 && c.lapsDone < this.settings.laps && c.st) {
+    else if (c.lapsDone >= 1 && c.lapsDone < this.settings.laps && c.st) {
       const before = c.nitro;
       c.nitro = Math.min(1, c.nitro + c.st.nitroRefill);
       if (p && c.nitro > before + 0.005) io.to(p.id).emit("xp", { label: `⚡ Boost +${Math.round((c.nitro - before) * 100)}%` });
@@ -1748,7 +1769,7 @@ class Room {
   }
 
   aiUpgrade(c) {
-    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, reflex: 0.2 };
+    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, enhance: 1.5 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
     if (!opts.length) return;
     let r = Math.random() * opts.reduce((a, k) => a + (W[k] || 1), 0);
@@ -1766,9 +1787,19 @@ class Room {
     return { pending: p.pendingPicks, cards: p.offer.map((k) => { const u = UPGRADES[k]; return { key: k, kind: u.kind, name: u.name, desc: u.desc, max: u.max, level: p.up[k], now: u.fx(p.up[k]), next: u.fx(p.up[k] + 1) }; }) };
   }
   makeOffer(p) {
-    const opts = Object.keys(UPGRADES).filter((k) => p.up[k] < UPGRADES[k].max);
-    for (let i = opts.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [opts[i], opts[j]] = [opts[j], opts[i]]; }
-    p.offer = opts.slice(0, 3);
+    // a shuffled "bag": every upgrade you can still take comes up once before anything repeats
+    const ok = (k) => p.up[k] < UPGRADES[k].max;
+    const pick = [];
+    for (let guard = 0; pick.length < 3 && guard < 3; guard++) {
+      p.bag = (p.bag || []).filter((k) => ok(k) && !pick.includes(k));
+      if (!p.bag.length) {
+        p.bag = Object.keys(UPGRADES).filter((k) => ok(k) && !pick.includes(k));
+        for (let i = p.bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p.bag[i], p.bag[j]] = [p.bag[j], p.bag[i]]; }
+        if (!p.bag.length) break;
+      }
+      while (pick.length < 3 && p.bag.length) pick.push(p.bag.shift());
+    }
+    p.offer = pick;
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", this.offerMsg(p));
   }
@@ -1850,13 +1881,14 @@ class Room {
         reaction: p.reaction > 0 ? p.reaction : 0, jump: !!p.jump, level: p.level,
         upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
         humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
-        kind: this.trackKind, trackId: this.trackId, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
+        kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
         raceSec: this.time || 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
       };
       accounts.getUser(p.uid).then((u) => {
         if (!u) return;
         const got = accounts.recordRace(u, r);
+        if (r.newPb) io.to(p.id).emit("toast", r.oldPb ? `🏅 New personal best on this track! ${r.best.toFixed(2)}s (was ${r.oldPb.toFixed(2)}s)` : `🏅 First lap record set on this track: ${r.best.toFixed(2)}s`);
         io.to(p.id).emit("account", accounts.publicUser(u));
         for (const a of got) io.to(p.id).emit("achievement", a);
       }).catch((e) => console.log("stats error", e.message));
@@ -1938,7 +1970,8 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const S = r.settings;
     if (s?.laps !== undefined && Number.isFinite(Number(s.laps))) S.laps = clamp(Math.round(Number(s.laps)), 1, 99);   // any number of laps
-    if ([0, 1, 2, 3, 5].includes(Number(s?.quali))) S.quali = Number(s.quali);                                       // qualifying minutes (0 = off)
+    if ([0, 1, 2, 3, 5].includes(Number(s?.quali))) S.quali = Number(s.quali);
+    if (AI_LEVELS[s?.aiLevel]) S.aiLevel = s.aiLevel;                                       // qualifying minutes (0 = off)
     if (s?.ai !== undefined && Number.isFinite(Number(s.ai))) { S.ai = clamp(Math.round(Number(s.ai)), 0, MAX_AI); r.ensureRoster(S.ai); }
     if (s?.points !== undefined) { const p = parsePoints(s.points); if (p.length) S.points = p; }
     if (s?.teamColors !== undefined) S.teamColors = s.teamColors === true || s.teamColors === "on";
@@ -1979,8 +2012,9 @@ io.on("connection", (socket) => {
     r.sendLobby();
   });
   // ---- accounts ----
+  const daily = (u) => { const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", d); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {
-    socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u);
+    socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u);
     socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
     const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
   };
@@ -2003,7 +2037,7 @@ io.on("connection", (socket) => {
       const u = await accounts.resumeOrRestore(String(d?.token || ""), d?.backup);
       if (!u) return socket.emit("signedOut");
       socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
-      socket.emit("account", accounts.publicUser(u));
+      socket.emit("account", accounts.publicUser(u)); daily(u);
       const p = me(); if (p) { p.uid = u.id; p.extras = socket.data.extras; room().sendLobby(); }
     } catch (e) { authFail(e); }
   });
@@ -2036,6 +2070,15 @@ io.on("connection", (socket) => {
   socket.on("store:buy", (id) => storeAction((u) => accounts.buy(u, String(id))));
   socket.on("store:open", (id) => storeAction((u) => { const r = accounts.openBox(u, String(id)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
   socket.on("store:equip", (d) => storeAction((u) => accounts.equip(u, String(d?.slot || ""), d?.id == null ? null : String(d.id))));
+  // quick emotes: shown over your car (race) or next to your name (lobby), max one every 1.5s
+  const EMOTES = ["👍", "😂", "😮", "😡", "🔥", "GG", "🏁", "😭"];
+  let emoteAt = 0;
+  socket.on("emote", (e) => {
+    const r = room(), p = me(); if (!r || !p || !EMOTES.includes(e) || Date.now() - emoteAt < 1500) return;
+    emoteAt = Date.now();
+    const c = r.cars && r.carOf(p.id);
+    r.emit("emote", { e, name: p.name, pid: p.id, car: c ? c.id : null });
+  });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
   socket.on("gridRandomAll", () => {

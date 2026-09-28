@@ -22,6 +22,24 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
+## Music
+Six original songs are built in (made with code by the game's synth, no files): Grid Walk, Full Throttle,
+Neon Overdrive, Pit Wall Funk, Victory Lap, Rain Tyres. Settings > Music volume / Soundtrack (Auto picks one
+for the menu, race and results; Shuffle plays anything).
+
+**Adding real songs by other artists:** only use music the artist lets you use in a game, and credit them.
+Good free sources: Pixabay Music (free for games, no credit needed), incompetech.com by Kevin MacLeod
+(CC BY: credit "Kevin MacLeod (incompetech.com)"), FreePD.com (public domain).
+1. Download the MP3s and put them in `public/music/`.
+2. List them in `public/music/music.json`, for example:
+```json
+[
+  { "file": "my-race-song.mp3", "title": "Song Name", "artist": "Artist Name", "license": "CC BY 4.0", "mood": "race" },
+  { "file": "chill.mp3", "title": "Chill Tune", "artist": "Someone", "license": "Pixabay", "mood": "menu" }
+]
+```
+`mood` is `menu`, `race`, `results` or `any`. The title and artist pop up when a song starts.
+
 ## Accounts and saved tracks survive updates
 - **Accounts:** after every change the server gives each player's browser a signed copy of their account.
   When an update (or a free Render restart) wipes the server, the browser hands the copy back on the next
@@ -254,6 +272,18 @@ messages carry `backup`; the client keeps `tb-backups` {id: blob} + `tb-last` an
 start point). Client keeps `tb-presets` and merges both lists by name (newest wins).
 **Teams:** `renameTeam name` renames your team for everyone on it (AI too) and moves its championship points.
 **AI:** 90 made-up names (`AI_NAMES`) and 33 team names, so big grids don't get "Bolt 2".
+
+**Upgrades:** Quick Reflexes removed. **Enhancer** (max 4): +3% to every stat, applied on top of all the others
+(`stats()` = `baseStats()` x enhancer). Offers come from a shuffled bag per player (`p.bag`), so every upgrade
+shows up once before any repeats. **Qualifying:** a full boost tank every lap.
+**AI difficulty** (`settings.aiLevel`, `AI_LEVELS`): easy / medium / hard / extreme change skill, engine power,
+reactions, aggression, mistakes and how fast AI teams upgrade.
+**Store:** 86 items. New slots `decal` and `body`. Bodies (kart, muscle, rally, endurance prototype = legendary,
+open-wheel F1-style racer = **mythic, 1% from the Legendary chest only**) have `box: "legend"`; `bodyPath`/
+`bodyExtras` draw them. Mythic duplicates refund 600 coins.
+**Extras:** quick emotes (`emote`, bubbles over cars / lobby pop-ups), daily login bonus (`dailyReward`: 50 coins
++10 per day in a row, max 150), personal best lap per track (`stats.pbs`, keyed by `trackKey` = real track id
+or a fingerprint of the drawing, + `_r` when reversed).
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
