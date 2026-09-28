@@ -194,7 +194,7 @@ const ACH = [
   { id: "km_100", icon: "🛣️", name: "Road Trip", desc: "Drive 100 km", coins: 60, test: (s) => s.km >= 100 },
   { id: "km_1000", icon: "🌍", name: "Around the World (almost)", desc: "Drive 1000 km", coins: 200, test: (s) => s.km >= 1000 },
   { id: "endurance", icon: "🔋", name: "Endurance", desc: "Finish a 15-lap race", coins: 60, test: (s, r) => r.finished && r.laps >= 15 },
-  { id: "green_hell", icon: "🌲", name: "The Green Hell", desc: "Finish a race on the Nordschleife", coins: 100, test: (s, r) => r.finished && r.trackId === "de-ns" },
+  { id: "green_hell", icon: "🌲", name: "Northern Loop Survivor", desc: "Finish a race on the Eifel Northern Loop", coins: 100, test: (s, r) => r.finished && r.trackId === "de-ns" },
   { id: "oval", icon: "⭕", name: "Turn Left", desc: "Finish a race on an oval", coins: 30, test: (s, r) => r.finished && ["us-dayt", "us-mart", "us-1909"].includes(r.trackId) },
   { id: "world_tour", icon: "✈️", name: "World Tour", desc: "Race on 10 different real tracks", coins: 150, test: (s) => s.realTracks.length >= 10 },
   { id: "dice", icon: "🎲", name: "Dice Roller", desc: "Race 10 random tracks", coins: 50, test: (s) => s.randomRaces >= 10 },
@@ -207,6 +207,8 @@ const ACH = [
   { id: "champ", icon: "🏅", name: "World Champion", desc: "Win a drivers' championship", coins: 200, test: (s) => s.champDriver >= 1 },
   { id: "champ_team", icon: "🏢", name: "Constructors' Crown", desc: "Win a teams' championship", coins: 200, test: (s) => s.champTeam >= 1 },
   { id: "rich", icon: "💰", name: "Big Spender", desc: "Buy something in the store", coins: 25, test: (s, r, u) => u.owned.length >= 1 },
+  { id: "unboxer", icon: "📦", name: "Unboxer", desc: "Open 10 chests", coins: 60, test: (s) => (s.boxes || 0) >= 10 },
+  { id: "legend_item", icon: "🌟", name: "Jackpot", desc: "Own a legendary item", coins: 100, test: (s, r, u) => u.owned.some((id) => STORE_BY_ID.get(id)?.rarity === "legendary") },
 ];
 const ACH_PUBLIC = ACH.map(({ id, icon, name, desc, coins }) => ({ id, icon, name, desc, coins }));
 
@@ -239,7 +241,61 @@ const STORE = [
   { id: "trail_hearts", slot: "trail", name: "Heart trail", look: "hearts", price: 140 },
   { id: "trail_stars", slot: "trail", name: "Star trail", look: "stars", price: 160 },
 ];
+// loot-box-only items: the "trash" commons, plus special liveries (all original designs)
+STORE.push(
+  { id: "junk_rims", slot: "rims", name: "Rusty rims", look: "#8a5a3a", loot: true },
+  { id: "junk_helmet", slot: "helmet", name: "Plain grey helmet", look: "#7b7f86", loot: true },
+  { id: "junk_glow", slot: "glow", name: "Muddy underglow", look: "#6b4a2f", loot: true },
+  { id: "junk_flame", slot: "flame", name: "Sooty boost flame", look: "#8d8d8d", loot: true },
+  { id: "junk_num", slot: "num", name: "Beige number plate", look: "beige", loot: true },
+  { id: "helmet_lime", slot: "helmet", name: "Lime helmet", look: "#a3e635", loot: true },
+  { id: "glow_red", slot: "glow", name: "Red underglow", look: "#ff3b30", loot: true },
+  { id: "liv_pinstripe", slot: "livery", name: "Gold pinstripe livery", look: "pinstripe", loot: true, rarity: "rare" },
+  { id: "liv_chevron", slot: "livery", name: "Chevron livery", look: "chevron", loot: true, rarity: "rare" },
+  { id: "liv_splatter", slot: "livery", name: "Paint splatter livery", look: "splatter", loot: true, rarity: "rare" },
+  { id: "liv_aurora", slot: "livery", name: "Aurora livery", look: "aurora", loot: true, rarity: "epic" },
+  { id: "liv_carbon", slot: "livery", name: "Carbon Viper livery", look: "carbon", loot: true, rarity: "epic" },
+  { id: "liv_tiger", slot: "livery", name: "Tiger livery", look: "tiger", loot: true, rarity: "epic" },
+  { id: "liv_lightning", slot: "livery", name: "Lightning livery", look: "lightning", loot: true, rarity: "epic" },
+  { id: "liv_circuit", slot: "livery", name: "Circuit board livery", look: "circuit", loot: true, rarity: "epic" },
+  { id: "liv_galaxy", slot: "livery", name: "Galaxy livery", look: "galaxy", loot: true, rarity: "legendary" },
+  { id: "liv_holo", slot: "livery", name: "Hologram livery", look: "holo", loot: true, rarity: "legendary" },
+  { id: "liv_gold", slot: "livery", name: "Gold Rush livery", look: "gold", loot: true, rarity: "legendary" },
+  { id: "liv_dragon", slot: "livery", name: "Dragon Scale livery", look: "dragon", loot: true, rarity: "legendary" },
+  { id: "liv_midnight", slot: "livery", name: "Midnight Comet livery", look: "midnight", loot: true, rarity: "legendary" },
+);
+// rarity: set on the item, or from its store price
+for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
+
+// ======================= Loot boxes =======================
+// Every box can still give junk; the pricier the box, the better the odds.
+const BOXES = [
+  { id: "basic", name: "Basic chest", price: 100, odds: { common: 72, rare: 22, epic: 5, legendary: 1 } },
+  { id: "mid", name: "Intermediate chest", price: 500, odds: { common: 40, rare: 38, epic: 17, legendary: 5 } },
+  { id: "legend", name: "Legendary chest", price: 1000, odds: { common: 15, rare: 30, epic: 35, legendary: 20 } },
+];
+const DUP_REFUND = { common: 10, rare: 30, epic: 80, legendary: 200 };
+function openBox(u, boxId) {
+  const box = BOXES.find((b) => b.id === boxId);
+  if (!box) return { error: "Unknown chest" };
+  if (u.coins < box.price) return { error: `You need ${box.price - u.coins} more coins` };
+  u.coins -= box.price;
+  let roll = Math.random() * 100, rarity = "common";
+  for (const [r, w] of Object.entries(box.odds)) { if (roll < w) { rarity = r; break; } roll -= w; }
+  const pool = STORE.filter((x) => x.rarity === rarity);
+  // favour things you don't own yet (but duplicates can still happen)
+  const fresh = pool.filter((x) => !u.owned.includes(x.id));
+  const from = fresh.length && Math.random() < 0.75 ? fresh : pool;
+  const item = from[Math.floor(Math.random() * from.length)];
+  const dup = u.owned.includes(item.id);
+  let refund = 0;
+  if (dup) { refund = DUP_REFUND[rarity]; u.coins += refund; } else u.owned.push(item.id);
+  u.stats.boxes = (u.stats.boxes || 0) + 1;
+  const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
+  saveSoon(u);
+  return { ok: true, box: box.id, item, rarity, dup, refund, got };
+}
 
 // what gets sent to other players' screens: { slot: look }
 function extrasOf(u) {
@@ -252,6 +308,7 @@ function buy(u, id) {
   const it = STORE_BY_ID.get(id);
   if (!it) return { error: "Unknown item" };
   if (u.owned.includes(id)) return { error: "You already own that" };
+  if (it.loot) return { error: "That one only comes from chests" };
   if (u.coins < it.price) return { error: `You need ${it.price - u.coins} more coins` };
   u.coins -= it.price; u.owned.push(id); u.equipped[it.slot] = id;
   const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
@@ -314,6 +371,6 @@ function publicUser(u) {
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

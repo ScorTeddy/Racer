@@ -9,7 +9,7 @@ plus up to 60 AI drivers. Rooms can be private (invite code) or public (listed o
 ```
 server.js          Node server: rooms, lobbies, track building, the whole race simulation
 accounts.js        Google sign-in, saved stats, achievements, coins and the store (keep it next to server.js)
-f1-tracks.json     42 real layouts: 39 F1 circuits + Nordschleife, Daytona, Martinsville (keep it next to server.js)
+f1-tracks.json     42 real-world layouts under made-up names (e.g. "Old Airfield Circuit", "Eifel Northern Loop"), keep it next to server.js
 package.json       dependencies (express, socket.io)
 public/index.html  the entire client (menu, room screen, race view, HUD, settings) in one file
 ```
@@ -213,6 +213,22 @@ steered home), `rawScatter` (spline through random points), wild waves (8 harmon
 **Season finale:** shown to everyone; `hasLastSeason` in the lobby + `lastSeason` event reopen it later.
 Nordschleife layout: simplified from github.com/maciejb2k/nurburgring-nordschleife-geojson (Touristenfahrten loop).
 It's squeezed onto the biggest map (~2.3 km in game instead of 20.7). Daytona/Martinsville are geometric approximations.
+
+**Qualifying** (`settings.quali` minutes, 0 = off): `startRace` runs a timed session first (`this.qualifying`,
+laps set to 999, no tire wear, no AI pit stops, everyone is a ghost, standings/gaps by best lap). `endQuali` saves
+`qualiGrid` (car `slotKey`s: `h:<playerId>` / `a:<aiIndex>`), shows `qualiResults` for 9s, then starts the race on that grid.
+**Pause:** host button / P key, `pause` socket, `setPaused`; `state.paused`. Auto-unpauses if the host leaves.
+**Must pit:** `mustPit {reason: rain|tires|damage}` popup when it really matters. **Pit exit:** 3s ghost (`c.ghostUntil`).
+**Laps:** any number 1-99. **Weather:** hidden `rain` strength drifting toward random `rainGoal` fronts (showers,
+cloudbursts, breaks); track `wet` soaks fast / dries slowly. The forecast bar (`weather.trend`, -3..3) is noisy,
+lags and only updates every 3-7s, so it's a hint, not a promise. Dynamic weather only.
+**Scenery** (`buildDecor`/`drawDecor`, Settings > Scenery): seeded per track+theme: grandstands by the start,
+trees/farms (grass), lamps (night), cacti/adobe (desert), pines/cabins/snowmen (snow), fall trees/pumpkins
+(autumn), sea/palms/umbrellas (beach), offices/cars (city), a volcano/lava/bunkers (volcano), neon cyber-towers/
+holo signs (neon). Drawn into the cached tiles, so it costs nothing per frame.
+**Chests** (`BOXES` in accounts.js): Basic 100 (72/22/5/1 % common/rare/epic/legendary), Intermediate 500
+(40/38/17/5), Legendary 1000 (15/30/35/20). Duplicates refund 10/30/80/200 coins. Chest-only items: junk commons
+and 13 original liveries (`drawLivery`). All odds are shown in the store.
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
