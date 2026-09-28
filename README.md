@@ -8,7 +8,8 @@ plus up to 60 AI drivers. Rooms can be private (invite code) or public (listed o
 ## Files
 ```
 server.js          Node server: rooms, lobbies, track building, the whole race simulation
-f1-tracks.json     39 real F1 circuit layouts (loaded by server.js; keep it next to it)
+accounts.js        Google sign-in, saved stats, achievements, coins and the store (keep it next to server.js)
+f1-tracks.json     42 real layouts: 39 F1 circuits + Nordschleife, Daytona, Martinsville (keep it next to server.js)
 package.json       dependencies (express, socket.io)
 public/index.html  the entire client (menu, room screen, race view, HUD, settings) in one file
 ```
@@ -19,6 +20,27 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 3. Build command `npm install`, start command `npm start`, instance type Free.
 
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
+(To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
+
+## Accounts (Google sign-in) setup
+Without these settings the game works exactly as before, everyone just plays as a guest.
+
+**1. Google Client ID (free):**
+1. Go to https://console.cloud.google.com, make a project (any name).
+2. APIs & Services > OAuth consent screen: choose External, fill in the app name and your email, save.
+   Then press "Publish app" so anyone can sign in (not just test users).
+3. APIs & Services > Credentials > Create credentials > OAuth client ID > type "Web application".
+   Under "Authorized JavaScript origins" add your site, e.g. `https://your-game.onrender.com`
+   (and `http://localhost:3000` for testing). No redirect URI needed.
+4. Copy the Client ID (ends in `.apps.googleusercontent.com`).
+5. Render > your service > Environment > add `GOOGLE_CLIENT_ID` = that ID. Save (it redeploys).
+
+**2. Somewhere permanent to keep accounts (free):** Render's free plan wipes files on every
+restart/redeploy (and it restarts after 15 minutes asleep), so accounts would vanish.
+1. Make a free database at https://upstash.com (Redis, pick a region near your Render region).
+2. On the database page, copy the **REST URL** and **REST token**.
+3. Render > Environment > add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+Without Upstash, accounts are saved in `data/accounts.json` (fine on your own computer).
 (Render's free plan has very little CPU: 60 AI at 3x speed can still stutter there.)
 
 ## Controls
@@ -36,8 +58,17 @@ Run locally: `npm install`, then `npm start`, then open http://localhost:3000
   **Smooth** makes straights straighter and curves smoother (rebuilds the current track too).
   **F1 tracks** loads a real circuit.
 - Car setup: **Paint your own design** (24 x 12 pixels over your color/livery, mirror, fill, undo).
+- **Grid:** each player's grid menu has **🎲 random** (rolled every race); the host also has **Random grid for everyone**.
+- **Undo after Finish loop** brings the drawing back without the join (the auto-filled bit or your closing stroke).
+- **Profile** (main menu or 🏅 Profile in the room): Stats, Achievements (46, each pays coins) and the Store
+  (underglow, rear wings, boost flame colors, rims, helmets, number plates, trails). Items show on your car for everyone.
 - Settings: **⚙** on the team radio panel, or **O**, any time (also mid-race). **UI size**
   (Auto/S/M/L/XL) scales all menus and the HUD (Auto = a bit smaller on phones).
+- **Phone mode** (Settings, Auto/On/Off; Auto = touch screens under ~760px): in the room the board is just
+  a preview, so swiping over it scrolls. Tap the board (or **Draw the track**) to open a full-screen editor:
+  board on top (beside the tools when sideways), big Draw/width/track tools, green **Done**. The room tabs
+  stick to the top and **Start race** sticks to the bottom while you scroll. (`body.phone`, `body.editing-track`,
+  `setEditing`.)
 - Phones: compact lobby (hint and tools above/below the board), round Boost button bottom-right,
   small upgrade cards, no keyboard hints on touchscreens.
 
@@ -81,8 +112,8 @@ on/off, team colors, `xpRate` 10-50, `season` (0 = endless, or 3/5/8/10 races: a
 and the client shows the season finale: champion cards + a bump chart of positions per race + ▲/▼ table.
 The results phase lasts 40s then, and the points reset), `smooth`.
 
-**Pit stops:** `PIT_MISTAKE_CHANCE` 5% adds `PIT_MISTAKE_TIME` 1s. Durables wear x0.72 (a set
-lasts ~83% of the race). The `me` message has `life` (laps each compound lasts for this car),
+**Pit stops:** `PIT_MISTAKE_CHANCE` 5% adds `PIT_MISTAKE_TIME` 1s. Durables wear x0.66 (a set
+lasts ~90% of the race). The `me` message has `life` (laps each compound lasts for this car),
 `lapsLeft` (after the stop), `heading`/`pitLane`/`pitting` for the pit tire picker.
 
 **AI strategy (`aiPlan`, `lifeLaps`, `safeLaps`):** tries 0-3 more stops for the laps left and
@@ -162,6 +193,24 @@ drawn from (`drawIdx`), so there's no flicker getting on or off a ramp.
 **Drawing board sizing:** `sizeBoard` uses `clientWidth/Height` (not the bounding box, which includes the
 lobby's slide-in scale animation and caused the pen to land away from the mouse); `toBoard` scales by
 on-screen vs layout size and freehand uses coalesced pointer events.
+
+**Accounts (`accounts.js`):** sockets `auth:google {credential}` (verified with Google's tokeninfo,
+`aud` must match `GOOGLE_CLIENT_ID`), `auth:resume {token}`, `auth:signout`, `auth:dev` (DEV_LOGIN only),
+`catalog`, `store:buy id`, `store:equip {slot,id|null}`; server sends `account`, `achievement`, `signedOut`.
+Sessions are random tokens (only their sha256 is stored), kept in `tb-token`. `Room.recordStats` builds a
+summary per signed-in player at the flag (`c.rs` counts overtakes/crashes/clean laps/slips/boost/wet),
+`recordRace` adds it to the totals and checks `ACH`. Equipped items go out as `extras` {slot: look} on
+lobby players and race cars; `drawCar` draws them (`trailShape` for trails).
+
+**Rain:** from `SLIP_WET` 60% wets are best. Dry tires: -8% top speed per 100% wet, plus up to -17% more
+from 50% to 90% wet, grip x(1 - 0.45 wet), and a slip (0.55-0.85s, rear steps out) about 1-3 times a lap.
+**Overtakes:** +10% boost each (`OVERTAKE_BOOST`, AI too). **Durables:** speed 0.97, wear 0.66 (~90% of a race).
+**Random tracks:** `randomStroke` kinds: classic waves, `rawNoodle` (straights/hairpins/chicanes/spirals/snakes,
+steered home), `rawScatter` (spline through random points), wild waves (8 harmonics).
+**Themes:** grass, desert, snow, night, autumn, beach, city, volcano, neon (`THEMES` + `tex()` ground patterns).
+**Season finale:** shown to everyone; `hasLastSeason` in the lobby + `lastSeason` event reopen it later.
+Nordschleife layout: simplified from github.com/maciejb2k/nurburgring-nordschleife-geojson (Touristenfahrten loop).
+It's squeezed onto the biggest map (~2.3 km in game instead of 20.7). Daytona/Martinsville are geometric approximations.
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over

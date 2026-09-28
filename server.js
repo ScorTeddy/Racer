@@ -4,6 +4,7 @@
 // the server drives.
 
 const fs = require("fs");
+const accounts = require("./accounts");   // Google sign-in, stats, achievements, store
 const path = require("path");
 const http = require("http");
 const express = require("express");
@@ -27,9 +28,10 @@ const BRAKE_PLAN = 936;                // how hard drivers plan to brake before 
 const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahead: +30% top speed
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
-const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5;
-// Aquaplaning: on a track this wet (80%+), anything but wets slides all over the place
-const AQUA_WET = 0.8;
+const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1;
+// Heavy rain: from 60% wet the wets are the tire to be on. Anything else is a lot slower
+// (top speed and grip) and slips out a couple of times a lap, but it can still race.
+const SLIP_WET = 0.6;
 const XP_RATE_MIN = 10, XP_RATE_MAX = 50, XP_RATE_DEFAULT = 10;   // passive XP per race-second (host setting)
 // Tire life depends on race length: a fresh set lasts about 60% of the race
 // (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
@@ -43,7 +45,7 @@ const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00ac
 const LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
 // Tire compounds. Wets are only good when the track is wet.
 const COMPOUNDS = {
-  durable: { name: "Durable",      short: "D", speed: 0.955, grip: 0.94, wear: 0.72 },   // lasts a long time, but not the whole race
+  durable: { name: "Durable",      short: "D", speed: 0.97,  grip: 0.96, wear: 0.66 },   // lasts a long time (~90% of a race), a bit slower
   inter:   { name: "Intermediate", short: "I", speed: 1.0,   grip: 1.0,  wear: 1.0 },
   fast:    { name: "Fast",         short: "F", speed: 1.04,  grip: 1.07, wear: 1.75 },
   wet:     { name: "Wets",         short: "W", speed: 0.92,  grip: 0.97, wear: 0.8, dryWear: 2.6 },
@@ -89,6 +91,7 @@ const xpForLevel = (lvl) => 100 + (lvl - 1) * 50;
 // ======================= Web server =======================
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
+app.get("/auth/config", (req, res) => res.json(accounts.config()));
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
 app.get("/", (req, res) => res.sendFile(indexFile));
@@ -514,20 +517,82 @@ function propellerRaw(M) {
   }
   return raw;
 }
+// ---- extra-random shapes ----
+// "Noodle": a turtle that drives straights, sweepers, hairpins, chicanes and even full spirals,
+// then steers back home with a smooth curve. Wild shapes; the rating throws out undrivable ones.
+function rawNoodle(M) {
+  const P = [[0, 0]]; let x = 0, y = 0, h = Math.random() * Math.PI * 2;
+  const step = (len, turn) => {          // drive len units while turning 'turn' radians in total
+    const n = Math.max(2, Math.round(len / 4));
+    for (let i = 0; i < n; i++) { h += turn / n; x += Math.cos(h) * (len / n); y += Math.sin(h) * (len / n); P.push([x, y]); }
+  };
+  const pieces = 7 + Math.floor(Math.random() * 9);
+  for (let k = 0; k < pieces; k++) {
+    const r = Math.random(), side = Math.random() < 0.5 ? -1 : 1;
+    if (r < 0.2) step(60 + Math.random() * 160, 0);                                            // straight
+    else if (r < 0.45) { const a = 0.5 + Math.random() * 1.6; step(a * (40 + Math.random() * 80), side * a); } // sweeper
+    else if (r < 0.62) step(Math.PI * (22 + Math.random() * 14), side * Math.PI);               // hairpin
+    else if (r < 0.8) { const a = 0.6 + Math.random() * 0.7, l = 25 + Math.random() * 25; step(l, side * a); step(l * 2, -side * a * 2); step(l, side * a); } // chicane
+    else if (r < 0.9) { const a = Math.PI * (1.6 + Math.random() * 0.9); step(a * (45 + Math.random() * 30), side * a); } // spiral: loops over itself (bridge)
+    else { for (let j = 0; j < 3 + Math.floor(Math.random() * 3); j++) step(30 + Math.random() * 20, (j % 2 ? -1 : 1) * side * (0.9 + Math.random() * 0.6)); } // snake
+  }
+  // go home: cubic Hermite from here back to the start, leaving/arriving along the road
+  const ex = x, ey = y, dx = -ex, dy = -ey, D = Math.hypot(dx, dy) + 80;
+  const t0 = [Math.cos(h) * D, Math.sin(h) * D];
+  const h0 = Math.atan2(P[1][1] - P[0][1], P[1][0] - P[0][0]), t1 = [Math.cos(h0) * D, Math.sin(h0) * D];
+  const n = Math.max(8, Math.round(D / 4));
+  for (let i = 1; i < n; i++) {
+    const t = i / n, t2 = t * t, t3 = t2 * t;
+    const a = 2 * t3 - 3 * t2 + 1, b = t3 - 2 * t2 + t, c = -2 * t3 + 3 * t2, d = t3 - t2;
+    P.push([a * ex + b * t0[0] + d * t1[0], a * ey + b * t0[1] + d * t1[1]]);
+  }
+  return resampleRaw(P, M);
+}
+// "Scatter": a smooth closed spline through random points around a wobbly ring
+function rawScatter(M) {
+  const n = 6 + Math.floor(Math.random() * 10), C = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + (Math.random() - 0.5) * (Math.PI * 2 / n) * 0.9;
+    const r = 0.35 + Math.random() * 0.75;
+    C.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  const P = [];
+  for (let i = 0; i < n; i++) {                  // Catmull-Rom through the points
+    const p0 = C[(i - 1 + n) % n], p1 = C[i], p2 = C[(i + 1) % n], p3 = C[(i + 2) % n];
+    for (let k = 0; k < 24; k++) {
+      const t = k / 24, t2 = t * t, t3 = t2 * t;
+      P.push([0, 1].map((j) => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  return resampleRaw(P, M);
+}
+function resampleRaw(P, M) {
+  const L = [0]; for (let i = 1; i <= P.length; i++) L.push(L[i - 1] + Math.hypot(P[i % P.length][0] - P[i - 1][0], P[i % P.length][1] - P[i - 1][1]));
+  const tot = L[L.length - 1], out = []; let j = 0;
+  for (let k = 0; k < M; k++) {
+    const t = (tot * k) / M; while (L[j + 1] < t) j++;
+    const a = P[j], b = P[(j + 1) % P.length], u = (t - L[j]) / (L[j + 1] - L[j] || 1);
+    out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
+  }
+  return out;
+}
 function randomStroke(board, propeller) {
   const [BW, BH] = board, M = 420;
   const style = Math.random();
+  // what kind of random: classic waves (~30%), noodle (~40%), scatter spline (~15%), wild waves (~15%)
+  const kind = propeller ? "classic" : style < 0.3 ? "classic" : style < 0.7 ? "noodle" : style < 0.85 ? "scatter" : "wild";
   const co = [];
   // big slow waves fold the loop over itself (bridges); small fast ones add twisty bits.
   // (fast waves are kept gentle: too strong and the curve gets cusps no car could drive)
-  const AMP = style < 0.5 ? [0.6, 0.32, 0.15, 0.08, 0.045] : [0.42, 0.3, 0.17, 0.1, 0.05];
-  for (let k = 2; k <= 6; k++) {
+  const AMP = kind === "wild" ? [0.5, 0.36, 0.22, 0.13, 0.09, 0.05, 0.035, 0.025] : style < 0.15 ? [0.6, 0.32, 0.15, 0.08, 0.045] : [0.42, 0.3, 0.17, 0.1, 0.05];
+  for (let k = 2; k < 2 + AMP.length; k++) {
     const a = AMP[k - 2];
     co.push({ k, ax: gauss() * a, bx: gauss() * a, ay: gauss() * a, by: gauss() * a });
   }
-  const eight = style > 0.78;       // figure-eight base shape: always at least one bridge
-  const raw = propeller ? propellerRaw(M) : [];
-  for (let s = 0; s < M && !propeller; s++) {
+  const eight = kind !== "noodle" && kind !== "scatter" && Math.random() < 0.25;   // figure-eight base shape: always at least one bridge
+  const raw = propeller ? propellerRaw(M) : kind === "noodle" ? rawNoodle(M) : kind === "scatter" ? rawScatter(M) : [];
+  const wave = !raw.length;
+  for (let s = 0; s < M && wave; s++) {
     const th = (s / M) * Math.PI * 2;
     let x = eight ? Math.sin(th) : Math.cos(th), y = eight ? Math.sin(2 * th) * 0.7 : Math.sin(th);
     for (const c of co) { const s1 = Math.sin(c.k * th), c1 = Math.cos(c.k * th); x += c.ax * c1 + c.bx * s1; y += c.ay * c1 + c.by * s1; }
@@ -587,18 +652,18 @@ function strokeOk(st) {
   return true;
 }
 function makeRandomTrack(board) {
-  const wantDouble = Math.random() < 0.4;
+  const wantDouble = Math.random() < 0.22;
   let best = null, bestScore = -Infinity, fallback = null;
   const t0 = Date.now();
   for (let tries = 0; tries < 400 && Date.now() - t0 < (best ? 1200 : 3000); tries++) {
-    const stroke = randomStroke(board, wantDouble && tries % 2 === 0);
+    const stroke = randomStroke(board, wantDouble && tries % 3 === 0);
     if (!strokeOk(stroke)) continue;
     const shape = buildTrack(stroke, board);
     if (!shape.error && !fallback) fallback = { stroke, shape };
     if (shape.error) continue;
     const r = rateTrack(shape);
     if (!r || r.crossings > 5) continue;
-    let score = Math.min(r.corners, 14) + r.twist * 0.6 + Math.min(r.crossings, 3) * 5 + Math.random() * 4;
+    let score = Math.min(r.corners, 20) + r.twist * 0.9 + Math.min(r.crossings, 3) * 5 + Math.random() * 10;
     if (r.crossings === 0) score -= 12;
     if (r.maxLevel >= 2) score += wantDouble ? 14 : 3;
     if (score > bestScore) { bestScore = score; best = { stroke, shape }; }
@@ -685,8 +750,8 @@ class Room {
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
   lobbyMsg() {
     return {
-      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.settings, raceNo: this.raceNo, public: this.public,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0 })),
+      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason,
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid })),
       trackName: this.trackName,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
       roster: this.roster.slice(0, this.settings.ai),
@@ -708,7 +773,7 @@ class Room {
   teamOrder() { return Object.entries(this.teamChamp).map(([n, p]) => ({ n, p })).sort((a, b) => b.p - a.p); }
 
   addPlayer(socket, profile) {
-    const p = { id: socket.id, ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false };
+    const p = { id: socket.id, ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false, uid: socket.data.uid || null, extras: socket.data.extras || null };
     this.players.set(socket.id, p);
     if (!this.hostId) this.hostId = socket.id;
     socket.leave("menu"); socket.join(this.code); socket.data.room = this.code;
@@ -752,7 +817,8 @@ class Room {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
-    this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null;
+    this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.trackId = null;
+    this.trackBy = kind === "drawn" ? this.players.get(this.hostId)?.uid || null : null;   // for the "Architect" achievement
     // random and real tracks put the start line on their best straight; drawn ones start where you started drawing
     this.track = finalizeTrack(shape, kind === "drawn" ? 0 : bestStart(shape), false, this.allTeams());
     this.stroke = stroke.slice(0, 8000).map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10, Math.round(clamp(Number(q[2]) || TRACK_W, MIN_W, MAX_W))]);
@@ -786,7 +852,9 @@ class Room {
     const [BW, BH] = MAP_SIZES[map];
     s = Math.min(s, BW * 0.9 / tr.w, BH * 0.9 / tr.h);
     const ox = (BW - tr.w * s) / 2, oy = (BH - tr.h * s) / 2;
-    return this.setTrack(tr.pts.map(([x, y]) => [ox + x * s, oy + y * s, TRACK_W]), map, "f1", tr.name);
+    const err = this.setTrack(tr.pts.map(([x, y]) => [ox + x * s, oy + y * s, TRACK_W]), map, "f1", tr.name);
+    if (!err) this.trackId = tr.id;
+    return err;
   }
   // "Smooth track" switched on/off: rebuild the current track from the same drawing
   rebuildSmooth() {
@@ -816,7 +884,12 @@ class Room {
     for (const h of humans.filter((h) => h.gridPos > 0).sort((a, b) => a.gridPos - b.gridPos)) {
       let i = clamp(h.gridPos - 1, 0, total - 1); while (order[i]) i = (i + 1) % total; order[i] = { human: h };
     }
-    const rest = [...Array.from({ length: aiCount }, (_, a) => ({ ai: a })), ...humans.filter((h) => !(h.gridPos > 0)).map((h) => ({ human: h }))];
+    // random spot (-1): any free slot on the whole grid, rolled again every race
+    for (const h of humans.filter((h) => h.gridPos === -1).sort(() => Math.random() - 0.5)) {
+      const free = order.map((o, i) => (o ? -1 : i)).filter((i) => i >= 0);
+      order[free[Math.floor(Math.random() * free.length)]] = { human: h };
+    }
+    const rest = [...Array.from({ length: aiCount }, (_, a) => ({ ai: a })), ...humans.filter((h) => !(h.gridPos > 0) && h.gridPos !== -1).map((h) => ({ human: h }))];
     for (let i = 0; i < total; i++) if (!order[i]) order[i] = rest.shift();
     order.forEach((slot, g) => {
       const row = Math.floor(g / 2), col = g % 2;
@@ -828,6 +901,7 @@ class Room {
         tire: 1, onTrack: true, inPit: false, pitting: 0, pitTotal: 0, mistakeT: 0, mistakeDir: 1, spin: 0, crashT: 0, damage: 0,
         passOff: 0, passT: 0, gridLane: lat, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
         cleanLap: true, launchAt: 0, boostUntil: 0, slide: 0, speed: 0, surface: 0, punct: false, compound: "inter", laneKey: 0,
+        rs: { overtakes: 0, crashes: 0, cleanLaps: 0, slips: 0, boostSec: 0, maxWet: 0, usedWets: false, grid: g + 1 },
         nitro: 1, nitroOn: false, regenT: 0, aiNitro: false, slip: false, yawMax: STEER_LOCK, gripF: 1, chase: false, attack: false,
         aggr: 0.8 + Math.random() * 0.5, nitroMin: 0.25 + Math.random() * 0.25, power: 1,
       };
@@ -877,7 +951,7 @@ class Room {
     this.nextWeather = w === "dynamic" ? 25 + Math.random() * 45 : Infinity;
     this.phase = "tires";
     this.tiresUntil = Date.now() + TIRE_PICK_TIME;
-    this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed });
+    this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed });
     for (const p of this.players.values()) this.resendOffer(p);
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS, perLap: this.perLapAll() });
     this.sendLobby();
@@ -1043,13 +1117,24 @@ class Room {
     this.collide();
     const order = this.standings();
     for (let i = 0; i < order.length; i++) order[i].ahead = i ? order[i - 1] : null;
+    // AI drivers get the overtake boost too
+    for (let i = 0; i < order.length; i++) {
+      const c = order[i]; if (c.owner || c.finished) { c.lastPos = i + 1; continue; }
+      if (c.lastPos && i + 1 < c.lastPos && !order.slice(i + 1, c.lastPos).some((r) => r.pitting || r.inPit) && this.time > 5) c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST * (c.lastPos - i - 1));
+      c.lastPos = i + 1;
+    }
     for (const p of this.players.values()) {
       const c = this.carOf(p.id); if (!c || c.finished) continue;
       const pos = order.indexOf(c) + 1;
       if (pos < p.lastPos) {
         for (let i = pos; i < p.lastPos; i++) {
           const rival = order[i];
-          if (this.time - (p.passCd.get(rival.id) || -99) > 8) { p.passCd.set(rival.id, this.time); this.addXp(p, 55, `${c.name} passed ${rival.name}! +55 XP`); }
+          if (this.time - (p.passCd.get(rival.id) || -99) > 8) {
+            p.passCd.set(rival.id, this.time);
+            c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST);          // every overtake: +10% boost
+            if (c.rs) c.rs.overtakes++;
+            this.addXp(p, 55, `${c.name} passed ${rival.name}! +55 XP ⚡+10%`);
+          }
         }
       } else if (pos > p.lastPos) {
         const by = order[pos - 2];
@@ -1270,7 +1355,7 @@ class Room {
       // mistakes: rare, mostly in corners, more with worn tires / slicks in the rain / pushing hard
       if (!calm && !cooldown && av < MAX_SPEED * 0.75 && c.mistakeT <= 0) {
         let rate = (p ? 0.03 : 0.015) * st.mistakes;
-        if (dryTires) rate *= 1 + 4 * this.wet;
+        if (dryTires) rate *= 1 + 2 * this.wet;
         if (c.tire < 0.25) rate *= 2;
         if (c.attack) rate *= 1.5;
         if (Math.random() < rate * dt) {
@@ -1307,8 +1392,9 @@ class Room {
     return true;
   }
   tireGrip(w) { return 0.45 + 0.55 * Math.sqrt(Math.max(0, w)); }
-  compoundSpeed(c) { return COMPOUNDS[c.compound].speed * (c.compound === "wet" ? 1 : 1 - 0.1 * this.wet); }
-  weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.55 * this.wet); }
+  // dry tires in the wet: slower everywhere, and from ~60% wet a LOT slower (about -25% at 100%)
+  compoundSpeed(c) { return COMPOUNDS[c.compound].speed * (c.compound === "wet" ? 1 : 1 - 0.08 * this.wet - 0.17 * clamp((this.wet - 0.5) / 0.4, 0, 1)); }
+  weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.45 * this.wet); }
   tireSpeed(w) { return w <= 0 ? 0.62 : 0.86 + 0.14 * Math.min(1, w * 3); }
 
   physics(c, input, dt) {
@@ -1367,27 +1453,34 @@ class Room {
     if (c.surface === 2) gripF *= 0.55; else if (c.surface === 3) gripF *= 0.4;
     if (c.punct) gripF *= 0.35;
     const av = Math.abs(vF);
+    if (c.rs) {
+      if (c.nitroOn) c.rs.boostSec += dt;
+      if (this.wet > c.rs.maxWet) c.rs.maxWet = this.wet;
+      if (c.compound === "wet" && this.wet >= 0.45) c.rs.usedWets = true;
+    }
     c.yawMax = Math.min(STEER_LOCK * clamp(av / 140, 0.2, 1), (LAT_GRIP * st.cornerPace * st.cornerPace * gripF) / Math.max(av, 1));
-    const aquaNow = c.compound !== "wet" && this.wet >= AQUA_WET && !c.inPit ? 0.45 : 1;   // steering barely bites
-    const control = (c.crashT > 0 ? 0.25 : 1) * aquaNow;
+    const control = c.crashT > 0 ? 0.25 : c.slipT > 0 ? 0.55 : 1;
     c.heading += input.steer * c.yawMax * Math.sign(vF || 1) * dt * control;
     let grip = st.grip * this.tireGrip(c.tire) * this.weatherGrip(c);
     if (c.surface === 2) grip *= 0.55; else if (c.surface === 3) grip *= 0.4;
     if (c.punct) { grip *= 0.35; c.heading += (Math.random() - 0.5) * 0.9 * dt; }
-    // Aquaplaning: 80-100% wet and not on wets = the car slides ALL over the place. The rear
-    // steps out in random directions every half second or so, the tires barely stop the slide,
-    // and it gets worse the faster you go (and the wetter it is).
-    c.aqua = 0;
-    if (c.compound !== "wet" && this.wet >= AQUA_WET && !c.inPit && av > 60) {
-      const a = (0.65 + 0.35 * clamp((this.wet - AQUA_WET) / (1 - AQUA_WET), 0, 1)) * clamp(av / 450, 0.3, 1);
-      c.aqua = a;
-      c.aquaT = (c.aquaT || 0) - dt;
-      if (c.aquaT <= 0) { c.aquaT = 0.35 + Math.random() * 0.7; c.aquaYaw = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 1.6); }
-      c.heading += (c.aquaYaw || 0) * a * dt;
-      vS += (c.aquaYaw || 0) * a * av * 0.9 * dt;
-      grip *= 1 - 0.85 * a;
-      if (p && !c.aquaWarned) { c.aquaWarned = true; io.to(p.id).emit("toast", `${c.name}: "I'm aquaplaning everywhere! Box for wets!"`); }
-    } else if (this.wet < AQUA_WET - 0.1) c.aquaWarned = false;
+    // Heavy rain on the wrong tires: every so often (about 1-3 times a lap) the rear steps out
+    // for most of a second. Scary, costs time, but the driver catches it.
+    if (c.compound !== "wet" && this.wet >= SLIP_WET && !c.inPit && av > 200 && !(c.slipT > 0)) {
+      const chance = 0.035 + 0.035 * clamp((this.wet - SLIP_WET) / (1 - SLIP_WET), 0, 1);
+      if (Math.random() < chance * dt) {
+        if (c.rs) c.rs.slips++;
+        c.slipT = 0.55 + Math.random() * 0.3; c.slipYaw = (Math.random() < 0.5 ? -1 : 1) * (0.9 + Math.random() * 0.5);
+        if (p) io.to(p.id).emit("toast", c.slipWarned ? `${c.name} slides on the wet track!` : `${c.name}: "Whoa, nearly lost it! We need wets!"`);
+        c.slipWarned = true;
+      }
+    }
+    if (c.slipT > 0) {
+      c.slipT -= dt;
+      c.heading += c.slipYaw * dt;
+      vS += c.slipYaw * av * 0.5 * dt;
+      grip *= 0.35;
+    }
     vS *= Math.exp(-grip * dt);
     const nfx = Math.cos(c.heading), nfy = Math.sin(c.heading);
     c.vx = nfx * vF - nfy * vS; c.vy = nfy * vF + nfx * vS;
@@ -1449,6 +1542,7 @@ class Room {
         if (c.lapsDone > 1) { this.emit("feed", { t: "fastest", name: c.name, time: lt }); if (p) this.addXp(p, 80, "Fastest lap! +80 XP"); }
       }
       if (p) { this.addXp(p, 30, "Lap done +30 XP"); if (c.cleanLap) this.addXp(p, 60, "Clean lap +60 XP"); }
+      if (c.cleanLap && c.rs) c.rs.cleanLaps++;
     }
     c.lapStart = this.time; c.cleanLap = true;
     // boost: half a tank back every time you cross the line (more with Nitro Refill)
@@ -1527,7 +1621,7 @@ class Room {
       if (c.crashT > 0.3) continue;
       c.vx *= 0.35 - 0.15 * k; c.vy *= 0.35 - 0.15 * k;
       const side = Math.sign((-Math.sin(c.heading)) * nx * sgn + Math.cos(c.heading) * ny * sgn) || 1;
-      c.spin = side * (4 + 6 * k); c.crashT = 0.9 + 0.8 * k;
+      c.spin = side * (4 + 6 * k); c.crashT = 0.9 + 0.8 * k; if (c.rs) c.rs.crashes++;
       c.damage = clamp(c.damage + 0.3 + 0.5 * k, 0, 1);
       c.tire = Math.max(0, c.tire - 0.05 - 0.1 * k);
       c.cleanLap = false; c.passT = 0; c.aiNitro = false;
@@ -1613,12 +1707,13 @@ class Room {
     // upgrades only mean something during a race: clear any cards still waiting
     for (const p of this.players.values()) { p.offer = null; p.pendingPicks = 0; io.to(p.id).emit("offerCleared"); }
     const len = this.settings.season, seasonOver = len > 0 && this.raceNo >= len;
-    const season = seasonOver ? {
+    const season = seasonOver ? this.lastSeason = {
       races: this.raceNo, drivers: this.champOrder().slice(0, 5), teams: this.settings.teams ? this.teamOrder().slice(0, 5) : [],
       history: this.history, colors: this.seasonColors,
       mine: { drivers: rows.filter((r) => r.owner).map((r) => r.name), teams: [...new Set(players.map((p) => p.team).filter(Boolean))] },
     } : null;
     this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season });
+    this.recordStats(order, rows, season);
     this.sendLobby();
     setTimeout(() => {
       if (this.phase === "results") {
@@ -1627,6 +1722,37 @@ class Room {
         this.sendLobby();
       }
     }, seasonOver ? 40000 : 12000);
+  }
+
+  // save everyone's stats to their account (signed-in players only) and hand out achievements
+  recordStats(order, rows, season) {
+    const humans = order.filter((c) => c.owner && this.players.get(c.owner));
+    const fastestCar = order.find((c) => c.bestLap === this.fastest && isFinite(c.bestLap));
+    const maxLevel = this.track ? Math.round(Math.max(0, ...this.track.elev)) : 0;
+    const kmPerLap = this.track ? this.track.length / 4200 : 0;
+    for (const c of humans) {
+      const p = this.players.get(c.owner); if (!p?.uid) continue;
+      const pos = order.indexOf(c) + 1, rs = c.rs || {};
+      const r = {
+        pos, of: order.length, grid: rs.grid || order.length, finished: !!c.finished, pts: rows[pos - 1]?.pts || 0,
+        laps: this.settings.laps, lapsDone: Math.max(0, c.lapsDone), km: Math.max(0, c.lapsDone) * kmPerLap,
+        overtakes: rs.overtakes || 0, crashes: rs.crashes || 0, cleanLaps: rs.cleanLaps || 0, slips: rs.slips || 0,
+        boostSec: rs.boostSec || 0, maxWet: rs.maxWet || 0, usedWets: !!rs.usedWets, pits: c.pits,
+        best: isFinite(c.bestLap) ? c.bestLap : 0, fastestLap: fastestCar === c,
+        reaction: p.reaction > 0 ? p.reaction : 0, jump: !!p.jump, level: p.level,
+        upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
+        humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
+        kind: this.trackKind, trackId: this.trackId, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
+        raceSec: this.time || 0,
+        champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
+      };
+      accounts.getUser(p.uid).then((u) => {
+        if (!u) return;
+        const got = accounts.recordRace(u, r);
+        io.to(p.id).emit("account", accounts.publicUser(u));
+        for (const a of got) io.to(p.id).emit("achievement", a);
+      }).catch((e) => console.log("stats error", e.message));
+    }
   }
 
   gaps(order) {
@@ -1711,7 +1837,7 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (["sunny", "rain", "dynamic"].includes(s?.weather)) S.weather = s.weather;
-    if (["grass", "desert", "snow", "night"].includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
+    if (["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"].includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
     if ([1, 2, 3].includes(Number(s?.speed))) S.speed = Number(s.speed);
     if (WEAR_LEVELS[s?.wear]) S.wear = s.wear;
     if (MAP_SIZES[s?.map] && !r.track) S.map = s.map;
@@ -1739,8 +1865,52 @@ io.on("connection", (socket) => {
   socket.on("gridPos", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const p = r.players.get(d?.id); if (!p) return;
-    p.gridPos = clamp(Math.round(Number(d.pos) || 0), 0, MAX_PLAYERS + MAX_AI);
+    p.gridPos = clamp(Math.round(Number(d.pos) || 0), -1, MAX_PLAYERS + MAX_AI);   // -1 = random spot every race
     r.sendLobby();
+  });
+  // ---- accounts ----
+  const signedIn = async (res) => {
+    socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u);
+    socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
+    const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
+  };
+  const authFail = (e) => socket.emit("authError", e.message || "Sign-in failed");
+  socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || "")).then(signedIn, authFail); });
+  socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
+  socket.on("auth:resume", async (d) => {
+    try {
+      const u = await accounts.userBySession(String(d?.token || ""));
+      if (!u) return socket.emit("signedOut");
+      socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
+      socket.emit("account", accounts.publicUser(u));
+      const p = me(); if (p) { p.uid = u.id; p.extras = socket.data.extras; room().sendLobby(); }
+    } catch (e) { authFail(e); }
+  });
+  socket.on("auth:signout", async (d) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (u) accounts.dropSession(u, String(d?.token || ""));
+    socket.data.uid = null; socket.data.extras = null;
+    const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
+    socket.emit("signedOut");
+  });
+  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE }));
+  const storeAction = async (fn) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (!u) return socket.emit("toast", "Sign in to use the store");
+    const res = fn(u);
+    if (res.error) return socket.emit("toast", res.error);
+    socket.data.extras = accounts.extrasOf(u);
+    socket.emit("account", accounts.publicUser(u));
+    for (const a of res.got || []) socket.emit("achievement", a);
+    const p = me(); if (p && room().phase === "lobby") { p.extras = socket.data.extras; room().sendLobby(); }
+  };
+  socket.on("store:buy", (id) => storeAction((u) => accounts.buy(u, String(id))));
+  socket.on("store:equip", (d) => storeAction((u) => accounts.equip(u, String(d?.slot || ""), d?.id == null ? null : String(d.id))));
+  socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
+  socket.on("gridRandomAll", () => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    for (const p of r.players.values()) p.gridPos = -1;
+    r.sendLobby(); r.emit("toast", "🎲 Everyone gets a random grid spot each race.");
   });
   socket.on("randomTrack", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;

@@ -667,6 +667,112 @@
   .fin-table .mv.same { color: var(--soft); }
   .fin-table .pt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   @media (max-width: 860px) { .fin-main { grid-template-columns: 1fr; } .fin-card { padding: 0.9rem; } #finChart { height: 16rem; } .fin-table { max-height: none; } }
+
+  /* =================== Phone mode =================== */
+  .edit-track-btn, .done-btn { display: none; }
+  .grid-random { width: 100%; margin: 0.2rem 0 0.4rem; font-size: 0.85rem; }
+  body.phone .edit-track-btn { display: flex; width: 100%; font-size: 1.1rem; }
+  body.phone .edit-track-btn.hidden { display: none !important; }
+  body.phone:not(.editing-track) #board { touch-action: pan-x pan-y; cursor: pointer; }
+  body.phone:not(.editing-track) .dock, body.phone:not(.editing-track) .cut-bar { display: none !important; }
+  body.phone:not(.editing-track) .board-wrap { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.45rem; height: auto; }
+  body.phone:not(.editing-track) .board-wrap > * { flex-shrink: 0; }
+  body.phone:not(.editing-track) .board-hint { position: static; transform: none; white-space: normal; text-align: center; order: -1; }
+  body.phone:not(.editing-track) #board { height: auto; aspect-ratio: 1.55; flex: 0 0 auto; border-radius: 0.6rem; }
+  body.phone:not(.editing-track) .track-card { position: static; grid-template-columns: repeat(3, auto); justify-content: center; }
+  /* room panel: tabs stay at the top and Start race stays at the bottom while you scroll */
+  body.phone .rc-tabs { position: sticky; top: 0; z-index: 4; background: var(--panel-solid); border-radius: 1rem 1rem 0 0; }
+  body.phone .rc-foot { position: sticky; bottom: 0; z-index: 4; background: var(--panel-solid); border-radius: 0 0 1rem 1rem; padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px)); }
+  body.phone .rc-tabs button { min-height: 3rem; }
+  body.phone .btn, body.phone select, body.phone input[type="text"], body.phone input[type="number"] { min-height: 2.8rem; }
+  @media (max-width: 860px) {
+    /* a plain column that grows with its content (the grid rows kept squashing the board) */
+    body.phone #lobby { display: flex; flex-direction: column; overflow-y: auto; }
+    body.phone #lobby > * { flex-shrink: 0; }
+    body.phone #lobby > .rc-top { order: 0; } body.phone #lobby > .board-wrap { order: 1; overflow: visible; } body.phone #lobby > .rc-side { order: 2; overflow: visible; }
+    body.phone .rc-body { overflow: visible; }
+  }
+
+  /* full-screen track editor */
+  body.editing-track .board-wrap {
+    position: fixed; inset: 0; z-index: 50; border-radius: 0; border: 0; margin: 0; animation: none;
+    display: flex; flex-direction: column; gap: 0.4rem; background: var(--bg);
+    padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.4rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  }
+  body.editing-track .board-hint { position: static; transform: none; order: -1; white-space: normal; text-align: center; font-size: 0.85rem; padding: 0.35rem 0.6rem; }
+  body.editing-track #board { flex: 1 1 auto; min-height: 0; height: auto; aspect-ratio: auto; touch-action: none; border-radius: 0.6rem; }
+  body.editing-track .edit-track-btn, body.editing-track .track-card { display: none !important; }
+  body.editing-track .cut-bar { position: static; transform: none; flex-wrap: wrap; justify-content: center; }
+  body.editing-track .dock { position: static; transform: none; width: auto; max-height: none; display: flex; flex-direction: column; gap: 0.4rem; padding: 0.4rem; overflow: visible; }
+  body.editing-track .done-btn { display: flex; order: 9; width: 100%; min-height: 3rem; font-size: 1.1rem; background: var(--green); border-color: var(--green); color: #0d2414; }
+  body.editing-track .dock-group { display: flex; flex-direction: row; flex-wrap: wrap; gap: 0.35rem; align-items: stretch; }
+  body.editing-track .dock-label { display: none; }
+  body.editing-track .dock .tool { width: auto; flex: 1 1 4.6rem; min-width: 4.4rem; min-height: 3rem; flex-direction: row; justify-content: center; gap: 0.3rem; padding: 0.45rem 0.4rem; font-size: 0.82rem; }
+  body.editing-track .dock .tool span { font-size: 1.1rem; }
+  body.editing-track #boardTools { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; padding-bottom: 2px; mask-image: linear-gradient(90deg, #000 88%, transparent); }
+  body.editing-track #boardTools .tool { flex: 0 0 auto; }
+  body.editing-track .brush { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
+  body.editing-track .brush button { min-height: 2.6rem; }
+  body.editing-track .credit { display: none; }
+  @media (orientation: landscape) {
+    body.editing-track .board-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, 32%); grid-template-rows: auto minmax(0, 1fr) auto; }
+    body.editing-track .board-hint { grid-column: 1 / -1; }
+    body.editing-track #board { grid-column: 1; grid-row: 2 / 4; height: 100%; }
+    body.editing-track .dock { grid-column: 2; grid-row: 2; overflow-y: auto; }
+    body.editing-track .cut-bar { grid-column: 2; grid-row: 3; }
+    body.editing-track #boardTools { flex-wrap: wrap; overflow: visible; mask-image: none; }
+    body.editing-track #boardTools .tool { flex: 1 1 45%; }
+  }
+
+  /* =================== Accounts, profile hub =================== */
+  .acct-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem 1rem; flex-wrap: wrap; padding: 0.65rem 0.8rem; border-radius: 0.9rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
+  @media (min-width: 900px) { .acct-bar { grid-column: 1 / -1; } }
+  .acct-who { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+  .acct-av { width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.08); font-size: 1.2rem; overflow: hidden; flex: 0 0 auto; }
+  .acct-av img { width: 100%; height: 100%; object-fit: cover; }
+  .acct-txt { display: flex; flex-direction: column; min-width: 0; }
+  .acct-txt small { color: var(--soft); font-size: 0.8rem; }
+  .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+  .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+  .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
+  #hub { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  .hub-card { width: min(56rem, 100%); max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; padding: 1rem 1.2rem; gap: 0.7rem; animation: rise 400ms cubic-bezier(.2,.9,.25,1.15) both; }
+  .hub-head { display: flex; align-items: center; gap: 0.8rem; }
+  .hub-head h2 { margin: 0; flex: 1; font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.6rem; }
+  .hub-tabs { display: flex; gap: 0.3rem; border-bottom: 1.5px solid var(--edge); overflow-x: auto; }
+  .hub-tabs button { cursor: pointer; border: 0; background: none; color: var(--soft); font-weight: 700; font-size: 0.95rem; padding: 0.55rem 0.9rem; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .hub-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--yellow); }
+  .hub-count { font-size: 0.75rem; color: var(--soft); }
+  .hub-guest { margin: 0; padding: 0.6rem 0.8rem; border-radius: 0.7rem; background: rgba(79,163,255,0.12); border: 1.5px solid rgba(79,163,255,0.4); font-size: 0.9rem; }
+  .hub-body { overflow-y: auto; min-height: 12rem; padding-right: 0.2rem; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 0.5rem; }
+  .stat { padding: 0.6rem 0.75rem; border-radius: 0.7rem; background: var(--panel-2); border: 1.5px solid var(--edge); display: flex; flex-direction: column; gap: 0.1rem; }
+  .stat b { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--soft); font-size: 0.78rem; font-weight: 600; }
+  .stat.hl b { color: var(--yellow); }
+  .hub-h { margin: 0.9rem 0 0.45rem; font-size: 0.95rem; color: var(--soft); }
+  .hub-h:first-child { margin-top: 0; }
+  .ach-bar { height: 0.55rem; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; margin-bottom: 0.7rem; }
+  .ach-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffcc1f, #ff9f1c); }
+  .ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.45rem; }
+  .ach { display: grid; grid-template-columns: 2.4rem 1fr auto; align-items: center; gap: 0.55rem; padding: 0.5rem 0.65rem; border-radius: 0.7rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
+  .ach .ic { font-size: 1.5rem; text-align: center; filter: grayscale(1); opacity: 0.45; }
+  .ach b { display: block; font-size: 0.9rem; } .ach small { color: var(--soft); font-size: 0.78rem; }
+  .ach .rw { font-size: 0.78rem; font-weight: 800; color: var(--soft); white-space: nowrap; }
+  .ach.got { border-color: rgba(255,204,31,0.55); background: linear-gradient(100deg, rgba(255,204,31,0.12), rgba(255,204,31,0.02)); }
+  .ach.got .ic { filter: none; opacity: 1; } .ach.got .rw { color: var(--green); }
+  .store-slot { margin-bottom: 0.9rem; }
+  .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.5rem; }
+  .item { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
+  .item canvas { width: 100%; height: auto; border-radius: 0.5rem; background: rgba(0,0,0,0.25); }
+  .item b { font-size: 0.85rem; }
+  .item .btn { min-height: 2.2rem; font-size: 0.82rem; padding: 0.3rem 0.5rem; }
+  .item.on { border-color: var(--yellow); }
+  .item .price { font-weight: 800; color: var(--yellow); font-size: 0.85rem; }
+  .ach-pop { position: fixed; left: 50%; top: 1rem; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 1rem 0.6rem 0.7rem; border-radius: 1rem; background: linear-gradient(100deg, #2b2410, #1a1d25); border: 2px solid var(--yellow); box-shadow: 0 12px 30px rgba(0,0,0,0.5); animation: achIn 4.2s ease both; pointer-events: none; }
+  .ach-pop .ic { font-size: 2rem; } .ach-pop small { display: block; color: var(--yellow); font-weight: 800; font-size: 0.75rem; }
+  .ach-pop b { font-size: 1rem; }
+  @keyframes achIn { 0% { opacity: 0; transform: translate(-50%, -30px) scale(0.9); } 10%, 85% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -20px); } }
   body.rm *, body.rm *::before, body.rm *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 </style>
 </head>
@@ -682,6 +788,21 @@
       <h1 class="logo display">Scribble <span>GP</span></h1>
       <p class="tag">Team Boss</p>
       <div class="online" id="onlineLine" role="status"><span class="live"></span><span id="onlineText">Connecting...</span></div>
+    </div>
+    <div class="acct-bar" id="acctBar">
+      <div class="acct-who" id="acctWho">
+        <span class="acct-av" id="acctAv" aria-hidden="true">👤</span>
+        <div class="acct-txt"><b id="acctName">Playing as a guest</b><small id="acctSub">Sign in to save your stats, earn coins and unlock car parts.</small></div>
+      </div>
+      <div class="acct-actions">
+        <div id="gsiBtn"></div>
+        <button type="button" class="btn hidden" id="devLoginBtn">🧪 Test login</button>
+        <span class="coins hidden" id="acctCoins" title="Coins: earned from achievements, spent in the store">🪙 0</span>
+        <button type="button" class="btn" data-hub="stats">📊 Stats</button>
+        <button type="button" class="btn" data-hub="ach">🏅 Achievements</button>
+        <button type="button" class="btn" data-hub="store">🛒 Store</button>
+        <button type="button" class="btn ghost hidden" id="signOutBtn">Sign out</button>
+      </div>
     </div>
     <section class="menu-car" aria-labelledby="carHead">
     <h2 class="menu-h" id="carHead">Your car</h2>
@@ -731,6 +852,7 @@
     <div class="rc-avatars" id="avatars" aria-label="Players in this room"></div>
     <div class="rc-spacer"></div>
     <button type="button" class="btn" id="garageBtn">🏎️ My car</button>
+    <button type="button" class="btn" data-hub="stats" title="Stats, achievements and store">🏅 Profile</button>
     <button type="button" class="gear rc-gear" data-settings aria-label="Settings">⚙</button>
     <button type="button" class="btn ghost" id="leaveBtn">Leave</button>
   </header>
@@ -747,6 +869,7 @@
       <section class="rc-pane" data-pane="drivers">
         <p class="pane-lead">Everyone in the room is the boss of their own team.</p>
         <ul class="plist" id="plist"></ul>
+        <button type="button" class="btn grid-random hidden" id="gridRandomBtn" title="Every player starts in a random spot, rolled again each race">🎲 Random grid for everyone</button>
         <div class="sect">Teams</div>
         <p class="teams-off hidden" id="teamsOff">Teams are off: everyone races for themselves (own garage, no team points). The host can turn them on in the Race tab.</p>
         <div id="teamsSection" style="display:flex;flex-direction:column;gap:0.6rem">
@@ -761,7 +884,7 @@
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
           <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
-          <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option></select></label>
+          <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
           <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
           <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
           <label class="f wide">Weather <select id="sWeather"><option value="sunny">☀ Always sunny</option><option value="rain">🌧 Always rainy</option><option value="dynamic">⛅ Dynamic (changes mid-race)</option></select></label>
@@ -798,7 +921,8 @@
         </details>
       </section>
       <section class="rc-pane" data-pane="standings" hidden>
-        <div class="sect" id="champTitle">Championship</div>
+        <button type="button" class="btn go hidden" id="lastSeasonBtn">🏆 See how last season went</button>
+          <div class="sect" id="champTitle">Championship</div>
         <div class="champ-tabs"><button type="button" id="champDrivers" aria-pressed="true">Drivers</button><button type="button" id="champTeams" aria-pressed="false">Teams</button></div>
         <table class="champ"><tbody id="champBody"></tbody></table>
         <button type="button" class="danger-btn" id="resetChampBtn">Reset championship</button>
@@ -812,8 +936,10 @@
 
   <main class="board-wrap panel">
     <canvas id="board" aria-label="Track drawing board"></canvas>
+    <button type="button" class="btn go edit-track-btn" id="editTrackBtn">✏️ Draw the track</button>
     <div class="board-hint panel" id="boardHint">Draw your track in one loop</div>
     <div class="dock panel" aria-label="Track tools">
+      <button type="button" class="btn done-btn" id="doneEditBtn">✓ Done</button>
       <div class="dock-group" id="drawMode">
         <span class="dock-label">Draw</span>
         <button type="button" class="tool" data-dm="free" aria-pressed="true" title="Drag to draw. Hold Shift for a straight bit"><span>✏️</span>Freehand</button>
@@ -830,7 +956,7 @@
         <button type="button" class="tool" id="startLineBtn" title="Then click on the track"><span>🏁</span>Start line</button>
         <button type="button" class="tool" id="reverseBtn"><span>🔄</span>Reverse</button>
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
-        <button type="button" class="tool" id="f1Btn" title="Race a real Formula 1 circuit"><span>🏆</span>F1 tracks</button>
+        <button type="button" class="tool" id="f1Btn" title="Race a real circuit (F1 tracks, the Nordschleife, ovals)"><span>🏆</span>Real tracks</button>
         <button type="button" class="tool" id="cutBtn" title="Pick a part of the track, delete it and draw it again"><span>✂️</span>Redraw part</button>
         <button type="button" class="tool" id="smoothBtn" aria-pressed="false" title="Straightens the straights and smooths the curves"><span>〰️</span>Smooth</button>
         <button type="button" class="tool danger" id="clearBtn"><span>🗑️</span>Clear</button>
@@ -931,6 +1057,26 @@
   </div>
 </div>
 
+<!-- ============ Profile hub: stats / achievements / store ============ -->
+<div id="hub" class="hidden" role="dialog" aria-modal="true" aria-labelledby="hubTitle">
+  <div class="hub-card panel">
+    <header class="hub-head">
+      <h2 id="hubTitle">Your profile</h2>
+      <span class="coins" id="hubCoins">🪙 0</span>
+      <button type="button" class="x" id="hubClose" aria-label="Close">✕</button>
+    </header>
+    <nav class="hub-tabs" role="tablist">
+      <button type="button" role="tab" data-ht="stats" aria-selected="true">📊 Stats</button>
+      <button type="button" role="tab" data-ht="ach" aria-selected="false">🏅 Achievements <span class="hub-count" id="achCount"></span></button>
+      <button type="button" role="tab" data-ht="store" aria-selected="false">🛒 Store</button>
+    </nav>
+    <p class="hub-guest hidden" id="hubGuest">You're playing as a guest, so nothing is saved. Sign in on the main menu to keep your stats, earn coins from achievements and spend them in the store.</p>
+    <div class="hub-body" id="hubStats"></div>
+    <div class="hub-body hidden" id="hubAch"></div>
+    <div class="hub-body hidden" id="hubStore"></div>
+  </div>
+</div>
+
 <!-- ============ Settings ============ -->
 <div id="settings" class="hidden" role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="set-card panel">
@@ -941,7 +1087,7 @@
 
 <div id="f1Modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="f1Title">
   <div class="f1-card panel">
-    <h2><span id="f1Title">Real F1 tracks</span><button type="button" class="x" id="f1Close" aria-label="Close">✕</button></h2>
+    <h2><span id="f1Title">Real tracks</span><button type="button" class="x" id="f1Close" aria-label="Close">✕</button></h2>
     <p class="pane-lead">Real circuit layouts, sized by their real length (Monaco is short, Spa is long). Suzuka even has its bridge!</p>
     <div class="f1-grid" id="f1Grid"></div>
   </div>
@@ -962,13 +1108,19 @@
   const LIVERIES = [["plain", "Plain"], ["stripes", "Stripes"], ["split", "Two-tone"], ["flames", "Flames"], ["checker", "Checker"]];
   const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
   const THEMES = {
-    grass:  { ground: "#4f8a3c", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.06)"], runoff: "#c9b98d", asphalt: "#3d3f45", curbA: "#f4f4f4", curbB: "#d32f2f", line: "rgba(255,255,255,0.45)" },
-    desert: { ground: "#d8b273", speck: ["rgba(255,255,255,0.08)", "rgba(120,70,20,0.1)"], runoff: "#e6c894", asphalt: "#4a4540", curbA: "#f4f4f4", curbB: "#ef6c00", line: "rgba(255,255,255,0.4)" },
-    snow:   { ground: "#e8eef3", speck: ["rgba(255,255,255,0.6)", "rgba(120,150,180,0.12)"], runoff: "#cfd9e1", asphalt: "#4b5159", curbA: "#f4f4f4", curbB: "#1e88e5", line: "rgba(255,255,255,0.5)" },
-    night:  { ground: "#17241b", speck: ["rgba(255,255,255,0.03)", "rgba(0,0,0,0.2)"], runoff: "#3a3527", asphalt: "#26282e", curbA: "#9aa0a6", curbB: "#b71c1c", line: "rgba(255,255,255,0.3)", night: true },
+    // tex = how the ground is painted (see tex()): mowing stripes, dune ripples, snow drifts, paving slabs...
+    grass:   { ground: "#4f8a3c", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.07)"], tex: "stripes", runoff: "#c9b98d", asphalt: "#3d3f45", curbA: "#f4f4f4", curbB: "#d32f2f", line: "rgba(255,255,255,0.45)" },
+    desert:  { ground: "#d8b273", speck: ["rgba(255,255,255,0.1)", "rgba(120,70,20,0.12)"], tex: "dunes", runoff: "#e6c894", asphalt: "#4a4540", curbA: "#f4f4f4", curbB: "#ef6c00", line: "rgba(255,255,255,0.4)" },
+    snow:    { ground: "#e8eef3", speck: ["rgba(255,255,255,0.7)", "rgba(120,150,180,0.14)"], tex: "drifts", runoff: "#cfd9e1", asphalt: "#4b5159", curbA: "#f4f4f4", curbB: "#1e88e5", line: "rgba(255,255,255,0.5)" },
+    night:   { ground: "#17241b", speck: ["rgba(255,255,255,0.03)", "rgba(0,0,0,0.22)"], tex: "stripes", runoff: "#3a3527", asphalt: "#26282e", curbA: "#9aa0a6", curbB: "#b71c1c", line: "rgba(255,255,255,0.3)", night: true },
+    autumn:  { ground: "#7c7a36", speck: ["rgba(230,120,30,0.28)", "rgba(190,50,30,0.22)"], tex: "leaves", runoff: "#b99a6b", asphalt: "#3f3b3a", curbA: "#f4f1e8", curbB: "#c2410c", line: "rgba(255,255,255,0.42)" },
+    beach:   { ground: "#e9d8a6", speck: ["rgba(255,255,255,0.35)", "rgba(160,120,60,0.12)"], tex: "dunes", runoff: "#f3e6bf", asphalt: "#474a52", curbA: "#ffffff", curbB: "#0ea5b7", line: "rgba(255,255,255,0.5)", water: "#2bb3c9" },
+    city:    { ground: "#7b8088", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.1)"], tex: "slabs", runoff: "#9aa0a8", asphalt: "#2e3036", curbA: "#ffd21f", curbB: "#1c1c1c", line: "rgba(255,255,255,0.5)" },
+    volcano: { ground: "#2b2320", speck: ["rgba(255,90,20,0.18)", "rgba(0,0,0,0.3)"], tex: "lava", runoff: "#4a3a33", asphalt: "#1f1c1c", curbA: "#ffb020", curbB: "#b91c1c", line: "rgba(255,190,120,0.45)" },
+    neon:    { ground: "#120d24", speck: ["rgba(180,120,255,0.08)", "rgba(0,0,0,0.3)"], tex: "grid", runoff: "#231a40", asphalt: "#18142a", curbA: "#22e6ff", curbB: "#ff2bd6", line: "rgba(120,240,255,0.6)", night: true },
   };
   const TIRES = {
-    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.2, grip: 0.35, life: 0.85, note: "Lasts a long time (not a whole race), but it's the slowest." },
+    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.35, grip: 0.35, life: 0.85, note: "Lasts a long time (not a whole race), but it's the slowest." },
     inter:   { name: "Intermediate", short: "I", color: "#ffcc1f", speed: 0.55, grip: 0.6, life: 0.55, note: "Right in the middle. A safe pick." },
     fast:    { name: "Fast", short: "F", color: "#e53935", speed: 1.0, grip: 0.85, life: 0.2, note: "The quickest, but they wear out fast." },
     wet:     { name: "Wets", short: "W", color: "#1e88e5", speed: 0.3, grip: 1.0, life: 0.5, note: "For rain. Slow and wear out fast on a dry track." },
@@ -988,6 +1140,7 @@
 
   // ======================= Settings (saved on this device) =======================
   const SETTINGS = [
+    { key: "phone", label: "Phone mode", hint: "Scroll the room without drawing by accident. Tap the board to open a full-screen track editor with big tools. Auto: on for phones.", def: "auto", opts: [["auto", "Auto"], ["on", "On"], ["off", "Off"]] },
     { key: "ui", label: "Interface size", hint: "How big buttons and text are (Auto: a bit smaller on phones)", def: "auto", opts: [["auto", "Auto"], ["s", "Small"], ["m", "Normal"], ["l", "Big"], ["xl", "Huge"]] },
     { key: "sound", label: "Sound effects", def: "med", opts: [["off", "Off"], ["low", "Low"], ["med", "Med"], ["high", "High"]] },
     { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
@@ -1020,6 +1173,12 @@
     reducedMotion = settings.motion === "on" || (settings.motion === "system" && sys);
     document.body.classList.toggle("rm", reducedMotion);
     mini.classList.toggle("hidden", settings.minimap === "off");
+    const phone = settings.phone === "on" || (settings.phone !== "off" && isTouch() && Math.min(window.innerWidth, window.innerHeight) < 760);
+    if (phone !== document.body.classList.contains("phone")) {
+      document.body.classList.toggle("phone", phone);
+      if (!phone && typeof setEditing === "function") setEditing(false);
+      requestAnimationFrame(() => { try { if (S.screen === "lobby") sizeBoard(); } catch (e) {} });
+    }
     try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
   }
   function renderSettings() {
@@ -1116,12 +1275,20 @@
     designCache.set(str, cv); return cv;
   }
   function drawCar(c, car, x, y, heading, scale, opts = {}) {
-    const L = CAR_LEN, Wd = CAR_WID;
+    const L = CAR_LEN, Wd = CAR_WID, X = car.extras || {};
+    const hueNow = (performance.now() / 8) % 360;
     c.save(); c.translate(x, y); c.rotate(heading); c.scale(scale, scale);
+    if (X.glow) {                            // store: underglow
+      const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow;
+      c.save(); c.globalAlpha = 0.55; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
+      rrect(c, -L / 2 - 2, -Wd / 2 - 3, L + 4, Wd + 6, 9); c.fill(); c.restore();
+    }
     c.fillStyle = "rgba(0,0,0,0.3)"; rrect(c, -L / 2 + 3, -Wd / 2 + 4, L, Wd, 7); c.fill();
-    if (opts.nitro) {                        // nitro boost: a long blue flame
-      const fl = 22 + Math.random() * 16;
-      c.fillStyle = "#3aa0ff"; c.beginPath(); c.moveTo(-L / 2, -7); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 7); c.fill();
+    if (opts.trailPreview && X.trail) { for (let k = 0; k < 4; k++) trailShape(c, X.trail, -L / 2 - 10 - k * 11, (k % 2 ? 4 : -4), 4.5 - k * 0.6, 1 - k * 0.2, k); }
+    if (opts.nitro || opts.flamePreview) {   // nitro boost: a long flame (blue, or the store colour)
+      const fl = opts.flamePreview ? 30 : 22 + Math.random() * 16;
+      c.fillStyle = X.flame === "rainbow" ? `hsl(${hueNow},100%,58%)` : X.flame || "#3aa0ff";
+      c.beginPath(); c.moveTo(-L / 2, -7); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 7); c.fill();
       c.fillStyle = "#d8f3ff"; c.beginPath(); c.moveTo(-L / 2, -3.5); c.lineTo(-L / 2 - fl * 0.55, 0); c.lineTo(-L / 2, 3.5); c.fill();
     }
     if (opts.boost) {
@@ -1131,6 +1298,7 @@
     }
     c.fillStyle = "#16171a";
     for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 6, wy * (Wd / 2) - 4, 12, 8);
+    if (X.rims) { c.fillStyle = X.rims; for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 3, wy * (Wd / 2) - 2.2, 6, 4.4); }
     // body
     c.save(); rrect(c, -L / 2, -Wd / 2, L, Wd, 7); c.clip();
     c.fillStyle = car.color; c.fillRect(-L / 2, -Wd / 2, L, Wd);
@@ -1150,12 +1318,40 @@
     c.lineWidth = 2; c.strokeStyle = "rgba(0,0,0,0.45)"; rrect(c, -L / 2, -Wd / 2, L, Wd, 7); c.stroke();
     c.fillStyle = "rgba(20,24,32,0.88)"; rrect(c, -6, -Wd / 2 + 4, 16, Wd - 8, 4); c.fill();
     c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(6, -Wd / 2 + 5, 3, Wd - 10);
+    if (X.helmet) { c.fillStyle = X.helmet; c.beginPath(); c.arc(0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect(1.5, -3, 2, 6); }
+    if (X.wing) {                             // store: rear wing
+      const wc = darken(car.color, 0.45);
+      if (X.wing === "duck") { c.fillStyle = wc; rrect(c, -L / 2 - 1, -Wd / 2 + 2, 4, Wd - 4, 2); c.fill(); }
+      else {
+        const decks = X.wing === "twin" ? [-L / 2 - 3, -L / 2 + 2] : [-L / 2 - 2];
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5);
+        for (const dx of decks) { c.fillStyle = wc; c.fillRect(dx, -Wd / 2 - 2.5, 3.5, Wd + 5); c.fillStyle = "rgba(255,255,255,0.35)"; c.fillRect(dx + 0.5, -Wd / 2 - 2, 1, Wd + 4); }
+      }
+    }
     // number
-    c.fillStyle = "#fff"; c.beginPath(); c.arc(-14, 0, 7, 0, Math.PI * 2); c.fill();
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"] }[X.num] || ["#fff", "#111"];
+    c.fillStyle = NP[0]; c.beginPath(); c.arc(-14, 0, 7, 0, Math.PI * 2); c.fill();
+    if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
     c.save(); c.translate(-14, 0); c.rotate(Math.PI / 2);
-    c.fillStyle = "#111"; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
+    c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
     c.restore();
     if (opts.glow) { c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 2.5; rrect(c, -L / 2 - 4, -Wd / 2 - 4, L + 8, Wd + 8, 10); c.stroke(); }
+    c.restore();
+  }
+
+  // account state (filled in once the server says who you are)
+  const A = { user: null, cfg: null, catalog: null, tab: "stats", extras: null };
+  // store trails: little sparks / hearts / stars left behind the car
+  function trailShape(c, kind, x, y, r, alpha, k) {
+    c.save(); c.globalAlpha = Math.max(0, alpha); c.translate(x, y);
+    if (kind === "hearts") {
+      c.fillStyle = "#ff4f7b"; c.beginPath(); c.moveTo(0, r * 0.9);
+      c.bezierCurveTo(-r * 1.4, -r * 0.2, -r * 0.6, -r * 1.2, 0, -r * 0.4); c.bezierCurveTo(r * 0.6, -r * 1.2, r * 1.4, -r * 0.2, 0, r * 0.9); c.fill();
+    } else if (kind === "stars") {
+      c.fillStyle = "#ffe066"; c.rotate(k * 0.7); c.beginPath();
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2, rr = i % 2 ? r * 0.45 : r; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      c.closePath(); c.fill();
+    } else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
     c.restore();
   }
 
@@ -1251,7 +1447,7 @@
   function drawPreview(now) {
     pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pv.width, pv.height);
     const spin = reducedMotion ? -0.35 : -0.35 + Math.sin(now / 900) * 0.25;
-    drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, design: prof.design }, 150, 92, spin, 3.2);
+    drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, design: prof.design, extras: A.extras }, 150, 92, spin, 3.2, { trailPreview: true });
   }
 
   // ======================= Networking + state =======================
@@ -1269,7 +1465,154 @@
   $("pubBtn").addEventListener("click", () => { saveProfile(); S.solo = false; socket.emit("create", prof, { public: true }); });
   // players online + the public lobby list (the server sends updates while you're on the menu)
   socket.on("menuInfo", (m) => { S.menu = m; renderMenuInfo(); });
-  socket.on("connect", () => socket.emit("menuInfo"));
+  socket.on("connect", () => {
+    socket.emit("menuInfo"); socket.emit("catalog");
+    let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
+    if (tok) socket.emit("auth:resume", { token: tok });
+  });
+
+  // ======================= Accounts: sign in, stats, achievements, store =======================
+  function extrasFor(u) {
+    if (!u || !A.catalog) return null;
+    const o = {};
+    for (const [slot, id] of Object.entries(u.equipped || {})) { const it = A.catalog.store.find((x) => x.id === id); if (it && u.owned.includes(id)) o[slot] = it.look; }
+    return Object.keys(o).length ? o : null;
+  }
+  function renderAcct() {
+    const u = A.user;
+    $("acctName").textContent = u ? u.name : "Playing as a guest";
+    $("acctSub").textContent = u ? `${u.stats.races} races · ${u.stats.wins} wins · ${Object.keys(u.ach).length}/${A.catalog?.ach.length || "?"} achievements`
+      : A.cfg && !A.cfg.googleClientId && !A.cfg.dev ? "Accounts aren't switched on for this server yet." : "Sign in to save your stats, earn coins and unlock car parts.";
+    const av = $("acctAv"); av.textContent = "";
+    if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = ""; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
+    $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
+    $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
+    $("signOutBtn").classList.toggle("hidden", !u);
+    $("gsiBtn").classList.toggle("hidden", !!u);
+    $("devLoginBtn").classList.toggle("hidden", !!u || !A.cfg?.dev);
+    A.extras = extrasFor(u);
+  }
+  socket.on("catalog", (c) => { A.catalog = c; renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  socket.on("account", (u) => {
+    if (u.token) { try { localStorage.setItem("tb-token", u.token); } catch (e) {} delete u.token; }
+    A.user = u; renderAcct();
+    if (!$("hub").classList.contains("hidden")) renderHub();
+  });
+  socket.on("signedOut", () => { A.user = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  socket.on("authError", (m) => popup(m, true));
+  socket.on("achievement", (a) => {
+    const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
+    const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = a.icon;
+    const tx = document.createElement("div"); const sm = document.createElement("small"); sm.textContent = `Achievement unlocked · +${a.coins} coins`;
+    const b = document.createElement("b"); b.textContent = a.name; tx.append(sm, b); d.append(ic, tx);
+    // queue them so several at once don't pile up
+    const q = (A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("level"); setTimeout(() => { d.remove(); res(); }, 4300); })));
+  });
+  fetch("/auth/config").then((r) => r.json()).then((cfg) => {
+    A.cfg = cfg; renderAcct();
+    if (!cfg.googleClientId) return;
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = () => {
+      google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential }) });
+      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
+    };
+    document.head.appendChild(sc);
+  }).catch(() => {});
+  $("devLoginBtn").addEventListener("click", () => socket.emit("auth:dev", { name: nameIn.value || "Tester" }));
+  $("signOutBtn").addEventListener("click", () => {
+    let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
+    socket.emit("auth:signout", { token: tok });
+    try { window.google?.accounts.id.disableAutoSelect(); } catch (e) {}
+  });
+
+  // ---- the profile hub ----
+  function openHub(tab) { A.tab = tab || A.tab; $("hub").classList.remove("hidden"); if (!A.catalog) socket.emit("catalog"); renderHub(); }
+  function closeHub() { $("hub").classList.add("hidden"); }
+  document.querySelectorAll("[data-hub]").forEach((b) => b.addEventListener("click", () => openHub(b.dataset.hub)));
+  document.querySelectorAll("[data-ht]").forEach((b) => b.addEventListener("click", () => { A.tab = b.dataset.ht; renderHub(); }));
+  $("hubClose").addEventListener("click", closeHub);
+  $("hub").addEventListener("click", (e) => { if (e.target.id === "hub") closeHub(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("hub").classList.contains("hidden")) closeHub(); });
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  function renderHub() {
+    const u = A.user;
+    document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    $("hubGuest").classList.toggle("hidden", !!u);
+    $("hubTitle").textContent = u ? u.name : "Guest";
+    $("achCount").textContent = A.catalog ? `${u ? Object.keys(u.ach).length : 0}/${A.catalog.ach.length}` : "";
+    if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else renderStore(u);
+  }
+  function renderStats(u) {
+    const box = $("hubStats"); box.textContent = "";
+    const st = u?.stats || {};
+    const n = (v) => (v || 0).toLocaleString();
+    const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "-");
+    const hours = (sec) => { const m = Math.round((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+    const groups = [
+      ["Racing", [["Races", n(st.races)], ["Wins", n(st.wins), 1], ["Win rate", pct(st.wins, st.races)], ["Podiums", n(st.podiums)], ["Top 5s", n(st.top5)], ["Best finish", st.bestFinish ? "P" + st.bestFinish : "-"], ["Points scored", n(st.points)], ["Time racing", hours(st.raceSec)]]],
+      ["Driving", [["Laps", n(st.laps)], ["Distance", `${(st.km || 0).toFixed(1)} km`], ["Overtakes", n(st.overtakes), 1], ["Most in a race", n(st.mostOvertakes)], ["Best comeback", st.bestComeback > 0 ? `+${st.bestComeback} places` : "-"], ["Fastest laps", n(st.fastestLaps)], ["Best lap ever", st.bestLap ? fmt(st.bestLap) : "-"], ["Clean laps", n(st.cleanLaps)], ["Crashes", n(st.crashes)], ["Slides in the wet", n(st.slips)]]],
+      ["Team boss", [["Pit stops", n(st.pitStops)], ["Wet races", n(st.rainRaces)], ["Wet wins", n(st.rainWins)], ["Best team level", n(st.maxLevel)], ["Upgrades picked", n(st.upgrades)], ["Boost used", `${Math.round(st.boostSec || 0)}s`]]],
+      ["Starts", [["Best reaction", st.bestReaction ? `${Math.round(st.bestReaction)} ms` : "-"], ["Great starts (<250ms)", n(st.perfectStarts)], ["Jump starts", n(st.jumpStarts)]]],
+      ["Championships and more", [["Driver titles", n(st.champDriver), 1], ["Team titles", n(st.champTeam), 1], ["Races with friends", n(st.multiRaces)], ["Friends beaten", n(st.beatPlayers)], ["Random tracks", n(st.randomRaces)], ["Your own tracks", n(st.drawnRaces)], ["Real tracks raced", n(st.realTracks?.length)]]],
+    ];
+    for (const [title, items] of groups) {
+      box.appendChild(el("h3", "hub-h", title));
+      const g = el("div", "stat-grid");
+      for (const [label, val, hl] of items) { const d = el("div", "stat" + (hl ? " hl" : "")); d.append(el("b", "", val), el("small", "", label)); g.appendChild(d); }
+      box.appendChild(g);
+    }
+  }
+  function renderAchs(u) {
+    const box = $("hubAch"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    const got = u?.ach || {}, list = A.catalog.ach, have = list.filter((a) => got[a.id]).length;
+    const earned = list.filter((a) => got[a.id]).reduce((t, a) => t + a.coins, 0);
+    box.appendChild(el("p", "hub-h", `${have} of ${list.length} unlocked · ${earned} coins earned from them`));
+    const bar = el("div", "ach-bar"); const fill = el("i"); fill.style.width = (have / list.length) * 100 + "%"; bar.appendChild(fill); box.appendChild(bar);
+    const g = el("div", "ach-grid");
+    for (const a of [...list].sort((x, y) => (!!got[y.id]) - (!!got[x.id]))) {
+      const d = el("div", "ach" + (got[a.id] ? " got" : ""));
+      const tx = el("div"); tx.append(el("b", "", a.name), el("small", "", a.desc));
+      d.append(el("span", "ic", a.icon), tx, el("span", "rw", got[a.id] ? "✓ +" + a.coins : "🪙 " + a.coins));
+      g.appendChild(d);
+    }
+    box.appendChild(g);
+  }
+  const SLOT_NAMES = { glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail" };
+  function renderStore(u) {
+    const box = $("hubStore"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    box.appendChild(el("p", "hub-h", u ? `You have 🪙 ${u.coins}. Earn more by unlocking achievements. Items show up on your car in every race.` : "Earn coins from achievements and spend them here. Items show up on your car in every race."));
+    const slots = [...new Set(A.catalog.store.map((x) => x.slot))];
+    for (const slot of slots) {
+      const sec = el("section", "store-slot"); sec.appendChild(el("h3", "hub-h", SLOT_NAMES[slot] || slot));
+      const g = el("div", "store-grid");
+      for (const it of A.catalog.store.filter((x) => x.slot === slot)) {
+        const owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
+        const card = el("div", "item" + (on ? " on" : ""));
+        const cv = document.createElement("canvas"); cv.width = 200; cv.height = 110;
+        const cx = cv.getContext("2d");
+        drawCar(cx, { color: prof.color, livery: prof.livery, number: prof.number, design: prof.design, extras: { [slot]: it.look } }, slot === "trail" || slot === "flame" ? 118 : 100, 55, 0, 2.3, { trailPreview: slot === "trail", flamePreview: slot === "flame" });
+        card.append(cv, el("b", "", it.name));
+        const row = el("div"); row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:.3rem";
+        if (!owned) {
+          row.appendChild(el("span", "price", `🪙 ${it.price}`));
+          const b = el("button", "btn go", "Buy"); b.type = "button";
+          b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
+          b.addEventListener("click", () => socket.emit("store:buy", it.id));
+          row.appendChild(b);
+        } else {
+          row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
+          const b = el("button", "btn", on ? "Take off" : "Equip"); b.type = "button";
+          b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on ? null : it.id }));
+          row.appendChild(b);
+        }
+        card.appendChild(row); g.appendChild(card);
+      }
+      sec.appendChild(g); box.appendChild(sec);
+    }
+  }
   function renderMenuInfo() {
     const m = S.menu; if (!m) return;
     const t = $("onlineText"); t.textContent = "";
@@ -1309,7 +1652,8 @@
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
     if (screen === "menu") socket.emit("menuInfo");
     if (screen !== "race") setNitro(false);
-    if (screen !== "results") closeFinale();
+    if (screen === "race" || screen === "menu") closeFinale();
+    if (screen !== "lobby") setEditing(false);
   }
 
   socket.on("joinError", (m) => { menuErr.textContent = m; });
@@ -1321,6 +1665,7 @@
   });
   socket.on("track", (t) => {
     S.track = t; S.hostDraft = null;
+    if (S.lobby) updateEditUi();
     renderTrackCard();
     S.geo = t ? buildGeo(t) : null;
     drawBoard();
@@ -1505,7 +1850,7 @@
       const nm = document.createElement("b"); nm.textContent = tr.name;
       const sm = document.createElement("small"); sm.textContent = `${tr.place} · ${tr.km} km`;
       b.append(cv, nm, sm);
-      b.addEventListener("click", () => { S.draft = null; updateDraftUi(); socket.emit("f1Track", { id: tr.id }); boardHint(`Loading ${tr.name}...`, false); closeF1(); });
+      b.addEventListener("click", () => { S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("f1Track", { id: tr.id }); boardHint(`Loading ${tr.name}...`, false); closeF1(); });
       g.appendChild(b);
     }
     $("f1Modal").classList.remove("hidden");
@@ -1625,11 +1970,13 @@
       if (S.host && l.phase === "lobby") {
         const gs = document.createElement("select"); gs.className = "grid-sel"; gs.setAttribute("aria-label", `Starting spot for ${p.name}`); gs.title = "Where they start on the grid";
         const o0 = document.createElement("option"); o0.value = "0"; o0.textContent = "Grid: back"; gs.appendChild(o0);
+        const oR = document.createElement("option"); oR.value = "-1"; oR.textContent = "Grid: 🎲 random"; gs.appendChild(oR);
         for (let k = 1; k <= total; k++) { const o = document.createElement("option"); o.value = String(k); o.textContent = k === 1 ? "Grid: pole" : `Grid: P${k}`; gs.appendChild(o); }
         gs.value = String(Math.min(p.gridPos || 0, total));
         gs.addEventListener("change", () => socket.emit("gridPos", { id: p.id, pos: Number(gs.value) }));
         t.append(document.createElement("br"), gs);
-      } else if (p.gridPos) { const g = document.createElement("span"); g.className = "grid-tag"; g.textContent = ` · starts ${p.gridPos === 1 ? "on pole" : "P" + p.gridPos}`; t.append(g); }
+      } else if (p.gridPos === -1) { const g = document.createElement("span"); g.className = "grid-tag"; g.textContent = " · random grid spot"; t.append(g); }
+      else if (p.gridPos) { const g = document.createElement("span"); g.className = "grid-tag"; g.textContent = ` · starts ${p.gridPos === 1 ? "on pole" : "P" + p.gridPos}`; t.append(g); }
       li.append(cv, n, t);
       if (S.host && p.id !== S.me) {
         const mk = document.createElement("button"); mk.type = "button"; mk.className = "mk"; mk.textContent = "Make host";
@@ -1689,6 +2036,9 @@
     $("boardTools").classList.toggle("hidden", !S.host);
     $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     document.querySelector(".dock").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    $("gridRandomBtn").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    $("lastSeasonBtn").classList.toggle("hidden", !l.hasLastSeason && !S.lastSeason?.history?.length);
+    updateEditUi();
     const cb = $("champBody"); cb.textContent = "";
     $("champTitle").textContent = s.season ? `Championship: race ${Math.min(l.raceNo + 1, s.season)} of ${s.season} next` : l.raceNo ? `Championship (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "Championship";
     $("champDrivers").setAttribute("aria-pressed", String(champView === "drivers"));
@@ -1910,7 +2260,7 @@
   });
   function updateDraftUi() {
     shareDraft();
-    $("undoPt").classList.toggle("hidden", !S.draft);
+    $("undoPt").classList.toggle("hidden", !S.draft && !(S.lastDraft && S.host));
     $("closeLoop").classList.toggle("hidden", !S.draft || S.draft.pts.length < 3);
   }
   function hintDraft() {
@@ -1944,6 +2294,22 @@
     const d = S.draft;
     if (!d || d.pts.length < 3 || draftLen() < 150) { boardHint("Draw a bit more first!", true); return; }
     let pts = d.pts.map((q) => q.slice());
+    // remember the drawing, so Undo after finishing brings it back without the join
+    // (the auto-filled bit, or the stroke you closed it with)
+    const gapPx = Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) * B.s;
+    S.lastDraft = { d: JSON.parse(JSON.stringify(d)), autoFill: gapPx > 30 };
+    if (!d.corners.length && gapPx > 30) {
+      // freehand: join the gap with a smooth curve here (so it's exactly what Undo takes away)
+      const a = pts[pts.length - 1], b = pts[0], a0 = pts[Math.max(0, pts.length - 4)], b1 = pts[Math.min(3, pts.length - 1)];
+      const D = Math.hypot(b[0] - a[0], b[1] - a[1]) * 1.1;
+      const na = Math.hypot(a[0] - a0[0], a[1] - a0[1]) || 1, nb = Math.hypot(b1[0] - b[0], b1[1] - b[1]) || 1;
+      const ta = [((a[0] - a0[0]) / na) * D, ((a[1] - a0[1]) / na) * D], tb = [((b1[0] - b[0]) / nb) * D, ((b1[1] - b[1]) / nb) * D];
+      const m = Math.max(4, Math.ceil(D / 4));
+      for (let k = 1; k < m; k++) {
+        const t = k / m, t2 = t * t, t3 = t2 * t, h1 = 2 * t3 - 3 * t2 + 1, h2 = t3 - 2 * t2 + t, h3 = -2 * t3 + 3 * t2, h4 = t3 - t2;
+        pts.push([h1 * a[0] + h2 * ta[0] + h3 * b[0] + h4 * tb[0], h1 * a[1] + h2 * ta[1] + h3 * b[1] + h4 * tb[1], Math.round(a[2] + (b[2] - a[2]) * t)]);
+      }
+    }
     if (d.corners.length) {
       // close with a straight line back to the start, then round every corner (the joins at the start too)
       let corners = d.corners.slice();
@@ -1972,6 +2338,14 @@
     drawBoard();
   }));
   function undoDraft() {
+    if (!S.draft && S.lastDraft && S.host && S.lobby?.phase === "lobby") {
+      // undo after finishing: the drawing comes back, minus the join
+      const { d, autoFill } = S.lastDraft; S.lastDraft = null;
+      S.draft = d;
+      if (!autoFill) { const at = d.pieces.pop(); if (at) { d.pts.length = at; d.corners = d.corners.filter((i) => i < at); } }
+      boardHint(autoFill ? "The auto-filled bit is gone. Draw the join yourself (or Finish loop again)." : "Your last stroke is gone. Keep drawing!", false);
+      updateDraftUi(); drawBoard(); return;
+    }
     const d = S.draft; if (!d) return;
     const at = d.pieces.pop();
     if (at === undefined || (!at && !d.cut)) { S.draft = null; if (d.cut) boardHint("Redraw cancelled: your old track is back.", false); }
@@ -1986,6 +2360,32 @@
     boardHint(startMode ? "Click anywhere on the track to put the start/finish line there." : "", false);
   });
   $("reverseBtn").addEventListener("click", () => { if (S.track) socket.emit("reverse"); else boardHint("Draw a track first.", true); });
+  // ---- Phone mode: the board in the room is only a preview (swipe over it to scroll). Tapping it
+  // (or "Draw the track") opens a full-screen editor: big board on top, all the tools below, Done.
+  var editing = false;       // (var: show() can run before this line on startup)
+  function phoneMode() { return document.body.classList.contains("phone"); }
+  function setEditing(on) {
+    on = !!(on && S.host && S.lobby?.phase === "lobby");
+    if (on === !!editing) return;
+    editing = on;
+    document.body.classList.toggle("editing-track", on);
+    if (!on) { if (drawing) { drawing = false; } if (cut) endCut(); }
+    else boardHint(S.track ? "Draw a new track, or use the track tools. Tap Done when you're happy." : "Draw your track in one loop with your finger. Tap Done when you're happy.", false);
+    requestAnimationFrame(sizeBoard);
+  }
+  $("lastSeasonBtn").addEventListener("click", () => { if (S.lastSeason) openFinale(S.lastSeason); else socket.emit("lastSeason"); });
+  socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
+  $("gridRandomBtn").addEventListener("click", () => { socket.emit("gridRandomAll"); sfx("tick"); });
+  $("editTrackBtn").addEventListener("click", () => setEditing(true));
+  $("doneEditBtn").addEventListener("click", () => setEditing(false));
+  board.addEventListener("click", () => { if (phoneMode() && !editing && S.host && S.lobby?.phase === "lobby") setEditing(true); });
+  function updateEditUi() {
+    const can = S.host && S.lobby?.phase === "lobby";
+    $("editTrackBtn").classList.toggle("hidden", !can);
+    $("editTrackBtn").textContent = S.track ? "✏️ Edit the track" : "✏️ Draw the track";
+    if (!can) setEditing(false);
+    else if (phoneMode() && !editing && !S.track && !S.draft) boardHint("Tap the board (or Draw the track) to open the track editor.", false);
+  }
   // ---- Redraw part: click two spots on the track, the part between them is deleted, and the rest
   // of the loop becomes your drawing again. Carry on drawing from the yellow dot and come back to
   // the green one (or hit Finish loop to just join the gap).
@@ -2022,7 +2422,7 @@
     const pts = [];
     for (let k = 0; k <= n - len; k++) { const q = st[(from + len + k) % n]; pts.push([q[0], q[1], q[2]]); }
     S.keepReverse = !!S.track?.reverse;
-    S.draft = { pts, corners: [], pieces: [], cut: true };
+    S.draft = { pts, corners: [], pieces: [], cut: true }; S.lastDraft = null;
     endCut(); updateDraftUi();
     boardHint(isTouch() ? "Draw the new part from the yellow dot back to the green dot (or tap Finish loop to just join it)." : "Draw the new part from the yellow dot back to the green dot (or Finish loop to just join it). Undo brings the old part back.", false);
     drawBoard();
@@ -2066,18 +2466,19 @@
   };
   board.addEventListener("pointerdown", (e) => {
     if (!S.host || S.lobby?.phase !== "lobby") return;
+    if (phoneMode() && !editing) return;            // phone mode: touching the board just scrolls (tap opens the editor)
     const p = toBoard(e);
     if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (drawMode === "line") {
-      if (!S.draft) S.draft = { pts: [[p[0], p[1], brushW]], corners: [0], pieces: [0] };
+      if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [0], pieces: [0] }; S.lastDraft = null; }
       else if (S.draft.pts.length >= 3 && nearPx(p, S.draft.pts[0], 18) && draftLen() > 150) { finishDraft(); return; }
       else { S.draft.pieces.push(S.draft.pts.length); markCorner(); addStraight(p); markCorner(); }
       updateDraftUi(); hintDraft(); drawBoard(); return;
     }
     board.setPointerCapture(e.pointerId);
     drawing = true;
-    if (!S.draft) S.draft = { pts: [[p[0], p[1], brushW]], corners: [], pieces: [0] };
+    if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [], pieces: [0] }; S.lastDraft = null; }
     else {
       S.draft.pieces.push(S.draft.pts.length);
       if (!nearPx(p, lastPt(), 14)) { markCorner(); addStraight(p); markCorner(); }    // started somewhere else: join with a straight line
@@ -2112,6 +2513,7 @@
   window.addEventListener("keyup", (e) => { if (e.key === "Shift" && drawing && shiftAnchor) { commitShift(); drawBoard(); } });
   window.addEventListener("keydown", (e) => {
     if (S.screen !== "lobby" || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "Escape" && editing && !cut && !S.draft) { setEditing(false); return; }
     if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
     if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && S.draft) { e.preventDefault(); undoDraft(); }
@@ -2132,11 +2534,11 @@
   };
   board.addEventListener("pointerup", endDraw); board.addEventListener("pointercancel", endDraw);
   $("randomBtn").addEventListener("click", () => {
-    endCut(); S.draft = null; updateDraftUi();
+    endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
     socket.emit("randomTrack", { map: S.lobby.settings.map });
     boardHint("Making a random track...", false);
   });
-  $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; updateDraftUi(); socket.emit("clearTrack"); });
+  $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("clearTrack"); });
 
 
   // ======================= Race HUD pieces =======================
@@ -2303,7 +2705,8 @@
     $("resTeamsBox").classList.toggle("hidden", r.teams === false);
     const sb = $("seasonBox"); sb.textContent = ""; S.resultsLen = r.season ? 40 : 12;
     clearTimeout(S.finaleTimer);
-    if (r.season) S.finaleTimer = setTimeout(() => { if (S.screen === "results") openFinale(r.season); }, 7000);
+    // everyone in the room gets the finale (not just whoever is still on the results screen)
+    if (r.season) { S.lastSeason = r.season; S.finaleTimer = setTimeout(() => { if (S.screen !== "menu" && S.screen !== "race") openFinale(r.season); }, 7000); }
     if (r.season) {
       const box = document.createElement("div"); box.className = "season-box";
       const h = document.createElement("h3"); h.textContent = `🏆 Season over! (${r.season.races} races)`;
@@ -2412,7 +2815,7 @@
     if ($("finale").classList.contains("hidden")) return;
     drawFinChart(now);
     const left = Math.max(0, (S.resultsLen || 12) - Math.floor((now - S.resultsAt) / 1000));
-    $("finBack").textContent = left > 0 ? `Back to the garage in ${left}s` : "Back to the garage...";
+    $("finBack").textContent = S.screen === "results" ? (left > 0 ? `Back to the garage in ${left}s` : "Back to the garage...") : "";
     F.raf = requestAnimationFrame(finLoop);
   }
   function drawFinChart(now) {
@@ -2523,7 +2926,7 @@
     if (cur) { if (out.length && out[0][0] === 0) out[0] = [...cur, ...out[0]]; else out.push(cur); }
     return out;
   }
-  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341" };
+  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150" };
   // The road is drawn as "runs": stretches where the width is (almost) the same, each stroked
   // with its own line width. Width changes are gradual, so the joins are invisible.
   function widthRuns(t, idxs, cum, closed) {
@@ -2623,7 +3026,19 @@
     const c = cv.getContext("2d");
     let seed = kind === "gravel" ? 7 : 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     if (kind === "gravel") { c.fillStyle = GRAVEL[th.key] || GRAVEL.grass; c.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { c.fillStyle = i % 3 ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.12)"; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 2, 2 + rnd() * 2); } }
-    else { c.fillStyle = th.ground; c.fillRect(0, 0, 256, 256); for (let i = 0; i < 420; i++) { c.fillStyle = th.speck[i % 2]; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 5, 2 + rnd() * 5); } }
+    else {
+      c.fillStyle = th.ground; c.fillRect(0, 0, 256, 256);
+      // every pattern repeats cleanly every 256px, so the tiles join up without seams
+      const T = th.tex;
+      if (T === "stripes") { c.fillStyle = "rgba(255,255,255,0.045)"; for (let x = 0; x < 256; x += 64) c.fillRect(x, 0, 32, 256); }
+      if (T === "dunes") { c.strokeStyle = "rgba(120,80,30,0.13)"; c.lineWidth = 2.5; for (let y = 8; y < 256; y += 21) { c.beginPath(); for (let x = 0; x <= 256; x += 4) c.lineTo(x, y + Math.sin((x / 256) * Math.PI * 4 + y) * 5); c.stroke(); } }
+      if (T === "drifts") { for (let i = 0; i < 26; i++) { const x = rnd() * 256, y = rnd() * 256, r = 14 + rnd() * 30; for (const [ox, oy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) { const g = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); } } }
+      if (T === "slabs") { c.strokeStyle = "rgba(0,0,0,0.16)"; c.lineWidth = 2; for (let y = 0; y < 256; y += 32) { c.beginPath(); c.moveTo(0, y); c.lineTo(256, y); c.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < 256; x += 64) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 32); c.stroke(); } } }
+      if (T === "grid") { c.strokeStyle = "rgba(170,90,255,0.22)"; c.lineWidth = 1.5; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v, 0); c.lineTo(v, 256); c.moveTo(0, v); c.lineTo(256, v); c.stroke(); } }
+      if (T === "lava") { c.lineCap = "round"; for (let i = 0; i < 7; i++) { let x = rnd() * 256, y = rnd() * 256; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; c.lineTo(x, y); } c.strokeStyle = "rgba(255,80,10,0.18)"; c.lineWidth = 7; c.stroke(); c.strokeStyle = "rgba(255,170,40,0.55)"; c.lineWidth = 1.8; c.stroke(); } }
+      if (T === "leaves") { for (let i = 0; i < 160; i++) { c.fillStyle = ["rgba(230,120,30,0.5)", "rgba(200,60,30,0.45)", "rgba(240,190,60,0.45)"][i % 3]; c.save(); c.translate(rnd() * 256, rnd() * 256); c.rotate(rnd() * 6.3); c.beginPath(); c.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.restore(); } }
+      for (let i = 0; i < 420; i++) { c.fillStyle = th.speck[i % 2]; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 4, 2 + rnd() * 4); }
+    }
     return (texCache[key] = cv);
   }
   function strokeRuns(c, runs, extra, color, dash) {
@@ -2888,6 +3303,9 @@
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
       if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (c.extras?.trail && c.speed > 250 && S.particles.length < 300 && Math.random() < 0.35 * Math.max(0.4, fxLevel)) {
+        S.particles.push({ x: c.x - Math.cos(c.h) * 22, y: c.y - Math.sin(c.h) * 22, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 50, life: 0.7, age: 0, r: 7, shape: c.extras.trail, k: Math.floor(Math.random() * 4) });
+      }
       if (c.punct && c.speed > 30 && Math.random() < 0.9 * fxLevel) {
         S.particles.push({ x: c.x - Math.cos(c.h) * 18, y: c.y - Math.sin(c.h) * 18, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, life: 0.25, age: 0, r: 2, color: Math.random() < 0.5 ? "#ffcc1f" : "#ff7043" });
       }
@@ -2895,8 +3313,11 @@
       if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
       if (c.dmg > 0.05 && Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
     }
-    S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.r += 20 * dt; return q.age < q.life; });
-    for (const q of S.particles) { ctx.globalAlpha = 1 - q.age / q.life; ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill(); }
+    S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape) q.r += 20 * dt; return q.age < q.life; });
+    for (const q of S.particles) {
+      if (q.shape) { trailShape(ctx, q.shape, q.x, q.y, 7 * (1 - 0.4 * q.age / q.life), 1 - q.age / q.life, q.k); continue; }
+      ctx.globalAlpha = 1 - q.age / q.life; ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.globalAlpha = 1;
     // Cars and bridges, bottom to top: cars on the ground, then each bridge (lowest first) with
     // the cars driving on it (ramps included) drawn right after it. The server says which bit of
