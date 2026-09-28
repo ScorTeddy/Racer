@@ -137,7 +137,16 @@ out of trouble. They can't be hit and the AI ignores them; they're drawn see-thr
 painted straight into the tiles). The road is drawn as "width runs". Cars are drawn a moment
 in the past and moved along a curve using their velocity (`interpCars`), so they follow
 corners at 2x/3x. Bridges are sorted low to high and each car is drawn right after the bridge
-it's on (from the server's track index), so cars on ramps are never hidden by their own bridge. `segOf` covers the whole drawn deck
+it's on (from the server's track index), so cars on ramps are never hidden by their own bridge.
+The delay adapts to how uneven the connection is (`netDelay`, 80-350ms), the display clock never
+speeds up/slows down by more than 12%, late corrections are blended in over a few frames instead of
+popping, and a car's height (and which bridge it's drawn on) comes from where it's drawn on the
+track, so climbing onto and off ramps is smooth even on a bad connection.
+
+**Phones:** portrait and landscape layouts (landscape lobby: board on the left sized to the screen,
+drawing tools beside it, room panel on the right). Settings > Interface size (Auto/Small/Normal/Big/
+Huge) scales all menus and HUD (they're in rem). The bottom HUD stacks itself by measuring
+(`layoutHud`). Guests see the host's drawing live while it's being drawn (`draft` event). `segOf` covers the whole drawn deck
 (ramps + 5 points either side) and the layer uses the track index of the snapshot the car is
 drawn from (`drawIdx`), so there's no flicker getting on or off a ramp.
 

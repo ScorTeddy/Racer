@@ -368,7 +368,7 @@
     #minimap { width: 120px; height: 90px; }
     .pos { font-size: 2rem; }
   }
-  @media (max-height: 520px) { .bottom { display: none; } .radio { width: 15rem; padding: 0.5rem; } .hint { display: none; } }
+  @media (max-height: 520px) { .bottom > .panel:not(#boostPanel) { display: none; } .radio { width: 15rem; padding: 0.5rem; } .hint { display: none; } }
   /* ---------- Menu: players online + public lobbies ---------- */
   .online { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; font-weight: 600; color: var(--soft); margin-top: -0.3rem; }
   .online .live { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(62,207,106,0.25); flex-shrink: 0; }
@@ -455,6 +455,110 @@
   .season-box .champs b { display: block; font-size: 1.1rem; color: var(--ink); }
   .season-box ol { margin: 0.2rem 0 0; padding-left: 1.2rem; font-size: 0.8rem; }
   @media (max-width: 860px) { .pp-row { grid-template-columns: repeat(2, 1fr); } .pit-pick { bottom: calc(22rem + env(safe-area-inset-bottom, 0px)); } }
+  .set-row { flex-wrap: wrap; } .set-row > div:first-child { flex: 1 1 8rem; } .seg { flex-wrap: wrap; max-width: 100%; }
+  /* ---------- phones ---------- */
+  body.touch kbd, body.touch #boostBtn small, body.touch .later kbd { display: none; }
+  @media (max-width: 860px) {
+    .credit { display: none; }
+    /* lobby: compact header, board sized to the map, tools above/below instead of on top */
+    #lobby { padding: 0.5rem; gap: 0.5rem; grid-template-rows: auto auto auto; }
+    .rc-top { gap: 0.4rem; padding: 0.45rem 0.55rem; }
+    .rc-brand { display: none; }
+    .rc-code { padding: 0 0.5rem 0 0; border-left: 0; }
+    .rc-code .code { font-size: 1.35rem; }
+    .rc-top .btn { padding: 0.35rem 0.55rem; font-size: 0.8rem; }
+    .rc-top .rc-spacer { display: none; }
+    .rc-top .gear { width: 2rem; height: 2rem; }
+    .board-wrap { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.4rem; min-height: 0; }
+    #board { height: auto; aspect-ratio: 1.55; border-radius: 0.6rem; }
+    .board-hint { position: static; transform: none; white-space: normal; text-align: center; font-size: 0.82rem; padding: 0.35rem 0.6rem; order: -1; }
+    .dock { position: static; transform: none; flex-direction: column; gap: 0.35rem; padding: 0.4rem; overflow: visible; }
+    .dock-group { flex-direction: row; flex-wrap: wrap; gap: 0.3rem; justify-content: center; }
+    .dock-label { display: block; width: 100%; text-align: left; }
+    .dock .tool { width: auto; flex: 1 1 4.2rem; flex-direction: row; justify-content: center; gap: 0.3rem; padding: 0.45rem 0.4rem; font-size: 0.78rem; }
+    .dock .tool span { font-size: 1rem; }
+    .brush { grid-template-columns: repeat(4, 1fr); flex: 1 1 100%; }
+    .track-card { display: grid; position: static; grid-template-columns: repeat(3, auto); font-size: 0.72rem; }
+    .track-card b { font-size: 0.9rem; }
+    .plist li { flex-wrap: wrap; }
+    /* race HUD: out of the way, big thumb-friendly boost button */
+    .standing { left: 0.5rem; top: calc(0.5rem + env(safe-area-inset-top, 0px)); padding: 0.3rem 0.55rem; gap: 0.5rem; }
+    .laps .big { font-size: 0.95rem; } .laps .t { font-size: 0.75rem; }
+    .weather { left: 0.5rem; transform: none; top: calc(5rem + env(safe-area-inset-top, 0px)); font-size: 0.75rem; padding: 0.1rem 0.55rem; }
+    #minimap { right: 0.5rem; top: calc(0.5rem + env(safe-area-inset-top, 0px)); width: 110px; height: 80px; }
+    .bottom { left: 0.5rem; right: 6.6rem; width: auto; transform: none; bottom: calc(6.4rem + env(safe-area-inset-bottom, 0px)); gap: 0.3rem; animation: none; }
+    .bottom .panel { padding: 0.3rem 0.5rem; }
+    .bottom .meter-label { font-size: 0.72rem; }
+    .bottom .meter { height: 7px; margin-top: 0.15rem; }
+    #boostPanel { position: fixed; right: 0.5rem; bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); width: 5.8rem; height: 5.8rem; padding: 0 !important; border-radius: 50%; background: none; border: 0; backdrop-filter: none; }
+    #boostBtn { width: 5.8rem; height: 5.8rem; border-radius: 50%; flex-direction: column; justify-content: center; align-items: center; gap: 0; padding: 0; border-width: 2.5px; }
+    #boostBtn .bfill { top: auto; left: 0; right: 0; width: 100% !important; height: var(--boost, 100%); bottom: 0; transition: height 120ms linear; }
+    #boostBtn .blabel { font-size: 0.85rem; text-align: center; line-height: 1.1; }
+    #boostBtn .blabel b { display: block; font-size: 1.05rem; }
+    .slip-tag { left: auto; right: 0; transform: none; top: -1.6rem; font-size: 0.78rem; }
+    .radio { left: 0.5rem; right: 6.6rem; width: auto; bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); padding: 0.4rem 0.5rem; gap: 0.3rem; flex-direction: row; flex-wrap: wrap; align-items: center; animation: none; }
+    .radio .radio-top { width: 100%; }
+    .radio .meter-label { font-size: 0.75rem; }
+    .radio .next-tires { font-size: 0.72rem; flex: 1 1 auto; }
+    .radio .next-tires > span:first-child { display: none; }
+    #boxBtn { flex: 1 1 7rem; padding: 0.4rem 0.3rem; font-size: 0.8rem; }
+    #leaveRaceBtn { flex: 0 0 auto; padding: 0.4rem 0.5rem; font-size: 0.7rem; }
+    .cards { top: calc(5.6rem + env(safe-area-inset-top, 0px)); gap: 0.3rem; width: calc(100vw - 1rem); }
+    .cards h2 { font-size: 0.85rem; }
+    .card-row { grid-template-columns: repeat(3, 1fr); gap: 0.3rem; }
+    .card { padding: 0.4rem 0.45rem; gap: 0.1rem; }
+    .card .top { flex-wrap: wrap; gap: 0.2rem; font-size: 0.78rem; } .card .top kbd { display: none; }
+    .card .kind { display: none; }
+    .card .fx { font-size: 0.68rem; } .card .pips { display: none; }
+    .up-pill { top: calc(5.6rem + env(safe-area-inset-top, 0px)); font-size: 0.8rem; }
+    .pit-pick { bottom: calc(13rem + env(safe-area-inset-bottom, 0px)); padding: 0.5rem; }
+    .pit-pick h3 { font-size: 0.9rem; flex-wrap: wrap; }
+    .pp { padding: 0.4rem; } .pp .nm { font-size: 0.85rem; } .pp .life { font-size: 0.85rem; }
+    .popups { top: 42%; } .popup { font-size: 0.9rem; }
+    .banner { font-size: clamp(2rem, 11vw, 3.5rem); }
+    .lights { top: calc(6rem + env(safe-area-inset-top, 0px)); padding: 0.5rem 0.7rem; } .bulb { width: 2rem; height: 2rem; }
+    .tire-pick { top: 46%; padding: 0.7rem; } .tp .note { display: none; }
+    .f1-grid { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
+  }
+  /* ---------- phones held sideways ---------- */
+  @media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) {
+    /* lobby: board on the left (fits the screen), drawing tools beside it, room panel on the right */
+    #lobby { grid-template-columns: minmax(0, 1fr) minmax(14rem, 34%); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "top top" "board side"; overflow: hidden; padding: 0.4rem; gap: 0.4rem; }
+    .rc-top { flex-wrap: nowrap; padding: 0.3rem 0.5rem; }
+    .rc-top .btn { padding: 0.28rem 0.5rem; font-size: 0.75rem; }
+    .rc-code small { display: none; } .rc-code .code { font-size: 1.15rem; }
+    .board-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); gap: 0.35rem; padding: 0.35rem; min-height: 0; overflow: hidden; }
+    .board-hint { grid-column: 1 / -1; font-size: 0.72rem; padding: 0.2rem 0.5rem; }
+    #board { aspect-ratio: auto; width: 100%; height: 100%; min-height: 0; }
+    .dock { grid-column: 2; grid-row: 2; width: 8.6rem; max-height: 100%; overflow-y: auto; padding: 0.3rem; gap: 0.3rem; }
+    .dock .tool { flex: 1 1 45%; font-size: 0.68rem; padding: 0.35rem 0.2rem; flex-direction: column; gap: 0; }
+    .dock .tool span { font-size: 0.9rem; }
+    .dock-label { font-size: 0.55rem; }
+    .brush button { height: 1.6rem; }
+    .track-card { display: none !important; }
+    .rc-side { min-height: 0; overflow: hidden; }
+    .rc-body { overflow-y: auto; padding: 0.5rem; }
+    .rc-tabs button { font-size: 0.7rem; padding: 0.35rem 0.1rem 0.4rem; }
+    .rc-foot { padding: 0.4rem 0.5rem; } .rc-foot .btn.go { font-size: 1rem; padding: 0.4rem; }
+    /* race: small HUD, no big panels in the middle of the road */
+    .pit-pick { bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px)); width: min(34rem, calc(100vw - 8rem)); }
+    .pp-row { grid-template-columns: repeat(4, 1fr); }
+    .cards { top: calc(3.4rem + env(safe-area-inset-top, 0px)); width: min(38rem, calc(100vw - 16rem)); }
+    .tire-pick { top: 50%; max-height: calc(100dvh - 1rem); overflow-y: auto; }
+    .tp .stat { display: none; }
+    .weather { left: auto; right: 0.5rem; transform: none; top: calc(5.4rem + env(safe-area-inset-top, 0px)); }
+    #minimap { width: 96px; height: 70px; }
+  }
+  /* never wider than the phone, whatever the interface size */
+  @media (max-width: 860px) {
+    #lobby { overflow-x: hidden; }
+    #lobby > * { min-width: 0; }
+    .rc-tabs { overflow-x: auto; scrollbar-width: none; }
+    .rc-tabs button { flex: 1 0 auto; padding-left: 0.4rem; padding-right: 0.4rem; }
+    .rc-top { flex-wrap: wrap; }
+    .dock .tool { min-width: 0; }
+    .standing { max-width: calc(100vw - 8.5rem); } .gapline .b { display: none; }
+  }
   body.rm *, body.rm *::before, body.rm *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 </style>
 </head>
@@ -653,7 +757,7 @@
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
   </div>
-  <div class="bottom">
+  <div class="bottom" id="hudBottom">
     <div class="panel boost" id="boostPanel">
       <div class="slip-tag hidden" id="slipTag">💨 SLIPSTREAM +30%</div>
       <button type="button" id="boostBtn" aria-label="Boost (hold)"><span class="bfill" id="boostFill" style="width:100%"></span><span class="blabel">⚡ BOOST <b id="boostPct">100%</b></span><small>hold <kbd>Space</kbd> / <kbd>N</kbd></small></button>
@@ -738,6 +842,7 @@
 
   // ======================= Settings (saved on this device) =======================
   const SETTINGS = [
+    { key: "ui", label: "Interface size", hint: "How big buttons and text are (Auto: a bit smaller on phones)", def: "auto", opts: [["auto", "Auto"], ["s", "Small"], ["m", "Normal"], ["l", "Big"], ["xl", "Huge"]] },
     { key: "sound", label: "Sound effects", def: "med", opts: [["off", "Off"], ["low", "Low"], ["med", "Med"], ["high", "High"]] },
     { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "units", label: "Speed units", def: "kmh", opts: [["kmh", "km/h"], ["mph", "mph"]] },
@@ -757,8 +862,14 @@
   for (const x of SETTINGS) settings[x.key] = x.def;
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
   let reducedMotion = false;
+  const isPhone = () => Math.min(window.innerWidth, window.innerHeight) < 560;
+  const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
   function applySettings() {
     document.documentElement.dataset.theme = settings.theme;
+    // UI size: everything in the menus and HUD is sized in rem, so this scales it all
+    const ui = { s: 82, m: 100, l: 115, xl: 130 }[settings.ui] || (isPhone() ? 88 : 100);
+    document.documentElement.style.fontSize = ui + "%";
+    document.body.classList.toggle("touch", window.matchMedia("(pointer: coarse)").matches);
     const sys = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     reducedMotion = settings.motion === "on" || (settings.motion === "system" && sys);
     document.body.classList.toggle("rm", reducedMotion);
@@ -1062,7 +1173,7 @@
     renderLobby();
   });
   socket.on("track", (t) => {
-    S.track = t;
+    S.track = t; S.hostDraft = null;
     renderTrackCard();
     S.geo = t ? buildGeo(t) : null;
     drawBoard();
@@ -1445,7 +1556,7 @@
       const c = document.createElement("td"); c.className = "n"; c.textContent = x.p + " pts";
       tr.append(a, b, c); cb.appendChild(tr);
     });
-    if (!S.track && S.host && !S.draft) boardHint(drawMode === "line" ? "Click to place corners. You can mix in Freehand too." : "Draw your track in one loop. Hold Shift for straight lines.", false);
+    if (!S.track && S.host && !S.draft) boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can mix in Freehand too." : "Click to place corners. You can mix in Freehand too.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
     if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
     drawBoard();
   }
@@ -1506,11 +1617,16 @@
   window.addEventListener("resize", () => { if (S.screen === "lobby") sizeBoard(); });
   function boardDims() {
     const m = MAP_SIZES[S.lobby?.settings.map || "normal"]; B.bw = m[0]; B.bh = m[1];
-    // keep the map clear of the tool dock (on the left on big screens)
-    const dock = document.querySelector(".dock"), dr = dock && !dock.classList.contains("hidden") ? dock.getBoundingClientRect() : null;
-    const left = dr && dr.height > dr.width ? dr.right - board.getBoundingClientRect().left + 10 : 20;
-    B.s = Math.min((B.w - left - 20) / B.bw, (B.h - 90) / B.bh); B.ox = left + (B.w - left - 20 - B.bw * B.s) / 2; B.oy = 50 + (B.h - 90 - B.bh * B.s) / 2;
+    // phones: the hint and tools sit above/below the board, so the map can use all of it
+    const compact = getComputedStyle($("boardHint")).position === "static";
+    const top = compact ? 8 : 50, bottom = compact ? 22 : 40;
+    // big screens: keep the map clear of the tool dock on the left
+    const dock = document.querySelector(".dock"), dr = !compact && dock && !dock.classList.contains("hidden") ? dock.getBoundingClientRect() : null;
+    const left = dr && dr.height > dr.width ? dr.right - board.getBoundingClientRect().left + 10 : compact ? 8 : 20, right = compact ? 8 : 20;
+    B.s = Math.min((B.w - left - right) / B.bw, (B.h - top - bottom) / B.bh); B.ox = left + (B.w - left - right - B.bw * B.s) / 2; B.oy = top + (B.h - top - bottom - B.bh * B.s) / 2;
   }
+  // redraw whenever the board changes size (phones rotating, the lobby laying itself out, etc.)
+  if (window.ResizeObserver) new ResizeObserver(() => { if (S.screen === "lobby") sizeBoard(); }).observe(board);
   // ======================= Drawing board =======================
   function drawBoard() {
     if (!B.w) return;
@@ -1527,7 +1643,9 @@
     for (let y = 0; y <= B.bh; y += 100) { c.moveTo(0, y); c.lineTo(B.bw, y); }
     c.stroke();
     const T = S.track;
-    if (T && !S.draft) {
+    // everyone else watches the host's drawing appear live
+    const watching = !S.host && S.hostDraft && S.hostDraft.length > 1;
+    if (T && !S.draft && !watching) {
       // the real track, drawn exactly like in the race (widths, kerbs, bridges, pit lane)
       if (!S.geo) S.geo = buildGeo(T);
       const G = S.geo;
@@ -1551,8 +1669,8 @@
       c.strokeText("START", p0.x, p0.y - hwAt(T, 0) - 16); c.fillText("START", p0.x, p0.y - hwAt(T, 0) - 16);
       c.restore();
     }
-    // the drawing you're working on
-    const d = S.draft;
+    // the drawing you're working on (or the host's, live)
+    const d = S.draft || (watching ? { pts: S.hostDraft, corners: [] } : null);
     if (d && d.pts.length) {
       const P = d.pts;
       c.lineJoin = "round"; c.lineCap = "round";
@@ -1620,12 +1738,24 @@
   }
   const markCorner = () => S.draft.corners.push(S.draft.pts.length - 1);
   function draftLen(pts = S.draft.pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; }
+  let draftSentAt = 0, draftTimer = null;
+  function shareDraft() {
+    if (!S.host) return;
+    const send = () => { draftTimer = null; draftSentAt = performance.now(); const P = S.draft?.pts; socket.emit("draft", P ? P.filter((_, i) => i % 2 === 0 || i === P.length - 1).map((q) => [Math.round(q[0]), Math.round(q[1]), q[2]]) : null); };
+    if (!S.draft) { clearTimeout(draftTimer); send(); return; }
+    if (!draftTimer) draftTimer = setTimeout(send, Math.max(0, 150 - (performance.now() - draftSentAt)));
+  }
+  socket.on("draft", (d) => {
+    S.hostDraft = d;
+    if (!S.host && S.screen === "lobby") { if (d) boardHint(`${S.lobby?.players.find((p) => p.id === S.lobby.hostId)?.name || "The host"} is drawing the track...`, false); drawBoard(); }
+  });
   function updateDraftUi() {
+    shareDraft();
     $("undoPt").classList.toggle("hidden", !S.draft);
     $("closeLoop").classList.toggle("hidden", !S.draft || S.draft.pts.length < 3);
   }
   function hintDraft() {
-    boardHint(drawMode === "line" ? "Click to add straight lines. Click the green dot (or Finish loop) to close it." : "Keep going: drag for curves, or switch to Straight. Come back to the green dot (or Finish loop) to close it.", false);
+    boardHint(drawMode === "line" ? (isTouch() ? "Tap to add straight lines. Tap the green dot (or Finish loop) to close it." : "Click to add straight lines. Click the green dot (or Finish loop) to close it.") : "Keep going: drag for curves, or switch to Straight. Come back to the green dot (or Finish loop) to close it.", false);
   }
   // round off the corners where straight lines meet, so cars can actually drive them
   function roundDraftCorners(pts, corners) {
@@ -1679,7 +1809,7 @@
     drawMode = b.dataset.dm;
     document.querySelectorAll("[data-dm]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     if (S.draft) hintDraft();
-    else boardHint(drawMode === "line" ? "Click to place corners. You can switch back to Freehand any time." : "Draw your track in one loop. Hold Shift for straight lines.", false);
+    else boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can switch back to Freehand any time." : "Click to place corners. You can switch back to Freehand any time.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
     drawBoard();
   }));
   function undoDraft() {
@@ -1727,7 +1857,7 @@
     }
     if (shiftAnchor) commitShift();
     const l = lastPt();
-    if (Math.hypot(p[0] - l[0], p[1] - l[1]) * B.s >= 3) { S.draft.pts.push([p[0], p[1], brushW]); drawBoard(); }
+    if (Math.hypot(p[0] - l[0], p[1] - l[1]) * B.s >= 3) { S.draft.pts.push([p[0], p[1], brushW]); drawBoard(); shareDraft(); }
   });
   board.addEventListener("pointerleave", () => { hover = null; if (!drawing) drawBoard(); });
   function commitShift() {
@@ -1840,6 +1970,7 @@
     S.offer = o; offerSeq++;
     if (S.screen !== "race") { S.offer = null; renderPill(); return; }             // upgrades only happen during a race
     if (S.cardsLater) { renderPill(); return; }
+    if (!$("lights").classList.contains("hidden")) { setTimeout(() => { if (S.offer === o) showCards(o); }, 800); return; }   // don't cover the GO button
     $("cardsTitle").textContent = o.pending > 1 ? `Level up! Upgrade your team (${o.pending} to pick)` : "Level up! Upgrade your team";
     const row = $("cardRow"); row.textContent = "";
     o.cards.forEach((c, i) => {
@@ -2000,7 +2131,7 @@
     const mw = mini.getBoundingClientRect().width || 180, mh = mini.getBoundingClientRect().height || 130;
     mini.width = mw * scr.dpr; mini.height = mh * scr.dpr;
   }
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => { resize(); if (settings.ui === "auto") applySettings(); });
   const cam = { x: 0, y: 0, z: 1 };
   const hwAt = (t, i) => (t.hw ? t.hw[i] : t.trackW / 2);
   // same pit lane math as the server (the lane sits a fixed gap outside the road edge)
@@ -2104,7 +2235,9 @@
       for (let m = 0; m < idxs.length; m += 2) { const k = idxs[m], e = t.elev[k]; if (e < 0.08 || e > peak - 0.05) continue; const a = P(k, hwAt(t, k) - 4), b = P(k, -(hwAt(t, k) - 4)); joints.moveTo(a.x, a.y); joints.lineTo(b.x, b.y); }
       return { idxs, seg, peak, shadow, walls, joints, runs: widthRuns(t, idxs, cum, false), top: widthRuns(t, [w(first - 3), ...idxs, w(last + 3)], cum, false) };
     }).sort((a, b) => a.peak - b.peak);
-    g.bridges.forEach((br, k) => { for (const i2 of br.seg) g.segOf[i2] = k; });
+    // every bit of road a bridge's deck is drawn over (ramps + the few points either side) belongs
+    // to that bridge: a car there is drawn right after it, so it never slips under its own ramp
+    g.bridges.forEach((br, k) => { const a = br.seg[0], b = br.seg[br.seg.length - 1]; for (let d = -5; d <= b - a + 5 + (b < a ? N : 0); d++) g.segOf[(a + d + N) % N] = k; });
     if (t.line) { g.line = new Path2D(); t.pts.forEach((p, k) => { const x = p.x + t.nor[k].x * t.line[k], y = p.y + t.nor[k].y * t.line[k]; k ? g.line.lineTo(x, y) : g.line.moveTo(x, y); }); g.line.closePath(); }
     g.trackPath = new Path2D(); t.pts.forEach((p, k) => (k ? g.trackPath.lineTo(p.x, p.y) : g.trackPath.moveTo(p.x, p.y))); g.trackPath.closePath();
     return g;
@@ -2237,38 +2370,75 @@
   // road through corners instead of cutting straight across the grass.
   const snaps = [];
   let rt = 0;
+  // How uneven the connection is decides how far behind we show the race: a steady connection
+  // gets a short delay (snappy), a jittery one (phones, free servers) a longer one (smooth).
+  let lastArrive = 0, jitter = 0.02, netDelay = 0.11;
   function pushSnap(st) {
+    const now = performance.now() / 1000, mul = S.race?.speed || 1;
     if (snaps.length && st.t < snaps[snaps.length - 1].t - 0.001) snaps.length = 0;
+    if (snaps.length && lastArrive) {
+      const gap = now - lastArrive, want = (st.t - snaps[snaps.length - 1].t) / mul;
+      jitter += (Math.min(0.4, Math.abs(gap - want)) - jitter) * 0.08;
+      netDelay = clamp(0.07 + jitter * 2.8, 0.08, 0.35);
+    }
+    lastArrive = now;
     const m = new Map(); for (const a of st.cars) m.set(a[0], a);
     snaps.push({ t: st.t, cars: m });
-    if (snaps.length > 10) snaps.shift();
+    if (snaps.length > 16) snaps.shift();
   }
   function interpCars(dt) {
     if (!snaps.length) return;
-    const mul = S.race?.speed || 1, last = snaps[snaps.length - 1];
-    const want = last.t - 0.11 * mul;
-    rt += dt * mul;
-    if (Math.abs(rt - want) > 0.3 * mul) rt = want; else rt += (want - rt) * Math.min(1, dt * 2.5);
-    rt = Math.min(rt, last.t + 0.2 * mul);
+    const mul = S.race?.speed || 1, last = snaps[snaps.length - 1], t = S.track;
+    const want = last.t - netDelay * mul;
+    // the display clock drifts toward where it should be by at most 12% (never a visible lurch)
+    if (Math.abs(rt - want) > 0.6 * mul) rt = want;
+    else rt += dt * mul * (1 + clamp(((want - rt) / mul) * 3, -0.12, 0.12));
+    rt = Math.min(rt, last.t + 0.25 * mul);
     let a = snaps[0], b = snaps[0];
     for (let i = snaps.length - 1; i >= 0; i--) if (snaps[i].t <= rt) { a = snaps[i]; b = snaps[Math.min(snaps.length - 1, i + 1)]; break; }
     const D = b.t - a.t;
     for (const c of S.cars.values()) {
       const A = a.cars.get(c.id), Bq = b.cars.get(c.id);
       if (!Bq) continue;
+      let x, y, teleport = false;
       if (!A || D < 1e-4) {
-        const e = Math.max(0, Math.min(0.2 * mul, rt - b.t));
-        c.x = Bq[1] + Bq[23] * e; c.y = Bq[2] + Bq[24] * e; c.h = Bq[3]; c.lvl = Bq[22]; continue;
+        const e = Math.max(0, Math.min(0.25 * mul, rt - b.t));
+        x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; c.drawIdx = Bq[25];
+      } else {
+        const u = (rt - a.t) / D;
+        c.drawIdx = u < 0.5 ? A[25] : Bq[25];
+        teleport = Math.hypot(Bq[1] - A[1], Bq[2] - A[2]) > (Math.hypot(A[23], A[24]) + Math.hypot(Bq[23], Bq[24])) * D * 0.75 + 60;
+        if (teleport) { x = Bq[1]; y = Bq[2]; c.h = Bq[3]; }
+        else if (u >= 1) { const e = rt - b.t; x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; }
+        else {
+          const u2 = u * u, u3 = u2 * u, h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = (u3 - 2 * u2 + u) * D, h4 = (u3 - u2) * D;
+          x = h1 * A[1] + h2 * Bq[1] + h3 * A[23] + h4 * Bq[23];
+          y = h1 * A[2] + h2 * Bq[2] + h3 * A[24] + h4 * Bq[24];
+          c.h = A[3] + wrapAngle(Bq[3] - A[3]) * u;
+        }
       }
-      const u = (rt - a.t) / D;
-      const jump = Math.hypot(Bq[1] - A[1], Bq[2] - A[2]) > (Math.hypot(A[23], A[24]) + Math.hypot(Bq[23], Bq[24])) * D * 0.75 + 60;
-      if (jump) { c.x = Bq[1]; c.y = Bq[2]; c.h = Bq[3]; c.lvl = Bq[22]; continue; }
-      if (u >= 1) { const e = rt - b.t; c.x = Bq[1] + Bq[23] * e; c.y = Bq[2] + Bq[24] * e; c.h = Bq[3]; c.lvl = Bq[22]; continue; }
-      const u2 = u * u, u3 = u2 * u, h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = (u3 - 2 * u2 + u) * D, h4 = (u3 - u2) * D;
-      c.x = h1 * A[1] + h2 * Bq[1] + h3 * A[23] + h4 * Bq[23];
-      c.y = h1 * A[2] + h2 * Bq[2] + h3 * A[24] + h4 * Bq[24];
-      c.h = A[3] + wrapAngle(Bq[3] - A[3]) * u;
-      c.lvl = A[22] + (Bq[22] - A[22]) * u;
+      // If the target position suddenly jumps (a late update corrected it), don't pop: keep the
+      // car where it was drawn and blend the correction in over a few frames.
+      const vx = Bq[23] * mul, vy = Bq[24] * mul;
+      if (c.tx0 !== undefined && !teleport) {
+        const jx = x - (c.tx0 + vx * dt), jy = y - (c.ty0 + vy * dt);
+        if (Math.hypot(jx, jy) > 1.5) { c.ex = (c.ex || 0) - jx; c.ey = (c.ey || 0) - jy; }
+      }
+      c.tx0 = x; c.ty0 = y;
+      const k = Math.exp(-dt * 9);
+      c.ex = (c.ex || 0) * k; c.ey = (c.ey || 0) * k;
+      if (teleport || Math.hypot(c.ex, c.ey) > 160) c.ex = c.ey = 0;
+      c.x = x + c.ex; c.y = y + c.ey;
+      // Height comes from where the car is DRAWN on the track (not from the last update), so
+      // climbing onto and off a ramp is perfectly smooth. Same for which bridge it's drawn on.
+      if (t && t.elev && c.drawIdx !== undefined) {
+        const N = t.N; let best = c.drawIdx, bd = Infinity;
+        for (let o = -5; o <= 6; o++) { const i = (c.drawIdx + o + N) % N, q = t.pts[i], d = (q.x - c.x) ** 2 + (q.y - c.y) ** 2; if (d < bd) { bd = d; best = i; } }
+        const i1 = (best + 1) % N, i0 = (best - 1 + N) % N, p = t.pts[best];
+        const sx = t.pts[i1].x - p.x, sy = t.pts[i1].y - p.y, f = ((c.x - p.x) * sx + (c.y - p.y) * sy) / (sx * sx + sy * sy || 1);
+        c.lvl = f >= 0 ? t.elev[best] + (t.elev[i1] - t.elev[best]) * Math.min(1, f) : t.elev[best] + (t.elev[i0] - t.elev[best]) * Math.min(1, -f);
+        c.trackIdx = best;
+      } else c.lvl = Bq[22];
     }
   }
 
@@ -2355,7 +2525,7 @@
     const layers = G.bridges.map(() => []), ground = [];
     for (const c of S.cars.values()) {
       if (c.x === undefined) continue;
-      const k = c.idx !== undefined && c.lvl > 0.02 ? G.segOf[c.idx] : -1;
+      const ix = c.trackIdx ?? c.drawIdx ?? c.idx, k = ix !== undefined ? G.segOf[ix] : -1;
       (k >= 0 ? layers[k] : ground).push(c);
     }
     const mineLast = (a, b) => (a.id === S.myCar) - (b.id === S.myCar);
@@ -2478,13 +2648,25 @@
     if (!me) return;
     const pct = Math.round(me.nitro ?? 100), key = pct + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0);
     if (key === boostShown) return; boostShown = key;
-    $("boostPct").textContent = pct + "%"; $("boostFill").style.width = pct + "%";
+    $("boostPct").textContent = pct + "%"; $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
     boostBtn.classList.toggle("empty", pct < 3);
     $("slipTag").classList.toggle("hidden", !me.slip || !!me.fin);
+    $("slipTag").textContent = window.innerWidth <= 860 ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%";
   }
   let lastHudStand = "";
   const fmtGap = (g, i) => (i === 0 ? "Leader" : g < 0 ? "+1 lap" : "+" + g.toFixed(1) + "s");
+  // Phones: stack the bottom HUD (radio, then tires/XP, then the pit tire picker) by measuring,
+  // so nothing hides behind anything at any interface size.
+  function layoutHud() {
+    const phone = window.innerWidth <= 860, bottom = $("hudBottom"), radio = $("radio"), pick = $("pitPick");
+    if (!phone || radio.classList.contains("hidden")) { bottom.style.bottom = ""; pick.style.bottom = ""; return; }
+    const rH = radio.getBoundingClientRect().height, bH = bottom.getBoundingClientRect().height;
+    bottom.style.bottom = `calc(${Math.round(rH + 12)}px + env(safe-area-inset-bottom, 0px))`;
+    pick.style.bottom = `calc(${Math.round(rH + bH + 18)}px + env(safe-area-inset-bottom, 0px))`;
+  }
+  window.addEventListener("resize", () => { if (S.screen === "race") layoutHud(); });
   function updateHud(now) {
+    layoutHud();
     const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
     if (!me) return;
     const pos = S.standings.indexOf(me.id) + 1, laps = S.race?.laps || 5;
