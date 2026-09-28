@@ -21,6 +21,47 @@ const FILE = path.join(DATA_DIR, "accounts.json");
 
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
+// ======================= Backups that survive updates =======================
+// Every time an account changes, the player's browser gets a signed copy of it ("backup").
+// If the server lost its accounts (a free Render server wipes its files on every update/restart),
+// the browser hands the copy back and the account is restored exactly as it was.
+// The signature (HMAC) means nobody can edit their copy to give themselves coins.
+// Set ACCOUNT_SECRET on Render to any long random text and never change it (if it's missing, a
+// built-in key is used: fine for testing, but anyone who reads your GitHub code could forge copies).
+const SECRET = process.env.ACCOUNT_SECRET || "scribble-gp-built-in-key-set-ACCOUNT_SECRET-on-render";
+const b64 = (str) => Buffer.from(str, "utf8").toString("base64url");
+function makeBackup(u) {
+  const { sessions, presets, ...keep } = u;
+  const body = b64(JSON.stringify(keep));
+  return body + "." + crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
+}
+function readBackup(blob) {
+  if (typeof blob !== "string" || blob.length > 400000) return null;
+  const [body, sig] = blob.split(".");
+  if (!body || !sig) return null;
+  const want = crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(want);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try { const u = JSON.parse(Buffer.from(body, "base64url").toString("utf8")); return u && typeof u.id === "string" ? u : null; } catch (e) { return null; }
+}
+// bring an account back from a backup, but only if the server doesn't have (a newer copy of) it
+async function restore(blob, wantId) {
+  const b = readBackup(blob); if (!b || (wantId && b.id !== wantId)) return null;
+  const have = await getUser(b.id);
+  if (have) return have;
+  const u = fix({ ...b, sessions: [] });
+  cache.set(u.id, u); saveSoon(u);
+  console.log("Restored account from a player's backup:", u.name);
+  return u;
+}
+async function resumeOrRestore(token, blob) {
+  let u = await userBySession(token);
+  if (u || !blob) return u;
+  u = await restore(blob);
+  if (u) { const h = sha(token); u.sessions = [...(u.sessions || []), h].slice(-8); sessIndex.set(h, u.id); if (UP_URL) redis(["SET", "tb:sess:" + h, u.id, "EX", 60 * 60 * 24 * 180]).catch(() => {}); saveSoon(u); }
+  return u;
+}
+
 // ======================= storage =======================
 const cache = new Map();          // user id -> user object (everyone who signed in since the server started)
 const sessIndex = new Map();      // session hash -> user id (file store keeps all of these in memory)
@@ -40,6 +81,7 @@ function loadFile() {
   return fileDb;
 }
 function saveSoon(u) {
+  u.rev = (u.rev || 0) + 1;
   if (UP_URL) {
     dirty.add(u.id);
     if (!upTimer) upTimer = setTimeout(async () => {
@@ -110,8 +152,9 @@ async function verifyGoogle(credential) {
   if (Number(t.exp) * 1000 < Date.now()) throw new Error("Sign-in expired, try again");
   return { sub: t.sub, name: t.given_name || t.name || "Racer", picture: t.picture || "" };
 }
-async function signInGoogle(credential) {
+async function signInGoogle(credential, backup) {
   const g = await verifyGoogle(credential);
+  if (backup) await restore(backup, "g_" + g.sub);
   return signInWith("g_" + g.sub, g.name, g.picture);
 }
 async function signInDev(name) {
@@ -130,21 +173,27 @@ function passOk(u, pw) {
   const a = Buffer.from(hashPass(pw, u.pass.salt).hash, "hex"), b = Buffer.from(u.pass.hash, "hex");
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-async function signUp(username, password) {
+async function signUp(username, password, backup) {
   username = String(username || "").trim(); password = String(password || "");
   if (!USER_RE.test(username)) throw new Error("Username: 3-16 letters, numbers or _");
   if (password.length < 6) throw new Error("Password needs at least 6 characters");
   if (password.length > 100) throw new Error("That password is too long");
   const id = "u_" + username.toLowerCase();
-  if (await getUser(id)) throw new Error("That username is taken, try another one");
+  if (!(await getUser(id)) && backup) {
+    // this browser has a saved copy of that account: bring it back instead of starting over
+    const r = await restore(backup, id);
+    if (r && passOk(r, password)) { const token = await addSession(r); return { u: r, token }; }
+  }
+  if (await getUser(id)) throw new Error("That username is taken, try another one (or Log in if it's yours)");
   const u = fix({ id, name: username, picture: "", created: Date.now(), pass: hashPass(password) });
   cache.set(id, u); saveSoon(u);
   const token = await addSession(u);
   return { u, token };
 }
-async function logIn(username, password) {
+async function logIn(username, password, backup) {
   username = String(username || "").trim();
-  const u = USER_RE.test(username) ? await getUser("u_" + username.toLowerCase()) : null;
+  let u = USER_RE.test(username) ? await getUser("u_" + username.toLowerCase()) : null;
+  if (!u && backup && USER_RE.test(username)) u = await restore(backup, "u_" + username.toLowerCase());
   if (!u || !passOk(u, password)) throw new Error("Wrong username or password");
   const token = await addSession(u);
   return { u, token };
@@ -366,11 +415,29 @@ function recordRace(u, r) {
 
 function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, owned: u.owned, equipped: u.equipped };
+  return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
+// ======================= Saved tracks (presets) =======================
+// Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
+function cleanPreset(p) {
+  if (!p || typeof p !== "object" || !Array.isArray(p.stroke)) return null;
+  const name = String(p.name || "").trim().slice(0, 30); if (!name) return null;
+  let st = p.stroke.filter((q) => Array.isArray(q) && q.length >= 3 && q.every(Number.isFinite)).map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10, Math.round(q[2])]);
+  if (st.length < 8) return null;
+  if (st.length > 2500) { const k = st.length / 2500; st = Array.from({ length: 2500 }, (_, i) => st[Math.floor(i * k)]); }
+  const start = Array.isArray(p.start) && p.start.length === 2 && p.start.every(Number.isFinite) ? p.start.map((v) => Math.round(v * 10) / 10) : null;
+  return { name, stroke: st, map: ["small", "normal", "large", "huge"].includes(p.map) ? p.map : "normal", start, reverse: !!p.reverse, smooth: !!p.smooth, theme: typeof p.theme === "string" ? p.theme.slice(0, 12) : null, saved: Number(p.saved) || Date.now() };
+}
+function savePreset(u, p) {
+  const c = cleanPreset(p); if (!c) return { error: "That track couldn't be saved" };
+  u.presets = (u.presets || []).filter((x) => x.name.toLowerCase() !== c.name.toLowerCase());
+  if (u.presets.length >= 30) return { error: "You have 30 saved tracks already. Delete one first." };
+  u.presets.push(c); saveSoon(u); return { ok: true };
+}
+function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.name !== name); saveSoon(u); return { ok: true }; }
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

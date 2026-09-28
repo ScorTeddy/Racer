@@ -40,7 +40,16 @@ const PIT_TIME = 2.8;
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
 const MAX_PLAYERS = 6;
-const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno", "Ziggy", "Pip"];
+// 90 made-up drivers, so even a 60-car grid has no "Bolt 2"
+const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno", "Ziggy", "Pip",
+  "Axel", "Luna", "Dash", "Echo", "Finn", "Gemma", "Hugo", "Ivy", "Jett", "Kai",
+  "Lola", "Milo", "Nash", "Orla", "Pike", "Quinn", "Rex", "Sage", "Taro", "Uma",
+  "Vince", "Wren", "Xander", "Yuki", "Zane", "Ace Jr", "Bree", "Cruz", "Dex", "Elio",
+  "Flint", "Gio", "Hana", "Ines", "Jasper", "Kenji", "Leon", "Mara", "Nico", "Otto",
+  "Pia", "Rafa", "Sol", "Tess", "Ulla", "Vito", "Wade", "Xia", "Yara", "Zeke",
+  "Aria", "Bram", "Cleo", "Dario", "Elsa", "Fox", "Greta", "Hank", "Iker", "Jules",
+  "Knox", "Lars", "Mika", "Noor", "Oskar", "Petra", "Rio", "Sven", "Tomas", "Vera",
+  "Willa", "Yusuf", "Zora", "Arlo", "Bex", "Cato", "Dunya", "Enzo", "Freya", "Gus"];
 const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00acc1", "#ec407a", "#6d4c41", "#546e7a", "#c0ca33"];
 const LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
 // Tire compounds. Wets are only good when the track is wet.
@@ -56,7 +65,9 @@ const PIT_LIMIT = 170;             // pit lane speed limit (world px/s, about 60
 const PIT_GAP = 62;                // pit lane center sits this far outside the road edge
 const DEFAULT_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 const MAX_AI = 60;
-const AI_TEAMS = ["Thunder Racing", "Apex Motors", "Nitro Works", "Comet GP", "Vortex", "Blue Falcon", "Red Arrow", "Iron Wolf", "Solar Speed", "Night Owl"];
+const AI_TEAMS = ["Thunder Racing", "Apex Motors", "Nitro Works", "Comet GP", "Vortex", "Blue Falcon", "Red Arrow", "Iron Wolf", "Solar Speed", "Night Owl",
+  "Crimson Tide GP", "Polar Motorsport", "Jade Dragon", "Sandstorm Racing", "Quantum Speed", "Kestrel Works", "Titan Torque", "Silver Fox", "Rocket Cola Racing", "Mango Motors",
+  "Aurora Engineering", "Ember Racing", "Glacier GP", "Hornet Team", "Lynx Autosport", "Meteor Racing", "Orbit Motors", "Phantom GP", "Riptide Racing", "Zenith Speed", "Cobalt Crew", "Wildcat Works", "Starling GP"];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const pct = (x) => Math.round(x * 100);
 const PIT_MISTAKE_CHANCE = 0.05, PIT_MISTAKE_TIME = 1;   // 5%: the crew fumbles and you wait 1 more second
@@ -1974,22 +1985,22 @@ io.on("connection", (socket) => {
     const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
   };
   const authFail = (e) => socket.emit("authError", e.message || "Sign-in failed");
-  socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || "")).then(signedIn, authFail); });
+  socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || ""), d?.backup).then(signedIn, authFail); });
   // username + password: max 8 tries a minute per connection, so nobody can guess passwords fast
   let authTries = [];
   const authLimited = () => { const now = Date.now(); authTries = authTries.filter((t) => now - t < 60000); authTries.push(now); return authTries.length > 8; };
   socket.on("auth:signup", (d) => {
     if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
-    accounts.signUp(d?.username, d?.password).then(signedIn, authFail);
+    accounts.signUp(d?.username, d?.password, d?.backup).then(signedIn, authFail);
   });
   socket.on("auth:login", (d) => {
     if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
-    accounts.logIn(d?.username, d?.password).then(signedIn, authFail);
+    accounts.logIn(d?.username, d?.password, d?.backup).then(signedIn, authFail);
   });
   socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
   socket.on("auth:resume", async (d) => {
     try {
-      const u = await accounts.userBySession(String(d?.token || ""));
+      const u = await accounts.resumeOrRestore(String(d?.token || ""), d?.backup);
       if (!u) return socket.emit("signedOut");
       socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
       socket.emit("account", accounts.publicUser(u));
@@ -2003,6 +2014,14 @@ io.on("connection", (socket) => {
     const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
     socket.emit("signedOut");
   });
+  // saved tracks on your account
+  socket.on("presets:get", async () => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); socket.emit("presets", u ? u.presets || [] : null); });
+  socket.on("presets:save", async (p) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
+    const r = accounts.savePreset(u, p); if (r.error) return socket.emit("toast", r.error);
+    socket.emit("presets", u.presets);
+  });
+  socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
   socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES }));
   const storeAction = async (fn) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
@@ -2071,6 +2090,20 @@ io.on("connection", (socket) => {
     r.sendLobby();
   });
   // bring an AI driver into your team (great when you race alone), or send one back
+  // rename your team (everyone on it, AI teammates too, and its championship points follow)
+  socket.on("renameTeam", (name) => {
+    const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return;
+    const old = p.team, nu = cleanTeam(name);
+    if (!nu || nu === old) return;
+    const taken = [...r.players.values()].some((x) => x.team === nu) || r.roster.some((x) => x.team === nu);
+    if (taken) return socket.emit("toast", "Another team already has that name");
+    for (const x of r.players.values()) if (x.team === old) { x.team = nu; io.to(x.id).emit("teamRenamed", nu); }
+    for (const a of r.roster) if (a.team === old) a.team = nu;
+    if (r.teamChamp[old] !== undefined) { r.teamChamp[nu] = (r.teamChamp[nu] || 0) + r.teamChamp[old]; delete r.teamChamp[old]; }
+    if (r.track) assignBoxes(r.track.pitLane, r.allTeams());
+    r.emit("toast", `${old} is now called ${nu}`);
+    r.sendLobby();
+  });
   socket.on("aiTeammate", (d) => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return;
     const humanTeams = new Set([...r.players.values()].map((x) => x.team));

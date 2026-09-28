@@ -22,6 +22,15 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
+## Accounts and saved tracks survive updates
+- **Accounts:** after every change the server gives each player's browser a signed copy of their account.
+  When an update (or a free Render restart) wipes the server, the browser hands the copy back on the next
+  visit or login and the account comes back with all its stats, coins and items. The signature stops
+  anyone from editing their copy. **Set `ACCOUNT_SECRET` once** (Render > Environment, any long random text,
+  e.g. mash the keyboard for 40 characters) and never change it. If you change it, old copies stop working.
+  Only the browser that last used an account has its copy, so for playing on several devices use Upstash too.
+- **Saved tracks (💾 My tracks):** stored in the browser (updates never touch that) and on the account.
+
 ## Accounts setup
 **Make an account** (username + password) works with no setup at all. Passwords are stored only as a
 salted scrypt hash, and there are max 8 sign-in tries a minute per connection. There's no "forgot password".
@@ -237,6 +246,14 @@ behind the one in front, left/right alternating, 60px apart (squeezed on short t
 row; hold **Ctrl** (or tap it) for everyone. **Lap delta** (top right): this lap vs your best lap at the same point.
 **Damage:** cracks/dents on the car grow with damage, smoke above 55%. **Side by side:** rubbing no longer costs
 speed every physics step, and a car beside you isn't treated as one to follow. **Durables:** wear 0.8 (~1.25x inters).
+
+**Backups:** `makeBackup`/`readBackup`/`restore` in accounts.js (HMAC-SHA256 with `ACCOUNT_SECRET`); `account`
+messages carry `backup`; the client keeps `tb-backups` {id: blob} + `tb-last` and sends it with `auth:resume`,
+`auth:login`, `auth:signup` and `auth:google`. A server copy always wins over a backup.
+**Presets:** `presets:get|save|delete` (max 30, stroke simplified to 2500 points; map, smooth, theme, reverse,
+start point). Client keeps `tb-presets` and merges both lists by name (newest wins).
+**Teams:** `renameTeam name` renames your team for everyone on it (AI too) and moves its championship points.
+**AI:** 90 made-up names (`AI_NAMES`) and 33 team names, so big grids don't get "Bolt 2".
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over

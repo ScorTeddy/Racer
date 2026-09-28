@@ -679,6 +679,8 @@
 
   /* =================== Phone mode =================== */
   .edit-track-btn, .done-btn { display: none; }
+  .team-edit { cursor: pointer; border: 0; background: none; font-size: 0.85rem; padding: 0 0.2rem; margin-left: auto; }
+  .team-name-in { flex: 1; min-width: 0; min-height: 2rem !important; padding: 0.2rem 0.5rem; }
   .ai-mate { width: 100%; margin-top: 0.4rem; min-height: 2.2rem; font-size: 0.82rem; }
   .m-x { cursor: pointer; border: 0; background: none; color: var(--soft); font-size: 0.7rem; padding: 0 0 0 0.25rem; }
   .m-x:hover { color: #ff6b61; }
@@ -747,6 +749,16 @@
   .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
+  #presetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  .preset-card { width: min(46rem, 100%); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; gap: 0.7rem; padding: 1rem 1.2rem; }
+  .preset-save { display: flex; gap: 0.5rem; } .preset-save input { flex: 1; min-width: 0; }
+  .preset-note { margin: 0; color: var(--soft); font-size: 0.82rem; }
+  .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: 0.55rem; overflow-y: auto; min-height: 6rem; }
+  .preset { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
+  .preset canvas { width: 100%; height: auto; border-radius: 0.5rem; background: rgba(0,0,0,0.25); }
+  .preset b { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preset small { color: var(--soft); font-size: 0.72rem; }
+  .preset .row { display: flex; gap: 0.35rem; } .preset .row .btn { flex: 1; min-height: 2.2rem; font-size: 0.82rem; padding: 0.3rem; }
   #authBox { position: fixed; inset: 0; z-index: 32; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .auth-card { width: min(26rem, 100%); display: flex; flex-direction: column; gap: 0.75rem; padding: 1.1rem 1.2rem; animation: rise 400ms cubic-bezier(.2,.9,.25,1.15) both; }
   .auth-card label.f { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -1021,6 +1033,7 @@
         <button type="button" class="tool" id="reverseBtn"><span>🔄</span>Reverse</button>
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
         <button type="button" class="tool" id="f1Btn" title="Race a real circuit (F1 tracks, the Nordschleife, ovals)"><span>🏆</span>Real tracks</button>
+        <button type="button" class="tool" id="presetBtn" title="Save this track, or load one you saved"><span>💾</span>My tracks</button>
         <button type="button" class="tool" id="cutBtn" title="Pick a part of the track, delete it and draw it again"><span>✂️</span>Redraw part</button>
         <button type="button" class="tool" id="smoothBtn" aria-pressed="false" title="Straightens the straights and smooths the curves"><span>〰️</span>Smooth</button>
         <button type="button" class="tool danger" id="clearBtn"><span>🗑️</span>Clear</button>
@@ -1134,6 +1147,19 @@
       <ol class="fin-table" id="finTable"></ol>
     </div>
     <div class="back" id="finBack"></div>
+  </div>
+</div>
+
+<!-- ============ Saved tracks ============ -->
+<div id="presetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="presetTitle">
+  <div class="preset-card panel">
+    <header class="hub-head"><h2 id="presetTitle">💾 My tracks</h2><button type="button" class="x" id="presetClose" aria-label="Close">✕</button></header>
+    <form class="preset-save" id="presetForm">
+      <input type="text" id="presetName" maxlength="30" placeholder="Name this track" aria-label="Track name">
+      <button type="submit" class="btn go" id="presetSaveBtn">Save current track</button>
+    </form>
+    <p class="preset-note" id="presetNote"></p>
+    <div class="preset-grid" id="presetGrid"></div>
   </div>
 </div>
 
@@ -1610,10 +1636,19 @@
   socket.on("connect", () => {
     socket.emit("menuInfo"); socket.emit("catalog");
     let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
-    if (tok) socket.emit("auth:resume", { token: tok });
+    if (tok) socket.emit("auth:resume", { token: tok, backup: backupFor(lastAcct()) });
   });
 
   // ======================= Accounts: sign in, stats, achievements, store =======================
+  // Backups: the server sends a signed copy of your account after every change and we keep it in
+  // this browser. If the server forgot everyone (it restarts clean after every update), we hand it back.
+  function backups() { try { return JSON.parse(localStorage.getItem("tb-backups") || "{}"); } catch (e) { return {}; } }
+  function backupFor(id) { return id ? backups()[id] || null : null; }
+  function lastAcct() { try { return localStorage.getItem("tb-last") || null; } catch (e) { return null; } }
+  function keepBackup(id, blob) {
+    if (!id || !blob) return;
+    try { const b = backups(); b[id] = blob; localStorage.setItem("tb-backups", JSON.stringify(b)); localStorage.setItem("tb-last", id); } catch (e) {}
+  }
   function extrasFor(u) {
     if (!u || !A.catalog) return null;
     const o = {};
@@ -1638,6 +1673,8 @@
   socket.on("catalog", (c) => { A.catalog = c; renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
   socket.on("account", (u) => {
     if (u.token) { try { localStorage.setItem("tb-token", u.token); } catch (e) {} delete u.token; }
+    if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
+    if (!A.user || A.user.id !== u.id) socket.emit("presets:get");
     A.user = u; renderAcct();
     if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
     if (!$("hub").classList.contains("hidden")) renderHub();
@@ -1678,7 +1715,7 @@
       if (password !== $("authPass2").value) { $("authErr").textContent = "The two passwords don't match"; return; }
     } else if (!password) { $("authErr").textContent = "Type your password"; return; }
     $("authErr").textContent = ""; $("authGo").disabled = true;
-    socket.emit(authMode === "signup" ? "auth:signup" : "auth:login", { username, password });
+    socket.emit(authMode === "signup" ? "auth:signup" : "auth:login", { username, password, backup: backupFor("u_" + username.toLowerCase()) });
   });
   socket.on("achievement", (a) => {
     const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
@@ -1693,7 +1730,7 @@
     if (!cfg.googleClientId) return;
     const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
     sc.onload = () => {
-      google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential }) });
+      google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential, backup: backupFor(lastAcct()) }) });
       google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
     };
     document.head.appendChild(sc);
@@ -1908,6 +1945,9 @@
     drawBoard();
   });
   socket.on("trackResult", (r) => {
+    if (!r.error && P.steps.length) { P.steps.shift()(); return; }
+    if (!r.error && P.loading) { boardHint(`Loaded "${P.loading}"!`, false); P.loading = null; return; }
+    if (r.error) { P.steps = []; P.loading = null; }
     if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
     if (r.error) boardHint(r.error, true);
     else if (r.moved) boardHint("Start/finish line moved!", false);
@@ -2321,6 +2361,17 @@
       const b = document.createElement("b"); b.textContent = team; th.appendChild(b);
       if (team === me?.team) {
         const y = document.createElement("span"); y.className = "you"; y.textContent = "YOUR TEAM"; th.appendChild(y);
+        if (l.phase === "lobby") {
+          const ed = document.createElement("button"); ed.type = "button"; ed.className = "team-edit"; ed.textContent = "✏️"; ed.title = "Rename your team"; ed.setAttribute("aria-label", "Rename your team");
+          ed.addEventListener("click", () => {
+            const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 20; inp.value = team; inp.className = "team-name-in"; inp.setAttribute("aria-label", "New team name");
+            const ok = document.createElement("button"); ok.type = "button"; ok.className = "join-btn"; ok.textContent = "Save";
+            const go = () => { const v = inp.value.trim(); if (v && v !== team) socket.emit("renameTeam", v); box.dataset.key = ""; renderTeams(S.lobby); };
+            ok.addEventListener("click", go); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); if (e.key === "Escape") { box.dataset.key = ""; renderTeams(S.lobby); } });
+            th.textContent = ""; th.append(inp, ok); inp.focus(); inp.select();
+          });
+          th.insertBefore(ed, y);
+        }
       }
       else {
         const j = document.createElement("button"); j.type = "button"; j.className = "join-btn"; j.textContent = "Join";
@@ -2631,7 +2682,83 @@
     else boardHint(S.track ? "Draw a new track, or use the track tools. Tap Done when you're happy." : "Draw your track in one loop with your finger. Tap Done when you're happy.", false);
     requestAnimationFrame(sizeBoard);
   }
+  // ---- saved tracks (presets): kept in this browser, and on your account when signed in ----
+  const P = { list: [], steps: [] };
+  function localPresets() { try { return JSON.parse(localStorage.getItem("tb-presets") || "[]"); } catch (e) { return []; } }
+  function storeLocal(list) { try { localStorage.setItem("tb-presets", JSON.stringify(list)); } catch (e) { popup("This browser is out of space for saved tracks", true); } }
+  function mergePresets(a, b) { const m = new Map(); for (const x of [...a, ...b]) { const k = x.name.toLowerCase(), o = m.get(k); if (!o || (x.saved || 0) > (o.saved || 0)) m.set(k, x); } return [...m.values()].sort((x, y) => (y.saved || 0) - (x.saved || 0)); }
+  P.list = localPresets();
+  socket.on("presets", (list) => {
+    if (!list) return;
+    const merged = mergePresets(P.list, list);
+    // anything only this browser had goes up to the account too
+    for (const x of merged) if (!list.some((y) => y.name.toLowerCase() === x.name.toLowerCase() && (y.saved || 0) >= (x.saved || 0))) socket.emit("presets:save", x);
+    P.list = merged; storeLocal(merged);
+    if (!$("presetBox").classList.contains("hidden")) renderPresets();
+  });
+  function openPresets() {
+    $("presetBox").classList.remove("hidden");
+    $("presetName").value = S.track?.name || "";
+    renderPresets(); setTimeout(() => $("presetName").focus(), 50);
+  }
+  function renderPresets() {
+    const canSave = S.host && S.lobby?.phase === "lobby" && S.track && S.lobby?.stroke;
+    $("presetSaveBtn").disabled = !canSave; $("presetName").disabled = !canSave;
+    $("presetNote").textContent = !S.host ? "Only the host can load tracks, but you can look." : !S.track ? "Draw a track (or roll a random one) to save it." : A.user ? "Saved to your account and this browser, so updates never delete them." : "Saved in this browser (updates never delete them). Make an account to have them on other devices too.";
+    const g = $("presetGrid"); g.textContent = "";
+    if (!P.list.length) { g.appendChild(el("p", "preset-note", "No saved tracks yet. Make one you love, give it a name and hit Save.")); return; }
+    for (const pr of P.list) {
+      const card = el("div", "preset");
+      const cv = document.createElement("canvas"); cv.width = 240; cv.height = 140;
+      const c = cv.getContext("2d"), xs = pr.stroke.map((q) => q[0]), ys = pr.stroke.map((q) => q[1]);
+      const mnx = Math.min(...xs), mxx = Math.max(...xs), mny = Math.min(...ys), mxy = Math.max(...ys), sc = Math.min(220 / (mxx - mnx || 1), 120 / (mxy - mny || 1));
+      c.lineJoin = c.lineCap = "round"; c.strokeStyle = "#ffcc1f"; c.lineWidth = 5; c.beginPath();
+      pr.stroke.forEach((q, i) => { const x = 120 + (q[0] - (mnx + mxx) / 2) * sc, y = 70 + (q[1] - (mny + mxy) / 2) * sc; i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.stroke();
+      if (pr.start) { c.fillStyle = "#fff"; c.beginPath(); c.arc(120 + (pr.start[0] - (mnx + mxx) / 2) * sc, 70 + (pr.start[1] - (mny + mxy) / 2) * sc, 5, 0, Math.PI * 2); c.fill(); }
+      card.append(cv, el("b", "", pr.name), el("small", "", `${pr.map} map${pr.reverse ? " · reversed" : ""} · ${new Date(pr.saved).toLocaleDateString()}`));
+      const row = el("div", "row");
+      const ld = el("button", "btn go", "Load"); ld.type = "button"; ld.disabled = !S.host || S.lobby?.phase !== "lobby";
+      ld.addEventListener("click", () => loadPreset(pr));
+      const del = el("button", "btn ghost", "Delete"); del.type = "button"; del.style.flex = "0 0 auto";
+      del.addEventListener("click", () => {
+        if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Sure?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Delete"; }, 2500); return; }
+        P.list = P.list.filter((x) => x !== pr); storeLocal(P.list); if (A.user) socket.emit("presets:delete", pr.name); renderPresets();
+      });
+      row.append(ld, del); card.appendChild(row); g.appendChild(card);
+    }
+  }
+  function currentPreset(name) {
+    const T = S.track, p0 = T.pts[0];
+    return { name, stroke: S.lobby.stroke, map: S.lobby.settings.map, smooth: !!S.lobby.settings.smooth, theme: S.lobby.settings.theme, reverse: !!T.reverse,
+      start: [T.minX + (p0.x - T.pad) / T.scale, T.minY + (p0.y - T.pad) / T.scale], saved: Date.now() };
+  }
+  $("presetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("presetName").value.trim().slice(0, 30);
+    if (!name) { $("presetName").focus(); return; }
+    if (!S.track || !S.lobby?.stroke) return;
+    const pr = currentPreset(name);
+    P.list = mergePresets(P.list.filter((x) => x.name.toLowerCase() !== name.toLowerCase()), [pr]); storeLocal(P.list);
+    if (A.user) socket.emit("presets:save", pr);
+    popup(`Saved "${name}"!`); sfx("level"); renderPresets();
+  });
+  function loadPreset(pr) {
+    if (!S.host) return;
+    const st = S.lobby.settings;
+    if (!!st.smooth !== !!pr.smooth || (pr.theme && pr.theme !== st.theme)) socket.emit("settings", { smooth: !!pr.smooth, ...(pr.theme ? { theme: pr.theme } : {}) });
+    endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
+    // after it's built: turn it round if it was reversed, then put the start line back
+    P.steps = []; if (pr.reverse) P.steps.push(() => socket.emit("reverse")); if (pr.start) P.steps.push(() => socket.emit("setStart", { x: pr.start[0], y: pr.start[1] }));
+    P.loading = pr.name;
+    setTimeout(() => socket.emit("track", { stroke: pr.stroke, map: pr.map }), pr.smooth !== !!st.smooth ? 250 : 0);
+    $("presetBox").classList.add("hidden"); boardHint(`Loading "${pr.name}"...`, false);
+  }
+  $("presetBtn").addEventListener("click", openPresets);
+  $("presetClose").addEventListener("click", () => $("presetBox").classList.add("hidden"));
+  $("presetBox").addEventListener("click", (e) => { if (e.target.id === "presetBox") $("presetBox").classList.add("hidden"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("presetBox").classList.contains("hidden")) $("presetBox").classList.add("hidden"); });
   $("lastSeasonBtn").addEventListener("click", () => { if (S.lastSeason) openFinale(S.lastSeason); else socket.emit("lastSeason"); });
+  socket.on("teamRenamed", (nu) => { prof.team = nu; teamIn.value = nu; try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {} });
   socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
   // ---- live delta to your best lap: time at each point of this lap vs. the same point on your best lap ----
   function lapDelta() {
