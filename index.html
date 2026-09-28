@@ -235,6 +235,15 @@
   @keyframes feedIn { from { opacity: 0; transform: translateX(30px); } }
   @keyframes feedOut { to { opacity: 0; transform: translateX(30px); } }
   .standings { position: absolute; left: 1rem; top: calc(7rem + env(safe-area-inset-top, 0px)); width: 15rem; padding: 0.4rem 0.5rem; font-size: 0.82rem; animation: inL 420ms cubic-bezier(.2,.9,.3,1.1) 60ms both; }
+  .standings { pointer-events: auto; cursor: pointer; }
+  .standings.all { z-index: 8; max-height: calc(100vh - 9rem); overflow-y: auto; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
+  .standings .lb-gap { justify-content: center; color: var(--soft); font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0; }
+  .lap-delta { position: absolute; right: 1rem; top: calc(2.4rem + 130px + 0.5rem + env(safe-area-inset-top, 0px)); width: 180px; padding: 0.35rem 0.6rem; display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; animation: inR 420ms cubic-bezier(.2,.9,.3,1.1) 100ms both; }
+  .lap-delta small { color: var(--soft); font-weight: 700; font-size: 0.72rem; }
+  .lap-delta b { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.25rem; }
+  .lap-delta.up b { color: #3ecf6a; } .lap-delta.down b { color: #ff6b61; }
+  @media (max-width: 860px) { .lap-delta { width: 120px; top: calc(2.4rem + 90px + 0.4rem + env(safe-area-inset-top, 0px)); padding: 0.25rem 0.45rem; } .lap-delta b { font-size: 1rem; } }
+  @media (max-height: 520px) and (orientation: landscape) { .lap-delta { width: 110px; top: calc(0.5rem + 80px + 0.3rem + env(safe-area-inset-top, 0px)); } }
   .standings ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
   .standings li { display: flex; align-items: center; gap: 0.35rem; transition: transform 200ms ease; }
   .standings li .p { width: 1.3rem; color: var(--soft); font-weight: 700; text-align: right; }
@@ -670,6 +679,9 @@
 
   /* =================== Phone mode =================== */
   .edit-track-btn, .done-btn { display: none; }
+  .ai-mate { width: 100%; margin-top: 0.4rem; min-height: 2.2rem; font-size: 0.82rem; }
+  .m-x { cursor: pointer; border: 0; background: none; color: var(--soft); font-size: 0.7rem; padding: 0 0 0 0.25rem; }
+  .m-x:hover { color: #ff6b61; }
   .grid-random { width: 100%; margin: 0.2rem 0 0.4rem; font-size: 0.85rem; }
   body.phone .edit-track-btn { display: flex; width: 100%; font-size: 1.1rem; }
   body.phone .edit-track-btn.hidden { display: none !important; }
@@ -752,10 +764,10 @@
   .hub-guest { margin: 0; padding: 0.6rem 0.8rem; border-radius: 0.7rem; background: rgba(79,163,255,0.12); border: 1.5px solid rgba(79,163,255,0.4); font-size: 0.9rem; }
   .hub-body { overflow-y: auto; min-height: 12rem; padding-right: 0.2rem; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 0.5rem; }
-  .stat { padding: 0.6rem 0.75rem; border-radius: 0.7rem; background: var(--panel-2); border: 1.5px solid var(--edge); display: flex; flex-direction: column; gap: 0.1rem; }
-  .stat b { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
-  .stat small { color: var(--soft); font-size: 0.78rem; font-weight: 600; }
-  .stat.hl b { color: var(--yellow); }
+  .hstat { padding: 0.6rem 0.75rem; border-radius: 0.7rem; background: var(--panel-2); border: 1.5px solid var(--edge); display: flex; flex-direction: column; gap: 0.1rem; }
+  .hstat b { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+  .hstat small { color: var(--soft); font-size: 0.78rem; font-weight: 600; }
+  .hstat.hl b { color: var(--yellow); }
   .hub-h { margin: 0.9rem 0 0.45rem; font-size: 0.95rem; color: var(--soft); }
   .hub-h:first-child { margin-top: 0; }
   .ach-bar { height: 0.55rem; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; margin-bottom: 0.7rem; }
@@ -1029,6 +1041,7 @@
   <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div></div>
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel"></canvas>
+  <div class="lap-delta panel hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best lap</small><b id="lapDeltaVal">--</b></div>
   <div class="feed" id="feed" aria-live="polite"></div>
   <div class="weather panel hidden" id="weatherPill"></div>
   <div class="tire-pick panel hidden" id="tirePick" role="dialog" aria-labelledby="tpTitle">
@@ -1204,7 +1217,7 @@
     neon:    { ground: "#120d24", speck: ["rgba(180,120,255,0.08)", "rgba(0,0,0,0.3)"], tex: "grid", runoff: "#231a40", asphalt: "#18142a", curbA: "#22e6ff", curbB: "#ff2bd6", line: "rgba(120,240,255,0.6)", night: true },
   };
   const TIRES = {
-    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.35, grip: 0.35, life: 0.85, note: "Lasts a long time (not a whole race), but it's the slowest." },
+    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.35, grip: 0.35, life: 0.7, note: "Lasts longer than the others, but it's the slowest." },
     inter:   { name: "Intermediate", short: "I", color: "#ffcc1f", speed: 0.55, grip: 0.6, life: 0.55, note: "Right in the middle. A safe pick." },
     fast:    { name: "Fast", short: "F", color: "#e53935", speed: 1.0, grip: 0.85, life: 0.2, note: "The quickest, but they wear out fast." },
     wet:     { name: "Wets", short: "W", color: "#1e88e5", speed: 0.3, grip: 1.0, life: 0.5, note: "For rain. Slow and wear out fast on a dry track." },
@@ -1422,12 +1435,33 @@
     c.save(); c.translate(-14, 0); c.rotate(Math.PI / 2);
     c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
     c.restore();
+    if (car.dmg > 0.08) drawDamage(c, car.dmg, car.id || 1, L, Wd);
     if (opts.glow) { c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 2.5; rrect(c, -L / 2 - 4, -Wd / 2 - 4, L + 8, Wd + 8, 10); c.stroke(); }
     c.restore();
   }
 
   // account state (filled in once the server says who you are)
   const A = { user: null, cfg: null, catalog: null, tab: "stats", extras: null };
+  // damage: cracks and dents that grow with the damage (0..1), the same pattern every frame for each car
+  function drawDamage(c, dmg, id, L, Wd) {
+    const R = seeded(id * 7919);
+    c.save(); rrect(c, -L / 2, -Wd / 2, L, Wd, 7); c.clip();
+    const n = Math.ceil(dmg * 7);
+    for (let k = 0; k < n; k++) {
+      let x = -L / 2 + R() * L, y = (R() < 0.5 ? -1 : 1) * (Wd / 2 - R() * 5);
+      // a dark dent where it got hit, with cracks running out of it
+      c.fillStyle = "rgba(0,0,0,0.35)"; c.beginPath(); c.ellipse(x, y, 3 + dmg * 3, 2 + dmg * 2, R() * 3, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(15,15,18,0.85)"; c.lineWidth = 0.9;
+      for (let b = 0; b < 3; b++) {
+        let cx = x, cy = y; c.beginPath(); c.moveTo(cx, cy);
+        const dir = Math.atan2(-y, R() - 0.5) + (R() - 0.5) * 1.6;
+        for (let s2 = 0; s2 < 3; s2++) { cx += Math.cos(dir + (R() - 0.5)) * (3 + dmg * 5); cy += Math.sin(dir + (R() - 0.5)) * (2 + dmg * 3); c.lineTo(cx, cy); }
+        c.stroke();
+      }
+    }
+    if (dmg > 0.5) { c.fillStyle = "rgba(20,20,20,0.35)"; c.fillRect(L / 2 - 8, -Wd / 2, 8, Wd); }   // crumpled nose
+    c.restore();
+  }
   // chest liveries (original designs), painted over the whole body
   function drawLivery(c, kind, base, L, Wd, hue) {
     const x0 = -L / 2, y0 = -Wd / 2;
@@ -1705,7 +1739,7 @@
     for (const [title, items] of groups) {
       box.appendChild(el("h3", "hub-h", title));
       const g = el("div", "stat-grid");
-      for (const [label, val, hl] of items) { const d = el("div", "stat" + (hl ? " hl" : "")); d.append(el("b", "", val), el("small", "", label)); g.appendChild(d); }
+      for (const [label, val, hl] of items) { const d = el("div", "hstat" + (hl ? " hl" : "")); d.append(el("b", "", val), el("small", "", label)); g.appendChild(d); }
       box.appendChild(g);
     }
   }
@@ -1893,6 +1927,7 @@
     setOrder("normal", true); updateBox(); disarmLeave();
     $("feed").textContent = ""; $("popups").textContent = "";
     $("qualiBox").classList.add("hidden"); $("mustPit").classList.add("hidden"); S.mustPit = null; setPausedUi(false);
+    S.lapRef = null; $("lapDelta").classList.add("hidden");
     $("pauseBtn").classList.toggle("hidden", !S.host);
     S.race.quali = r.quali || 0;
     show("race");
@@ -1989,6 +2024,7 @@
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
       Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost });
     }
+    lapDelta();
     S.weather = st.weather;
     if (S.myCar) {
       const pos = S.standings.indexOf(S.myCar) + 1;
@@ -2273,7 +2309,7 @@
     const teams = new Map();
     const add = (team, m) => { if (!team) return; if (!teams.has(team)) teams.set(team, []); teams.get(team).push(m); };
     for (const p of l.players) add(p.team, { name: p.name, color: p.color, ai: false });
-    for (const r of l.roster) add(r.team, { name: r.name, color: r.color, ai: true });
+    for (const r of l.roster) add(r.team, { name: r.name, color: r.color, ai: true, hired: !!r.origTeam });
     const key = JSON.stringify([...teams]) + me?.team;
     if (box.dataset.key === key) return;
     box.dataset.key = key; box.textContent = "";
@@ -2283,7 +2319,9 @@
       const card = document.createElement("div"); card.className = "team-card" + (team === me?.team ? " mine" : "");
       const th = document.createElement("div"); th.className = "th";
       const b = document.createElement("b"); b.textContent = team; th.appendChild(b);
-      if (team === me?.team) { const y = document.createElement("span"); y.className = "you"; y.textContent = "YOUR TEAM"; th.appendChild(y); }
+      if (team === me?.team) {
+        const y = document.createElement("span"); y.className = "you"; y.textContent = "YOUR TEAM"; th.appendChild(y);
+      }
       else {
         const j = document.createElement("button"); j.type = "button"; j.className = "join-btn"; j.textContent = "Join";
         j.addEventListener("click", () => joinTeam(team));
@@ -2293,9 +2331,21 @@
       for (const m of members) {
         const s2 = document.createElement("span"); s2.className = "m" + (m.ai ? " ai" : "");
         const i2 = document.createElement("i"); i2.style.background = m.color; s2.append(i2, m.name + (m.ai ? " (AI)" : ""));
+        if (m.ai && team === me?.team && m.hired && l.phase === "lobby") {
+          const x = document.createElement("button"); x.type = "button"; x.className = "m-x"; x.textContent = "✕"; x.title = `Send ${m.name} back to their old team`;
+          x.addEventListener("click", () => socket.emit("aiTeammate", { remove: m.name })); s2.appendChild(x);
+        }
         ms.appendChild(s2);
       }
-      card.append(th, ms); box.appendChild(card);
+      card.append(th, ms);
+      if (team === me?.team && l.phase === "lobby" && members.filter((m) => m.ai).length < 3) {
+        const add = document.createElement("button"); add.type = "button"; add.className = "btn ai-mate";
+        add.textContent = members.length < 2 ? "🤖 Add an AI teammate" : "🤖 Add another AI teammate";
+        add.title = "An AI driver races for your team and scores team points (it takes one from the AI teams)";
+        add.addEventListener("click", () => { socket.emit("aiTeammate", {}); sfx("tick"); });
+        card.appendChild(add);
+      }
+      box.appendChild(card);
     }
   }
   function joinTeam(team) {
@@ -2583,6 +2633,25 @@
   }
   $("lastSeasonBtn").addEventListener("click", () => { if (S.lastSeason) openFinale(S.lastSeason); else socket.emit("lastSeason"); });
   socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
+  // ---- live delta to your best lap: time at each point of this lap vs. the same point on your best lap ----
+  function lapDelta() {
+    const me = S.cars.get(S.myCar), T = S.track; if (!me || !T || me.fin) return;
+    const B = 240, L = S.lapRef || (S.lapRef = { cur: [], best: null, bestT: 0, start: null, lap: me.laps });
+    const bk = Math.floor((me.idx / T.N) * B);
+    if (me.laps !== L.lap) {
+      if (L.start !== null && me.laps === L.lap + 1) {
+        const lapT = S.t - L.start;
+        if (!L.best || lapT < L.bestT) { L.best = L.cur; L.bestT = lapT; }
+      }
+      L.cur = []; L.start = me.laps >= 0 ? S.t : null; L.lap = me.laps;
+    }
+    if (L.start !== null && L.cur[bk] === undefined) L.cur[bk] = S.t - L.start;
+    const box = $("lapDelta");
+    if (!L.best || L.cur[bk] === undefined || L.best[bk] === undefined) { if (!L.best) box.classList.add("hidden"); return; }
+    const d = L.cur[bk] - L.best[bk];
+    box.classList.remove("hidden"); box.classList.toggle("up", d < -0.005); box.classList.toggle("down", d > 0.005);
+    $("lapDeltaVal").textContent = (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2) + "s";
+  }
   // ---- pause (host) ----
   function setPausedUi(on, by) {
     S.paused = on;
@@ -3003,7 +3072,7 @@
     const H = season.history || [], mine = new Set((kind === "teams" ? season.mine?.teams : season.mine?.drivers) || []);
     const last = H.length ? H[H.length - 1][kind] : [];
     // top 10 at the end, plus your own team/driver if they finished lower
-    const pick = last.slice(0, 10).map((x) => x.n);
+    const pick = last.slice(0, Math.min(20, last.length)).map((x) => x.n);
     for (const x of last) if (mine.has(x.n) && !pick.includes(x.n)) pick.push(x.n);
     return pick.map((n, k) => {
       const pos = H.map((snap) => { const i = snap[kind].findIndex((x) => x.n === n); return i >= 0 ? i + 1 : null; });
@@ -3504,6 +3573,28 @@
     }
     c.restore();
   }
+  // grid boxes, same maths as gridSlot() on the server: staggered, pole really in front
+  function gridCount() { return S.screen === "race" && S.race?.info ? S.race.info.size : S.lobby ? S.lobby.players.length + (S.lobby.settings.ai || 0) : 0; }
+  function gridSlotC(t, g, total) {
+    const spacing = t.length / t.N, gap = clamp((t.length * 0.85 - 70) / Math.max(1, total), 34, 60);
+    const idx = (t.N - Math.round((70 + g * gap) / spacing) + t.N * 4) % t.N;
+    return { idx, lat: (g % 2 ? 1 : -1) * Math.min(28, t.hw[idx] - 20) };
+  }
+  function drawGridBoxes(c, t, total) {
+    if (!total || !t.length) return;
+    c.save(); c.strokeStyle = "rgba(255,255,255,0.8)"; c.fillStyle = "rgba(255,255,255,0.8)"; c.lineWidth = 2.5; c.lineCap = "square";
+    c.font = "700 13px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    for (let g = 0; g < total; g++) {
+      const { idx, lat } = gridSlotC(t, g, total), p = t.pts[idx], n = t.nor[idx], tn = t.tan[idx];
+      const x = p.x + n.x * lat, y = p.y + n.y * lat, a = Math.atan2(tn.y, tn.x);
+      c.save(); c.translate(x, y); c.rotate(a);
+      // "[" bracket in front of the car's nose, like painted grid slots
+      c.beginPath(); c.moveTo(18, -15); c.lineTo(28, -15); c.lineTo(28, 15); c.lineTo(18, 15); c.stroke();
+      c.translate(-34, 0); c.rotate(Math.PI / 2); c.fillText(String(g + 1), 0, 0);
+      c.restore();
+    }
+    c.restore();
+  }
   function drawStatic(c, t, G, th, opts = {}) {
     if (!opts.noGround) { c.fillStyle = c.createPattern(tex("ground", th), "repeat"); c.fillRect(opts.x0 ?? 0, opts.y0 ?? 0, opts.w ?? t.W, opts.h ?? t.H); }
     if (!opts.noGround && settings.scenery !== "off") drawDecor(c, t, G, th, opts);
@@ -3535,6 +3626,7 @@
       c.strokeStyle = "#ffcc1f"; c.lineWidth = 3; c.strokeRect(-24, -16, 48, 32);
       c.restore();
     }
+    drawGridBoxes(c, t, gridCount());
     if (!opts.board) for (const [pt, label] of [[G.entry, "PIT 60"], [G.exit, "PIT EXIT"]]) {
       const ang = Math.atan2(t.tan[pt.i].y, t.tan[pt.i].x);
       c.save(); c.translate(pt.x, pt.y); c.rotate(ang);
@@ -3729,7 +3821,7 @@
     // what part of the world is on screen
     const vx0 = cam.x - w / 2 / z - 60, vy0 = cam.y - h / 2 / z - 60, vx1 = cam.x + w / 2 / z + 60, vy1 = cam.y + h / 2 / z + 60;
     // static layer from the tile cache
-    const sig = `${G.id}|${t.theme}|${settings.raceline}|${settings.scenery}`;
+    const sig = `${G.id}|${t.theme}|${settings.raceline}|${settings.scenery}|${gridCount()}`;
     if (sig !== tileSig) { tileSig = sig; resetTiles(); }
     tileQ = pickQ(z * dpr);
     tileBudget = S.phase === "race" ? 3 : 12;
@@ -3757,6 +3849,7 @@
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
       if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (c.dmg > 0.55 && Math.random() < 0.25 * Math.max(0.4, fxLevel)) puff(c, "rgba(60,60,60,0.45)");
       if (c.extras?.trail && c.speed > 250 && S.particles.length < 300 && Math.random() < 0.35 * Math.max(0.4, fxLevel)) {
         S.particles.push({ x: c.x - Math.cos(c.h) * 22, y: c.y - Math.sin(c.h) * 22, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 50, life: 0.7, age: 0, r: 7, shape: c.extras.trail, k: Math.floor(Math.random() * 4) });
       }
@@ -3973,7 +4066,16 @@
     if (key !== lastHudStand) {
       lastHudStand = key;
       const ol = $("standList"); ol.textContent = "";
-      S.standings.slice(0, 12).forEach((id, i) => {
+      // as many rows as fit (more cars = bigger list); hold Ctrl (or tap the list) to see everyone
+      const fit = Math.max(8, Math.floor((window.innerHeight * 0.42) / 19));
+      const all = S.lbAll || S.standings.length <= fit + 1;
+      $("standings").classList.toggle("all", !!S.lbAll);
+      const myI = S.standings.indexOf(S.myCar);
+      const show = all ? S.standings.map((id, i) => i) : [...Array(Math.min(fit, S.standings.length)).keys()];
+      if (!all && myI >= fit) show.push(-1, myI);
+      show.forEach((i) => {
+        if (i === -1) { const gap = document.createElement("li"); gap.className = "lb-gap"; gap.textContent = `··· ${S.standings.length - show.length + 2} more · hold Ctrl`; ol.appendChild(gap); return; }
+        const id = S.standings[i];
         const c = S.cars.get(id); if (!c) return;
         const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
         const p = document.createElement("span"); p.className = "p"; p.textContent = i + 1;
@@ -3986,11 +4088,16 @@
         if (c.punct) x.style.color = "#ff8a80";
         li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
+      if (!all && myI < fit && S.standings.length > fit) { const m = document.createElement("li"); m.className = "lb-gap"; m.textContent = `+${S.standings.length - fit} more · ${isTouch() ? "tap" : "hold Ctrl"}`; ol.appendChild(m); }
     }
     if (!$("garage").childElementCount && S.up) renderGarage();
   }
 
   // ======================= Input =======================
+  window.addEventListener("keydown", (e) => { if (e.key === "Control" && S.screen === "race") S.lbAll = true; });
+  window.addEventListener("keyup", (e) => { if (e.key === "Control") S.lbAll = false; });
+  window.addEventListener("blur", () => { S.lbAll = false; });
+  $("standings").addEventListener("click", () => { S.lbAll = !S.lbAll; });
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
     if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }

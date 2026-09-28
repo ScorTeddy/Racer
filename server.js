@@ -45,7 +45,7 @@ const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00ac
 const LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
 // Tire compounds. Wets are only good when the track is wet.
 const COMPOUNDS = {
-  durable: { name: "Durable",      short: "D", speed: 0.97,  grip: 0.96, wear: 0.66 },   // lasts a long time (~90% of a race), a bit slower
+  durable: { name: "Durable",      short: "D", speed: 0.97,  grip: 0.96, wear: 0.8 },    // lasts longer than inters (~1.25x), a bit slower
   inter:   { name: "Intermediate", short: "I", speed: 1.0,   grip: 1.0,  wear: 1.0 },
   fast:    { name: "Fast",         short: "F", speed: 1.04,  grip: 1.07, wear: 1.75 },
   wet:     { name: "Wets",         short: "W", speed: 0.92,  grip: 0.97, wear: 0.8, dryWear: 2.6 },
@@ -701,6 +701,15 @@ function bestStart(shape) {
   return 0;
 }
 
+// Staggered grid like real racing: every car is half a row behind the one in front (pole is
+// really first), left/right alternating, 60px between slots (less on a short track with a huge grid).
+// The client draws the grid boxes with the same maths (gridSlotC in index.html).
+function gridSlot(t, g, total) {
+  const gap = clamp((t.length * 0.85 - 70) / Math.max(1, total), 34, 60);
+  const idx = (t.N - Math.round((70 + g * gap) / t.spacing) + t.N * 4) % t.N;
+  return { idx, lat: (g % 2 ? 1 : -1) * Math.min(28, t.hw[idx] - 20) };
+}
+
 // ======================= Rooms =======================
 const rooms = new Map();
 function makeCode() {
@@ -906,9 +915,8 @@ class Room {
     }
     for (let i = 0; i < total; i++) if (!order[i]) order[i] = rest.shift();
     order.forEach((slot, g) => {
-      const row = Math.floor(g / 2), col = g % 2;
-      const idx = (t.N - Math.round(3 + row * 2.2 * (30 / t.spacing)) + t.N * 4) % t.N;
-      const p = t.pts[idx], n = t.nor[idx], tn = t.tan[idx], lat = (col ? 1 : -1) * Math.min(28, t.hw[idx] - 20);
+      const { idx, lat } = gridSlot(t, g, total);
+      const p = t.pts[idx], n = t.nor[idx], tn = t.tan[idx];
       const base = {
         slotKey: slot.human ? "h:" + slot.human.id : "a:" + slot.ai,
         id: g + 1, x: p.x + n.x * lat, y: p.y + n.y * lat, heading: Math.atan2(tn.y, tn.x), vx: 0, vy: 0,
@@ -1353,7 +1361,9 @@ class Room {
       for (let q = 0; q < near.length; q += 2) {
         const o = near[q], along = near[q + 1];
         const dl = Math.abs(o.lat - myLat);
-        if (along > 0 && (dl < 28 || (along < 160 && Math.abs(o.lat - off) < 26)) && along < leadAlong) { lead = o; leadAlong = along; }
+        // a car that's already beside me (not in front) isn't one to follow: racing room keeps us apart
+        const besideMe = along < 26 && dl >= 20;
+        if (along > 0 && !besideMe && (dl < 28 || (along < 160 && Math.abs(o.lat - off) < 26)) && along < leadAlong) { lead = o; leadAlong = along; }
         if (Math.abs(along) < 48 && dl >= 20 && dl < 64) alongside = o;
         if (along < 0 && along > -speed * 0.5 && dl < 40) pressure = o;
       }
@@ -1384,8 +1394,8 @@ class Room {
         if (Math.abs(along) > 52) continue;
         const side = Math.sign(o.lat - myLat), gap = Math.abs(o.lat - myLat);
         if (gap > 70 || gap < 4) continue;
-        if (side > 0 && off > o.lat - 30) off = Math.max(myLat, o.lat - 30);
-        if (side < 0 && off < o.lat + 30) off = Math.min(myLat, o.lat + 30);
+        if (side > 0 && off > o.lat - 33) off = Math.max(Math.min(myLat, o.lat - 33), -lim);
+        if (side < 0 && off < o.lat + 33) off = Math.min(Math.max(myLat, o.lat + 33), lim);
       }
       if (cooldown) off = t.line[i] > 0 ? -Math.min(44, lim) : Math.min(44, lim);
       if (c.punct) off = pl.side * lim;                                            // limp along the edge, out of the way
@@ -1694,7 +1704,9 @@ class Room {
           const imp = -rel * 0.5;
           a.vx -= nx * imp; a.vy -= ny * imp; b.vx += nx * imp; b.vy += ny * imp;
           if (-rel > CRASH_SPEED) this.crash(a, b, -rel, nx, ny);
-          else { const loss = 1 - Math.min(0.06, -rel / 2500); a.vx *= loss; a.vy *= loss; b.vx *= loss; b.vy *= loss; }
+          // a real bump costs a little speed; two cars just rubbing side by side don't slow each other down
+          // (this used to take a bit of speed EVERY physics step they touched, so side by side = both stopping)
+          else if (-rel > 45) { const loss = 1 - Math.min(0.03, -rel / 6000); a.vx *= loss; a.vy *= loss; b.vx *= loss; b.vy *= loss; }
         }
       }
     }
@@ -2056,6 +2068,26 @@ io.on("connection", (socket) => {
     const r = room(), p = me(); if (!r || !p) return;
     p.team = cleanTeam(t) || `${p.name} Racing`;
     if (r.track && r.phase === "lobby") assignBoxes(r.track.pitLane, r.allTeams());
+    r.sendLobby();
+  });
+  // bring an AI driver into your team (great when you race alone), or send one back
+  socket.on("aiTeammate", (d) => {
+    const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return;
+    const humanTeams = new Set([...r.players.values()].map((x) => x.team));
+    if (d?.remove) {
+      const a = r.roster.slice(0, r.settings.ai).find((x) => x.name === d.remove && x.team === p.team && x.origTeam);
+      if (a) { a.team = a.origTeam; delete a.origTeam; }
+    } else {
+      if (!r.settings.ai) { r.settings.ai = 1; r.ensureRoster(1); }
+      const act = r.roster.slice(0, r.settings.ai);
+      // take an AI from a team without humans (the last one first, so the front AI teams stay whole)
+      let a = [...act].reverse().find((x) => !humanTeams.has(x.team));
+      if (!a) { r.settings.ai = clamp(r.settings.ai + 1, 0, MAX_AI); r.ensureRoster(r.settings.ai); a = r.roster[r.settings.ai - 1]; }
+      if (!a || humanTeams.has(a.team) && a.team === p.team) return;
+      a.origTeam = a.origTeam || a.team; a.team = p.team;
+      socket.emit("toast", `${a.name} (AI) joined ${p.team}!`);
+    }
+    if (r.track) assignBoxes(r.track.pitLane, r.allTeams());
     r.sendLobby();
   });
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });

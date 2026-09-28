@@ -230,6 +230,14 @@ holo signs (neon). Drawn into the cached tiles, so it costs nothing per frame.
 (40/38/17/5), Legendary 1000 (15/30/35/20). Duplicates refund 10/30/80/200 coins. Chest-only items: junk commons
 and 13 original liveries (`drawLivery`). All odds are shown in the store.
 
+**Grid:** staggered (`gridSlot` on the server, `gridSlotC` + `drawGridBoxes` on the client): each car is one slot
+behind the one in front, left/right alternating, 60px apart (squeezed on short tracks with huge grids); numbered boxes painted on the road.
+**AI teammate:** `aiTeammate {}` moves an AI from a team without humans into yours (adds one if there are no AI),
+`aiTeammate {remove: name}` sends it back (`origTeam`). **Leaderboard:** shows as many rows as fit plus your own
+row; hold **Ctrl** (or tap it) for everyone. **Lap delta** (top right): this lap vs your best lap at the same point.
+**Damage:** cracks/dents on the car grow with damage, smoke above 55%. **Side by side:** rubbing no longer costs
+speed every physics step, and a car beside you isn't treated as one to follow. **Durables:** wear 0.8 (~1.25x inters).
+
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
 host, reset championship, move start line, reverse track, public/private rooms.
