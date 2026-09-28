@@ -559,6 +559,114 @@
     .dock .tool { min-width: 0; }
     .standing { max-width: calc(100vw - 8.5rem); } .gapline .b { display: none; }
   }
+
+  /* =====================================================================
+     Polish pass: pit-wall look. Layered panels, one yellow for "do this",
+     clearer tabs and section headings, a shorter tool dock, a two-column
+     main menu on big screens, and the season finale.
+     ===================================================================== */
+  :root { --bg: #101218; --panel: rgba(22, 25, 32, 0.92); --panel-solid: #1a1d25; --panel-2: rgba(255,255,255,0.045); --edge: rgba(255, 255, 255, 0.10); --edge-2: rgba(255,255,255,0.18); }
+  body { background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 6px),
+      repeating-linear-gradient(-45deg, rgba(0,0,0,0.18) 0 2px, transparent 2px 6px), var(--bg); }
+  .panel { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 3.5rem), var(--panel); box-shadow: 0 14px 34px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.06); }
+  :root[data-theme="light"] .panel { background: var(--panel); box-shadow: 0 10px 26px rgba(20,30,50,0.12); }
+  .btn { border-radius: 0.7rem; min-height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
+  .btn:hover { border-color: var(--edge-2); }
+  .btn.go { border-radius: 0.8rem; min-height: 3rem; }
+  .btn.danger-fill { background: #d93a30; border-color: #d93a30; color: #fff; }
+  .btn.danger-fill:hover { background: #ef4b40; }
+  input[type="text"], input[type="number"], select { min-height: 2.35rem; transition: border-color 140ms ease, background 140ms ease; }
+  input[type="text"]:hover, input[type="number"]:hover, select:hover { border-color: var(--edge-2); }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: var(--yellow); background: rgba(255,204,31,0.06); outline: none; }
+  .sect { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 1rem; letter-spacing: 0; color: var(--ink); display: flex; align-items: center; gap: 0.5rem; }
+  .sect::before { content: ""; width: 0.3rem; height: 1rem; border-radius: 2px; background: var(--yellow); }
+  .tag { letter-spacing: 0.08em; }
+
+  /* main menu: header on top, "Your car" and "Play" side by side on big screens */
+  .menu-head { display: flex; flex-direction: column; gap: 0.35rem; padding-right: 3rem; }
+  .menu-head .online { margin-top: 0.15rem; }
+  .menu-car, .menu-play { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+  div.f { font-size: 0.8rem; font-weight: 600; color: var(--soft); }
+  .menu-h { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--soft); }
+  @media (min-width: 900px) {
+    .menu-card { width: min(62rem, 100%); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "head head" "car play"; column-gap: 1.6rem; row-gap: 1rem; padding: 1.6rem 1.8rem; }
+    .menu-head { grid-area: head; flex-direction: row; align-items: baseline; flex-wrap: wrap; column-gap: 1rem; }
+    .menu-head .logo { font-size: 3rem; }
+    .menu-head .online { margin-left: auto; margin-top: 0; }
+    .menu-car { grid-area: car; }
+    .menu-play { grid-area: play; padding-left: 1.6rem; border-left: 1.5px solid var(--edge); }
+    .menu-play .lobbies { max-height: 18rem; overflow-y: auto; }
+    #soloBtn { font-size: 1.45rem; min-height: 3.6rem; }
+  }
+
+  /* lobby tabs: icon over the label, obvious active tab */
+  .rc-tabs { gap: 0.25rem; padding: 0.45rem 0.45rem 0; }
+  .rc-tabs button { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; border-radius: 0.6rem 0.6rem 0 0; padding: 0.4rem 0.15rem 0.45rem; font-size: 0.76rem; }
+  .rc-tabs button .ti { font-size: 1.05rem; line-height: 1; filter: grayscale(0.7); opacity: 0.75; transition: filter 150ms ease, opacity 150ms ease; }
+  .rc-tabs button:hover { color: var(--ink); background: rgba(255,255,255,0.04); }
+  .rc-tabs button[aria-selected="true"] { background: rgba(255,204,31,0.10); }
+  .rc-tabs button[aria-selected="true"] .ti { filter: none; opacity: 1; }
+  .rc-tabs .tab-count { position: absolute; margin: -0.2rem 0 0 1.6rem; }
+  .rc-tabs button { position: relative; }
+  .rc-foot { box-shadow: 0 -10px 20px rgba(0,0,0,0.18); }
+
+  /* drawing dock: two columns on big screens, so it's half as tall; Finish loop stands out */
+  .dock-label { font-size: 0.7rem; letter-spacing: 0.02em; text-transform: none; }
+  #closeLoop { background: rgba(62,207,106,0.2); border-color: rgba(62,207,106,0.7); }
+  #closeLoop:hover { background: rgba(62,207,106,0.35); }
+  @media (min-width: 861px) {
+    .dock { gap: 0.6rem; padding: 0.5rem; }
+    .dock-group { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; }
+    .dock-group .dock-label, .dock-group .brush { grid-column: 1 / -1; }
+    .dock .tool { width: 4.3rem; padding: 0.4rem 0.15rem; }
+    .dock .tool:hover { transform: translateY(-1px); }
+    #boardTools .tool.danger { grid-column: 1 / -1; width: auto; flex-direction: row; justify-content: center; gap: 0.35rem; }
+  }
+  .board-hint { box-shadow: 0 6px 18px rgba(0,0,0,0.3); }
+  .track-card { background: rgba(16,18,24,0.78); padding: 0.45rem 0.7rem; gap: 0.1rem 0.9rem; font-size: 0.72rem; }
+  .track-card b { font-size: 0.95rem; }
+  .cut-bar { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; gap: 0.4rem; padding: 0.4rem; z-index: 3; animation: pop 240ms ease both; }
+  .cut-bar .btn { min-height: 2.3rem; padding: 0.4rem 0.8rem; white-space: nowrap; }
+  @media (max-width: 860px) { .cut-bar { position: static; transform: none; flex-wrap: wrap; justify-content: center; } }
+
+  /* results + season finale */
+  .res-card { width: min(38rem, 100%); }
+  .fin-open { margin-top: 0.4rem; font-size: 1.05rem !important; }
+  #finale { position: fixed; inset: 0; z-index: 28; display: grid; place-items: center; padding: 1rem; overflow-y: auto;
+    background: radial-gradient(ellipse at 50% 0%, rgba(255,204,31,0.18), transparent 60%), rgba(8,9,12,0.92); animation: fadeIn 500ms ease both; }
+  .fin-card { width: min(68rem, 100%); padding: 1.3rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; animation: rise 600ms cubic-bezier(.2,.9,.25,1.15) both; }
+  .fin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .fin-kicker { margin: 0; color: var(--soft); font-weight: 600; }
+  .fin-head h2 { margin: 0.1rem 0 0; font-family: "Russo One", sans-serif; font-weight: 400; font-size: clamp(1.8rem, 4vw, 2.8rem); line-height: 1; }
+  .fin-champs { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .fin-champ { flex: 1 1 14rem; position: relative; overflow: hidden; border-radius: 0.9rem; padding: 0.8rem 1rem 0.8rem 1.3rem; background: var(--panel-2); border: 1.5px solid var(--edge); display: flex; flex-direction: column; gap: 0.1rem; animation: pop 500ms cubic-bezier(.2,.9,.3,1.4) 300ms both; }
+  .fin-champ::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 0.4rem; background: var(--c); }
+  .fin-champ .lbl { color: var(--soft); font-size: 0.85rem; font-weight: 600; }
+  .fin-champ strong { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.5rem; line-height: 1.15; }
+  .fin-champ.big { border-color: rgba(255,204,31,0.6); background: linear-gradient(100deg, rgba(255,204,31,0.16), rgba(255,204,31,0.02)); }
+  .fin-champ.big strong { font-size: 2rem; color: var(--yellow); }
+  .fin-champ .pts { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fin-main { display: grid; grid-template-columns: minmax(0, 1fr) 17rem; gap: 1.2rem; min-height: 0; }
+  .fin-chart-box { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+  .fin-tabs { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--edge); border-radius: 99px; padding: 2px; }
+  .fin-tabs button { cursor: pointer; border: 0; background: none; color: var(--soft); font-weight: 700; font-size: 0.85rem; padding: 0.3rem 0.9rem; border-radius: 99px; }
+  .fin-tabs button[aria-selected="true"] { background: var(--yellow); color: #1b1b1b; }
+  #finChart { width: 100%; height: clamp(15rem, 44vh, 26rem); display: block; border-radius: 0.8rem; background: rgba(0,0,0,0.22); }
+  .fin-note { margin: 0; color: var(--soft); font-size: 0.8rem; }
+  .fin-table { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; overflow-y: auto; max-height: calc(clamp(15rem, 44vh, 26rem) + 3rem); }
+  .fin-table li { cursor: pointer; display: grid; grid-template-columns: 1.8rem minmax(0, 1fr) auto 2.8rem; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem 0.35rem 0.6rem; border-radius: 0.55rem; background: var(--panel-2); border-left: 4px solid var(--c); font-size: 0.88rem; animation: rowIn 320ms ease both; }
+  .fin-table li:hover { background: rgba(255,255,255,0.09); }
+  .fin-table li.mine { outline: 1.5px solid var(--yellow); }
+  .fin-table .fp { font-family: "Russo One", sans-serif; color: var(--soft); }
+  .fin-table li:first-child .fp { color: var(--yellow); }
+  .fin-table .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-table .mv { font-size: 0.75rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 99px; font-variant-numeric: tabular-nums; }
+  .fin-table .mv.up { color: #3ecf6a; background: rgba(62,207,106,0.14); }
+  .fin-table .mv.down { color: #ff6b61; background: rgba(229,57,53,0.14); }
+  .fin-table .mv.same { color: var(--soft); }
+  .fin-table .pt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  @media (max-width: 860px) { .fin-main { grid-template-columns: 1fr; } .fin-card { padding: 0.9rem; } #finChart { height: 16rem; } .fin-table { max-height: none; } }
   body.rm *, body.rm *::before, body.rm *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 </style>
 </head>
@@ -570,11 +678,13 @@
 <div class="screen" id="menu">
   <form class="menu-card panel" id="menuForm" novalidate>
     <button type="button" class="gear" data-settings aria-label="Settings">⚙</button>
-    <div>
+    <div class="menu-head">
       <h1 class="logo display">Scribble <span>GP</span></h1>
-      <p class="tag">TEAM BOSS</p>
+      <p class="tag">Team Boss</p>
+      <div class="online" id="onlineLine" role="status"><span class="live"></span><span id="onlineText">Connecting...</span></div>
     </div>
-    <div class="online" id="onlineLine" role="status"><span class="live"></span><span id="onlineText">Connecting...</span></div>
+    <section class="menu-car" aria-labelledby="carHead">
+    <h2 class="menu-h" id="carHead">Your car</h2>
     <div class="garage-preview">
       <canvas id="carPreview" width="300" height="180" aria-hidden="true"></canvas>
       <div style="flex:1;display:flex;flex-direction:column;gap:0.5rem">
@@ -594,6 +704,9 @@
         <div class="paint-tools"><button type="button" id="paintFill" aria-pressed="false">Fill</button><button type="button" id="paintMirror" aria-pressed="true">Mirror</button><button type="button" id="paintUndo">Undo</button><button type="button" id="paintClear">Clear</button></div>
       </div>
     </details>
+    </section>
+    <section class="menu-play" aria-labelledby="playHead">
+    <h2 class="menu-h" id="playHead">Play</h2>
     <button type="button" class="btn go" id="soloBtn">Race solo</button>
     <div class="sep-or">or play with friends</div>
     <div class="row">
@@ -601,17 +714,18 @@
       <input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Room code">
       <button type="button" class="btn" id="joinBtn" style="flex:0.6">Join</button>
     </div>
-    <div class="lob-head"><div class="sect">PUBLIC LOBBIES</div><button type="button" class="btn" id="pubBtn">Make public lobby</button></div>
+    <div class="lob-head"><div class="sect">Public lobbies</div><button type="button" class="btn" id="pubBtn">Make public lobby</button></div>
     <div class="lobbies" id="lobbyList"><div class="lob-empty">Looking for lobbies...</div></div>
     <p class="err" id="menuErr" role="alert"></p>
+    </section>
   </form>
 </div>
 
 <!-- ============ Lobby ============ -->
 <div id="lobby" class="hidden">
   <header class="rc-top panel">
-    <div class="rc-brand display">Scribble <span>GP</span><small>RACE CONTROL</small></div>
-    <div class="rc-code"><small>ROOM CODE</small><span class="code" id="roomCode">ABCD</span></div>
+    <div class="rc-brand display">Scribble <span>GP</span><small>Race control</small></div>
+    <div class="rc-code"><small>Room code</small><span class="code" id="roomCode">ABCD</span></div>
     <button type="button" class="btn" id="copyBtn">🔗 Copy invite link</button>
     <button type="button" class="btn" id="pubToggle" title="Public rooms show up in everyone's lobby list">🔒 Private</button>
     <div class="rc-avatars" id="avatars" aria-label="Players in this room"></div>
@@ -623,17 +737,17 @@
 
   <aside class="rc-side panel">
     <nav class="rc-tabs" role="tablist" aria-label="Room panels">
-      <button type="button" role="tab" data-tab="drivers" aria-selected="true">Drivers</button>
-      <button type="button" role="tab" data-tab="race" aria-selected="false">Race</button>
-      <button type="button" role="tab" data-tab="points" aria-selected="false">Points</button>
-      <button type="button" role="tab" data-tab="ai" aria-selected="false">AI <span class="tab-count" id="aiCount">5</span></button>
-      <button type="button" role="tab" data-tab="standings" aria-selected="false">Standings</button>
+      <button type="button" role="tab" data-tab="drivers" aria-selected="true"><span class="ti" aria-hidden="true">👥</span>Drivers</button>
+      <button type="button" role="tab" data-tab="race" aria-selected="false"><span class="ti" aria-hidden="true">⚙️</span>Race</button>
+      <button type="button" role="tab" data-tab="points" aria-selected="false"><span class="ti" aria-hidden="true">🏅</span>Points</button>
+      <button type="button" role="tab" data-tab="ai" aria-selected="false"><span class="ti" aria-hidden="true">🤖</span>AI <span class="tab-count" id="aiCount">5</span></button>
+      <button type="button" role="tab" data-tab="standings" aria-selected="false"><span class="ti" aria-hidden="true">🏆</span>Standings</button>
     </nav>
     <div class="rc-body">
       <section class="rc-pane" data-pane="drivers">
         <p class="pane-lead">Everyone in the room is the boss of their own team.</p>
         <ul class="plist" id="plist"></ul>
-        <div class="sect">TEAMS</div>
+        <div class="sect">Teams</div>
         <p class="teams-off hidden" id="teamsOff">Teams are off: everyone races for themselves (own garage, no team points). The host can turn them on in the Race tab.</p>
         <div id="teamsSection" style="display:flex;flex-direction:column;gap:0.6rem">
         <p class="pane-lead" style="margin-top:-0.3rem">Tap <b>Join</b> to team up with someone (friends or AI). Teammates share a garage and score together.</p>
@@ -684,7 +798,7 @@
         </details>
       </section>
       <section class="rc-pane" data-pane="standings" hidden>
-        <div class="sect" id="champTitle">CHAMPIONSHIP</div>
+        <div class="sect" id="champTitle">Championship</div>
         <div class="champ-tabs"><button type="button" id="champDrivers" aria-pressed="true">Drivers</button><button type="button" id="champTeams" aria-pressed="false">Teams</button></div>
         <table class="champ"><tbody id="champBody"></tbody></table>
         <button type="button" class="danger-btn" id="resetChampBtn">Reset championship</button>
@@ -701,27 +815,33 @@
     <div class="board-hint panel" id="boardHint">Draw your track in one loop</div>
     <div class="dock panel" aria-label="Track tools">
       <div class="dock-group" id="drawMode">
-        <span class="dock-label">DRAW</span>
+        <span class="dock-label">Draw</span>
         <button type="button" class="tool" data-dm="free" aria-pressed="true" title="Drag to draw. Hold Shift for a straight bit"><span>✏️</span>Freehand</button>
         <button type="button" class="tool" data-dm="line" aria-pressed="false" title="Click to add straight lines"><span>📐</span>Straight</button>
         <button type="button" class="tool hidden" id="undoPt" title="Undo the last piece (Ctrl+Z)"><span>↩️</span>Undo</button>
         <button type="button" class="tool hidden" id="closeLoop" title="Join the end back to the start"><span>⭕</span>Finish loop</button>
       </div>
       <div class="dock-group" id="widthTools">
-        <span class="dock-label">WIDTH</span>
+        <span class="dock-label">Road width</span>
         <div class="brush" id="brush" role="radiogroup" aria-label="Road width"></div>
       </div>
       <div class="dock-group" id="boardTools">
-        <span class="dock-label">TRACK</span>
+        <span class="dock-label">Track</span>
         <button type="button" class="tool" id="startLineBtn" title="Then click on the track"><span>🏁</span>Start line</button>
         <button type="button" class="tool" id="reverseBtn"><span>🔄</span>Reverse</button>
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
         <button type="button" class="tool" id="f1Btn" title="Race a real Formula 1 circuit"><span>🏆</span>F1 tracks</button>
+        <button type="button" class="tool" id="cutBtn" title="Pick a part of the track, delete it and draw it again"><span>✂️</span>Redraw part</button>
         <button type="button" class="tool" id="smoothBtn" aria-pressed="false" title="Straightens the straights and smooths the curves"><span>〰️</span>Smooth</button>
         <button type="button" class="tool danger" id="clearBtn"><span>🗑️</span>Clear</button>
       </div>
     </div>
     <div class="track-card panel hidden" id="trackCard"></div>
+    <div class="cut-bar panel hidden" id="cutBar" role="group" aria-label="Redraw part of the track">
+      <button type="button" class="btn danger-fill" id="cutDo">✂️ Delete this part</button>
+      <button type="button" class="btn" id="cutFlip" title="Select the other way round the loop">↔ Other side</button>
+      <button type="button" class="btn ghost" id="cutCancel">Cancel</button>
+    </div>
   </main>
 </div>
 
@@ -778,10 +898,36 @@
     <h2 id="resTitle">Race 1 results</h2>
     <canvas id="podium" aria-hidden="true"></canvas>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
-    <div id="resTeamsBox"><div class="sect">TEAM STANDINGS</div>
+    <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>
     <div id="seasonBox"></div>
     <div class="back" id="backText">Back to the garage in 12s</div>
+  </div>
+</div>
+
+<!-- ============ Season finale ============ -->
+<div id="finale" class="hidden" role="dialog" aria-modal="true" aria-labelledby="finTitle">
+  <div class="fin-card panel">
+    <header class="fin-head">
+      <div>
+        <p class="fin-kicker" id="finKicker">Season over</p>
+        <h2 id="finTitle">Season champions</h2>
+      </div>
+      <button type="button" class="x" id="finClose" aria-label="Close the season finale">✕</button>
+    </header>
+    <div class="fin-champs" id="finChamps"></div>
+    <div class="fin-main">
+      <section class="fin-chart-box" aria-label="Championship positions after every race">
+        <div class="fin-tabs" role="tablist">
+          <button type="button" role="tab" id="finTeams" aria-selected="true">Teams</button>
+          <button type="button" role="tab" id="finDrivers" aria-selected="false">Drivers</button>
+        </div>
+        <canvas id="finChart"></canvas>
+        <p class="fin-note">Championship position after each race. Hover a name to follow its line.</p>
+      </section>
+      <ol class="fin-table" id="finTable"></ol>
+    </div>
+    <div class="back" id="finBack"></div>
   </div>
 </div>
 
@@ -1163,6 +1309,7 @@
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
     if (screen === "menu") socket.emit("menuInfo");
     if (screen !== "race") setNitro(false);
+    if (screen !== "results") closeFinale();
   }
 
   socket.on("joinError", (m) => { menuErr.textContent = m; });
@@ -1179,6 +1326,7 @@
     drawBoard();
   });
   socket.on("trackResult", (r) => {
+    if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
     if (r.error) boardHint(r.error, true);
     else if (r.moved) boardHint("Start/finish line moved!", false);
     else if (r.reversed !== undefined) boardHint(r.reversed ? "Track reversed: racing the other way!" : "Back to the original direction.", false);
@@ -1542,7 +1690,7 @@
     $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     document.querySelector(".dock").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     const cb = $("champBody"); cb.textContent = "";
-    $("champTitle").textContent = s.season ? `CHAMPIONSHIP: race ${Math.min(l.raceNo + 1, s.season)} of ${s.season} next` : l.raceNo ? `CHAMPIONSHIP (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "CHAMPIONSHIP";
+    $("champTitle").textContent = s.season ? `Championship: race ${Math.min(l.raceNo + 1, s.season)} of ${s.season} next` : l.raceNo ? `Championship (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "Championship";
     $("champDrivers").setAttribute("aria-pressed", String(champView === "drivers"));
     $("champTeams").setAttribute("aria-pressed", String(champView === "teams"));
     const myTeam = l.players.find((p) => p.id === S.me)?.team;
@@ -1610,8 +1758,12 @@
   // the drawing board shows the whole map; bigger maps = more room to draw
   const B = { w: 0, h: 0, s: 1, ox: 0, oy: 0, bw: 1600, bh: 1000 };
   function sizeBoard() {
-    const r = board.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
-    board.width = r.width * dpr; board.height = r.height * dpr; B.w = r.width; B.h = r.height; B.dpr = dpr;
+    // clientWidth/Height are the board's real layout size. (getBoundingClientRect() also counts
+    // CSS transforms: measured while the lobby's slide-in animation was still scaling the board
+    // to 96%, the drawing ended up a few % away from the mouse. That was the offset bug.)
+    const w = board.clientWidth, h = board.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!w || !h) return;
+    board.width = Math.round(w * dpr); board.height = Math.round(h * dpr); B.w = w; B.h = h; B.dpr = dpr;
     drawBoard();
   }
   window.addEventListener("resize", () => { if (S.screen === "lobby") sizeBoard(); });
@@ -1669,6 +1821,7 @@
       c.strokeText("START", p0.x, p0.y - hwAt(T, 0) - 16); c.fillText("START", p0.x, p0.y - hwAt(T, 0) - 16);
       c.restore();
     }
+    drawCutPreview(c);
     // the drawing you're working on (or the host's, live)
     const d = S.draft || (watching ? { pts: S.hostDraft, corners: [] } : null);
     if (d && d.pts.length) {
@@ -1691,13 +1844,18 @@
       for (const i of new Set(d.corners)) { if (!P[i]) continue; c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(P[i][0], P[i][1], 5 / B.s, 0, Math.PI * 2); c.fill(); }
       c.fillStyle = "#3ecf6a"; c.beginPath(); c.arc(P[0][0], P[0][1], 9 / B.s, 0, Math.PI * 2); c.fill();
       c.strokeStyle = "#fff"; c.lineWidth = 2 / B.s; c.stroke();
+      if (d.cut && d.pieces && !d.pieces.length) {         // redraw: start from here
+        const L = P[P.length - 1];
+        c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(L[0], L[1], 9 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(L[0], L[1], (14 + 4 * Math.sin(performance.now() / 200)) / B.s, 0, Math.PI * 2); c.strokeStyle = "rgba(255,204,31,0.7)"; c.stroke();
+      }
     }
     // rubber band for straight lines (Straight tool, or Shift while drawing)
     const rubber = (a, b) => { c.setLineDash([10 / B.s, 8 / B.s]); c.lineWidth = brushW / 3; c.strokeStyle = "rgba(255,204,31,0.35)"; c.lineCap = "round"; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]); };
     if (d && drawMode === "line" && hover) rubber(d.pts[d.pts.length - 1], hover);
     if (d && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, S.shiftEnd);
     // brush size preview under the pointer
-    if (hover && S.host && S.lobby?.phase === "lobby" && !startMode) {
+    if (hover && S.host && S.lobby?.phase === "lobby" && !startMode && !cut) {
       c.strokeStyle = "rgba(255,255,255,0.7)"; c.lineWidth = 1.5 / B.s;
       c.beginPath(); c.arc(hover[0], hover[1], brushW / 6, 0, Math.PI * 2); c.stroke();
     }
@@ -1711,6 +1869,7 @@
   // drag a curvy bit, click a few straight lines, drag some more... then close the loop.
   // The width brush sets how wide the road is for whatever you draw next.
   let drawMode = "free", hover = null, drawing = false, shiftAnchor = null, startMode = false;
+  let cut = null;          // Redraw part: { a, b, flip } indexes into the track's stroke (board units)
   let brushW = 130;
   try { brushW = WIDTHS.map((x) => x[0]).includes(+localStorage.getItem("tb-brush")) ? +localStorage.getItem("tb-brush") : 130; } catch (e) {}
   S.draft = null;
@@ -1814,23 +1973,101 @@
   }));
   function undoDraft() {
     const d = S.draft; if (!d) return;
-    const cut = d.pieces.pop();
-    if (!cut) S.draft = null;
-    else { d.pts.length = cut; d.corners = d.corners.filter((i) => i < cut); }
+    const at = d.pieces.pop();
+    if (at === undefined || (!at && !d.cut)) { S.draft = null; if (d.cut) boardHint("Redraw cancelled: your old track is back.", false); }
+    else { d.pts.length = at; d.corners = d.corners.filter((i) => i < at); }
     updateDraftUi(); drawBoard();
   }
   $("undoPt").addEventListener("click", undoDraft);
   $("closeLoop").addEventListener("click", finishDraft);
   $("startLineBtn").addEventListener("click", () => {
     if (!S.track) { boardHint("Draw a track first.", true); return; }
-    startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
+    endCut(); startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
     boardHint(startMode ? "Click anywhere on the track to put the start/finish line there." : "", false);
   });
   $("reverseBtn").addEventListener("click", () => { if (S.track) socket.emit("reverse"); else boardHint("Draw a track first.", true); });
-  const toBoard = (e) => { const r = board.getBoundingClientRect(); return [clamp((e.clientX - r.left - B.ox) / B.s, 0, B.bw), clamp((e.clientY - r.top - B.oy) / B.s, 0, B.bh)]; };
+  // ---- Redraw part: click two spots on the track, the part between them is deleted, and the rest
+  // of the loop becomes your drawing again. Carry on drawing from the yellow dot and come back to
+  // the green one (or hit Finish loop to just join the gap).
+  const cutStroke = () => S.lobby?.stroke || null;
+  function nearestStroke(p) {
+    const st = cutStroke(); if (!st) return null;
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < st.length; i++) { const d = (st[i][0] - p[0]) ** 2 + (st[i][1] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
+    return Math.sqrt(bd) * B.s < 45 ? bi : null;
+  }
+  // the part that goes: [from, from+len] going forwards round the loop
+  function cutRange(a, b, flip) {
+    const n = cutStroke().length, fwd = (b - a + n) % n;
+    const shortFwd = fwd <= n - fwd;
+    return shortFwd !== !!flip ? { from: a, len: fwd } : { from: b, len: n - fwd };
+  }
+  function endCut() { cut = null; $("cutBtn").classList.remove("on"); $("cutBar").classList.add("hidden"); drawBoard(); }
+  function cutClick(p) {
+    const i = nearestStroke(p);
+    if (i === null) { boardHint("Click right on the track.", true); return; }
+    if (cut.a === null || cut.b !== null) { cut.a = i; cut.b = null; cut.flip = false; $("cutBar").classList.add("hidden"); boardHint("Now click where the part you don't like ends.", false); }
+    else {
+      const n = cutStroke().length, d = Math.min((i - cut.a + n) % n, (cut.a - i + n) % n);
+      if (d < 3) { boardHint("Pick a spot a bit further along the track.", true); return; }
+      cut.b = i; $("cutBar").classList.remove("hidden");
+      boardHint("The red part will be deleted. Wrong part? Hit Other side.", false);
+    }
+    sfx("tick"); drawBoard();
+  }
+  function doCut() {
+    const st = cutStroke(); if (!cut || cut.b === null || !st) return;
+    const n = st.length, { from, len } = cutRange(cut.a, cut.b, cut.flip);
+    if (n - len < 4) { boardHint("That's almost the whole track. Use Clear to start over.", true); return; }
+    const pts = [];
+    for (let k = 0; k <= n - len; k++) { const q = st[(from + len + k) % n]; pts.push([q[0], q[1], q[2]]); }
+    S.keepReverse = !!S.track?.reverse;
+    S.draft = { pts, corners: [], pieces: [], cut: true };
+    endCut(); updateDraftUi();
+    boardHint(isTouch() ? "Draw the new part from the yellow dot back to the green dot (or tap Finish loop to just join it)." : "Draw the new part from the yellow dot back to the green dot (or Finish loop to just join it). Undo brings the old part back.", false);
+    drawBoard();
+  }
+  $("cutBtn").addEventListener("click", () => {
+    if (cut) { endCut(); boardHint("", false); return; }
+    if (!cutStroke() || !S.track) { boardHint("Draw a track first.", true); return; }
+    startMode = false; $("startLineBtn").classList.remove("on");
+    S.draft = null; drawing = false; updateDraftUi();
+    cut = { a: null, b: null, flip: false }; $("cutBtn").classList.add("on");
+    boardHint("Click where the part you don't like starts.", false); drawBoard();
+  });
+  $("cutDo").addEventListener("click", doCut);
+  $("cutFlip").addEventListener("click", () => { if (cut) { cut.flip = !cut.flip; drawBoard(); } });
+  $("cutCancel").addEventListener("click", () => { endCut(); boardHint("", false); });
+  // red highlight of the part that would go
+  function drawCutPreview(c) {
+    const st = cutStroke(); if (!cut || !st || cut.a === null) return;
+    let b = cut.b;
+    if (b === null && hover) b = nearestStroke(hover);
+    c.lineCap = "round"; c.lineJoin = "round";
+    if (b !== null && b !== cut.a) {
+      const { from, len } = cutRange(cut.a, b, cut.flip), n = st.length;
+      c.beginPath();
+      for (let k = 0; k <= len; k++) { const q = st[(from + k) % n]; k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }
+      c.strokeStyle = cut.b === null ? "rgba(255,90,80,0.45)" : "rgba(255,70,60,0.75)";
+      c.lineWidth = Math.max(10 / B.s, st[cut.a][2] / 3 + 8); c.stroke();
+      c.setLineDash([8 / B.s, 6 / B.s]); c.lineWidth = 2 / B.s; c.strokeStyle = "#fff"; c.stroke(); c.setLineDash([]);
+    }
+    for (const i of [cut.a, b]) {
+      if (i === null || !st[i]) continue;
+      c.fillStyle = "#ff5a50"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
+      c.beginPath(); c.arc(st[i][0], st[i][1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+    }
+  }
+  // screen -> board units. Scales by the on-screen size vs. the layout size, so the point under the
+  // mouse is always exactly where the pen draws (even mid-animation or with any UI size).
+  const toBoard = (e) => {
+    const r = board.getBoundingClientRect(), kx = r.width ? B.w / r.width : 1, ky = r.height ? B.h / r.height : 1;
+    return [clamp(((e.clientX - r.left) * kx - B.ox) / B.s, 0, B.bw), clamp(((e.clientY - r.top) * ky - B.oy) / B.s, 0, B.bh)];
+  };
   board.addEventListener("pointerdown", (e) => {
     if (!S.host || S.lobby?.phase !== "lobby") return;
     const p = toBoard(e);
+    if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (drawMode === "line") {
       if (!S.draft) S.draft = { pts: [[p[0], p[1], brushW]], corners: [0], pieces: [0] };
@@ -1856,8 +2093,15 @@
       S.shiftEnd = p; drawBoard(); return;
     }
     if (shiftAnchor) commitShift();
-    const l = lastPt();
-    if (Math.hypot(p[0] - l[0], p[1] - l[1]) * B.s >= 3) { S.draft.pts.push([p[0], p[1], brushW]); drawBoard(); shareDraft(); }
+    // use every pointer sample the browser collected since the last frame, so fast strokes
+    // follow the mouse exactly instead of cutting corners
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    let added = false;
+    for (const ev of evs.length ? evs : [e]) {
+      const q = toBoard(ev), l = lastPt();
+      if (Math.hypot(q[0] - l[0], q[1] - l[1]) * B.s >= 2) { S.draft.pts.push([q[0], q[1], brushW]); added = true; }
+    }
+    if (added) { drawBoard(); shareDraft(); }
   });
   board.addEventListener("pointerleave", () => { hover = null; if (!drawing) drawBoard(); });
   function commitShift() {
@@ -1868,6 +2112,7 @@
   window.addEventListener("keyup", (e) => { if (e.key === "Shift" && drawing && shiftAnchor) { commitShift(); drawBoard(); } });
   window.addEventListener("keydown", (e) => {
     if (S.screen !== "lobby" || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
     if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && S.draft) { e.preventDefault(); undoDraft(); }
     if (e.key === "[" || e.key === "]") { const ws = WIDTHS.map((x) => x[0]), i = ws.indexOf(brushW); setBrush(ws[clamp(i + (e.key === "]" ? 1 : -1), 0, ws.length - 1)]); }
@@ -1882,16 +2127,16 @@
     for (const q of P) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
     const gap = Math.hypot(b[0] - a[0], b[1] - a[1]), diag = Math.hypot(x1 - x0, y1 - y0);
     // back near the start? finish the loop. (One single freehand stroke gets a bit more leeway, like before.)
-    const closed = P.length > 12 && draftLen() > 250 && (nearPx(a, b, 26) || (d.pieces.length === 1 && !d.corners.length && gap < diag * 0.22));
+    const closed = P.length > 12 && draftLen() > 250 && (nearPx(a, b, 26) || (!d.cut && d.pieces.length === 1 && !d.corners.length && gap < diag * 0.22));
     if (closed) finishDraft(); else { updateDraftUi(); hintDraft(); drawBoard(); }
   };
   board.addEventListener("pointerup", endDraw); board.addEventListener("pointercancel", endDraw);
   $("randomBtn").addEventListener("click", () => {
-    S.draft = null; updateDraftUi();
+    endCut(); S.draft = null; updateDraftUi();
     socket.emit("randomTrack", { map: S.lobby.settings.map });
     boardHint("Making a random track...", false);
   });
-  $("clearBtn").addEventListener("click", () => { S.draft = null; updateDraftUi(); socket.emit("clearTrack"); });
+  $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; updateDraftUi(); socket.emit("clearTrack"); });
 
 
   // ======================= Race HUD pieces =======================
@@ -2056,7 +2301,9 @@
   function showResults(r) {
     renderTeamResults(r);
     $("resTeamsBox").classList.toggle("hidden", r.teams === false);
-    const sb = $("seasonBox"); sb.textContent = ""; S.resultsLen = r.season ? 20 : 12;
+    const sb = $("seasonBox"); sb.textContent = ""; S.resultsLen = r.season ? 40 : 12;
+    clearTimeout(S.finaleTimer);
+    if (r.season) S.finaleTimer = setTimeout(() => { if (S.screen === "results") openFinale(r.season); }, 7000);
     if (r.season) {
       const box = document.createElement("div"); box.className = "season-box";
       const h = document.createElement("h3"); h.textContent = `🏆 Season over! (${r.season.races} races)`;
@@ -2069,7 +2316,9 @@
       };
       champs.appendChild(col("Driver champion", r.season.drivers));
       if (r.season.teams.length) champs.appendChild(col("Team champion", r.season.teams));
-      box.append(h, champs); sb.appendChild(box);
+      const see = document.createElement("button"); see.type = "button"; see.className = "btn go fin-open"; see.textContent = "🏆 See how the season went";
+      see.addEventListener("click", () => openFinale(r.season));
+      box.append(h, champs, see); sb.appendChild(box);
       const me = r.rows.find((x) => x.owner === S.me);
       if (me && r.season.drivers[0]?.n === me.name) setTimeout(() => banner("CHAMPION!", "#ffcc1f"), 1500);
     }
@@ -2093,6 +2342,129 @@
     sfx(mine === 0 ? "win" : "level");
     S.resultsAt = performance.now();
     setTimeout(() => { show("results"); if (S.offer) renderPill(); }, 1400);
+  }
+  // ---- Season finale: who won, and a "bump chart" of how everyone moved up and down ----
+  const finLerp = (a, b, t) => a + (b - a) * t;
+  const FIN_COLORS = ["#ffcc1f", "#4fa3ff", "#ff5a5f", "#3ecf6a", "#c77dff", "#ff9f1c", "#2ec4b6", "#ff70a6", "#a3e635", "#e2e8f0", "#f97316", "#60a5fa"];
+  const F = { season: null, kind: "teams", lines: [], hi: null, t0: 0, raf: 0 };
+  function finaleData(season, kind) {
+    const H = season.history || [], mine = new Set((kind === "teams" ? season.mine?.teams : season.mine?.drivers) || []);
+    const last = H.length ? H[H.length - 1][kind] : [];
+    // top 10 at the end, plus your own team/driver if they finished lower
+    const pick = last.slice(0, 10).map((x) => x.n);
+    for (const x of last) if (mine.has(x.n) && !pick.includes(x.n)) pick.push(x.n);
+    return pick.map((n, k) => {
+      const pos = H.map((snap) => { const i = snap[kind].findIndex((x) => x.n === n); return i >= 0 ? i + 1 : null; });
+      const firstPos = pos.find((v) => v !== null), fin = pos[pos.length - 1];
+      return { n, pos, pts: last.find((x) => x.n === n)?.p || 0, final: fin, move: firstPos && fin ? firstPos - fin : 0, color: FIN_COLORS[k % FIN_COLORS.length], mine: mine.has(n) };
+    });
+  }
+  function openFinale(season) {
+    if (!season?.history?.length) return;
+    F.season = season; F.kind = season.teams?.length ? "teams" : "drivers";
+    $("finTeams").classList.toggle("hidden", !season.teams?.length);
+    $("finKicker").textContent = `Season over after ${season.races} races`;
+    const ch = $("finChamps"); ch.textContent = "";
+    const hero = (label, list, colors, big) => {
+      if (!list?.[0]) return;
+      const d = document.createElement("div"); d.className = "fin-champ" + (big ? " big" : "");
+      d.style.setProperty("--c", "#ffcc1f");
+      const l = document.createElement("span"); l.className = "lbl"; l.textContent = label;
+      const n = document.createElement("strong"); n.textContent = list[0].n;
+      const p = document.createElement("span"); p.className = "pts"; p.textContent = `${list[0].p} points`;
+      d.append(l, n, p); ch.appendChild(d);
+    };
+    hero("Team champions", season.teams, season.colors?.teams, true);
+    hero("Driver champion", season.drivers, season.colors?.drivers, !season.teams?.length);
+    $("finale").classList.remove("hidden");
+    setFinKind(F.kind);
+    sfx("win");
+    const myTeam = season.mine?.teams || [], myDrv = season.mine?.drivers || [];
+    if (season.teams?.[0] && myTeam.includes(season.teams[0].n)) setTimeout(() => banner("TEAM CHAMPIONS!", "#ffcc1f"), 900);
+    else if (season.drivers?.[0] && myDrv.includes(season.drivers[0].n)) setTimeout(() => banner("CHAMPION!", "#ffcc1f"), 900);
+  }
+  function closeFinale() { $("finale").classList.add("hidden"); cancelAnimationFrame(F.raf); F.raf = 0; }
+  function setFinKind(kind) {
+    F.kind = kind; F.lines = finaleData(F.season, kind); F.hi = null; F.t0 = performance.now();
+    $("finTeams").setAttribute("aria-selected", String(kind === "teams")); $("finDrivers").setAttribute("aria-selected", String(kind === "drivers"));
+    const ol = $("finTable"); ol.textContent = "";
+    F.lines.forEach((L, i) => {
+      const li = document.createElement("li"); li.style.setProperty("--c", L.color); li.style.animationDelay = (0.25 + i * 0.07) + "s";
+      if (L.mine) li.classList.add("mine");
+      const pos = document.createElement("span"); pos.className = "fp"; pos.textContent = L.final ?? "-";
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = L.n;
+      const mv = document.createElement("span"); mv.className = "mv " + (L.move > 0 ? "up" : L.move < 0 ? "down" : "same");
+      mv.textContent = L.move > 0 ? `▲ ${L.move}` : L.move < 0 ? `▼ ${-L.move}` : "=";
+      mv.title = L.move ? `${Math.abs(L.move)} place${Math.abs(L.move) > 1 ? "s" : ""} ${L.move > 0 ? "up" : "down"} since race 1` : "Same place as after race 1";
+      const pt = document.createElement("span"); pt.className = "pt"; pt.textContent = L.pts;
+      li.append(pos, nm, mv, pt);
+      li.addEventListener("pointerenter", () => { F.hi = L.n; }); li.addEventListener("pointerleave", () => { F.hi = null; });
+      li.addEventListener("click", () => { F.hi = F.hi === L.n ? null : L.n; });
+      ol.appendChild(li);
+    });
+    if (!F.raf) F.raf = requestAnimationFrame(finLoop);
+  }
+  $("finTeams").addEventListener("click", () => setFinKind("teams"));
+  $("finDrivers").addEventListener("click", () => setFinKind("drivers"));
+  $("finClose").addEventListener("click", closeFinale);
+  function finLoop(now) {
+    F.raf = 0;
+    if ($("finale").classList.contains("hidden")) return;
+    drawFinChart(now);
+    const left = Math.max(0, (S.resultsLen || 12) - Math.floor((now - S.resultsAt) / 1000));
+    $("finBack").textContent = left > 0 ? `Back to the garage in ${left}s` : "Back to the garage...";
+    F.raf = requestAnimationFrame(finLoop);
+  }
+  function drawFinChart(now) {
+    const cv = $("finChart"), w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    const lines = F.lines, R = F.season.history.length;
+    const maxPos = Math.max(2, ...lines.flatMap((L) => L.pos.filter((v) => v !== null)));
+    const padL = 34, padR = Math.min(150, w * 0.3), padT = 16, padB = 28;
+    const X = (i) => padL + (R <= 1 ? (w - padL - padR) / 2 : (i / (R - 1)) * (w - padL - padR));
+    const Y = (p) => padT + ((p - 1) / Math.max(1, maxPos - 1)) * (h - padT - padB);
+    const ink = getComputedStyle(document.documentElement).getPropertyValue("--soft").trim() || "#aab0bd";
+    // grid: one column per race, one row per place
+    c.font = "600 11px 'Chakra Petch', sans-serif"; c.textBaseline = "middle";
+    for (let i = 0; i < R; i++) {
+      c.strokeStyle = "rgba(128,128,140,0.18)"; c.lineWidth = 1; c.beginPath(); c.moveTo(X(i), padT - 6); c.lineTo(X(i), h - padB + 4); c.stroke();
+      c.fillStyle = ink; c.textAlign = "center"; c.fillText(`R${i + 1}`, X(i), h - 10);
+    }
+    const step = maxPos > 16 ? 5 : maxPos > 10 ? 2 : 1;
+    c.textAlign = "right";
+    for (let p = 1; p <= maxPos; p++) if (p === 1 || p % step === 0) { c.fillStyle = ink; c.fillText(`P${p}`, padL - 8, Y(p)); }
+    // lines grow race by race
+    const prog = reducedMotion ? R : Math.min(R - 1, ((now - F.t0) / 2600) * Math.max(1, R - 1));
+    const order = lines.slice().sort((a, b) => (a.n === F.hi) - (b.n === F.hi) || a.mine - b.mine);
+    for (const L of order) {
+      const dim = F.hi && F.hi !== L.n;
+      c.globalAlpha = dim ? 0.18 : 1;
+      c.strokeStyle = L.color; c.lineWidth = L.n === F.hi ? 5 : L.mine ? 4.5 : 2.6; c.lineJoin = "round"; c.lineCap = "round";
+      if (L.mine && !dim) { c.shadowColor = L.color; c.shadowBlur = 10; }
+      c.beginPath(); let started = false, lx = 0, ly = 0;
+      for (let i = 0; i < R; i++) {
+        if (L.pos[i] === null) { started = false; continue; }
+        if (i > prog + 1e-6) {
+          // partly drawn segment to the next race
+          if (started && i - 1 <= prog && L.pos[i - 1] !== null) { const f = prog - (i - 1); const x = finLerp(X(i - 1), X(i), f), y = finLerp(Y(L.pos[i - 1]), Y(L.pos[i]), f); c.lineTo(x, y); lx = x; ly = y; }
+          break;
+        }
+        const x = X(i), y = Y(L.pos[i]);
+        started ? c.lineTo(x, y) : c.moveTo(x, y); started = true; lx = x; ly = y;
+      }
+      c.stroke(); c.shadowBlur = 0;
+      c.fillStyle = L.color;
+      for (let i = 0; i < R && i <= prog + 1e-6; i++) if (L.pos[i] !== null) { c.beginPath(); c.arc(X(i), Y(L.pos[i]), L.mine || L.n === F.hi ? 4.5 : 3.2, 0, Math.PI * 2); c.fill(); }
+      // name label once the line reaches the last race
+      if (prog >= R - 1 - 1e-6 && L.final) {
+        c.textAlign = "left"; c.font = `${L.mine || L.n === F.hi ? 700 : 600} 12px 'Chakra Petch', sans-serif`;
+        const label = L.n.length > 16 ? L.n.slice(0, 15) + "…" : L.n;
+        c.fillText(`${L.final}. ${label}`, X(R - 1) + 10, Y(L.final));
+      }
+      c.globalAlpha = 1;
+    }
   }
   function drawPodium(now) {
     const cv = $("podium"), r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2307,18 +2679,25 @@
     for (let r = 0; r < 2; r++) for (let q = 0; q < Math.ceil(hw0 / 5); q++) { c.fillStyle = (r + q) % 2 ? "#111" : "#fff"; c.fillRect(-10 + r * 10, -hw0 + q * 10, 10, Math.min(10, hw0 * 2 - q * 10)); }
     c.restore();
   }
+  // Double ramps (a bridge over a bridge) get their own colours so you can tell the levels apart:
+  // level 2 is a blue steel deck with cyan kerbs, level 3 a purple one with pink kerbs.
+  const RAMP_STYLE = {
+    2: { asphalt: "#2f4f86", runoff: "#1c2f52", curbA: "#5ee0ff", curbB: "#ffffff", line: "#bfe9ff", wall: "#9fd4ff", wallTop: "#3f7fc0" },
+    3: { asphalt: "#5b3a86", runoff: "#352252", curbA: "#ff7de0", curbB: "#ffffff", line: "#f3c9ff", wall: "#e2b6ff", wallTop: "#9a5cc8" },
+  };
   function drawBridge(c, t, G, th, br) {
-    c.fillStyle = "rgba(0,0,0,0.3)"; c.fill(br.shadow);
+    const lv = br.peak >= 2.5 ? 3 : br.peak >= 1.5 ? 2 : 1, rs = RAMP_STYLE[lv] || {};
+    c.fillStyle = lv > 1 ? "rgba(0,0,0,0.38)" : "rgba(0,0,0,0.3)"; c.fill(br.shadow);
     c.lineJoin = "round"; c.lineCap = "butt";
-    strokeRuns(c, br.runs, 24, th.runoff);
-    strokeRuns(c, br.runs, 14, th.curbA);
-    strokeRuns(c, br.runs, 14, th.curbB, [22, 22]);
-    strokeRuns(c, br.top, 0, th.asphalt);
-    c.lineWidth = 3; c.strokeStyle = th.line; c.setLineDash([26, 30]);
+    strokeRuns(c, br.runs, 24, rs.runoff || th.runoff);
+    strokeRuns(c, br.runs, 14, rs.curbA || th.curbA);
+    strokeRuns(c, br.runs, 14, rs.curbB || th.curbB, [22, 22]);
+    strokeRuns(c, br.top, 0, rs.asphalt || th.asphalt);
+    c.lineWidth = 3; c.strokeStyle = rs.line || th.line; c.setLineDash([26, 30]);
     for (const r of br.top) { c.lineDashOffset = r.dash; c.stroke(r.p); }
     c.setLineDash([]); c.lineDashOffset = 0;
     c.lineWidth = 2; c.strokeStyle = "rgba(0,0,0,0.22)"; c.stroke(br.joints);
-    for (const wl of br.walls) { c.fillStyle = "#c7ccd2"; c.fill(wl.fill); c.lineWidth = 3; c.strokeStyle = "#7d858d"; c.stroke(wl.top); }
+    for (const wl of br.walls) { c.fillStyle = rs.wall || "#c7ccd2"; c.fill(wl.fill); c.lineWidth = 3; c.strokeStyle = rs.wallTop || "#7d858d"; c.stroke(wl.top); }
     c.lineCap = "round";
   }
 

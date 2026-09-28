@@ -27,6 +27,9 @@ Run locally: `npm install`, then `npm start`, then open http://localhost:3000
   If you don't pick before your garage, the "Next tires" choice on the team radio goes on.
 - **1/2/3** pick upgrade (click the cards while the tire picker is open), **U** cards later, **Tab** watch another car, **O** settings
 - Drawing board: Freehand (drag) and Straight (click) add to the **same** drawing, mix them freely.
+  **Redraw part** (✂️): click where a bad bit starts and ends (it turns red, **Other side** flips it),
+  **Delete this part**, then draw from the yellow dot back to the green one (or Finish loop to just join it).
+  Undo brings the old part back.
   Shift while dragging = straight bit. Width brush (4 sizes, or **[** / **]**) sets how wide the road is
   for what you draw next. **Undo** (Ctrl+Z) removes the last piece, **Finish loop** closes it
   (or come back to the green dot). Esc clears the drawing.
@@ -66,13 +69,17 @@ changed), `joined`, `lobby`, `track`, `trackResult`, `race`, `tirePick`, `lights
 `GRIP 14`, `CORNER_GRIP 1700` (what drivers plan for), `LAT_GRIP` (what the car can really do,
 1.3x), `CRASH_SPEED 430`, `PIT_LIMIT 170`, `TRACK_W 130` (default width), `MIN_W 84`/`MAX_W 260`,
 `SCALE 3.0`, `MAX_AI 60`, `SLIP_TIME 0.5` / `SLIP_BONUS 0.30` (slipstream: within 0.5s of the car
-ahead = +30% top speed), `NITRO_POWER 0.12` (+12% top speed, accel x(1.15 + power)), `NITRO_DRAIN 0.12`/s, `NITRO_REGEN 0.03` every 1.5s,
+ahead = +30% top speed), `NITRO_POWER 0.12` (+12% top speed, accel x(1.15 + power)), `NITRO_DRAIN 0.2`/s
+(a full tank = 5s), no slow refill: `NITRO_LAP_REFILL 0.5` back every time you cross the line (Nitro Refill
+upgrade: 55/60/65%), `AQUA_WET 0.8` (80%+ wet and not on wets = aquaplaning: random slides, 45% steering),
 XP per second: host setting 10-50 (default 10), `xpForLevel = 100 + (lvl-1)*50`.
 All timings are race-time, so at 3x speed the boost drains 3x faster in real seconds.
 
 **Settings:** laps, AI count, map, theme, speed, wear, weather (dynamic = no forecast), teams
 on/off, team colors, `xpRate` 10-50, `season` (0 = endless, or 3/5/8/10 races: after the last one
-`results.season` has the driver + team champions and the points reset), `smooth`.
+`results.season` has the champions plus `history` (standings after every race), `colors` and `mine`,
+and the client shows the season finale: champion cards + a bump chart of positions per race + ▲/▼ table.
+The results phase lasts 40s then, and the points reset), `smooth`.
 
 **Pit stops:** `PIT_MISTAKE_CHANCE` 5% adds `PIT_MISTAKE_TIME` 1s. Durables wear x0.72 (a set
 lasts ~83% of the race). The `me` message has `life` (laps each compound lasts for this car),
@@ -102,7 +109,8 @@ f1-circuits, MIT License, Copyright (c) 2019-2025 Tomislav Bacinger (unofficial,
 Master +6% corner speed, Late Braker (brakes use 72% → up to 94% of the car's braking), Racecraft
 (+0.1s slipstream reach, overtakes more), Focus, Tire Whisperer, Quick Reflexes, Big Engine +7%
 top speed, Turbo +25% accel, Sticky Setup +15% grip, Hard Compound, Carbon Brakes +30%,
-Pro Pit Crew, Nitro Power (+5% boost per level), Nitro Tank (drains 25% slower, refills 50% faster).
+Pro Pit Crew, Nitro Refill (+5% boost back per lap, max 3), Pit Lane Rocket (+25% pit lane speed, max 3).
+(Nitro Power and Nitro Tank were removed.)
 (Hard Compound was removed: Tire Whisperer is the one tire-wear upgrade, max 4.)
 `stats(c)` turns levels into numbers.
 
@@ -149,6 +157,11 @@ Huge) scales all menus and HUD (they're in rem). The bottom HUD stacks itself by
 (`layoutHud`). Guests see the host's drawing live while it's being drawn (`draft` event). `segOf` covers the whole drawn deck
 (ramps + 5 points either side) and the layer uses the track index of the snapshot the car is
 drawn from (`drawIdx`), so there's no flicker getting on or off a ramp.
+
+**Double ramps** are drawn in their own colours (`RAMP_STYLE`: level 2 blue deck/cyan kerbs, level 3 purple/pink).
+**Drawing board sizing:** `sizeBoard` uses `clientWidth/Height` (not the bounding box, which includes the
+lobby's slide-in scale animation and caused the pen to land away from the mouse); `toBoard` scales by
+on-screen vs layout size and freehand uses coalesced pointer events.
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over

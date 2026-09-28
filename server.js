@@ -25,7 +25,11 @@ const CORNER_GRIP = 1700;              // how hard drivers PLAN to corner (px/s^
 const LAT_GRIP = CORNER_GRIP * 1.3;    // how hard the car CAN corner (a safety margin above the plan)
 const BRAKE_PLAN = 936;                // how hard drivers plan to brake before a corner (72% of BRAKE)
 const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahead: +30% top speed
-const NITRO_POWER = 0.12, NITRO_DRAIN = 0.12, NITRO_REGEN = 0.03, NITRO_REGEN_EVERY = 1.5;
+// Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
+// more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
+const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5;
+// Aquaplaning: on a track this wet (80%+), anything but wets slides all over the place
+const AQUA_WET = 0.8;
 const XP_RATE_MIN = 10, XP_RATE_MAX = 50, XP_RATE_DEFAULT = 10;   // passive XP per race-second (host setting)
 // Tire life depends on race length: a fresh set lasts about 60% of the race
 // (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
@@ -75,8 +79,8 @@ const UPGRADES = {
   grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+15% grip, +2% corner speed",            max: 4, fx: (n) => `+${15 * n}% grip` },
   brakes:  { kind: "Car",    name: "Carbon Brakes",  desc: "+30% braking power",                     max: 3, fx: (n) => `+${30 * n}% braking` },
   pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
-  nitro:   { kind: "Car",    name: "Nitro Power",    desc: "Boost pushes 5% harder",                 max: 3, fx: (n) => `+${12 + 5 * n}% boost speed` },
-  tank:    { kind: "Car",    name: "Nitro Tank",     desc: "Boost drains 25% slower, refills 50% faster", max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% slower drain` },
+  refill:  { kind: "Car",    name: "Nitro Refill",   desc: "+5% boost back every lap",               max: 3, fx: (n) => `${pct(NITRO_LAP_REFILL + 0.05 * n)}% boost back per lap` },
+  pitlane: { kind: "Car",    name: "Pit Lane Rocket", desc: "Drives 25% faster down the pit lane",   max: 3, fx: (n) => `+${25 * n}% pit lane speed` },
 };
 const upgradeInfo = () => Object.fromEntries(Object.entries(UPGRADES).map(([k, u]) => [k, { kind: u.kind, name: u.name, desc: u.desc, max: u.max, levels: Array.from({ length: u.max + 1 }, (_, n) => u.fx(n)) }]));
 const blankUp = () => Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0]));
@@ -673,7 +677,10 @@ class Room {
     this.roster = [];
     this.ensureRoster(this.settings.ai);
     this.raceNo = 0;
+    this.history = [];          // championship standings after every race of this season (for the finale)
+    this.seasonColors = { drivers: {}, teams: {} };
   }
+  resetSeason() { this.champ = {}; this.teamChamp = {}; this.raceNo = 0; this.history = []; this.seasonColors = { drivers: {}, teams: {} }; }
   emit(ev, d) { io.to(this.code).emit(ev, d); }
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
   lobbyMsg() {
@@ -920,7 +927,8 @@ class Room {
       gripMul: 1 + 0.15 * u.grip,
       planBrake: BRAKE * (1 + 0.3 * u.brakes) * (0.72 + 0.055 * u.late),   // drivers plan to use 72% of the brakes (Late Braker: up to 94%)
       slipTime: SLIP_TIME + 0.1 * u.craft,
-      nitroPow: NITRO_POWER + 0.05 * u.nitro, nitroDrain: NITRO_DRAIN * Math.pow(0.75, u.tank), nitroRegen: NITRO_REGEN * (1 + 0.5 * u.tank),
+      nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN, nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
+      pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane),
       mistakes: Math.pow(0.6, u.focus),
     };
   }
@@ -1126,16 +1134,16 @@ class Room {
     if (c.aiMode === "pitLane" || c.aiMode === "pitOut") {
       if (kNow < 0) {
         c.aiMode = "race";
-        tx = t.pts[(c.idx + 4) % N].x; ty = t.pts[(c.idx + 4) % N].y; targetSpeed = PIT_LIMIT;
+        tx = t.pts[(c.idx + 4) % N].x; ty = t.pts[(c.idx + 4) % N].y; targetSpeed = st.pitLimit;
       } else {
         const k = kNow;
         const aim = lanePoint(t, Math.min(pl.len, k + 2.5 * 30 / t.spacing));
-        tx = aim.x; ty = aim.y; targetSpeed = PIT_LIMIT;
+        tx = aim.x; ty = aim.y; targetSpeed = st.pitLimit;
         if (c.aiMode === "pitLane") {
           const busy = this.cars.some((o) => o !== c && o.team === c.team && o.pitting > 0);
           const stopAt = c.laneKey - (busy ? 2.2 * 30 / t.spacing : 0);
           const dk = stopAt - k;
-          targetSpeed = dk > 0 ? Math.min(PIT_LIMIT, Math.sqrt(2 * 520 * dk * t.spacing)) : 0;
+          targetSpeed = dk > 0 ? Math.min(st.pitLimit, Math.sqrt(2 * 520 * dk * t.spacing)) : 0;
           if (!busy && dk <= 0.9 && speed < 70) {
             const box = lanePoint(t, c.laneKey), bi = (pl.entry + Math.round(c.laneKey)) % N;
             c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
@@ -1338,16 +1346,13 @@ class Room {
     if (c.slip) maxSp *= 1 + SLIP_BONUS;
     c.boosting = this.time < c.boostUntil;           // launch boost off the line
     if (c.boosting) { accel *= 1.8; maxSp *= 1.08; }
-    // Nitro boost: +20% while held, drains 12%/s, refills 3% every 1.5s when not in use
+    // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
     const p = c.owner && this.players.get(c.owner);
     const wantN = p ? p.nitroHeld : c.aiNitro;
     c.nitroOn = !!wantN && c.nitro > 0 && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
       maxSp *= 1 + st.nitroPow; accel *= 1.15 + st.nitroPow;
-      c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt); c.regenT = 0;
-    } else if (c.nitro < 1) {
-      c.regenT += dt;
-      while (c.regenT >= NITRO_REGEN_EVERY) { c.regenT -= NITRO_REGEN_EVERY; c.nitro = Math.min(1, c.nitro + st.nitroRegen); }
+      c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
     }
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
@@ -1363,11 +1368,26 @@ class Room {
     if (c.punct) gripF *= 0.35;
     const av = Math.abs(vF);
     c.yawMax = Math.min(STEER_LOCK * clamp(av / 140, 0.2, 1), (LAT_GRIP * st.cornerPace * st.cornerPace * gripF) / Math.max(av, 1));
-    const control = c.crashT > 0 ? 0.25 : 1;
+    const aquaNow = c.compound !== "wet" && this.wet >= AQUA_WET && !c.inPit ? 0.45 : 1;   // steering barely bites
+    const control = (c.crashT > 0 ? 0.25 : 1) * aquaNow;
     c.heading += input.steer * c.yawMax * Math.sign(vF || 1) * dt * control;
     let grip = st.grip * this.tireGrip(c.tire) * this.weatherGrip(c);
     if (c.surface === 2) grip *= 0.55; else if (c.surface === 3) grip *= 0.4;
     if (c.punct) { grip *= 0.35; c.heading += (Math.random() - 0.5) * 0.9 * dt; }
+    // Aquaplaning: 80-100% wet and not on wets = the car slides ALL over the place. The rear
+    // steps out in random directions every half second or so, the tires barely stop the slide,
+    // and it gets worse the faster you go (and the wetter it is).
+    c.aqua = 0;
+    if (c.compound !== "wet" && this.wet >= AQUA_WET && !c.inPit && av > 60) {
+      const a = (0.65 + 0.35 * clamp((this.wet - AQUA_WET) / (1 - AQUA_WET), 0, 1)) * clamp(av / 450, 0.3, 1);
+      c.aqua = a;
+      c.aquaT = (c.aquaT || 0) - dt;
+      if (c.aquaT <= 0) { c.aquaT = 0.35 + Math.random() * 0.7; c.aquaYaw = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 1.6); }
+      c.heading += (c.aquaYaw || 0) * a * dt;
+      vS += (c.aquaYaw || 0) * a * av * 0.9 * dt;
+      grip *= 1 - 0.85 * a;
+      if (p && !c.aquaWarned) { c.aquaWarned = true; io.to(p.id).emit("toast", `${c.name}: "I'm aquaplaning everywhere! Box for wets!"`); }
+    } else if (this.wet < AQUA_WET - 0.1) c.aquaWarned = false;
     vS *= Math.exp(-grip * dt);
     const nfx = Math.cos(c.heading), nfy = Math.sin(c.heading);
     c.vx = nfx * vF - nfy * vS; c.vy = nfy * vF + nfx * vS;
@@ -1431,6 +1451,12 @@ class Room {
       if (p) { this.addXp(p, 30, "Lap done +30 XP"); if (c.cleanLap) this.addXp(p, 60, "Clean lap +60 XP"); }
     }
     c.lapStart = this.time; c.cleanLap = true;
+    // boost: half a tank back every time you cross the line (more with Nitro Refill)
+    if (c.lapsDone >= 1 && c.lapsDone < this.settings.laps && c.st) {
+      const before = c.nitro;
+      c.nitro = Math.min(1, c.nitro + c.st.nitroRefill);
+      if (p && c.nitro > before + 0.005) io.to(p.id).emit("xp", { label: `⚡ Boost +${Math.round((c.nitro - before) * 100)}%` });
+    }
     if (c.tireAtLap !== undefined && c.tire < c.tireAtLap && c.pitting <= 0) { const w = c.tireAtLap - c.tire; c.lapWearMeas = c.lapWearMeas ? c.lapWearMeas * 0.5 + w * 0.5 : w; }
     c.tireAtLap = c.tire;
     if (c.lapsDone >= this.settings.laps && !c.finished) {
@@ -1520,7 +1546,7 @@ class Room {
   }
 
   aiUpgrade(c) {
-    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, nitro: 1, tank: 1, focus: 1, whisper: 1, pit: 1, reflex: 0.2 };
+    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, reflex: 0.2 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
     if (!opts.length) return;
     let r = Math.random() * opts.reduce((a, k) => a + (W[k] || 1), 0);
@@ -1580,19 +1606,27 @@ class Room {
       if (c.team && this.settings.teams) this.teamChamp[c.team] = (this.teamChamp[c.team] || 0) + pts;
       return { name: c.name, team: this.settings.teams ? c.team : "", color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
     });
+    // remember the standings after this race, so the season finale can show who went up and down
+    for (const r of rows) { this.seasonColors.drivers[r.name] = r.color; if (r.team && !this.seasonColors.teams[r.team]) this.seasonColors.teams[r.team] = r.color; }
+    const players = [...this.players.values()];
+    this.history.push({ drivers: this.champOrder(), teams: this.settings.teams ? this.teamOrder() : [] });
     // upgrades only mean something during a race: clear any cards still waiting
     for (const p of this.players.values()) { p.offer = null; p.pendingPicks = 0; io.to(p.id).emit("offerCleared"); }
     const len = this.settings.season, seasonOver = len > 0 && this.raceNo >= len;
-    const season = seasonOver ? { races: this.raceNo, drivers: this.champOrder().slice(0, 5), teams: this.settings.teams ? this.teamOrder().slice(0, 5) : [] } : null;
+    const season = seasonOver ? {
+      races: this.raceNo, drivers: this.champOrder().slice(0, 5), teams: this.settings.teams ? this.teamOrder().slice(0, 5) : [],
+      history: this.history, colors: this.seasonColors,
+      mine: { drivers: rows.filter((r) => r.owner).map((r) => r.name), teams: [...new Set(players.map((p) => p.team).filter(Boolean))] },
+    } : null;
     this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season });
     this.sendLobby();
     setTimeout(() => {
       if (this.phase === "results") {
         this.phase = "lobby"; this.cars = null;
-        if (seasonOver) { this.champ = {}; this.teamChamp = {}; this.raceNo = 0; this.emit("toast", "New season! Championship points are reset."); }
+        if (seasonOver) { this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
         this.sendLobby();
       }
-    }, seasonOver ? 20000 : 12000);
+    }, seasonOver ? 40000 : 12000);
   }
 
   gaps(order) {
@@ -1745,7 +1779,7 @@ io.on("connection", (socket) => {
   });
   socket.on("resetChamp", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
-    r.champ = {}; r.teamChamp = {}; r.raceNo = 0; r.sendLobby();
+    r.resetSeason(); r.sendLobby();
     r.emit("toast", "Championship reset. Fresh season!");
   });
   socket.on("setTeam", (t) => {
