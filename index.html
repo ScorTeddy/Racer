@@ -793,6 +793,14 @@
   .ach { display: grid; grid-template-columns: 2.4rem 1fr auto; align-items: center; gap: 0.55rem; padding: 0.5rem 0.65rem; border-radius: 0.7rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
   .ach .ic { font-size: 1.5rem; text-align: center; filter: grayscale(1); opacity: 0.45; }
   .ach b { display: block; font-size: 0.9rem; } .ach small { color: var(--soft); font-size: 0.78rem; }
+  .ach-filters { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .ach-filters .chip { cursor: pointer; border: 1.5px solid var(--edge); background: none; color: var(--soft); border-radius: 99px; padding: 0.25rem 0.8rem; font-weight: 700; font-size: 0.8rem; }
+  .ach-filters .chip.on { background: var(--yellow); border-color: var(--yellow); color: #1b1b1b; }
+  .ach-prog { height: 0.4rem; border-radius: 99px; background: rgba(255,255,255,0.1); overflow: hidden; margin-top: 0.3rem; }
+  .ach-prog i { display: block; height: 100%; background: linear-gradient(90deg, #4fa3ff, #3ecf6a); border-radius: 99px; }
+  .ach-num { font-variant-numeric: tabular-nums; font-size: 0.7rem !important; }
+  .ach.insane { border-color: rgba(255,90,40,0.55); background: linear-gradient(100deg, rgba(255,70,30,0.12), rgba(255,70,30,0.02)); }
+  .ach.insane .rw { color: #ff8a4a; }
   .ach .rw { font-size: 0.78rem; font-weight: 800; color: var(--soft); white-space: nowrap; }
   .ach.got { border-color: rgba(255,204,31,0.55); background: linear-gradient(100deg, rgba(255,204,31,0.12), rgba(255,204,31,0.02)); }
   .ach.got .ic { filter: none; opacity: 1; } .ach.got .rw { color: var(--green); }
@@ -817,6 +825,8 @@
   .reel-win { position: relative; width: 100%; min-width: 0; contain: inline-size; overflow: hidden; border-radius: 0.8rem; background: rgba(0,0,0,0.35); padding: 0.5rem 0; }
   .reel-win::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: var(--yellow); box-shadow: 0 0 12px var(--yellow); }
   .reel-strip { display: flex; gap: 14px; padding-left: 6px; will-change: transform; }
+  /* 'Reduce motion' turns off every transition in the game, which also froze the chest spin (still a gentle one) */
+  body.rm .reel-strip { transition: transform 1.4s cubic-bezier(.12,.8,.2,1) !important; }
   .reel-cell { flex: 0 0 150px; display: flex; flex-direction: column; gap: 0.2rem; padding: 0.3rem; border-radius: 0.6rem; background: var(--panel-2); border-bottom: 4px solid var(--rc); }
   .reel-cell canvas { width: 100%; height: auto; } .reel-cell small { font-size: 0.72rem; font-weight: 700; }
   .reel-res { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; animation: pop 400ms cubic-bezier(.2,.9,.3,1.4) both; }
@@ -1985,13 +1995,31 @@
     const earned = list.filter((a) => got[a.id]).reduce((t, a) => t + a.coins, 0);
     box.appendChild(el("p", "hub-h", `${have} of ${list.length} unlocked · ${earned} coins earned from them`));
     const bar = el("div", "ach-bar"); const fill = el("i"); fill.style.width = (have / list.length) * 100 + "%"; bar.appendChild(fill); box.appendChild(bar);
+    // filters: closest to unlocking first, so you always see what to go for next
+    const prog = u?.achProg || {};
+    const pctOf = (a) => (got[a.id] ? 1 : a.goal ? Math.min(1, (prog[a.id] || 0) / a.goal) : 0);
+    const f = A.achFilter || "todo";
+    const fbar = el("div", "ach-filters");
+    for (const [k, label] of [["todo", "To do"], ["done", "Unlocked"], ["hard", "🔥 Insane"], ["all", "All"]]) {
+      const b = el("button", "chip" + (f === k ? " on" : ""), label); b.type = "button";
+      b.addEventListener("click", () => { A.achFilter = k; renderAchs(u); }); fbar.appendChild(b);
+    }
+    box.appendChild(fbar);
+    let shown = list.filter((a) => (f === "todo" ? !got[a.id] : f === "done" ? got[a.id] : f === "hard" ? a.coins >= 1000 : true));
+    shown = shown.sort((x, y) => (f === "done" ? (got[y.id] || 0) - (got[x.id] || 0) : pctOf(y) - pctOf(x) || x.coins - y.coins));
     const g = el("div", "ach-grid");
-    for (const a of [...list].sort((x, y) => (!!got[y.id]) - (!!got[x.id]))) {
-      const d = el("div", "ach" + (got[a.id] ? " got" : ""));
+    for (const a of shown) {
+      const d = el("div", "ach" + (got[a.id] ? " got" : "") + (a.coins >= 1000 ? " insane" : ""));
       const tx = el("div"); tx.append(el("b", "", a.name), el("small", "", a.desc));
-      d.append(el("span", "ic", a.icon), tx, el("span", "rw", got[a.id] ? "✓ +" + a.coins : "🪙 " + a.coins));
+      if (a.goal && !got[a.id]) {
+        const cur = Math.min(a.goal, prog[a.id] || 0);
+        const pb = el("div", "ach-prog"); const fi = el("i"); fi.style.width = (cur / a.goal) * 100 + "%"; pb.appendChild(fi);
+        tx.append(pb, el("small", "ach-num", `${Math.floor(cur).toLocaleString()} / ${a.goal.toLocaleString()}`));
+      }
+      d.append(el("span", "ic", a.icon), tx, el("span", "rw", got[a.id] ? "✓ +" + a.coins : "🪙 " + a.coins.toLocaleString()));
       g.appendChild(d);
     }
+    if (!shown.length) g.appendChild(el("p", "preset-note", f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
     box.appendChild(g);
   }
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
@@ -2029,11 +2057,18 @@
     win.appendChild(strip); panel.append(el("h3", "", "Opening..."), win);
     const res = el("div", "reel-res hidden"); panel.appendChild(res);
     wrap.appendChild(panel); document.body.appendChild(wrap);
-    const cellW = 164;
-    requestAnimationFrame(() => {
-      strip.style.transition = reducedMotion ? "none" : "transform 3.2s cubic-bezier(.12,.8,.2,1)";
-      strip.style.transform = `translateX(${-(stopAt * cellW - win.clientWidth / 2 + cellW / 2 - 6 + (Math.random() - 0.5) * 60)}px)`;
-    });
+    const cellW = 164, spinT = reducedMotion ? 1.4 : 3.2;
+    // Start from 0, make the browser actually lay that out, THEN set where it stops. (Setting both in the
+    // same frame meant some browsers skipped straight to the end: no spin. That was your friend's bug.)
+    strip.style.transition = "none"; strip.style.transform = "translateX(0px)";
+    void strip.getBoundingClientRect();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const w = win.clientWidth || Math.min(window.innerWidth - 64, 600);
+      strip.style.transition = `transform ${spinT}s cubic-bezier(.12,.8,.2,1)`;
+      strip.style.transform = `translateX(${-(stopAt * cellW - w / 2 + cellW / 2 - 6 + (Math.random() - 0.5) * 60)}px)`;
+    }));
+    // tick sounds as items fly past
+    if (!reducedMotion) for (let k = 0; k < 22; k++) setTimeout(() => sfx("tick"), 3000 * Math.pow(k / 22, 2.2));
     setTimeout(() => {
       const [rn, rc] = RARITY[r.rarity];
       panel.querySelector("h3").textContent = r.rarity === "mythic" ? "💎 MYTHIC!!! THE RAREST THING IN THE GAME 💎" : r.rarity === "legendary" ? "🌟 LEGENDARY! 🌟" : "You got:";
@@ -2047,7 +2082,7 @@
       sfx(r.rarity === "legendary" || r.rarity === "epic" ? "win" : "level");
       if (r.rarity === "legendary") banner("LEGENDARY!", "#ffb020");
       if (r.rarity === "mythic") { banner("MYTHIC!", "#ff3b8a"); sfx("win"); }
-    }, reducedMotion ? 200 : 3400);
+    }, reducedMotion ? 1600 : 3400);
   });
   const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail" };
   function renderStore(u) {

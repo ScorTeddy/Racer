@@ -133,6 +133,7 @@ function fix(u) {
 }
 function blankStats() {
   return {
+    poles: 0, emotes: 0, winsHard: 0, winsExtreme: 0, lastPlaces: 0, coinsEarned: 0, bestStreak: 0, winStreak: 0, bestWinStreak: 0, themes: [], themesWon: [],
     races: 0, wins: 0, podiums: 0, top5: 0, bestFinish: 0, points: 0, laps: 0, km: 0,
     overtakes: 0, mostOvertakes: 0, pitStops: 0, fastestLaps: 0, cleanLaps: 0, crashes: 0, slips: 0,
     bestReaction: 0, perfectStarts: 0, jumpStarts: 0, rainRaces: 0, rainWins: 0, maxLevel: 0, upgrades: 0,
@@ -259,7 +260,130 @@ const ACH = [
   { id: "unboxer", icon: "📦", name: "Unboxer", desc: "Open 10 chests", coins: 60, test: (s) => (s.boxes || 0) >= 10 },
   { id: "legend_item", icon: "🌟", name: "Jackpot", desc: "Own a legendary item", coins: 100, test: (s, r, u) => u.owned.some((id) => STORE_BY_ID.get(id)?.rarity === "legendary") },
 ];
-const ACH_PUBLIC = ACH.map(({ id, icon, name, desc, coins }) => ({ id, icon, name, desc, coins }));
+// ---- ~100 more. cnt() = "reach N of something" (these get a progress bar). The 🔥 ones are brutal but pay a LOT.
+let STORE_COUNT = 999;      // set once the store list is built (below)
+const len = (v) => (Array.isArray(v) ? v.length : Number(v) || 0);
+const cnt = (id, icon, name, desc, coins, key, goal) => ({ id, icon, name, desc, coins, goal, prog: (s, u) => (typeof key === "function" ? key(s, u) : len(s[key])), test: (s, r, u) => (typeof key === "function" ? key(s, u) : len(s[key])) >= goal });
+const one = (id, icon, name, desc, coins, test) => ({ id, icon, name, desc, coins, test });
+ACH.push(
+  // racing volume
+  cnt("races_500", "📅", "Half a Thousand", "Race 500 times", 600, "races", 500),
+  cnt("races_1000", "🗿", "Part of the Furniture", "Race 1000 times", 1500, "races", 1000),
+  cnt("wins_50", "🥇", "Winning Habit", "Win 50 races", 400, "wins", 50),
+  cnt("wins_100", "🏆", "Centurion", "Win 100 races", 1000, "wins", 100),
+  cnt("wins_250", "🐐", "The GOAT", "Win 250 races", 3000, "wins", 250),
+  cnt("podiums_50", "🍾", "Podium Regular", "50 podiums", 250, "podiums", 50),
+  cnt("podiums_150", "🎖️", "Podium Machine", "150 podiums", 800, "podiums", 150),
+  cnt("top5_100", "5️⃣", "Always There", "100 top-5 finishes", 300, "top5", 100),
+  cnt("points_1000", "📊", "Point Collector", "Score 1,000 championship points", 200, "points", 1000),
+  cnt("points_10000", "📈", "Points Mountain", "Score 10,000 championship points", 1200, "points", 10000),
+  cnt("laps_100", "🔁", "Lapping It Up", "Drive 100 laps", 50, "laps", 100),
+  cnt("laps_1000", "♾️", "Lap Legend", "Drive 1,000 laps", 300, "laps", 1000),
+  cnt("laps_10000", "🌀", "Dizzy Yet?", "Drive 10,000 laps", 2500, "laps", 10000),
+  cnt("km_5000", "🚀", "To the Moon (sort of)", "Drive 5,000 km", 800, "km", 5000),
+  cnt("km_20000", "🌌", "Deep Space Driver", "Drive 20,000 km", 3000, "km", 20000),
+  cnt("time_10h", "⌛", "Ten Hours Deep", "Race for 10 hours in total", 500, (s) => Math.floor((s.raceSec || 0) / 3600), 10),
+  cnt("time_50h", "🕰️", "No Life (Complimentary)", "Race for 50 hours in total", 2500, (s) => Math.floor((s.raceSec || 0) / 3600), 50),
+  // overtaking
+  cnt("ot_5000", "⚔️", "Traffic Slicer", "5,000 overtakes", 900, "overtakes", 5000),
+  cnt("ot_20000", "🦈", "Apex Predator", "20,000 overtakes", 3000, "overtakes", 20000),
+  one("ot_20race", "💫", "Through the Field", "20 overtakes in one race", 250, (s, r) => r.overtakes >= 20),
+  one("ot_40race", "🌪️", "Human Tornado", "40 overtakes in one race", 1200, (s, r) => r.overtakes >= 40),
+  one("comeback_20", "📈", "Great Escape", "Gain 20 places in one race", 400, (s, r) => r.grid - r.pos >= 20),
+  one("comeback_40", "🧗", "Everest Climb", "Gain 40 places in one race", 2000, (s, r) => r.grid - r.pos >= 40),
+  one("from_p10", "🎯", "Mid-Pack Miracle", "Win from 10th or lower on the grid", 200, (s, r) => r.pos === 1 && r.grid >= 10),
+  one("from_p30", "🚀", "Rocket From the Back", "Win from 30th or lower on the grid", 1500, (s, r) => r.pos === 1 && r.grid >= 30),
+  // speed & laps
+  cnt("fastest_25", "🟣", "Purple Patch", "25 fastest laps", 250, "fastestLaps", 25),
+  cnt("fastest_100", "💜", "Always Purple", "100 fastest laps", 1200, "fastestLaps", 100),
+  cnt("clean_100", "🧼", "Tidy Driver", "100 clean laps", 150, "cleanLaps", 100),
+  cnt("clean_1000", "🫧", "Mr. Clean", "1,000 clean laps", 900, "cleanLaps", 1000),
+  cnt("pb_10", "🏅", "Record Breaker", "Set lap records on 10 tracks", 200, (s) => Object.keys(s.pbs || {}).length, 10),
+  cnt("pb_50", "📚", "Record Collector", "Set lap records on 50 tracks", 1000, (s) => Object.keys(s.pbs || {}).length, 50),
+  one("grand_slam", "💎", "Grand Slam", "Pole, win, fastest lap and every lap clean in one race", 800, (s, r) => r.grid === 1 && r.pos === 1 && r.fastestLap && r.cleanLaps >= r.laps),
+  one("margin_30", "🏝️", "See You Later", "Win by 30 seconds or more", 300, (s, r) => r.pos === 1 && r.margin >= 30),
+  one("photo", "📸", "Photo Finish", "Win by less than 0.1 seconds", 400, (s, r) => r.pos === 1 && r.margin > 0 && r.margin < 0.1),
+  one("streak_3", "🔥", "On Fire", "Win 3 races in a row", 300, (s) => (s.bestWinStreak || 0) >= 3),
+  one("streak_10", "☄️", "Untouchable", "Win 10 races in a row", 3000, (s) => (s.bestWinStreak || 0) >= 10),
+  one("no_boost_win", "🧘", "Pure Driving", "Win without using any boost", 300, (s, r) => r.pos === 1 && r.boostSec === 0 && r.of >= 4),
+  // starts
+  cnt("starts_10", "⚡", "Quick Draw", "10 great starts (under 250 ms)", 150, "perfectStarts", 10),
+  cnt("starts_100", "🌩️", "Lightning Reflexes", "100 great starts", 900, "perfectStarts", 100),
+  one("react_150", "🦾", "Superhuman", "React to the lights in under 150 ms", 600, (s, r) => r.reaction > 0 && r.reaction < 150),
+  cnt("jumps_10", "🐸", "Frog Legs", "Jump the start 10 times", 30, "jumpStarts", 10),
+  // strategy / team boss
+  cnt("pits_500", "🔧", "Pit Crew Hall of Fame", "500 pit stops", 500, "pitStops", 500),
+  cnt("upg_100", "🛠️", "Tinkerer", "Pick 100 upgrades", 150, "upgrades", 100),
+  cnt("upg_1000", "🏭", "Factory Owner", "Pick 1,000 upgrades", 900, "upgrades", 1000),
+  one("level_20", "🧬", "Mad Scientist", "Reach team level 20 in a race", 500, (s, r) => r.level >= 20),
+  cnt("boost_10m", "🔥", "Nitro Addict", "Boost for 10 minutes in total", 300, (s) => Math.floor((s.boostSec || 0) / 60), 10),
+  cnt("boost_60m", "🧨", "Walking Fire Hazard", "Boost for an hour in total", 1500, (s) => Math.floor((s.boostSec || 0) / 60), 60),
+  // weather
+  cnt("rain_25", "🌧️", "Rain Dancer", "Finish 25 wet races", 250, "rainRaces", 25),
+  cnt("rainwin_10", "⛈️", "Storm Chaser", "Win 10 wet races", 500, "rainWins", 10),
+  cnt("rainwin_50", "🌊", "Poseidon", "Win 50 wet races", 2500, "rainWins", 50),
+  one("madman", "🤡", "Absolute Madman", "Win in heavy rain without ever using wets", 1000, (s, r) => r.pos === 1 && r.maxWet >= 0.6 && !r.usedWets && r.of >= 6),
+  cnt("slips_100", "🍌", "Banana Peel", "Slide 100 times in the wet", 60, "slips", 100),
+  // difficulty
+  one("win_hard", "😤", "Hardened", "Win a race on Hard AI", 150, (s, r) => r.pos === 1 && (r.aiLevel === "hard" || r.aiLevel === "extreme") && r.of >= 6),
+  cnt("win_hard_25", "💪", "Hard Carry", "Win 25 races on Hard or Extreme AI", 700, "winsHard", 25),
+  one("win_extreme", "💀", "Extreme Measures", "Win a race on EXTREME AI", 400, (s, r) => r.pos === 1 && r.aiLevel === "extreme" && r.of >= 6),
+  cnt("win_extreme_10", "☠️", "Extremely Good", "Win 10 races on EXTREME AI", 1500, "winsExtreme", 10),
+  cnt("win_extreme_50", "👹", "Final Boss", "Win 50 races on EXTREME AI", 5000, "winsExtreme", 50),
+  one("impossible", "🌋", "The Impossible", "Win on EXTREME against 40+ AI, starting last", 5000, (s, r) => r.pos === 1 && r.aiLevel === "extreme" && r.of >= 41 && r.grid === r.of),
+  one("extreme_nord", "🌲", "Northern Loop Master", "Win on the Eifel Northern Loop on EXTREME AI", 2000, (s, r) => r.pos === 1 && r.aiLevel === "extreme" && r.trackId === "de-ns" && r.of >= 6),
+  one("marathon", "🏃", "Marathon", "Finish a 50-lap race", 600, (s, r) => r.finished && r.laps >= 50),
+  one("ultra", "🦿", "Ultra Marathon", "Finish a 99-lap race", 2500, (s, r) => r.finished && r.laps >= 99),
+  one("full_grid", "🚦", "Maximum Chaos", "Finish a race with 60 AI", 300, (s, r) => r.finished && r.of >= 61),
+  one("full_grid_win", "👑", "King of Chaos", "Win a race against 60 AI", 2000, (s, r) => r.pos === 1 && r.of >= 61),
+  // championships
+  cnt("champ_3", "🏅", "Triple Champion", "Win 3 drivers' titles", 800, "champDriver", 3),
+  cnt("champ_10", "🌟", "Dynasty", "Win 10 drivers' titles", 3000, "champDriver", 10),
+  cnt("champteam_5", "🏢", "Constructor Empire", "Win 5 teams' titles", 1500, "champTeam", 5),
+  cnt("poles_1", "🥇", "Pole Sitter", "Take pole position in qualifying", 60, "poles", 1),
+  cnt("poles_25", "⏱️", "Saturday Specialist", "25 pole positions", 600, "poles", 25),
+  cnt("poles_100", "🧊", "Ice Cold", "100 pole positions", 2500, "poles", 100),
+  // places & tracks
+  cnt("real_20", "🗺️", "Globetrotter", "Race on 20 different real tracks", 300, "realTracks", 20),
+  cnt("real_all", "🌐", "Seen It All", "Race on all 42 real tracks", 2000, "realTracks", 42),
+  cnt("themes_all", "🎨", "Tourist", "Race on every track theme", 250, "themes", 9),
+  cnt("themes_win", "🖼️", "Master of All Lands", "Win on every track theme", 1500, "themesWon", 9),
+  cnt("drawn_25", "✏️", "Track Designer", "Race 25 times on tracks you drew", 300, "drawnRaces", 25),
+  cnt("random_100", "🎲", "Gambler", "Race 100 random tracks", 500, "randomRaces", 100),
+  // friends
+  cnt("multi_25", "🤝", "Social Racer", "25 races with other real players", 200, "multiRaces", 25),
+  cnt("multi_200", "🎉", "Party Animal", "200 races with other real players", 1000, "multiRaces", 200),
+  cnt("beat_100", "😈", "Friend Crusher", "Beat real players 100 times", 600, "beatPlayers", 100),
+  cnt("beat_1000", "🦖", "Friendship Ender", "Beat real players 1,000 times", 3000, "beatPlayers", 1000),
+  cnt("emotes_100", "💬", "Chatterbox", "Send 100 emotes", 50, "emotes", 100),
+  // chaos
+  cnt("crash_100", "🚗", "Bumper Cars", "Crash 100 times", 60, "crashes", 100),
+  cnt("crash_1000", "💥", "Insurance Nightmare", "Crash 1,000 times", 400, "crashes", 1000),
+  cnt("last_10", "🐢", "Scenic Route", "Finish last 10 times", 40, "lastPlaces", 10),
+  // store & chests
+  cnt("boxes_50", "📦", "Chest Hoarder", "Open 50 chests", 300, "boxes", 50),
+  cnt("boxes_250", "🏦", "Chest Tycoon", "Open 250 chests", 1500, "boxes", 250),
+  cnt("items_25", "🧳", "Collector", "Own 25 items", 200, (s, u) => u.owned.length, 25),
+  cnt("items_60", "🗄️", "Hoarder", "Own 60 items", 800, (s, u) => u.owned.length, 60),
+  cnt("items_all", "🏛️", "Museum Curator", "Own every single item", 5000, (s, u) => u.owned.length, STORE_COUNT),
+  one("mythic", "💠", "Holy Grail", "Own the open-wheel racer", 1000, (s, r, u) => u.owned.includes("body_f1")),
+  cnt("bodies_all", "🚙", "Car Park", "Own every car body", 1500, (s, u) => u.owned.filter((id) => id.startsWith("body_")).length, 5),
+  cnt("liveries_10", "🎨", "Paint Shop", "Own 10 chest liveries", 400, (s, u) => u.owned.filter((id) => id.startsWith("liv_")).length, 10),
+  one("f1_win", "🏎️", "Formula Winner", "Win a race in the open-wheel racer", 500, (s, r) => r.pos === 1 && r.body === "f1"),
+  one("kart_win", "🛒", "Kart Champion", "Win a race in the go-kart", 300, (s, r) => r.pos === 1 && r.body === "kart"),
+  cnt("coins_10000", "💰", "Rich", "Earn 10,000 coins in total", 500, "coinsEarned", 10000),
+  cnt("coins_50000", "🤑", "Filthy Rich", "Earn 50,000 coins in total", 2500, "coinsEarned", 50000),
+  cnt("daily_7", "📆", "Week Streak", "Log in 7 days in a row", 150, "bestStreak", 7),
+  cnt("daily_30", "🗓️", "Month Streak", "Log in 30 days in a row", 1000, "bestStreak", 30),
+  cnt("daily_100", "🏆", "100-Day Legend", "Log in 100 days in a row", 5000, "bestStreak", 100),
+  cnt("ach_50", "🎯", "Achievement Hunter", "Unlock 50 achievements", 500, (s, u) => Object.keys(u.ach).length, 50),
+  cnt("ach_100", "🏵️", "Completionist", "Unlock 100 achievements", 3000, (s, u) => Object.keys(u.ach).length, 100),
+);
+// progress bars for the older count achievements too
+const OLD_PROG = { races_10: ["races", 10], races_50: ["races", 50], races_200: ["races", 200], wins_5: ["wins", 5], wins_25: ["wins", 25], podiums_20: ["podiums", 20], ot_100: ["overtakes", 100], ot_1000: ["overtakes", 1000], fastest_10: ["fastestLaps", 10], pits_100: ["pitStops", 100], km_100: ["km", 100], km_1000: ["km", 1000], world_tour: ["realTracks", 10], dice: ["randomRaces", 10], bragging: ["beatPlayers", 10], unboxer: ["boxes", 10] };
+for (const a of ACH) if (OLD_PROG[a.id] && !a.prog) { const [k, g] = OLD_PROG[a.id]; a.goal = g; a.prog = (s) => len(s[k]); }
+const ACH_PUBLIC = ACH.map(({ id, icon, name, desc, coins, goal }) => ({ id, icon, name, desc, coins, goal: goal || 0 }));
+function achProgress(u) { const o = {}; for (const a of ACH) if (a.prog && !u.ach[a.id]) { try { o[a.id] = Math.floor(a.prog(u.stats, u) * 10) / 10; } catch (e) {} } return o; }
 
 // ======================= Store =======================
 // slot -> one equipped item per slot. The client knows how to draw every "look".
@@ -360,6 +484,9 @@ STORE.push(
 // rarity: set on the item, or from its store price
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
+STORE_COUNT = STORE.length;
+for (const a of ACH) if (a.id === "items_all") a.goal = STORE_COUNT;
+for (const a of ACH_PUBLIC) if (a.id === "items_all") a.goal = STORE_COUNT;
 
 // ======================= Loot boxes =======================
 // Every box can still give junk; the pricier the box, the better the odds.
@@ -383,7 +510,7 @@ function openBox(u, boxId) {
   const item = from[Math.floor(Math.random() * from.length)];
   const dup = u.owned.includes(item.id);
   let refund = 0;
-  if (dup) { refund = DUP_REFUND[rarity]; u.coins += refund; } else u.owned.push(item.id);
+  if (dup) { refund = DUP_REFUND[rarity]; u.coins += refund; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + refund; } else u.owned.push(item.id);
   u.stats.boxes = (u.stats.boxes || 0) + 1;
   const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
   saveSoon(u);
@@ -420,8 +547,10 @@ function checkAch(u, r) {
   for (const a of ACH) {
     if (u.ach[a.id]) continue;
     let ok = false; try { ok = !!a.test(u.stats, r, u); } catch (e) {}
-    if (ok) { u.ach[a.id] = Date.now(); u.coins += a.coins; got.push({ id: a.id, icon: a.icon, name: a.name, coins: a.coins }); }
+    if (ok) { u.ach[a.id] = Date.now(); u.coins += a.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + a.coins; got.push({ id: a.id, icon: a.icon, name: a.name, coins: a.coins }); }
   }
+  // unlocking some can unlock "unlock N achievements" ones, so check once more
+  if (got.length && !r?.again) got.push(...checkAch(u, { ...(r || {}), again: true }));
   return got;
 }
 
@@ -457,6 +586,14 @@ function recordRace(u, r) {
     if (!old || r.best < old) { r.newPb = true; r.oldPb = old || 0; s.pbs[r.trackKey] = { t: Math.round(r.best * 1000) / 1000, name: r.trackName || null, at: Date.now() }; }
     const keys = Object.keys(s.pbs); if (keys.length > 200) delete s.pbs[keys.sort((a, b) => s.pbs[a].at - s.pbs[b].at)[0]];
   }
+  // new stats for the big achievement list
+  s.themes = s.themes || []; s.themesWon = s.themesWon || [];
+  if (r.theme && !s.themes.includes(r.theme)) s.themes.push(r.theme);
+  if (r.pos === 1 && r.of >= 4 && r.theme && !s.themesWon.includes(r.theme)) s.themesWon.push(r.theme);
+  if (r.pos === 1 && r.of >= 6 && (r.aiLevel === "hard" || r.aiLevel === "extreme")) s.winsHard = (s.winsHard || 0) + 1;
+  if (r.pos === 1 && r.of >= 6 && r.aiLevel === "extreme") s.winsExtreme = (s.winsExtreme || 0) + 1;
+  if (r.pos === 1 && r.of >= 3) { s.winStreak = (s.winStreak || 0) + 1; s.bestWinStreak = Math.max(s.bestWinStreak || 0, s.winStreak); } else s.winStreak = 0;
+  if (r.pos === r.of && r.of >= 4) s.lastPlaces = (s.lastPlaces || 0) + 1;
   if (r.champDriver) s.champDriver++;
   if (r.champTeam) s.champTeam++;
   const got = checkAch(u, r);
@@ -464,6 +601,8 @@ function recordRace(u, r) {
   return got;
 }
 
+function recheck(u) { const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); if (got.length) saveSoon(u); return got; }
+function bump(u, key, n = 1) { u.stats[key] = (u.stats[key] || 0) + n; const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); saveSoon(u); return got; }
 // daily login reward: 50 coins, +10 for every day in a row (up to 150)
 function dailyReward(u) {
   const day = Math.floor(Date.now() / 86400000);
@@ -471,12 +610,15 @@ function dailyReward(u) {
   u.streak = u.dailyDay === day - 1 ? (u.streak || 0) + 1 : 1;
   u.dailyDay = day;
   const coins = Math.min(150, 40 + u.streak * 10);
-  u.coins += coins; saveSoon(u);
-  return { coins, streak: u.streak };
+  u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins;
+  u.stats.bestStreak = Math.max(u.stats.bestStreak || 0, u.streak);
+  const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
+  saveSoon(u);
+  return { coins, streak: u.streak, got };
 }
 function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -499,6 +641,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, bump, recheck, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

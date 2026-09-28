@@ -285,6 +285,12 @@ open-wheel F1-style racer = **mythic, 1% from the Legendary chest only**) have `
 +10 per day in a row, max 150), personal best lap per track (`stats.pbs`, keyed by `trackKey` = real track id
 or a fingerprint of the drawing, + `_r` when reversed).
 
+**Achievements (148):** `cnt()` ones have a `goal` + `prog()` (progress bars, sent as `achProg`), `one()` ones
+are single-race feats. 38 "insane" ones pay 1,000-5,000 coins. `recheck` runs on sign-in so anything you
+already qualify for unlocks right away. New stats: poles, emotes, winsHard/winsExtreme, win streaks, last places,
+coinsEarned, bestStreak, themes/themesWon. **Chest spin:** starts from a laid-out 0 before animating, and isn't
+switched off by Reduce motion (it's just shorter).
+
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
 host, reset championship, move start line, reverse track, public/private rooms.

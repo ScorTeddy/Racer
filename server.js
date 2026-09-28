@@ -1246,6 +1246,8 @@ class Room {
     const pole = order[0] && isFinite(order[0].bestLap) ? order[0].bestLap : 0;
     const rows = order.map((c) => ({ name: c.name, team: this.settings.teams ? c.team : "", color: c.color, owner: c.owner || null, best: isFinite(c.bestLap) ? c.bestLap : null, gap: isFinite(c.bestLap) && pole ? c.bestLap - pole : null }));
     this.qualiGrid = order.map((c) => c.slotKey);
+    const poleP = order[0]?.owner && this.players.get(order[0].owner);
+    if (poleP?.uid && order.length >= 3) accounts.getUser(poleP.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "poles"); io.to(poleP.id).emit("account", accounts.publicUser(u)); for (const a of got) io.to(poleP.id).emit("achievement", a); }).catch(() => {});
     this.settings.laps = this.realLaps ?? this.settings.laps; this.realLaps = null;
     this.qualifying = false; this.paused = false;
     this.phase = "qualiResults"; this.cars = null;
@@ -1882,7 +1884,8 @@ class Room {
         upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
         humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
         kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
-        raceSec: this.time || 0,
+        raceSec: this.time || 0, aiLevel: this.settings.aiLevel || "medium", theme: this.settings.theme, body: p.extras?.body || null,
+        margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
       };
       accounts.getUser(p.uid).then((u) => {
@@ -2012,7 +2015,10 @@ io.on("connection", (socket) => {
     r.sendLobby();
   });
   // ---- accounts ----
-  const daily = (u) => { const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", d); socket.emit("account", accounts.publicUser(u)); }, 1200); };
+  const daily = (u) => {
+    // achievements you already qualify for (e.g. new ones added in an update) unlock right away
+    const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
+    const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {
     socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u);
     socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
@@ -2078,6 +2084,7 @@ io.on("connection", (socket) => {
     emoteAt = Date.now();
     const c = r.cars && r.carOf(p.id);
     r.emit("emote", { e, name: p.name, pid: p.id, car: c ? c.id : null });
+    if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "emotes"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
   });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
