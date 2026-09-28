@@ -22,8 +22,10 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
-## Accounts (Google sign-in) setup
-Without these settings the game works exactly as before, everyone just plays as a guest.
+## Accounts setup
+**Make an account** (username + password) works with no setup at all. Passwords are stored only as a
+salted scrypt hash, and there are max 8 sign-in tries a minute per connection. There's no "forgot password".
+Google sign-in is optional extra (step 1). Step 2 is needed on Render or accounts get wiped on restarts.
 
 **1. Google Client ID (free):**
 1. Go to https://console.cloud.google.com, make a project (any name).
@@ -194,7 +196,7 @@ drawn from (`drawIdx`), so there's no flicker getting on or off a ramp.
 lobby's slide-in scale animation and caused the pen to land away from the mouse); `toBoard` scales by
 on-screen vs layout size and freehand uses coalesced pointer events.
 
-**Accounts (`accounts.js`):** sockets `auth:google {credential}` (verified with Google's tokeninfo,
+**Accounts (`accounts.js`):** sockets `auth:signup`/`auth:login {username, password}` (ids `u_<lowercase name>`), `auth:google {credential}` (verified with Google's tokeninfo,
 `aud` must match `GOOGLE_CLIENT_ID`), `auth:resume {token}`, `auth:signout`, `auth:dev` (DEV_LOGIN only),
 `catalog`, `store:buy id`, `store:equip {slot,id|null}`; server sends `account`, `achievement`, `signedOut`.
 Sessions are random tokens (only their sha256 is stored), kept in `tb-token`. `Room.recordStats` builds a

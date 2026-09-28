@@ -119,6 +119,37 @@ async function signInDev(name) {
   const n = String(name || "Tester").trim().slice(0, 16) || "Tester";
   return signInWith("dev_" + sha(n).slice(0, 12), n, "");
 }
+// ======================= Username + password accounts =======================
+// Passwords are never stored: only a salted scrypt hash (Node's built-in crypto, no extra packages).
+const USER_RE = /^[A-Za-z0-9_]{3,16}$/;
+function hashPass(pw, salt = crypto.randomBytes(16).toString("hex")) {
+  return { salt, hash: crypto.scryptSync(String(pw), salt, 64).toString("hex") };
+}
+function passOk(u, pw) {
+  if (!u?.pass) return false;
+  const a = Buffer.from(hashPass(pw, u.pass.salt).hash, "hex"), b = Buffer.from(u.pass.hash, "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+async function signUp(username, password) {
+  username = String(username || "").trim(); password = String(password || "");
+  if (!USER_RE.test(username)) throw new Error("Username: 3-16 letters, numbers or _");
+  if (password.length < 6) throw new Error("Password needs at least 6 characters");
+  if (password.length > 100) throw new Error("That password is too long");
+  const id = "u_" + username.toLowerCase();
+  if (await getUser(id)) throw new Error("That username is taken, try another one");
+  const u = fix({ id, name: username, picture: "", created: Date.now(), pass: hashPass(password) });
+  cache.set(id, u); saveSoon(u);
+  const token = await addSession(u);
+  return { u, token };
+}
+async function logIn(username, password) {
+  username = String(username || "").trim();
+  const u = USER_RE.test(username) ? await getUser("u_" + username.toLowerCase()) : null;
+  if (!u || !passOk(u, password)) throw new Error("Wrong username or password");
+  const token = await addSession(u);
+  return { u, token };
+}
+
 async function signInWith(id, name, picture) {
   let u = await getUser(id);
   if (!u) { u = fix({ id, name, picture, created: Date.now() }); cache.set(id, u); }
@@ -283,6 +314,6 @@ function publicUser(u) {
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signInGoogle, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

@@ -1876,6 +1876,17 @@ io.on("connection", (socket) => {
   };
   const authFail = (e) => socket.emit("authError", e.message || "Sign-in failed");
   socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || "")).then(signedIn, authFail); });
+  // username + password: max 8 tries a minute per connection, so nobody can guess passwords fast
+  let authTries = [];
+  const authLimited = () => { const now = Date.now(); authTries = authTries.filter((t) => now - t < 60000); authTries.push(now); return authTries.length > 8; };
+  socket.on("auth:signup", (d) => {
+    if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
+    accounts.signUp(d?.username, d?.password).then(signedIn, authFail);
+  });
+  socket.on("auth:login", (d) => {
+    if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
+    accounts.logIn(d?.username, d?.password).then(signedIn, authFail);
+  });
   socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
   socket.on("auth:resume", async (d) => {
     try {

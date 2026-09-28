@@ -51,7 +51,7 @@
   .row { display: flex; gap: 0.5rem; }
   .row > * { flex: 1; }
   label.f { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; font-weight: 600; color: var(--soft); }
-  input[type="text"], select {
+  input[type="text"], input[type="password"], select {
     background: rgba(255,255,255,0.07); border: 1.5px solid var(--edge); border-radius: 0.6rem; padding: 0.45rem 0.55rem; font-weight: 600; color: var(--ink);
   }
   select option { color: #111; }
@@ -576,9 +576,9 @@
   .btn.go { border-radius: 0.8rem; min-height: 3rem; }
   .btn.danger-fill { background: #d93a30; border-color: #d93a30; color: #fff; }
   .btn.danger-fill:hover { background: #ef4b40; }
-  input[type="text"], input[type="number"], select { min-height: 2.35rem; transition: border-color 140ms ease, background 140ms ease; }
-  input[type="text"]:hover, input[type="number"]:hover, select:hover { border-color: var(--edge-2); }
-  input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: var(--yellow); background: rgba(255,204,31,0.06); outline: none; }
+  input[type="text"], input[type="password"], input[type="number"], select { min-height: 2.35rem; transition: border-color 140ms ease, background 140ms ease; }
+  input[type="text"]:hover, input[type="password"]:hover, input[type="number"]:hover, select:hover { border-color: var(--edge-2); }
+  input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus { border-color: var(--yellow); background: rgba(255,204,31,0.06); outline: none; }
   .sect { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 1rem; letter-spacing: 0; color: var(--ink); display: flex; align-items: center; gap: 0.5rem; }
   .sect::before { content: ""; width: 0.3rem; height: 1rem; border-radius: 2px; background: var(--yellow); }
   .tag { letter-spacing: 0.08em; }
@@ -684,7 +684,7 @@
   body.phone .rc-tabs { position: sticky; top: 0; z-index: 4; background: var(--panel-solid); border-radius: 1rem 1rem 0 0; }
   body.phone .rc-foot { position: sticky; bottom: 0; z-index: 4; background: var(--panel-solid); border-radius: 0 0 1rem 1rem; padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px)); }
   body.phone .rc-tabs button { min-height: 3rem; }
-  body.phone .btn, body.phone select, body.phone input[type="text"], body.phone input[type="number"] { min-height: 2.8rem; }
+  body.phone .btn, body.phone select, body.phone input[type="text"], body.phone input[type="password"], body.phone input[type="number"] { min-height: 2.8rem; }
   @media (max-width: 860px) {
     /* a plain column that grows with its content (the grid rows kept squashing the board) */
     body.phone #lobby { display: flex; flex-direction: column; overflow-y: auto; }
@@ -735,6 +735,12 @@
   .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
+  #authBox { position: fixed; inset: 0; z-index: 32; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  .auth-card { width: min(26rem, 100%); display: flex; flex-direction: column; gap: 0.75rem; padding: 1.1rem 1.2rem; animation: rise 400ms cubic-bezier(.2,.9,.25,1.15) both; }
+  .auth-card label.f { display: flex; flex-direction: column; gap: 0.3rem; }
+  .auth-card input { width: 100%; }
+  .auth-card .err { margin: 0; min-height: 1.2em; }
+  .auth-note { margin: 0; color: var(--soft); font-size: 0.8rem; }
   #hub { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .hub-card { width: min(56rem, 100%); max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; padding: 1rem 1.2rem; gap: 0.7rem; animation: rise 400ms cubic-bezier(.2,.9,.25,1.15) both; }
   .hub-head { display: flex; align-items: center; gap: 0.8rem; }
@@ -795,6 +801,8 @@
         <div class="acct-txt"><b id="acctName">Playing as a guest</b><small id="acctSub">Sign in to save your stats, earn coins and unlock car parts.</small></div>
       </div>
       <div class="acct-actions">
+        <button type="button" class="btn go" id="signUpBtn">✨ Make an account</button>
+        <button type="button" class="btn" id="logInBtn">Log in</button>
         <div id="gsiBtn"></div>
         <button type="button" class="btn hidden" id="devLoginBtn">🧪 Test login</button>
         <span class="coins hidden" id="acctCoins" title="Coins: earned from achievements, spent in the store">🪙 0</span>
@@ -1055,6 +1063,23 @@
     </div>
     <div class="back" id="finBack"></div>
   </div>
+</div>
+
+<!-- ============ Make an account / log in ============ -->
+<div id="authBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <form class="auth-card panel" id="authForm" novalidate>
+    <header class="hub-head"><h2 id="authTitle">Make an account</h2><button type="button" class="x" id="authClose" aria-label="Close">✕</button></header>
+    <nav class="hub-tabs" role="tablist">
+      <button type="button" role="tab" data-am="signup" aria-selected="true">Make an account</button>
+      <button type="button" role="tab" data-am="login" aria-selected="false">Log in</button>
+    </nav>
+    <label class="f">Username <input type="text" id="authUser" maxlength="16" autocomplete="username" spellcheck="false" placeholder="3-16 letters, numbers or _"></label>
+    <label class="f">Password <input type="password" id="authPass" maxlength="100" autocomplete="new-password" placeholder="At least 6 characters"></label>
+    <label class="f" id="authPass2Row">Password again <input type="password" id="authPass2" maxlength="100" autocomplete="new-password"></label>
+    <p class="err" id="authErr" role="alert"></p>
+    <button type="submit" class="btn go" id="authGo">Make my account</button>
+    <p class="auth-note" id="authNote">No email needed. Write your password down somewhere: there's no "forgot password" yet.</p>
+  </form>
 </div>
 
 <!-- ============ Profile hub: stats / achievements / store ============ -->
@@ -1482,12 +1507,13 @@
     const u = A.user;
     $("acctName").textContent = u ? u.name : "Playing as a guest";
     $("acctSub").textContent = u ? `${u.stats.races} races · ${u.stats.wins} wins · ${Object.keys(u.ach).length}/${A.catalog?.ach.length || "?"} achievements`
-      : A.cfg && !A.cfg.googleClientId && !A.cfg.dev ? "Accounts aren't switched on for this server yet." : "Sign in to save your stats, earn coins and unlock car parts.";
+      : "Make an account to save your stats, earn coins and unlock car parts.";
     const av = $("acctAv"); av.textContent = "";
     if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = ""; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
     $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
     $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
     $("signOutBtn").classList.toggle("hidden", !u);
+    $("signUpBtn").classList.toggle("hidden", !!u); $("logInBtn").classList.toggle("hidden", !!u);
     $("gsiBtn").classList.toggle("hidden", !!u);
     $("devLoginBtn").classList.toggle("hidden", !!u || !A.cfg?.dev);
     A.extras = extrasFor(u);
@@ -1496,10 +1522,47 @@
   socket.on("account", (u) => {
     if (u.token) { try { localStorage.setItem("tb-token", u.token); } catch (e) {} delete u.token; }
     A.user = u; renderAcct();
+    if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
     if (!$("hub").classList.contains("hidden")) renderHub();
   });
   socket.on("signedOut", () => { A.user = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
-  socket.on("authError", (m) => popup(m, true));
+  socket.on("authError", (m) => {
+    if (!$("authBox").classList.contains("hidden")) { $("authErr").textContent = m; $("authGo").disabled = false; }
+    else popup(m, true);
+  });
+  // ---- make an account / log in ----
+  let authMode = "signup";
+  function openAuth(mode) {
+    authMode = mode; $("authErr").textContent = ""; $("authGo").disabled = false;
+    const up = mode === "signup";
+    $("authTitle").textContent = up ? "Make an account" : "Log in";
+    document.querySelectorAll("[data-am]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.am === mode)));
+    $("authPass2Row").classList.toggle("hidden", !up);
+    $("authPass").autocomplete = up ? "new-password" : "current-password";
+    $("authPass").placeholder = up ? "At least 6 characters" : "";
+    $("authGo").textContent = up ? "Make my account" : "Log in";
+    $("authNote").classList.toggle("hidden", !up);
+    $("authBox").classList.remove("hidden");
+    setTimeout(() => $("authUser").focus(), 50);
+  }
+  function closeAuth() { $("authBox").classList.add("hidden"); $("authPass").value = ""; $("authPass2").value = ""; }
+  $("signUpBtn").addEventListener("click", () => openAuth("signup"));
+  $("logInBtn").addEventListener("click", () => openAuth("login"));
+  document.querySelectorAll("[data-am]").forEach((b) => b.addEventListener("click", () => openAuth(b.dataset.am)));
+  $("authClose").addEventListener("click", closeAuth);
+  $("authBox").addEventListener("click", (e) => { if (e.target.id === "authBox") closeAuth(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("authBox").classList.contains("hidden")) closeAuth(); });
+  $("authForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const username = $("authUser").value.trim(), password = $("authPass").value;
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) { $("authErr").textContent = "Username: 3-16 letters, numbers or _"; return; }
+    if (authMode === "signup") {
+      if (password.length < 6) { $("authErr").textContent = "Password needs at least 6 characters"; return; }
+      if (password !== $("authPass2").value) { $("authErr").textContent = "The two passwords don't match"; return; }
+    } else if (!password) { $("authErr").textContent = "Type your password"; return; }
+    $("authErr").textContent = ""; $("authGo").disabled = true;
+    socket.emit(authMode === "signup" ? "auth:signup" : "auth:login", { username, password });
+  });
   socket.on("achievement", (a) => {
     const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
     const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = a.icon;
