@@ -241,6 +241,12 @@
         <span class="dock-label">Road width</span>
         <div class="brush" id="brush" role="radiogroup" aria-label="Road width"></div>
       </div>
+      <div class="dock-group" id="wonkTools" role="radiogroup" aria-label="How wonky random tracks are">
+        <span class="dock-label">Random track</span>
+        <button type="button" class="tool" data-wonk="little" role="radio" title="Smooth, flowing tracks"><span>🙂</span>A bit wonky</button>
+        <button type="button" class="tool" data-wonk="regular" role="radio" title="Twisty, with a few bridges"><span>😵‍💫</span>Wonky</button>
+        <button type="button" class="tool" data-wonk="very" role="radio" title="Absurd: loops, pretzels and bridges everywhere"><span>🤪</span>VERY wonky</button>
+      </div>
       <div class="dock-group" id="boardTools">
         <span class="dock-label">Track</span>
         <button type="button" class="tool" id="startLineBtn" title="Then click on the track"><span>🏁</span>Start line</button>
@@ -265,10 +271,9 @@
 <!-- ============ Race HUD ============ -->
 <div id="hud" class="hidden">
   <div class="flash" id="flash"></div>
-  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div></div>
+  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div><div class="lap-delta hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best</small><b id="lapDeltaVal">--</b></div></div>
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel" role="img" aria-label="Mini map of the track with every car's position"></canvas>
-  <div class="lap-delta panel hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best lap</small><b id="lapDeltaVal">--</b></div>
   <div class="feed" id="feed" aria-live="polite"></div>
   <div class="weather panel hidden" id="weatherPill"></div>
   <div class="tire-pick panel hidden" id="tirePick" role="dialog" aria-labelledby="tpTitle">

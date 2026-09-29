@@ -235,12 +235,11 @@
   .standings { pointer-events: auto; cursor: pointer; }
   .standings.all { z-index: 8; max-height: calc(100vh - 9rem); overflow-y: auto; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
   .standings .lb-gap { justify-content: center; color: var(--soft); font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0; }
-  .lap-delta { position: absolute; right: 1rem; top: calc(2.4rem + 130px + 0.5rem + env(safe-area-inset-top, 0px)); width: 180px; padding: 0.35rem 0.6rem; display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; animation: inR 420ms cubic-bezier(.2,.9,.3,1.1) 100ms both; }
+  .lap-delta { display: flex; flex-direction: column; align-items: center; padding-left: 0.8rem; border-left: 1px solid var(--edge); font-variant-numeric: tabular-nums; }
   .lap-delta small { color: var(--soft); font-weight: 700; font-size: 0.72rem; }
   .lap-delta b { font-family: "Russo One", sans-serif; font-weight: 400; font-size: 1.25rem; }
   .lap-delta.up b { color: #3ecf6a; } .lap-delta.down b { color: #ff6b61; }
-  @media (max-width: 860px) { .lap-delta { width: 120px; top: calc(2.4rem + 90px + 0.4rem + env(safe-area-inset-top, 0px)); padding: 0.25rem 0.45rem; } .lap-delta b { font-size: 1rem; } }
-  @media (max-height: 520px) and (orientation: landscape) { .lap-delta { width: 110px; top: calc(0.5rem + 80px + 0.3rem + env(safe-area-inset-top, 0px)); } }
+  @media (max-width: 860px) { .lap-delta { padding-left: 0.5rem; } .lap-delta b { font-size: 1rem; } }
   .standings ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
   .standings li { display: flex; align-items: center; gap: 0.35rem; transition: transform 200ms ease; }
   .standings li .p { width: 1.3rem; color: var(--soft); font-weight: 700; text-align: right; }
@@ -923,4 +922,4 @@
 
 /* the drawing tools can get long (Shapes / Edit track open): let the dock scroll instead of running off screen */
 @media (min-width: 861px) { .dock { max-height: calc(100% - 1.5rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; } }
-#stampPick .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); }
+#stampPick .tool.on, #wonkTools .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); color: var(--ink); }

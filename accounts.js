@@ -960,8 +960,20 @@ function savePreset(u, p) {
 }
 function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.name !== name); saveSoon(u); return { ok: true }; }
 
+// Small short-lived values (a room saved while the server restarts for an update): in Upstash when
+// it's set up (the new server can see it), otherwise in a file (only survives a restart on this machine).
+const tmpFile = (key) => path.join(DATA_DIR, "tmp", key.replace(/[^A-Za-z0-9_-]/g, "_") + ".json");
+async function stash(key, value, ttlSec) {
+  if (UP_URL) return redis(["SET", "tb:tmp:" + key, value, "EX", ttlSec]);
+  fs.mkdirSync(path.join(DATA_DIR, "tmp"), { recursive: true });
+  fs.writeFileSync(tmpFile(key), JSON.stringify({ until: Date.now() + ttlSec * 1000, value }), { mode: 0o600 });
+}
+async function unstash(key) {     // read it once (and forget it)
+  if (UP_URL) { const v = await redis(["GET", "tb:tmp:" + key]); if (v) redis(["DEL", "tb:tmp:" + key]).catch(() => {}); return v || null; }
+  try { const o = JSON.parse(fs.readFileSync(tmpFile(key), "utf8")); fs.unlinkSync(tmpFile(key)); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
+}
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
-  ACH: ACH_PUBLIC, STORE,
+  ACH: ACH_PUBLIC, STORE, stash, unstash,
 };

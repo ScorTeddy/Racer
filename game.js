@@ -1156,7 +1156,21 @@
   // ---- dropped connection / server restart: reconnect and take your car back ----
   socket.on("disconnect", () => { if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔧 The game is updating. Back in a minute..." : "📡 Connection lost. Reconnecting..."; } });
   socket.on("serverRestart", () => { S.restarting = true; if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 The game is updating. Back in a minute..."; } else popup("The game is updating: back in a minute!", true); });
-  socket.on("connect", () => {
+  // Every connection starts with the server's version. Running old code (the game just updated)?
+  // Reload to get the new version: you land straight back in your room, and your race.
+  const myBuild = (() => { const v = (sel, attr) => { try { return new URL(document.querySelector(sel)?.[attr] || "", location.href).searchParams.get("v"); } catch (e) { return null; } }; const a = v('script[src*="game.js"]', "src"), b = v('link[href*="game.css"]', "href"); return a && b ? `${a}-${b}` : null; })();
+  socket.on("build", (v) => {
+    if (myBuild && v && v !== myBuild && !S.reloading) {
+      let tries = 0; try { tries = Number(sessionStorage.getItem("tb-reloads") || 0); } catch (e) {}
+      if (tries < 2) {                                  // (never loop if something's off)
+        S.reloading = true;
+        try { sessionStorage.setItem("tb-reloads", String(tries + 1)); } catch (e) {}
+        if (S.code) saveRejoin({});
+        $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 Loading the new version...";
+        location.reload(); return;
+      }
+    }
+    try { sessionStorage.removeItem("tb-reloads"); } catch (e) {}
     let rj = null; try { rj = JSON.parse(sessionStorage.getItem("tb-rejoin") || "null"); } catch (e) {}
     // reconnected, or the page was reloaded less than 2 minutes after being in a room: go back in
     if (rj && rj.code && (S.code ? rj.code === S.code : Date.now() - (rj.at || 0) < 120e3)) { S.rejoinTry = rj; socket.emit("rejoin", rj); }
@@ -1187,7 +1201,7 @@
     renderLobby();
   });
   socket.on("track", (t) => {
-    S.track = t; S.hostDraft = null;
+    S.track = t; S.hostDraft = null; S.preview = null;
     if (S.lobby) updateEditUi();
     renderTrackCard();
     S.geo = t ? buildGeo(t) : null;
@@ -1196,7 +1210,7 @@
   socket.on("trackResult", (r) => {
     if (!r.error && P.steps.length) { P.steps.shift()(); return; }
     if (!r.error && P.loading) { boardHint(`Loaded "${P.loading}"!`, false); P.loading = null; return; }
-    if (r.error) { P.steps = []; P.loading = null; }
+    if (r.error) { P.steps = []; P.loading = null; if (S.preview) { S.preview = null; drawBoard(); } }
     if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
     if (r.error) boardHint(r.error, true);
     else if (r.moved) boardHint("Start/finish line moved!", false);
@@ -1772,7 +1786,8 @@
     const T = S.track;
     // everyone else watches the host's drawing appear live
     const watching = !S.host && S.hostDraft && S.hostDraft.length > 1;
-    const showTrack = T && !S.draft && !watching;
+    const preview = !S.draft && S.preview;
+    const showTrack = T && !S.draft && !watching && !preview;
     if (showTrack && !S.geo) S.geo = buildGeo(T);
     // The board background (textured ground, scenery, the finished track) is painted once into a
     // cached picture and just copied every frame, so it can look like the race and still be fast.
@@ -1803,7 +1818,7 @@
     }
     drawCutPreview(c);
     // the drawing you're working on (or the host's, live)
-    const d = S.draft || (watching ? { pts: S.hostDraft, corners: [] } : null);
+    const d = S.draft || (preview ? { pts: S.preview, corners: [], preview: true } : watching ? { pts: S.hostDraft.slice(0, Math.max(2, Math.ceil(S.hostShown || 0))), corners: [] } : null);
     if (d && d.pts.length) {
       const P = d.pts;
       c.lineJoin = "round"; c.lineCap = "round";
@@ -1819,6 +1834,8 @@
         }
       };
       layer(5, th.curbB); layer(0, th.asphalt);
+      if (d.preview) { c.lineWidth = 3 / B.s; c.strokeStyle = "rgba(255,255,255,0.5)"; c.beginPath(); P.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.stroke(); }
+      else {
       c.lineWidth = 2 / B.s; c.strokeStyle = "rgba(255,204,31,0.8)"; c.setLineDash([8 / B.s, 6 / B.s]);
       c.beginPath(); P.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); c.setLineDash([]);
       for (const i of new Set(d.corners)) { if (!P[i]) continue; c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(P[i][0], P[i][1], 5 / B.s, 0, Math.PI * 2); c.fill(); }
@@ -1828,6 +1845,7 @@
         const L = P[P.length - 1];
         c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(L[0], L[1], 9 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
         c.beginPath(); c.arc(L[0], L[1], (14 + 4 * Math.sin(performance.now() / 200)) / B.s, 0, Math.PI * 2); c.strokeStyle = "rgba(255,204,31,0.7)"; c.stroke();
+      }
       }
     }
     // mirror mode: the middle line, and a see-through preview of the mirrored half
@@ -1969,6 +1987,7 @@
     pts = pts.map((q) => [q[0] + dx, q[1] + dy, q[2]]);
     P.steps = []; if (S.track.reverse) P.steps.push(() => socket.emit("reverse"));
     S.draft = null; S.lastDraft = null; updateDraftUi();
+    S.preview = pts; drawBoard();            // show it right away; the server's finished track replaces it in a moment
     socket.emit("track", { stroke: pts, map: S.lobby.settings.map });
     boardHint({ rot: "Rotated!", flipx: "Flipped left to right!", flipy: "Flipped upside down!", big: "Bigger!", small: "Smaller!", center: "Centered on the map!", wide: "Wider road!", narrow: "Narrower road!", wiggle: "Added some wiggles! (hit it again for more)" }[kind], false);
   }
@@ -1978,16 +1997,32 @@
   }
   const markCorner = () => S.draft.corners.push(S.draft.pts.length - 1);
   function draftLen(pts = S.draft.pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; }
-  let draftSentAt = 0, draftTimer = null;
+  // The host's drawing goes out live, 20 times a second. Usually just the new bit of the line
+  // (from: where it carries on); the whole thing again if they undid or changed something.
+  let draftSentAt = 0, draftTimer = null, sent = [], sentMsgs = 0;
   function shareDraft() {
     if (!S.host) return;
-    const send = () => { draftTimer = null; draftSentAt = performance.now(); const P = S.draft?.pts; socket.emit("draft", P ? P.filter((_, i) => i % 2 === 0 || i === P.length - 1).map((q) => [Math.round(q[0]), Math.round(q[1]), q[2]]) : null); };
+    const send = () => {
+      draftTimer = null; draftSentAt = performance.now();
+      const P = S.draft?.pts;
+      if (!P) { sent = []; socket.emit("draft", null); return; }
+      const pts = P.map((q) => [Math.round(q[0]), Math.round(q[1]), q[2]]), n = sent.length, lastSame = n && pts.length >= n && pts[n - 1][0] === sent[n - 1][0] && pts[n - 1][1] === sent[n - 1][1];
+      if (lastSame && pts.length === n) return;
+      const full = !lastSame || ++sentMsgs % 40 === 0;       // (a full copy now and then, just in case)
+      socket.emit("draft", { from: full ? 0 : n, pts: full ? pts : pts.slice(n) });
+      sent = pts;
+    };
     if (!S.draft) { clearTimeout(draftTimer); send(); return; }
-    if (!draftTimer) draftTimer = setTimeout(send, Math.max(0, 150 - (performance.now() - draftSentAt)));
+    if (!draftTimer) draftTimer = setTimeout(send, Math.max(0, 50 - (performance.now() - draftSentAt)));
   }
   socket.on("draft", (d) => {
-    S.hostDraft = d;
-    if (!S.host && S.screen === "lobby") { if (d) boardHint(`${S.lobby?.players.find((p) => p.id === S.lobby.hostId)?.name || "The host"} is drawing the track...`, false); drawBoard(); }
+    if (!d) S.hostDraft = null;
+    else if (Array.isArray(d)) S.hostDraft = d;
+    else if (d.from === 0) { const was = S.hostDraft; S.hostDraft = d.pts; if (!was || was.length > d.pts.length) S.hostShown = d.pts.length; }
+    else if (S.hostDraft && d.from === S.hostDraft.length) S.hostDraft.push(...d.pts);
+    else return;                                            // missed a bit: the next full copy fixes it
+    if (!S.hostDraft) S.hostShown = 0;
+    if (!S.host && S.screen === "lobby") { if (S.hostDraft) boardHint(`${S.lobby?.players.find((p) => p.id === S.lobby.hostId)?.name || "The host"} is drawing the track...`, false); drawBoard(); }
   });
   function updateDraftUi() {
     shareDraft();
@@ -2553,11 +2588,22 @@
     if (closed) finishDraft(); else { updateDraftUi(); hintDraft(); drawBoard(); }
   };
   board.addEventListener("pointerup", endDraw); board.addEventListener("pointercancel", endDraw);
-  $("randomBtn").addEventListener("click", () => {
-    endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
-    socket.emit("randomTrack", { map: S.lobby.settings.map });
-    boardHint("Making a random track...", false);
-  });
+  // random track, as wonky as you picked (remembered on this device)
+  const WONK_NAME = { little: "a bit wonky", regular: "wonky", very: "VERY wonky" };
+  if (!WONK_NAME[settings.wonk]) settings.wonk = "regular";
+  const showWonk = () => document.querySelectorAll("[data-wonk]").forEach((x) => { const on = x.dataset.wonk === settings.wonk; x.classList.toggle("on", on); x.setAttribute("aria-checked", String(on)); });
+  function randomTrack() {
+    endCut(); S.draft = null; S.lastDraft = null; S.preview = null; updateDraftUi();
+    socket.emit("randomTrack", { map: S.lobby.settings.map, wonk: settings.wonk });
+    boardHint(`Making a ${WONK_NAME[settings.wonk]} random track...`, false);
+  }
+  $("randomBtn").addEventListener("click", randomTrack);
+  document.querySelectorAll("[data-wonk]").forEach((b) => b.addEventListener("click", () => {
+    settings.wonk = b.dataset.wonk; showWonk();
+    try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
+    randomTrack();
+  }));
+  showWonk();
   $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("clearTrack"); });
 
 
@@ -3853,6 +3899,12 @@
     if (S.screen === "menu" || !$("menu").classList.contains("hidden")) drawPreview(now);
     if (S.screen === "race" || S.screen === "results") renderRace(dt, now);
     if (S.screen === "results") drawPodium(now);
+    // watching the host draw: glide the line out smoothly instead of in jumps
+    if (S.screen === "lobby" && !S.host && S.hostDraft && (S.hostShown || 0) < S.hostDraft.length) {
+      const left = S.hostDraft.length - (S.hostShown || 0);
+      S.hostShown = Math.min(S.hostDraft.length, (S.hostShown || 0) + Math.max(1, left * Math.min(1, dt / 0.07)));
+      drawBoard();
+    }
     requestAnimationFrame(frame);
   }
   resize();
