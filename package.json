@@ -4,7 +4,8 @@
   "description": "Multiplayer draw-your-track racing team manager (made by Emmett)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/smoke.test.js"
   },
   "engines": {
     "node": ">=18"
@@ -14,5 +15,8 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "zxcvbn": "^4.4.2"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
   }
 }

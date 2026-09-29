@@ -254,6 +254,7 @@ async function checkPassword(password, username) {
 async function signUp(username, password, backup) {
   username = String(username || "").trim(); password = String(password || "");
   if (!USER_RE.test(username)) throw new Error("Username: 3-16 letters, numbers or _");
+  if (require("./filter").isBad(username)) throw new Error("Please pick a different username");
   const id = "u_" + username.toLowerCase();
   if (!(await getUser(id)) && backup) {
     // this browser has a saved copy of that account: bring it back instead of starting over
@@ -674,8 +675,166 @@ function recordRace(u, r) {
   if (r.champDriver) s.champDriver++;
   if (r.champTeam) s.champTeam++;
   const got = checkAch(u, r);
+  got.push(...weeklyRace(u, r));
+  updateBoards(u, r);
   saveSoon(u);
   return got;
+}
+
+// ======================= Weekly challenges =======================
+// 3 new challenges every Monday (the same for everyone), picked from this pool. Progress resets weekly.
+const WEEKLY_POOL = [
+  { id: "w_wins3", name: "Winning Week", desc: "Win 3 races", goal: 3, coins: 250, add: (r) => (r.pos === 1 && r.of >= 3 ? 1 : 0) },
+  { id: "w_podium5", name: "Podium Hunter", desc: "Finish on the podium 5 times", goal: 5, coins: 200, add: (r) => (r.pos <= 3 && r.of >= 4 ? 1 : 0) },
+  { id: "w_ot50", name: "Traffic Surgeon", desc: "Make 50 overtakes", goal: 50, coins: 200, add: (r) => r.overtakes || 0 },
+  { id: "w_rain", name: "Rain Check", desc: "Finish 2 races on a track at least 60% wet", goal: 2, coins: 200, add: (r) => (r.finished && r.maxWet >= 0.6 ? 1 : 0) },
+  { id: "w_rainwin", name: "Stormy Victory", desc: "Win a race in the rain", goal: 1, coins: 300, add: (r) => (r.pos === 1 && r.maxWet >= 0.6 && r.of >= 3 ? 1 : 0) },
+  { id: "w_random3", name: "Lucky Dip", desc: "Finish 3 races on random tracks", goal: 3, coins: 150, add: (r) => (r.finished && r.kind === "random" ? 1 : 0) },
+  { id: "w_real3", name: "Road Trip", desc: "Finish 3 races on real tracks", goal: 3, coins: 150, add: (r) => (r.finished && r.kind === "f1" ? 1 : 0) },
+  { id: "w_drawn2", name: "Home Made", desc: "Finish 2 races on tracks you drew", goal: 2, coins: 150, add: (r) => (r.finished && r.drewIt ? 1 : 0) },
+  { id: "w_hard", name: "Tough Crowd", desc: "Win on Hard or EXTREME AI", goal: 1, coins: 350, add: (r) => (r.pos === 1 && (r.aiLevel === "hard" || r.aiLevel === "extreme") && r.of >= 6 ? 1 : 0) },
+  { id: "w_laps40", name: "Lap Grinder", desc: "Drive 40 laps", goal: 40, coins: 150, add: (r) => r.lapsDone || 0 },
+  { id: "w_pb3", name: "Personal Bests", desc: "Set 3 personal-best laps", goal: 3, coins: 200, add: (r) => (r.newPb ? 1 : 0) },
+  { id: "w_clean", name: "Clean Sheet", desc: "Finish a race with every lap clean", goal: 1, coins: 200, add: (r) => (r.finished && r.cleanLaps >= r.laps && r.crashes === 0 ? 1 : 0) },
+  { id: "w_friends", name: "Better Together", desc: "Finish 3 races with another real player", goal: 3, coins: 250, add: (r) => (r.humans >= 2 ? 1 : 0) },
+  { id: "w_comeback", name: "Charge!", desc: "Gain 8 places in one race", goal: 1, coins: 250, add: (r) => (r.grid - r.pos >= 8 ? 1 : 0) },
+  { id: "w_nostop", name: "One Set", desc: "Finish top 3 without a pit stop", goal: 1, coins: 200, add: (r) => (r.pos <= 3 && r.pits === 0 && r.of >= 4 ? 1 : 0) },
+];
+const weekNo = () => Math.floor((Date.now() / 86400000 + 3) / 7);           // weeks start on Monday (UTC)
+const weekEnds = () => (weekNo() + 1) * 7 * 86400000 - 3 * 86400000;
+function weeklyPicks(w = weekNo()) {
+  let seed = w * 2654435761 >>> 0; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const pool = WEEKLY_POOL.slice(); for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 3);
+}
+function weeklyState(u) {
+  const w = weekNo();
+  if (!u.weekly || u.weekly.week !== w) u.weekly = { week: w, prog: {}, done: [] };
+  return u.weekly;
+}
+function weeklyRace(u, r) {
+  const W = weeklyState(u), got = [];
+  for (const c of weeklyPicks()) {
+    if (W.done.includes(c.id)) continue;
+    W.prog[c.id] = Math.min(c.goal, (W.prog[c.id] || 0) + (c.add(r) || 0));
+    if (W.prog[c.id] >= c.goal) {
+      W.done.push(c.id); u.coins += c.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + c.coins;
+      u.stats.weeklyDone = (u.stats.weeklyDone || 0) + 1;
+      got.push({ id: c.id, icon: "📅", name: "Weekly: " + c.name, coins: c.coins });
+    }
+  }
+  return got;
+}
+function weeklyPublic(u) {
+  const W = weeklyState(u);
+  return { ends: weekEnds(), list: weeklyPicks().map((c) => ({ id: c.id, name: c.name, desc: c.desc, goal: c.goal, coins: c.coins, prog: W.prog[c.id] || 0, done: W.done.includes(c.id) })) };
+}
+
+// ======================= Global leaderboards =======================
+// Only signed-in players. Kept small: top 20 per board, fastest laps on the real tracks (top 10 each).
+let BOARDS = null, boardsTimer = null;
+async function boards() {
+  if (BOARDS) return BOARDS;
+  try {
+    if (UP_URL) { const v = await redis(["GET", "tb:boards"]); BOARDS = v ? JSON.parse(v, noProto) : null; }
+    else { loadFile(); BOARDS = fileDb.boards || null; }
+  } catch (e) { BOARDS = null; }
+  BOARDS = BOARDS || { wins: [], ach: [], km: [], laps: {} };
+  return BOARDS;
+}
+function saveBoards() {
+  if (boardsTimer) return;
+  boardsTimer = setTimeout(() => {
+    boardsTimer = null;
+    if (UP_URL) redis(["SET", "tb:boards", JSON.stringify(BOARDS)]).catch(() => {});
+    else { loadFile(); fileDb.boards = BOARDS; saveFileNow(); }
+  }, overCap() ? 120000 : 5000);
+}
+function putBoard(list, entry, better, max) {
+  const i = list.findIndex((x) => x.id === entry.id);
+  if (i >= 0) { if (!better(entry, list[i])) return; list.splice(i, 1); }
+  list.push(entry); list.sort((a, b) => (better(a, b) ? -1 : better(b, a) ? 1 : 0)); list.length = Math.min(list.length, max);
+}
+async function updateBoards(u, r) {
+  const B = await boards(), name = u.name, id = u.id;
+  putBoard(B.wins, { id, name, v: u.stats.wins }, (a, b) => a.v > b.v, 20);
+  putBoard(B.ach, { id, name, v: Object.keys(u.ach).length }, (a, b) => a.v > b.v, 20);
+  putBoard(B.km, { id, name, v: Math.round(u.stats.km) }, (a, b) => a.v > b.v, 20);
+  if (r.best > 0 && r.kind === "f1" && r.trackId) {
+    const key = r.trackId + (r.trackKey?.endsWith("_r") ? "_r" : "");
+    B.laps[key] = B.laps[key] || [];
+    putBoard(B.laps[key], { id, name, v: Math.round(r.best * 1000) / 1000, at: Date.now() }, (a, b) => a.v < b.v, 10);
+  }
+  saveBoards();
+}
+async function getBoard(kind, track) {
+  const B = await boards();
+  if (kind === "laps") return { kind, track, list: B.laps[String(track)] || [], tracks: Object.keys(B.laps) };
+  return { kind, list: B[kind] || [] };
+}
+function dropFromBoards(id) { if (!BOARDS) return; for (const k of ["wins", "ach", "km"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
+
+// ======================= Friends =======================
+// Add by username or by friend code (for Google accounts). Requests must be accepted.
+const friendCode = (id) => sha("fc:" + id).slice(0, 8).toUpperCase();
+async function findUser(q) {
+  q = String(q || "").trim();
+  if (USER_RE.test(q)) { const u = await getUser("u_" + q.toLowerCase()); if (u) return u; }
+  const code = q.toUpperCase().replace(/[^0-9A-F]/g, "");
+  if (code.length === 8) {
+    if (UP_URL) { const id = await redis(["GET", "tb:fc:" + code]).catch(() => null); if (id) return getUser(id); }
+    else { loadFile(); for (const u of cache.values()) if (friendCode(u.id) === code) return u; }
+  }
+  return null;
+}
+function indexFriendCode(u) { if (UP_URL && !u.fcIndexed) { u.fcIndexed = true; redis(["SET", "tb:fc:" + friendCode(u.id), u.id]).catch(() => {}); saveSoon(u); } }
+const F = (u) => { u.friends = u.friends || []; u.reqIn = u.reqIn || []; u.reqOut = u.reqOut || []; return u; };
+async function friendAdd(u, q) {
+  const o = await findUser(q);
+  if (!o) return { error: "No player with that username or friend code" };
+  if (o.id === u.id) return { error: "That's you!" };
+  F(u); F(o);
+  if (u.friends.includes(o.id)) return { error: `${o.name} is already your friend` };
+  if ((o.blocked || []).includes(u.id)) return { ok: true, name: o.name };      // quietly do nothing
+  if (u.reqIn.includes(o.id)) return friendAccept(u, o.id);                     // they asked you already: that's a yes
+  if (u.reqOut.length >= 50) return { error: "Too many friend requests waiting" };
+  if (!u.reqOut.includes(o.id)) u.reqOut.push(o.id);
+  if (!o.reqIn.includes(u.id)) o.reqIn.push(u.id);
+  saveSoon(u); saveSoon(o);
+  return { ok: true, name: o.name, other: o.id };
+}
+async function friendAccept(u, id) {
+  const o = await getUser(id); F(u); if (!o || !u.reqIn.includes(id)) return { error: "No request from that player" };
+  F(o);
+  u.reqIn = u.reqIn.filter((x) => x !== id); o.reqOut = o.reqOut.filter((x) => x !== u.id);
+  if (!u.friends.includes(id)) u.friends.push(id); if (!o.friends.includes(u.id)) o.friends.push(u.id);
+  u.friends = u.friends.slice(-200); o.friends = o.friends.slice(-200);
+  saveSoon(u); saveSoon(o);
+  return { ok: true, name: o.name, other: o.id };
+}
+async function friendRemove(u, id) {
+  F(u); const o = await getUser(id);
+  u.friends = u.friends.filter((x) => x !== id); u.reqIn = u.reqIn.filter((x) => x !== id); u.reqOut = u.reqOut.filter((x) => x !== id);
+  if (o) { F(o); o.friends = o.friends.filter((x) => x !== u.id); o.reqIn = o.reqIn.filter((x) => x !== u.id); o.reqOut = o.reqOut.filter((x) => x !== u.id); saveSoon(o); }
+  saveSoon(u); return { ok: true, other: id };
+}
+async function friendList(u, online) {
+  F(u);
+  const one = async (id) => { const o = await getUser(id); return o ? { id, name: o.name, ...(online(id) || { online: false }) } : null; };
+  return {
+    code: friendCode(u.id),
+    friends: (await Promise.all(u.friends.map(one))).filter(Boolean).sort((a, b) => b.online - a.online || a.name.localeCompare(b.name)),
+    reqIn: (await Promise.all(u.reqIn.map(one))).filter(Boolean),
+    reqOut: (await Promise.all(u.reqOut.map(one))).filter(Boolean),
+  };
+}
+// block: they can't join rooms you host, can't friend you, and their emotes are hidden for you
+function setBlocked(u, id, on) { u.blocked = u.blocked || []; u.blocked = on ? [...new Set([...u.blocked, id])].slice(-500) : u.blocked.filter((x) => x !== id); if (on) { F(u); u.friends = u.friends.filter((x) => x !== id); } saveSoon(u); return { ok: true }; }
+
+// save everything right now (the server is about to restart)
+async function flush() {
+  if (UP_URL) { const ids = [...dirty]; dirty.clear(); await Promise.all(ids.map((id) => { const x = cache.get(id); return x ? redis(["SET", "tb:user:" + id, JSON.stringify(x)]).catch(() => {}) : null; })); if (BOARDS) await redis(["SET", "tb:boards", JSON.stringify(BOARDS)]).catch(() => {}); }
+  else if (fileDb) { if (BOARDS) fileDb.boards = BOARDS; saveFileNow(); }
 }
 
 // ======================= Two-factor authentication (TOTP, RFC 6238) =======================
@@ -753,7 +912,7 @@ async function deleteAccount(u, password, code) {
   if (u.totp?.on && !verify2fa(u, code)) return { error: "Type a code from your authenticator app (or a backup code)" };
   const id = u.id;
   for (const h of [...(u.sessions || [])]) { sessIndex.delete(h); if (UP_URL) redis(["DEL", "tb:sess:" + h]).catch(() => {}); }
-  cache.delete(id); dirty.delete(id);
+  cache.delete(id); dirty.delete(id); dropFromBoards(id);
   if (UP_URL) await redis(["DEL", "tb:user:" + id]).catch(() => {});
   else { loadFile(); delete fileDb.users[id]; u.rev = 0; saveFileNow(); }
   // a backup of a deleted account must never bring it back
@@ -779,7 +938,8 @@ function dailyReward(u) {
 }
 function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  indexFriendCode(u);
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -802,6 +962,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

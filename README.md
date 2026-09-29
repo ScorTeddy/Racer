@@ -10,12 +10,40 @@ plus up to 60 AI drivers. Rooms can be private (invite code) or public (listed o
 server.js          Node server: rooms, lobbies, track building, the whole race simulation
 accounts.js        Google sign-in, saved stats, achievements, coins and the store (keep it next to server.js)
 f1-tracks.json     42 real-world layouts under made-up names (e.g. "Old Airfield Circuit", "Eifel Northern Loop"), keep it next to server.js
-package.json       dependencies (express, socket.io)
-public/index.html  the entire client (menu, room screen, race view, HUD, settings) in one file
+filter.js          bad-word filter for names, team names and usernames
+package.json       dependencies (express, socket.io, zxcvbn, qrcode) + "npm test"
+test/smoke.test.js automatic checks: pages, headers, filter, passwords and a whole race vs the AI
+public/index.html  the page itself (all the screens' HTML)
+public/game.js     the whole game client (menu, room, race view, HUD, settings, profile)
+public/game.css    all the styles
 public/faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
 public/og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
                                                      (robots.txt and sitemap.xml are made by server.js)
 ```
+
+## Before every update: run the tests
+`npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
+full race against the AI (about 30 seconds). If anything says `not ok`, don't upload yet.
+
+## New-player and multiplayer features
+- **Tutorial** (🎓 on the menu, highlighted on a first visit): a short easy race with coach cards for tires,
+  the start, boost, upgrades and pit stops.
+- **Quick Play**: joins the busiest public room with space, or makes a new public one.
+- **Name filter** (`filter.js`): bad words in driver/team/usernames (also written with 1337 letters) are refused
+  or swapped for "Racer123". **⋯ menu** on every player: Add friend, Block (hides their emotes; the host's block
+  also removes them), Report (logged as `[report]` in the Render logs).
+- **Dropped connection / reload**: your car is kept for 2 minutes and comes back when you reconnect
+  (`rejoin` + `gone` seats). **Updates**: everyone sees "The game is updating", then the host's browser rebuilds
+  the room with the same code, settings and track, and the others join it again automatically.
+- **Friends** (Profile › Friends): add by username or friend code, accept requests, see who's online and where,
+  invite them to your room. **Leaderboards** (Profile › Leaderboards): most wins, achievements, km, fastest laps
+  per real track. **Weekly challenges**: 3 new ones every Monday (Achievements tab), paying coins.
+- **Replay**: the last 25 seconds of every race can be watched again from the results screen.
+- **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
+
+## Render's free plan (worth knowing)
+It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 seconds) and has very little CPU
+(60 AI at 3x speed can stutter). If the game gets popular, Render's cheapest paid instance ("Starter") fixes both.
 
 ## Put it online (Render, free)
 1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, `index.html` inside `public/`.

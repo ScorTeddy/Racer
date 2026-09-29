@@ -1,0 +1,3698 @@
+// Scribble GP: Team Boss - the whole game client (menu, room, race view, HUD, settings, profile).
+// Loaded by public/index.html. Kept out of the HTML so the page can run with a strict Content Security Policy.
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const view = $("view"), ctx = view.getContext("2d");
+  const mini = $("minimap"), mctx = mini.getContext("2d");
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const CAR_LEN = 46, CAR_WID = 24;
+  const KMH = 0.36;
+  const COLORS = ["#ffcc1f", "#e53935", "#fb8c00", "#43a047", "#00acc1", "#1e88e5", "#8e24aa", "#ec407a", "#f5f5f5", "#263238"];
+  const LIVERIES = [["plain", "Plain"], ["stripes", "Stripes"], ["split", "Two-tone"], ["flames", "Flames"], ["checker", "Checker"]];
+  const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
+  const THEMES = {
+    // tex = how the ground is painted (see tex()): mowing stripes, dune ripples, snow drifts, paving slabs...
+    grass:   { ground: "#4f8a3c", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.07)"], tex: "stripes", runoff: "#c9b98d", asphalt: "#3d3f45", curbA: "#f4f4f4", curbB: "#d32f2f", line: "rgba(255,255,255,0.45)" },
+    desert:  { ground: "#d8b273", speck: ["rgba(255,255,255,0.1)", "rgba(120,70,20,0.12)"], tex: "dunes", runoff: "#e6c894", asphalt: "#4a4540", curbA: "#f4f4f4", curbB: "#ef6c00", line: "rgba(255,255,255,0.4)" },
+    snow:    { ground: "#e8eef3", speck: ["rgba(255,255,255,0.7)", "rgba(120,150,180,0.14)"], tex: "drifts", runoff: "#cfd9e1", asphalt: "#4b5159", curbA: "#f4f4f4", curbB: "#1e88e5", line: "rgba(255,255,255,0.5)" },
+    night:   { ground: "#17241b", speck: ["rgba(255,255,255,0.03)", "rgba(0,0,0,0.22)"], tex: "stripes", runoff: "#3a3527", asphalt: "#26282e", curbA: "#9aa0a6", curbB: "#b71c1c", line: "rgba(255,255,255,0.3)", night: true },
+    autumn:  { ground: "#7c7a36", speck: ["rgba(230,120,30,0.28)", "rgba(190,50,30,0.22)"], tex: "leaves", runoff: "#b99a6b", asphalt: "#3f3b3a", curbA: "#f4f1e8", curbB: "#c2410c", line: "rgba(255,255,255,0.42)" },
+    beach:   { ground: "#e9d8a6", speck: ["rgba(255,255,255,0.35)", "rgba(160,120,60,0.12)"], tex: "dunes", runoff: "#f3e6bf", asphalt: "#474a52", curbA: "#ffffff", curbB: "#0ea5b7", line: "rgba(255,255,255,0.5)", water: "#2bb3c9" },
+    city:    { ground: "#7b8088", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.1)"], tex: "slabs", runoff: "#9aa0a8", asphalt: "#2e3036", curbA: "#ffd21f", curbB: "#1c1c1c", line: "rgba(255,255,255,0.5)" },
+    volcano: { ground: "#2b2320", speck: ["rgba(255,90,20,0.18)", "rgba(0,0,0,0.3)"], tex: "lava", runoff: "#4a3a33", asphalt: "#1f1c1c", curbA: "#ffb020", curbB: "#b91c1c", line: "rgba(255,190,120,0.45)" },
+    neon:    { ground: "#120d24", speck: ["rgba(180,120,255,0.08)", "rgba(0,0,0,0.3)"], tex: "grid", runoff: "#231a40", asphalt: "#18142a", curbA: "#22e6ff", curbB: "#ff2bd6", line: "rgba(120,240,255,0.6)", night: true },
+  };
+  const TIRES = {
+    durable: { name: "Durable", short: "D", color: "#f5f5f5", speed: 0.35, grip: 0.35, life: 0.7, note: "Lasts longer than the others, but it's the slowest." },
+    inter:   { name: "Intermediate", short: "I", color: "#ffcc1f", speed: 0.55, grip: 0.6, life: 0.55, note: "Right in the middle. A safe pick." },
+    fast:    { name: "Fast", short: "F", color: "#e53935", speed: 1.0, grip: 0.85, life: 0.2, note: "The quickest, but they wear out fast." },
+    wet:     { name: "Wets", short: "W", color: "#1e88e5", speed: 0.3, grip: 1.0, life: 0.5, note: "For rain. Slow and wear out fast on a dry track." },
+  };
+  const SHORT_TO_KEY = { D: "durable", I: "inter", F: "fast", W: "wet" };
+  const WIDTHS = [[96, "Thin road"], [130, "Normal road"], [176, "Wide road"], [230, "Huge road"]];
+  function badge(key, small) {
+    const b = document.createElement("span"); const T = TIRES[key];
+    b.className = "badge" + (small ? " sm" : ""); b.dataset.c = key; b.style.borderColor = T.color; b.textContent = T.short; b.title = T.name;
+    return b;
+  }
+  const ORDER_HINT = {
+    push: "Risky! A little faster, but tires wear 75% quicker and big mistakes are 3x as likely.",
+    normal: "A steady pace. Good default.",
+    save: "Slower, but tires last way longer and mistakes are rare.",
+  };
+
+  // ======================= Settings (saved on this device) =======================
+  const SETTINGS = [
+    { key: "cb", label: "Colorblind-friendly tires", hint: "Each tire gets its own ring pattern and bigger letters, and colors that are easier to tell apart", def: "off", opts: [["off", "Off"], ["on", "On"]] },
+    { key: "phone", label: "Phone mode", hint: "Scroll the room without drawing by accident. Tap the board to open a full-screen track editor with big tools. Auto: on for phones.", def: "auto", opts: [["auto", "Auto"], ["on", "On"], ["off", "Off"]] },
+    { key: "ui", label: "Interface size", hint: "How big buttons and text are (Auto: a bit smaller on phones)", def: "auto", opts: [["auto", "Auto"], ["s", "Small"], ["m", "Normal"], ["l", "Big"], ["xl", "Huge"]] },
+    { key: "vMaster", label: "🔊 Master volume", hint: "Everything at once", def: 80, range: true },
+    { key: "vMusic", label: "🎵 Music", hint: "", def: 45, range: true },
+    { key: "vFx", label: "💥 Sound effects", hint: "Lights, engines, overtakes...", def: 70, range: true },
+    { key: "track", label: "Soundtrack", hint: "Auto: calmer songs in the menus, fast ones in the race. Music by Kevin MacLeod (incompetech.com), CC BY 3.0", def: "auto", opts: [["auto", "Auto"], ["shuffle", "Shuffle all"], ["race", "Race songs only"]] },
+    { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "units", label: "Speed units", def: "kmh", opts: [["kmh", "km/h"], ["mph", "mph"]] },
+    { key: "zoom", label: "Camera zoom", def: "normal", opts: [["close", "Close"], ["normal", "Normal"], ["far", "Far"]] },
+    { key: "cam", label: "Camera follows", hint: "Tab also switches who you're watching", def: "me", opts: [["me", "My car"], ["leader", "Leader"]] },
+    { key: "names", label: "Name tags", def: "all", opts: [["all", "All"], ["mine", "Mine"], ["off", "Off"]] },
+    { key: "fx", label: "Smoke and dust", def: "high", opts: [["high", "High"], ["low", "Low"], ["off", "Off"]] },
+    { key: "scenery", label: "Scenery", hint: "Buildings, trees and props around the track (turn off on slow devices)", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "skids", label: "Skid marks", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "lines", label: "Speed lines", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "shake", label: "Screen shake", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "minimap", label: "Minimap", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "theme", label: "Menu theme", def: "dark", opts: [["dark", "Dark"], ["light", "Light"]] },
+    { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
+  ];
+  const settings = {};
+  for (const x of SETTINGS) settings[x.key] = x.def;
+  try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
+  // old Off/Low/Med/High sound settings -> the new sliders
+  { const OLD = { off: 0, low: 25, med: 55, high: 100 }; if (typeof settings.sound === "string" && OLD[settings.sound] !== undefined) { settings.vFx = OLD[settings.sound]; delete settings.sound; } if (typeof settings.music === "string") { settings.vMusic = settings.music === "off" ? 0 : OLD[settings.music] ?? 45; delete settings.music; } if (!["auto", "shuffle", "race"].includes(settings.track)) settings.track = "auto"; }
+  const fxVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vFx) / 100);
+  const musicVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vMusic) / 100);
+  let reducedMotion = false;
+  const isPhone = () => Math.min(window.innerWidth, window.innerHeight) < 560;
+  const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
+  function applySettings() {
+    document.documentElement.dataset.theme = settings.theme;
+    // UI size: everything in the menus and HUD is sized in rem, so this scales it all
+    const ui = { s: 82, m: 100, l: 115, xl: 130 }[settings.ui] || (isPhone() ? 88 : 100);
+    document.documentElement.style.fontSize = ui + "%";
+    document.body.classList.toggle("touch", window.matchMedia("(pointer: coarse)").matches);
+    const sys = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    reducedMotion = settings.motion === "on" || (settings.motion === "system" && sys);
+    document.body.classList.toggle("rm", reducedMotion);
+    mini.classList.toggle("hidden", settings.minimap === "off");
+    document.body.classList.toggle("cb", settings.cb === "on");
+    if (typeof TIRES !== "undefined") { TIRES.fast.color = settings.cb === "on" ? "#ff7a00" : "#e53935"; TIRES.wet.color = settings.cb === "on" ? "#56b4e9" : "#1e88e5"; }
+    if (MUS && MUS.started) { setMusicVolume(); if (MUS.lastTrack !== settings.track || (!MUS.el && musicVol() > 0)) { MUS.lastTrack = settings.track; pickMusic(true); } }
+    const phone = settings.phone === "on" || (settings.phone !== "off" && isTouch() && Math.min(window.innerWidth, window.innerHeight) < 760);
+    if (phone !== document.body.classList.contains("phone")) {
+      document.body.classList.toggle("phone", phone);
+      if (!phone && typeof setEditing === "function") setEditing(false);
+      requestAnimationFrame(() => { try { if (S.screen === "lobby") sizeBoard(); } catch (e) {} });
+    }
+    try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
+  }
+  function renderSettings() {
+    const body = $("setBody"); body.textContent = "";
+    for (const x of SETTINGS) {
+      const row = document.createElement("div"); row.className = "set-row";
+      const l = document.createElement("div"); const b = document.createElement("b"); b.textContent = x.label; l.appendChild(b);
+      if (x.hint) { const s = document.createElement("small"); s.textContent = x.hint; l.appendChild(s); }
+      if (x.range) {           // volume sliders
+        const wrap = document.createElement("div"); wrap.className = "vol";
+        const r = document.createElement("input"); r.type = "range"; r.min = "0"; r.max = "100"; r.step = "1"; r.value = String(settings[x.key]); r.setAttribute("aria-label", x.label);
+        const out = document.createElement("span"); out.textContent = settings[x.key] + "%";
+        r.addEventListener("input", () => { settings[x.key] = Number(r.value); out.textContent = r.value + "%"; applySettings(); });
+        r.addEventListener("change", () => sfx("tick"));
+        wrap.append(r, out); row.append(l, wrap); body.appendChild(row); continue;
+      }
+      const seg = document.createElement("div"); seg.className = "seg"; seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", x.label);
+      for (const [v, t] of x.opts) {
+        const o = document.createElement("button"); o.type = "button"; o.textContent = t; o.setAttribute("role", "radio");
+        o.setAttribute("aria-checked", String(settings[x.key] === v));
+        o.addEventListener("click", () => { settings[x.key] = v; applySettings(); renderSettings(); sfx("tick"); });
+        seg.appendChild(o);
+      }
+      row.append(l, seg); body.appendChild(row);
+      if (x.key === "track") {   // now playing + skip
+        const np = document.createElement("div"); np.className = "set-row now-row";
+        const t2 = document.createElement("div"); t2.id = "nowPlaying"; t2.textContent = MUS?.now ? `♪ ${MUS.now}` : "♪ Nothing playing yet (click anywhere to start)";
+        const sk = document.createElement("button"); sk.type = "button"; sk.className = "btn"; sk.textContent = "⏭ Next song";
+        sk.addEventListener("click", () => { MUS.started = true; pickMusic(true); });
+        np.append(t2, sk); body.appendChild(np);
+      }
+    }
+  }
+  const setEl = $("settings");
+  function openSettings() { renderSettings(); setEl.classList.remove("hidden"); }
+  function closeSettings() { setEl.classList.add("hidden"); }
+  document.querySelectorAll("[data-settings]").forEach((b) => b.addEventListener("click", openSettings));
+  $("setClose").addEventListener("click", closeSettings);
+  setEl.addEventListener("click", (e) => { if (e.target === setEl) closeSettings(); });
+  applySettings();
+
+  // ======================= Sound (made with code, no files) =======================
+  let actx = null, engine = null;
+  function audio() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (actx.state === "suspended") actx.resume();
+    return actx;
+  }
+
+  // ======================= Music =======================
+  // Real songs by Kevin MacLeod (incompetech.com), free to use under Creative Commons BY 3.0 as long
+  // as he's credited (the game shows the credit when a song starts and in Settings). They stream from
+  // the Internet Archive's copy of his library, so there are no files to upload.
+  // You can add your own free-to-use songs too: public/music/music.json (see the README).
+  const IA = "https://archive.org/download/Incompetech/mp3-royaltyfree/";
+  const KM = { artist: "Kevin MacLeod", license: "CC BY 3.0" };
+  const BUILTIN = [
+    { title: "Aces High", file: "Aces High.mp3", mood: "race" },
+    { title: "Basic Implosion", file: "Basic Implosion.mp3", mood: "race" },
+    { title: "Bit Shift", file: "Bit Shift.mp3", mood: "race" },
+    { title: "Blip Stream", file: "BlipStream.mp3", mood: "race" },
+    { title: "Black Vortex", file: "BlackVortex.mp3", mood: "race" },
+    { title: "Big Rock", file: "Big Rock.mp3", mood: "race" },
+    { title: "Action", file: "Action.mp3", mood: "race" },
+    { title: "Back on Track", file: "Back on Track.mp3", mood: "race" },
+    { title: "Blown Away", file: "BlownAway.mp3", mood: "race" },
+    { title: "Backed Vibes (Clean)", file: "Backed Vibes Clean.mp3", mood: "menu" },
+    { title: "Big Mojo", file: "Big Mojo.mp3", mood: "menu" },
+    { title: "Bass Walker", file: "Bass Walker.mp3", mood: "menu" },
+    { title: "Airport Lounge", file: "Airport Lounge.mp3", mood: "menu" },
+    { title: "Beachfront Celebration", file: "Beachfront Celebration.mp3", mood: "results" },
+    { title: "At Launch", file: "At Launch.mp3", mood: "results" },
+  ].map((x) => ({ ...KM, ...x, url: IA + encodeURIComponent(x.file) }));
+  var MUS = { el: null, list: BUILTIN.slice(), cur: null, started: false, now: "", recent: [] };
+  fetch("music/music.json").then((r) => (r.ok ? r.json() : [])).then((list) => {
+    if (!Array.isArray(list)) return;
+    for (const x of list) if (x && x.file) MUS.list.push({ title: String(x.title || x.file), artist: String(x.artist || ""), license: String(x.license || ""), mood: x.mood || "any", url: "music/" + String(x.file).replace(/^\/+/, "") });
+  }).catch(() => {});
+  function stopMusic() { if (MUS.el) { MUS.el.pause(); MUS.el = null; } MUS.cur = null; }
+  function setMusicVolume() { if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol())); if (musicVol() <= 0) stopMusic(); }
+  function playTrack(tr) {
+    if (musicVol() <= 0) { stopMusic(); return; }
+    stopMusic();
+    const el2 = new Audio(); el2.preload = "auto"; el2.src = tr.url; el2.volume = Math.min(1, musicVol());
+    el2.addEventListener("ended", () => { if (MUS.el === el2) pickMusic(true); });
+    el2.addEventListener("error", () => { if (MUS.el === el2) { MUS.bad = (MUS.bad || 0) + 1; if (MUS.bad < 4) setTimeout(() => pickMusic(true), 800); } });
+    el2.play().then(() => { MUS.bad = 0; }).catch(() => {});
+    MUS.el = el2; MUS.cur = tr; MUS.now = `${tr.title} · ${tr.artist}${tr.license ? " (" + tr.license + ")" : ""}`;
+    MUS.recent = [tr.url, ...MUS.recent].slice(0, 5);
+    const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now;
+    if (S.screen !== "race") popup(`♪ ${tr.title} · ${tr.artist}`);
+  }
+  // which song fits right now (menu / race / results), never the same one twice in a row
+  function pickMusic(force) {
+    if (!MUS.started) return;
+    if (musicVol() <= 0) { stopMusic(); return; }
+    const mood = settings.track === "race" ? "race" : S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
+    const pool = MUS.list.filter((x) => settings.track === "shuffle" || x.mood === mood || x.mood === "any");
+    if (!force && MUS.cur && pool.includes(MUS.cur) && MUS.el && !MUS.el.paused) return;
+    const fresh = pool.filter((x) => !MUS.recent.includes(x.url));
+    const from = fresh.length ? fresh : pool;
+    if (from.length) playTrack(from[Math.floor(Math.random() * from.length)]);
+  }
+  // browsers only allow sound after you click or press something
+  const startMusic = () => { if (MUS.started) return; MUS.started = true; audio(); pickMusic(true); };
+  window.addEventListener("pointerdown", startMusic, { capture: true });
+  window.addEventListener("keydown", startMusic, { capture: true });
+  function tone(freq, dur, type = "square", vol = 0.2, slide = 0, delay = 0) {
+    const v = fxVol() * vol; if (!v) return;
+    const a = audio(); if (!a) return;
+    const t0 = a.currentTime + delay;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t0 + dur);
+    g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function sfx(name) {
+    if (name === "light") tone(440, 0.16, "square", 0.18);
+    else if (name === "go") tone(880, 0.45, "square", 0.22);
+    else if (name === "jump") { tone(140, 0.5, "sawtooth", 0.25, -60); }
+    else if (name === "pass") { tone(660, 0.08, "triangle", 0.2); tone(990, 0.1, "triangle", 0.2, 0, 0.07); }
+    else if (name === "lost") { tone(520, 0.1, "triangle", 0.18); tone(360, 0.14, "triangle", 0.18, 0, 0.08); }
+    else if (name === "level") [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.14, "triangle", 0.2, 0, i * 0.08));
+    else if (name === "pit") tone(300, 0.35, "sawtooth", 0.12, 500);
+    else if (name === "win") [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, 0.2, "triangle", 0.22, 0, i * 0.12));
+    else if (name === "tick") tone(1200, 0.03, "square", 0.08);
+    else if (name === "warn") [880, 660, 880, 660].forEach((f, i) => tone(f, 0.12, "square", 0.16, 0, i * 0.14));
+    else if (name === "card") tone(700, 0.12, "triangle", 0.18, 300);
+  }
+  function engineSound(speed, on) {
+    const want = on && settings.engine === "on" && fxVol() > 0;
+    const a = want ? audio() : actx;
+    if (!a) return;
+    if (!engine && want) {
+      const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
+      o.type = "sawtooth"; f.type = "lowpass"; f.frequency.value = 600; g.gain.value = 0;
+      o.connect(f).connect(g).connect(a.destination); o.start();
+      engine = { o, g };
+    }
+    if (!engine) return;
+    const t = a.currentTime;
+    engine.o.frequency.setTargetAtTime(55 + Math.max(0, speed) * 0.22, t, 0.08);
+    engine.g.gain.setTargetAtTime(want ? 0.035 * fxVol() : 0, t, 0.15);
+  }
+  window.addEventListener("pointerdown", () => audio(), { once: true });
+
+  // ======================= Car drawing (with liveries) =======================
+  function darken(hex, k) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${Math.round(((n >> 16) & 255) * k)},${Math.round(((n >> 8) & 255) * k)},${Math.round((n & 255) * k)})`;
+  }
+  function rrect(c, x, y, w, h, r) {
+    c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+  // Painted designs: 24 x 12 pixels, each a palette colour (0-f) or "." for see-through.
+  const DW = 24, DH = 12;
+  const PAINT = ["#ffffff", "#111111", "#e53935", "#fb8c00", "#ffcc1f", "#43a047", "#00acc1", "#1e88e5", "#8e24aa", "#ec407a", "#6d4c41", "#9e9e9e", "#ff7043", "#c0ca33", "#90caf9", "#00e5ff"];
+  const designCache = new Map();
+  function designCanvas(str) {
+    if (!str || str.length !== DW * DH) return null;
+    let cv = designCache.get(str); if (cv) return cv;
+    cv = document.createElement("canvas"); cv.width = DW; cv.height = DH;
+    const c = cv.getContext("2d");
+    for (let i = 0; i < str.length; i++) { const v = str[i]; if (v === ".") continue; c.fillStyle = PAINT[parseInt(v, 16)]; c.fillRect(i % DW, Math.floor(i / DW), 1, 1); }
+    if (designCache.size > 60) designCache.delete(designCache.keys().next().value);
+    designCache.set(str, cv); return cv;
+  }
+  function drawCar(c, car, x, y, heading, scale, opts = {}) {
+    const L = CAR_LEN, Wd = CAR_WID, X = car.extras || {};
+    const hueNow = (performance.now() / 8) % 360;
+    c.save(); c.translate(x, y); c.rotate(heading); c.scale(scale, scale);
+    if (X.glow) {                            // store: underglow
+      const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow;
+      c.save(); c.globalAlpha = 0.55; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
+      rrect(c, -L / 2 - 2, -Wd / 2 - 3, L + 4, Wd + 6, 9); c.fill(); c.restore();
+    }
+    c.fillStyle = "rgba(0,0,0,0.3)"; c.save(); c.translate(3, 4); bodyPath(c, X.body, L, Wd); c.fill(); c.restore();
+    if (opts.trailPreview && X.trail) { for (let k = 0; k < 4; k++) trailShape(c, X.trail, -L / 2 - 10 - k * 11, (k % 2 ? 4 : -4), 4.5 - k * 0.6, 1 - k * 0.2, k); }
+    if (opts.nitro || opts.flamePreview) {   // nitro boost: a long flame (blue, or the store colour)
+      const fl = opts.flamePreview ? 30 : 22 + Math.random() * 16;
+      c.fillStyle = X.flame === "rainbow" ? `hsl(${hueNow},100%,58%)` : X.flame || "#3aa0ff";
+      c.beginPath(); c.moveTo(-L / 2, -7); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 7); c.fill();
+      c.fillStyle = "#d8f3ff"; c.beginPath(); c.moveTo(-L / 2, -3.5); c.lineTo(-L / 2 - fl * 0.55, 0); c.lineTo(-L / 2, 3.5); c.fill();
+    }
+    if (opts.boost) {
+      const fl = 14 + Math.random() * 12;
+      c.fillStyle = "#ffb74d"; c.beginPath(); c.moveTo(-L / 2, -6); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 6); c.fill();
+      c.fillStyle = "#fff"; c.beginPath(); c.moveTo(-L / 2, -3); c.lineTo(-L / 2 - fl * 0.5, 0); c.lineTo(-L / 2, 3); c.fill();
+    }
+    const B = X.body, open = B === "f1" || B === "kart";
+    if (!open) {
+      c.fillStyle = "#16171a";
+      for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 6, wy * (Wd / 2) - 4, 12, 8);
+      if (X.rims) { c.fillStyle = X.rims; for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 3, wy * (Wd / 2) - 2.2, 6, 4.4); }
+    } else {
+      // open-wheel cars: big wheels out in the air
+      const wl = B === "f1" ? [[L * 0.33, Wd / 2 - 1, 11, 7], [-L * 0.32, Wd / 2 - 1, 12, 8]] : [[L * 0.24, Wd * 0.4, 8, 6], [-L * 0.24, Wd * 0.4, 8, 6]];
+      for (const [wx, wy, ww, wh] of wl) for (const sg of [-1, 1]) {
+        c.fillStyle = "#141518"; rrect(c, wx - ww / 2, sg * wy - wh / 2, ww, wh, 2); c.fill();
+        c.fillStyle = X.rims || "#7b818a"; c.fillRect(wx - ww * 0.22, sg * wy - wh * 0.28, ww * 0.44, wh * 0.56);
+      }
+      if (B === "f1") { c.fillStyle = "#2a2c31"; c.fillRect(L * 0.33 - 1, -Wd / 2 + 4, 2, Wd - 8); c.fillRect(-L * 0.32 - 1, -Wd / 2 + 4, 2, Wd - 8); }   // suspension arms
+    }
+    // body
+    c.save(); bodyPath(c, B, L, Wd); c.clip();
+    c.fillStyle = car.color; c.fillRect(-L / 2, -Wd / 2, L, Wd);
+    const alt = darken(car.color, 0.55), light = "rgba(255,255,255,0.85)";
+    if (car.livery === "stripes") { c.fillStyle = light; c.fillRect(-L / 2, -4, L, 3); c.fillRect(-L / 2, 1, L, 3); }
+    else if (car.livery === "split") { c.fillStyle = alt; c.fillRect(-L / 2, 0, L, Wd / 2); }
+    else if (car.livery === "flames") {
+      c.fillStyle = "#ff7043";
+      c.beginPath(); c.moveTo(L / 2, -Wd / 2); for (let k = 0; k <= 5; k++) c.lineTo(L / 2 - 8 - (k % 2 ? 14 : 4), -Wd / 2 + (k / 5) * Wd); c.lineTo(L / 2, Wd / 2); c.closePath(); c.fill();
+      c.fillStyle = "#ffd54f";
+      c.beginPath(); c.moveTo(L / 2, -Wd / 3); for (let k = 0; k <= 4; k++) c.lineTo(L / 2 - 4 - (k % 2 ? 8 : 2), -Wd / 3 + (k / 4) * (Wd * 2 / 3)); c.lineTo(L / 2, Wd / 3); c.closePath(); c.fill();
+    } else if (car.livery === "checker") {
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#fff"; c.fillRect(-L / 2 + i * 4, -Wd / 2 + j * 6, 4, 6); }
+    }
+    if (X.livery) drawLivery(c, X.livery, car.color, L, Wd, hueNow);
+    if (X.decal) drawDecal(c, X.decal, L, Wd, B);
+    if (car.design) { const d = designCanvas(car.design); if (d) { const sm = c.imageSmoothingEnabled; c.imageSmoothingEnabled = false; c.drawImage(d, -L / 2, -Wd / 2, L, Wd); c.imageSmoothingEnabled = sm; } }
+    c.restore();
+    c.lineWidth = 2; c.strokeStyle = "rgba(0,0,0,0.45)"; bodyPath(c, B, L, Wd); c.stroke();
+    if (!open) {
+      c.fillStyle = "rgba(20,24,32,0.88)"; rrect(c, -6, -Wd / 2 + 4, 16, Wd - 8, 4); c.fill();
+      c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(6, -Wd / 2 + 5, 3, Wd - 10);
+    }
+    bodyExtras(c, B, car, X, L, Wd);
+    if (X.helmet || open) { const hc = X.helmet || "#f5f5f5"; c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
+    if (X.wing && !open) {                    // store: rear wing
+      const wc = darken(car.color, 0.45);
+      if (X.wing === "card") { c.save(); c.rotate(0.12); c.fillStyle = "#b08850"; c.fillRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.strokeStyle = "#7c5c32"; c.lineWidth = 0.8; c.strokeRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.restore(); }
+      else if (X.wing === "swan") { c.fillStyle = "#15161a"; c.fillRect(-L / 2 + 1, -5, 2, 2); c.fillRect(-L / 2 + 1, 3, 2, 2); c.fillStyle = wc; c.fillRect(-L / 2 - 6, -Wd / 2 - 3, 4, Wd + 6); c.fillStyle = "rgba(255,255,255,0.35)"; c.fillRect(-L / 2 - 5.5, -Wd / 2 - 2.5, 1, Wd + 5); }
+      else if (X.wing === "duck") { c.fillStyle = wc; rrect(c, -L / 2 - 1, -Wd / 2 + 2, 4, Wd - 4, 2); c.fill(); }
+      else {
+        const decks = X.wing === "twin" ? [-L / 2 - 3, -L / 2 + 2] : [-L / 2 - 2];
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5);
+        for (const dx of decks) { c.fillStyle = wc; c.fillRect(dx, -Wd / 2 - 2.5, 3.5, Wd + 5); c.fillStyle = "rgba(255,255,255,0.35)"; c.fillRect(dx + 0.5, -Wd / 2 - 2, 1, Wd + 4); }
+      }
+    }
+    // number
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"] }[X.num] || ["#fff", "#111"];
+    const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
+    c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
+    if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
+    c.save(); c.translate(nx, 0); c.rotate(Math.PI / 2); if (open) c.scale(0.75, 0.75);
+    c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
+    c.restore();
+    if (car.dmg > 0.08) drawDamage(c, car.dmg, car.id || 1, L, Wd, X.body);
+    if (opts.glow) { c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 2.5; rrect(c, -L / 2 - 4, -Wd / 2 - 4, L + 8, Wd + 8, 10); c.stroke(); }
+    c.restore();
+  }
+
+  // account state (filled in once the server says who you are)
+  const A = { user: null, cfg: null, catalog: null, tab: "stats", extras: null };
+  // damage: cracks and dents that grow with the damage (0..1), the same pattern every frame for each car
+  function drawDamage(c, dmg, id, L, Wd, B) {
+    const R = seeded(id * 7919);
+    c.save(); bodyPath(c, B, L, Wd); c.clip();
+    const n = Math.ceil(dmg * 7);
+    for (let k = 0; k < n; k++) {
+      let x = -L / 2 + R() * L, y = (R() < 0.5 ? -1 : 1) * (Wd / 2 - R() * 5);
+      // a dark dent where it got hit, with cracks running out of it
+      c.fillStyle = "rgba(0,0,0,0.35)"; c.beginPath(); c.ellipse(x, y, 3 + dmg * 3, 2 + dmg * 2, R() * 3, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(15,15,18,0.85)"; c.lineWidth = 0.9;
+      for (let b = 0; b < 3; b++) {
+        let cx = x, cy = y; c.beginPath(); c.moveTo(cx, cy);
+        const dir = Math.atan2(-y, R() - 0.5) + (R() - 0.5) * 1.6;
+        for (let s2 = 0; s2 < 3; s2++) { cx += Math.cos(dir + (R() - 0.5)) * (3 + dmg * 5); cy += Math.sin(dir + (R() - 0.5)) * (2 + dmg * 3); c.lineTo(cx, cy); }
+        c.stroke();
+      }
+    }
+    if (dmg > 0.5) { c.fillStyle = "rgba(20,20,20,0.35)"; c.fillRect(L / 2 - 8, -Wd / 2, 8, Wd); }   // crumpled nose
+    c.restore();
+  }
+  // car body shapes (chest-only, Legendary chest). The path is used to clip the paint and for the outline.
+  function bodyPath(c, B, L, Wd) {
+    c.beginPath();
+    const h = Wd / 2;
+    if (B === "f1") {         // open-wheel single-seater: pointy nose, sidepods, narrow tail
+      c.moveTo(L / 2 + 5, 0); c.lineTo(L * 0.3, -2.6); c.lineTo(L * 0.08, -3.4); c.lineTo(L * 0.02, -h + 3); c.lineTo(-L * 0.24, -h + 3.5); c.lineTo(-L * 0.36, -4); c.lineTo(-L / 2, -4);
+      c.lineTo(-L / 2, 4); c.lineTo(-L * 0.36, 4); c.lineTo(-L * 0.24, h - 3.5); c.lineTo(L * 0.02, h - 3); c.lineTo(L * 0.08, 3.4); c.lineTo(L * 0.3, 2.6); c.closePath();
+    } else if (B === "kart") { const x = -L * 0.3, w = L * 0.6, y = -Wd * 0.3, hh = Wd * 0.6, r = 4; c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + hh, r); c.arcTo(x + w, y + hh, x, y + hh, r); c.arcTo(x, y + hh, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+    else if (B === "muscle") { const x = -L / 2 - 2, w = L + 4, r = 3; c.moveTo(x + r, -h); c.arcTo(x + w, -h, x + w, h, r); c.arcTo(x + w, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + w, -h, r); c.closePath(); }
+    else if (B === "rally") { const x = -L / 2 + 4, w = L - 5, r = 6; c.moveTo(x + r, -h); c.arcTo(x + w, -h, x + w, h, r); c.arcTo(x + w, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + w, -h, r); c.closePath(); }
+    else if (B === "lmp") {   // endurance prototype: long pointed nose, big front fenders, wide tail
+      c.moveTo(L / 2 + 4, -3); c.quadraticCurveTo(L * 0.42, -h - 1, L * 0.22, -h); c.lineTo(L * 0.02, -h + 3); c.lineTo(-L * 0.2, -h + 2); c.lineTo(-L / 2, -h);
+      c.lineTo(-L / 2, h); c.lineTo(-L * 0.2, h - 2); c.lineTo(L * 0.02, h - 3); c.lineTo(L * 0.22, h); c.quadraticCurveTo(L * 0.42, h + 1, L / 2 + 4, 3); c.closePath();
+    } else { const x = -L / 2, r = 7; c.moveTo(x + r, -h); c.arcTo(x + L, -h, x + L, h, r); c.arcTo(x + L, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + L, -h, r); c.closePath(); }
+  }
+  function bodyExtras(c, B, car, X, L, Wd) {
+    const dk = darken(car.color, 0.4);
+    if (B === "f1") {
+      c.fillStyle = "#1c1d21"; c.fillRect(L / 2 - 1, -Wd / 2 - 1, 4, Wd + 2);                       // front wing
+      c.fillStyle = car.color; c.fillRect(L / 2 - 1, -Wd / 2 - 1, 4, 2.5); c.fillRect(L / 2 - 1, Wd / 2 - 1.5, 4, 2.5);
+      c.fillStyle = "#1c1d21"; c.fillRect(-L / 2 - 4, -Wd / 2 + 1, 5, Wd - 2);                      // rear wing
+      c.fillStyle = car.color; c.fillRect(-L / 2 - 4, -Wd / 2 + 1, 5, 2); c.fillRect(-L / 2 - 4, Wd / 2 - 3, 5, 2);
+      c.fillStyle = "rgba(15,16,20,0.9)"; c.beginPath(); c.ellipse(-2, 0, 7, 3.8, 0, 0, Math.PI * 2); c.fill();   // cockpit
+      c.strokeStyle = "#2a2c31"; c.lineWidth = 1.6; c.beginPath(); c.moveTo(6, 0); c.quadraticCurveTo(2, -4.6, -6, -3.6); c.moveTo(6, 0); c.quadraticCurveTo(2, 4.6, -6, 3.6); c.stroke();   // halo
+    } else if (B === "kart") {
+      c.fillStyle = "#2a2c31"; c.fillRect(L * 0.3, -Wd * 0.34, 3, Wd * 0.68); c.fillRect(-L * 0.34, -Wd * 0.34, 3, Wd * 0.68);   // bumpers
+      c.fillStyle = "rgba(15,16,20,0.85)"; rrect(c, -8, -5, 12, 10, 3); c.fill();                    // seat
+    } else if (B === "muscle") {
+      c.fillStyle = "rgba(20,24,32,0.9)"; c.fillRect(L * 0.18, -3, 8, 6); c.fillStyle = "rgba(255,255,255,0.18)"; c.fillRect(L * 0.18, -3, 8, 1.2);   // hood scoop
+    } else if (B === "rally") {
+      c.fillStyle = "#fff6c2"; for (const y of [-7, -2.5, 2.5, 7]) { c.beginPath(); c.arc(L / 2 - 3, y, 1.8, 0, Math.PI * 2); c.fill(); }   // light pod
+      c.strokeStyle = "rgba(0,0,0,0.5)"; c.lineWidth = 1; for (const x of [-10, -6, -2]) { c.beginPath(); c.moveTo(x, -7); c.lineTo(x, 7); c.stroke(); }   // roof rack
+    } else if (B === "lmp") {
+      c.fillStyle = "rgba(20,24,32,0.9)"; c.beginPath(); c.ellipse(4, 0, 8, 5, 0, 0, Math.PI * 2); c.fill();   // bubble canopy
+      c.strokeStyle = dk; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-4, 0); c.lineTo(-L / 2, 0); c.stroke();   // shark fin
+    }
+  }
+  function drawDecal(c, kind, L, Wd, B) {
+    const x = B === "f1" ? -L * 0.16 : L * 0.28, y = 0;   // on the bonnet (engine cover on the open-wheeler)
+    c.save(); c.translate(x, y);
+    switch (kind) {
+      case "star": c.fillStyle = "#ffe066"; c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i / 10) * Math.PI * 2, r = i % 2 ? 2.2 : 5; c.lineTo(Math.cos(a) * r, Math.sin(a) * r); } c.closePath(); c.fill(); break;
+      case "bolt": c.fillStyle = "#ffd21f"; c.beginPath(); c.moveTo(4, -6); c.lineTo(-1, 0.5); c.lineTo(2, 0.5); c.lineTo(-4, 6); c.lineTo(0, -1); c.lineTo(-2.5, -1); c.closePath(); c.fill(); break;
+      case "target": for (const [r, col] of [[5.5, "#fff"], [4, "#e53935"], [2.5, "#fff"], [1.1, "#e53935"]]) { c.fillStyle = col; c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill(); } break;
+      case "eyes": for (const sy of [-4.5, 4.5]) { c.fillStyle = "#fff"; c.beginPath(); c.arc(4, sy, 3.4, 0, Math.PI * 2); c.fill(); c.fillStyle = "#111"; c.beginPath(); c.arc(5.4, sy, 1.6, 0, Math.PI * 2); c.fill(); } break;
+      case "teeth": c.fillStyle = "#fff"; c.strokeStyle = "#8a1c1c"; c.lineWidth = 0.6; c.beginPath(); c.moveTo(8, -Wd / 2 + 2); for (let i = 0; i <= 8; i++) c.lineTo(i % 2 ? 3 : 8, -Wd / 2 + 2 + (i / 8) * (Wd - 4)); c.fill(); c.stroke(); break;
+      case "crown": c.fillStyle = "#ffcc1f"; c.beginPath(); c.moveTo(-3, -5); c.lineTo(3, -5); c.lineTo(5, -2.5); c.lineTo(3, -1); c.lineTo(5, 1); c.lineTo(3, 2.5); c.lineTo(5, 5); c.lineTo(-3, 5); c.closePath(); c.fill(); break;
+      case "tape": c.fillStyle = "rgba(170,172,176,0.9)"; c.rotate(0.6); c.fillRect(-7, -1.6, 14, 3.2); c.rotate(-1.2); c.fillRect(-7, -1.6, 14, 3.2); break;
+      case "wings": c.fillStyle = "rgba(255,255,255,0.92)"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(0, sg * 1); c.quadraticCurveTo(-7, sg * 9, -12, sg * 10); c.quadraticCurveTo(-7, sg * 5, -4, sg * 1); c.fill(); } break;
+    }
+    c.restore();
+  }
+  // chest liveries (original designs), painted over the whole body
+  function drawLivery(c, kind, base, L, Wd, hue) {
+    const x0 = -L / 2, y0 = -Wd / 2;
+    const lin = (stops, vert) => { const g = vert ? c.createLinearGradient(0, y0, 0, -y0) : c.createLinearGradient(x0, 0, -x0, 0); stops.forEach((col, i) => g.addColorStop(i / (stops.length - 1), col)); return g; };
+    const R = seeded(kind.length * 97);
+    switch (kind) {
+      case "pinstripe": c.fillStyle = "#e8c34a"; for (const y of [-6.5, -2.5, 1.5, 5.5]) c.fillRect(x0, y, L, 0.9); break;
+      case "chevron": c.fillStyle = "rgba(255,255,255,0.9)"; for (let k = 0; k < 3; k++) { const x = x0 + 10 + k * 9; c.beginPath(); c.moveTo(x, y0); c.lineTo(x + 6, 0); c.lineTo(x, -y0); c.lineTo(x - 3, -y0); c.lineTo(x + 3, 0); c.lineTo(x - 3, y0); c.fill(); } break;
+      case "splatter": for (let k = 0; k < 16; k++) { c.fillStyle = ["#ff2bd6", "#22e6ff", "#ffe066"][k % 3]; c.beginPath(); c.arc(x0 + R() * L, y0 + R() * Wd, 1 + R() * 2.6, 0, Math.PI * 2); c.fill(); } break;
+      case "aurora": c.fillStyle = lin(["#12d6b0", "#3b82f6", "#a855f7", "#ff4fd8"]); c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(x0, -1, L, 2); break;
+      case "carbon": c.fillStyle = "#1a1c20"; c.fillRect(x0, y0, L, Wd); for (let i = 0; i < L; i += 3) for (let j = 0; j < Wd; j += 3) { c.fillStyle = (i + j) % 6 ? "#26292e" : "#131417"; c.fillRect(x0 + i, y0 + j, 3, 3); } c.fillStyle = "#e11d48"; c.fillRect(x0, -1, L, 2); c.fillRect(x0, y0 + 2, L, 1); c.fillRect(x0, -y0 - 3, L, 1); break;
+      case "tiger": c.fillStyle = "#f28c1e"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#151515"; for (let k = 0; k < 7; k++) { const x = x0 + 4 + k * 6.5; c.beginPath(); c.moveTo(x, y0); c.quadraticCurveTo(x + 4, y0 + Wd * 0.3, x + 1, y0 + Wd * 0.45); c.lineTo(x - 1, y0 + Wd * 0.4); c.quadraticCurveTo(x + 1, y0 + Wd * 0.25, x - 2, y0); c.fill(); c.beginPath(); c.moveTo(x + 2, -y0); c.quadraticCurveTo(x + 6, -y0 - Wd * 0.3, x + 3, -y0 - Wd * 0.45); c.lineTo(x + 1, -y0 - Wd * 0.4); c.quadraticCurveTo(x + 3, -y0 - Wd * 0.25, x, -y0); c.fill(); } break;
+      case "lightning": c.fillStyle = "#2a2d34"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#ffd21f"; c.beginPath(); c.moveTo(x0, -2); c.lineTo(x0 + L * 0.35, -4); c.lineTo(x0 + L * 0.3, 1); c.lineTo(x0 + L * 0.7, -1); c.lineTo(x0 + L * 0.62, 4); c.lineTo(-x0, 2); c.lineTo(x0 + L * 0.66, 2.5); c.lineTo(x0 + L * 0.72, -3); c.lineTo(x0 + L * 0.33, -0.5); c.lineTo(x0 + L * 0.4, -6); c.closePath(); c.fill(); break;
+      case "circuit": c.fillStyle = "#0f5132"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "#e8c34a"; c.lineWidth = 0.8; for (let k = 0; k < 7; k++) { let x = x0 + R() * L, y = y0 + 2 + R() * (Wd - 4); c.beginPath(); c.moveTo(x, y); x += 4 + R() * 8; c.lineTo(x, y); y += (R() - 0.5) * 8; c.lineTo(x + 3, y); c.stroke(); c.fillStyle = "#e8c34a"; c.fillRect(x + 2, y - 1, 2, 2); } break;
+      case "galaxy": { c.fillStyle = "#0b0f2a"; c.fillRect(x0, y0, L, Wd); const g = c.createRadialGradient(x0 + L * 0.35, 0, 1, x0 + L * 0.35, 0, L * 0.5); g.addColorStop(0, "rgba(168,85,247,0.8)"); g.addColorStop(0.5, "rgba(59,130,246,0.35)"); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g; c.fillRect(x0, y0, L, Wd); for (let k = 0; k < 22; k++) { c.fillStyle = k % 5 ? "rgba(255,255,255,0.85)" : "#ffe066"; c.fillRect(x0 + R() * L, y0 + R() * Wd, 0.9, 0.9); } break; }
+      case "holo": c.fillStyle = lin([`hsl(${hue},90%,65%)`, `hsl(${(hue + 90) % 360},90%,65%)`, `hsl(${(hue + 180) % 360},90%,65%)`, `hsl(${(hue + 270) % 360},90%,65%)`]); c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(255,255,255,0.35)"; c.beginPath(); c.moveTo(x0 + L * 0.2, y0); c.lineTo(x0 + L * 0.35, y0); c.lineTo(x0 + L * 0.25, -y0); c.lineTo(x0 + L * 0.1, -y0); c.fill(); break;
+      case "gold": c.fillStyle = lin(["#8a6212", "#f7d774", "#c9981f", "#fff1b8", "#b8860b"]); c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(255,255,255,0.45)"; c.beginPath(); c.moveTo(x0 + L * 0.55, y0); c.lineTo(x0 + L * 0.62, y0); c.lineTo(x0 + L * 0.5, -y0); c.lineTo(x0 + L * 0.43, -y0); c.fill(); break;
+      case "dragon": c.fillStyle = "#9f1d1d"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(20,0,0,0.55)"; c.lineWidth = 0.8; for (let j = 0; j < Wd + 3; j += 3) for (let i = (j / 3) % 2 ? 1.5 : 0; i < L + 3; i += 3) { c.beginPath(); c.arc(x0 + i, y0 + j, 1.6, 0, Math.PI); c.stroke(); } c.fillStyle = "#f5b301"; c.fillRect(x0, -0.8, L, 1.6); break;
+      case "camo": c.fillStyle = "#4b5a2f"; c.fillRect(x0, y0, L, Wd); for (let k = 0; k < 14; k++) { c.fillStyle = ["#2f3a1d", "#7b7445", "#1e2413"][k % 3]; c.beginPath(); c.ellipse(x0 + R() * L, y0 + R() * Wd, 3 + R() * 4, 2 + R() * 3, R() * 3, 0, Math.PI * 2); c.fill(); } break;
+      case "zebra": c.fillStyle = "#f5f5f5"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#111"; for (let k = 0; k < 9; k++) { const x = x0 + 2 + k * 5; c.beginPath(); c.moveTo(x, y0); c.quadraticCurveTo(x + 3, 0, x - 1, -y0); c.lineTo(x + 1.5, -y0); c.quadraticCurveTo(x + 5, 0, x + 2, y0); c.fill(); } break;
+      case "sunset": c.fillStyle = lin(["#ffb347", "#ff5f6d", "#8e2de2"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(255,240,180,0.6)"; c.beginPath(); c.arc(x0 + L * 0.3, 0, 4, 0, Math.PI * 2); c.fill(); break;
+      case "lava": c.fillStyle = "#1d1614"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "#ff6a1a"; c.lineWidth = 1.1; for (let k = 0; k < 6; k++) { let x = x0 + R() * L, y = y0 + R() * Wd; c.beginPath(); c.moveTo(x, y); for (let q = 0; q < 3; q++) { x += (R() - 0.3) * 9; y += (R() - 0.5) * 8; c.lineTo(x, y); } c.stroke(); } break;
+      case "ice": c.fillStyle = lin(["#e0f7ff", "#8fd3fe", "#e0f7ff"], true); c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(255,255,255,0.9)"; c.lineWidth = 0.8; for (let k = 0; k < 5; k++) { const cx = x0 + R() * L, cy = y0 + R() * Wd; for (let a = 0; a < 3; a++) { c.beginPath(); c.moveTo(cx - Math.cos(a) * 3, cy - Math.sin(a) * 3); c.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); c.stroke(); } } break;
+      case "pixel": for (let i = 0; i < L; i += 4) for (let j = 0; j < Wd; j += 4) { c.fillStyle = ["#ff2bd6", "#22e6ff", "#ffe066", "#39ff88", "#7c3aed", "#111"][Math.floor(R() * 6)]; c.fillRect(x0 + i, y0 + j, 4, 4); } break;
+      case "rainbow": for (let k = 0; k < 7; k++) { c.fillStyle = `hsl(${(k * 51 + hue) % 360},90%,58%)`; c.fillRect(x0, y0 + (k / 7) * Wd, L, Wd / 7 + 0.5); } break;
+      case "midnight": c.fillStyle = lin(["#0b1026", "#1e2a5a", "#0b1026"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "#e2e8f0"; c.beginPath(); c.moveTo(-x0, -1.5); c.lineTo(x0 + L * 0.3, -3.5); c.lineTo(x0 + L * 0.3, 3.5); c.lineTo(-x0, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.fillRect(x0 + L * 0.25, -1, L * 0.5, 2); break;
+    }
+  }
+  // store trails: little sparks / hearts / stars left behind the car
+  function trailShape(c, kind, x, y, r, alpha, k) {
+    c.save(); c.globalAlpha = Math.max(0, alpha); c.translate(x, y);
+    if (kind === "hearts") {
+      c.fillStyle = "#ff4f7b"; c.beginPath(); c.moveTo(0, r * 0.9);
+      c.bezierCurveTo(-r * 1.4, -r * 0.2, -r * 0.6, -r * 1.2, 0, -r * 0.4); c.bezierCurveTo(r * 0.6, -r * 1.2, r * 1.4, -r * 0.2, 0, r * 0.9); c.fill();
+    } else if (kind === "stars") {
+      c.fillStyle = "#ffe066"; c.rotate(k * 0.7); c.beginPath();
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2, rr = i % 2 ? r * 0.45 : r; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      c.closePath(); c.fill();
+    } else if (kind === "bubbles") { c.strokeStyle = "rgba(170,225,255,0.95)"; c.lineWidth = 1.5; c.beginPath(); c.arc(0, 0, r * 0.7, 0, Math.PI * 2); c.stroke(); c.fillStyle = "rgba(255,255,255,0.8)"; c.fillRect(-r * 0.3, -r * 0.35, 1.5, 1.5); }
+    else if (kind === "notes") { c.fillStyle = ["#ff4fd8", "#22e6ff", "#ffe066"][k % 3]; c.font = `700 ${Math.round(r * 2.2)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(k % 2 ? "♪" : "♫", 0, 0); }
+    else if (kind === "bolts") { c.fillStyle = "#ffe066"; c.rotate(k); c.beginPath(); c.moveTo(r * 0.5, -r); c.lineTo(-r * 0.2, 0); c.lineTo(r * 0.2, 0); c.lineTo(-r * 0.5, r); c.lineTo(0, -r * 0.1); c.lineTo(-r * 0.3, -r * 0.1); c.closePath(); c.fill(); }
+    else if (kind === "fire") { const g = c.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, "#fff3a0"); g.addColorStop(0.45, "#ff8a1f"); g.addColorStop(1, "rgba(220,40,10,0)"); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r * 1.2, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
+    else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
+    c.restore();
+  }
+
+  // ======================= Profile / garage =======================
+  const prof = { name: "Ace", color: COLORS[0], livery: "stripes", number: 7, team: "" };
+  try { Object.assign(prof, JSON.parse(localStorage.getItem("tb-profile") || "{}")); } catch (e) {}
+  const nameIn = $("nameIn"), numIn = $("numIn"), codeIn = $("codeIn");
+  const teamIn = $("teamIn");
+  nameIn.value = prof.name; numIn.value = prof.number; teamIn.value = prof.team || "";
+  function saveProfile() {
+    prof.name = nameIn.value.trim().slice(0, 12) || "Ace";
+    prof.number = clamp(parseInt(numIn.value, 10) || 0, 0, 99);
+    prof.team = teamIn.value.trim().slice(0, 20);
+    try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {}
+    if (S.code) socket.emit("profile", prof);
+  }
+  const sw = $("swatches");
+  for (const c of COLORS) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "swatch"; b.style.background = c; b.setAttribute("aria-label", "Color " + c);
+    b.addEventListener("click", () => { prof.color = c; refreshGarage(); saveProfile(); sfx("tick"); });
+    sw.appendChild(b);
+  }
+  const lv = $("liveries");
+  for (const [k, t] of LIVERIES) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = t; b.dataset.k = k;
+    b.addEventListener("click", () => { prof.livery = k; refreshGarage(); saveProfile(); sfx("tick"); });
+    lv.appendChild(b);
+  }
+  function refreshGarage() {
+    sw.querySelectorAll(".swatch").forEach((b) => b.setAttribute("aria-pressed", String(b.style.background && rgbToHex(b.style.background) === prof.color.toLowerCase())));
+    lv.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === prof.livery)));
+  }
+  function rgbToHex(rgb) { const m = rgb.match(/\d+/g); return m ? "#" + m.slice(0, 3).map((n) => (+n).toString(16).padStart(2, "0")).join("") : rgb; }
+  nameIn.addEventListener("input", saveProfile); numIn.addEventListener("input", saveProfile); teamIn.addEventListener("change", saveProfile);
+  refreshGarage();
+  // ---- paint editor ----
+  const paintCv = $("paintCv"), paintCtx = paintCv.getContext("2d");
+  let paintPix = (prof.design && prof.design.length === DW * DH ? prof.design : ".".repeat(DW * DH)).split("");
+  let paintColor = "1", paintFillMode = false, paintMirror = true, paintHist = [], painting = false;
+  const pal = $("palette");
+  [...PAINT.map((col, i) => [i.toString(16), col]), [".", null]].forEach(([v, col]) => {
+    const b = document.createElement("button"); b.type = "button"; b.dataset.v = v; b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", col ? "Paint " + col : "Eraser"); b.title = col ? col : "Eraser";
+    if (col) b.style.background = col; else b.className = "erase";
+    b.addEventListener("click", () => { paintColor = v; renderPalette(); });
+    pal.appendChild(b);
+  });
+  function renderPalette() { pal.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === paintColor))); }
+  renderPalette();
+  function drawPaint() {
+    const c = paintCtx, W = paintCv.width, H = paintCv.height, cw = W / DW, ch = H / DH;
+    c.clearRect(0, 0, W, H);
+    // the car underneath, stretched to fill the canvas
+    c.save(); c.translate(W / 2, H / 2); c.scale(W / CAR_LEN, H / CAR_WID); drawCar(c, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number }, 0, 0, 0, 1); c.restore();
+    for (let i = 0; i < paintPix.length; i++) { const v = paintPix[i]; if (v === ".") continue; c.fillStyle = PAINT[parseInt(v, 16)]; c.fillRect((i % DW) * cw, Math.floor(i / DW) * ch, cw + 0.5, ch + 0.5); }
+    c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1; c.beginPath();
+    for (let x = 1; x < DW; x++) { c.moveTo(x * cw, 0); c.lineTo(x * cw, H); }
+    for (let y = 1; y < DH; y++) { c.moveTo(0, y * ch); c.lineTo(W, y * ch); }
+    c.stroke();
+  }
+  function savePaint() {
+    const str = paintPix.join("");
+    prof.design = /[0-9a-f]/.test(str) ? str : null;
+    saveProfile(); drawPaint();
+  }
+  const cellAt = (e) => { const r = paintCv.getBoundingClientRect(); return [clamp(Math.floor(((e.clientX - r.left) / r.width) * DW), 0, DW - 1), clamp(Math.floor(((e.clientY - r.top) / r.height) * DH), 0, DH - 1)]; };
+  function paintCell(x, y) {
+    paintPix[y * DW + x] = paintColor;
+    if (paintMirror) paintPix[(DH - 1 - y) * DW + x] = paintColor;       // mirror left/right side of the car
+  }
+  function floodFill(x, y) {
+    const from = paintPix[y * DW + x]; if (from === paintColor) return;
+    const st = [[x, y]];
+    while (st.length) { const [a, b] = st.pop(); if (a < 0 || b < 0 || a >= DW || b >= DH || paintPix[b * DW + a] !== from) continue; paintPix[b * DW + a] = paintColor; st.push([a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]); }
+  }
+  paintCv.addEventListener("pointerdown", (e) => {
+    paintHist.push(paintPix.join("")); if (paintHist.length > 40) paintHist.shift();
+    const [x, y] = cellAt(e);
+    if (paintFillMode) { floodFill(x, y); savePaint(); return; }
+    painting = true; paintCv.setPointerCapture(e.pointerId); paintCell(x, y); drawPaint();
+  });
+  paintCv.addEventListener("pointermove", (e) => { if (!painting) return; const [x, y] = cellAt(e); paintCell(x, y); drawPaint(); });
+  const endPaint = () => { if (painting) { painting = false; savePaint(); } };
+  paintCv.addEventListener("pointerup", endPaint); paintCv.addEventListener("pointercancel", endPaint);
+  $("paintFill").addEventListener("click", () => { paintFillMode = !paintFillMode; $("paintFill").setAttribute("aria-pressed", String(paintFillMode)); });
+  $("paintMirror").addEventListener("click", () => { paintMirror = !paintMirror; $("paintMirror").setAttribute("aria-pressed", String(paintMirror)); });
+  $("paintUndo").addEventListener("click", () => { if (paintHist.length) { paintPix = paintHist.pop().split(""); savePaint(); } });
+  $("paintClear").addEventListener("click", () => { paintHist.push(paintPix.join("")); paintPix = ".".repeat(DW * DH).split(""); savePaint(); });
+  $("paintBox").addEventListener("toggle", drawPaint);
+  sw.addEventListener("click", () => setTimeout(drawPaint)); lv.addEventListener("click", () => setTimeout(drawPaint));
+  drawPaint();
+  const pv = $("carPreview"), pctx = pv.getContext("2d");
+  function drawPreview(now) {
+    pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pv.width, pv.height);
+    const spin = reducedMotion ? -0.35 : -0.35 + Math.sin(now / 900) * 0.25;
+    drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, design: prof.design, extras: A.extras }, 150, 92, spin, 3.2, { trailPreview: true });
+  }
+
+  // ======================= Networking + state =======================
+  const S = {
+    screen: "menu", code: null, me: null, host: false, lobby: null, track: null, race: null, cars: new Map(),
+    myCar: null, standings: [], order: "normal", box: false, xp: null, offer: null, camTarget: null,
+    reacted: false, lightsOutAt: 0, particles: [], skids: [], popups: [], shake: 0, results: null, stroke: null,
+  };
+  const socket = io();
+  const menuErr = $("menuErr");
+  const inv = new URLSearchParams(location.search).get("room");
+  if (inv) codeIn.value = inv.toUpperCase().slice(0, 4);
+  $("soloBtn").addEventListener("click", () => { saveProfile(); S.solo = true; S.tutorial = false; socket.emit("create", prof); });
+  $("quickBtn").addEventListener("click", () => { saveProfile(); S.solo = false; S.tutorial = false; socket.emit("quickPlay", prof); });
+  $("tutBtn").addEventListener("click", () => startTutorial());
+  $("createBtn").addEventListener("click", () => { saveProfile(); S.solo = false; socket.emit("create", prof); });
+  $("pubBtn").addEventListener("click", () => { saveProfile(); S.solo = false; socket.emit("create", prof, { public: true }); });
+  // players online + the public lobby list (the server sends updates while you're on the menu)
+  socket.on("menuInfo", (m) => { S.menu = m; renderMenuInfo(); });
+  socket.on("connect", () => {
+    socket.emit("menuInfo"); socket.emit("catalog");
+    let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
+    if (tok) socket.emit("auth:resume", { token: tok, backup: backupFor(lastAcct()) });
+  });
+
+  // ======================= Accounts: sign in, stats, achievements, store =======================
+  // Backups: the server sends a signed copy of your account after every change and we keep it in
+  // this browser. If the server forgot everyone (it restarts clean after every update), we hand it back.
+  function backups() { try { return JSON.parse(localStorage.getItem("tb-backups") || "{}"); } catch (e) { return {}; } }
+  function backupFor(id) { return id ? backups()[id] || null : null; }
+  function lastAcct() { try { return localStorage.getItem("tb-last") || null; } catch (e) { return null; } }
+  function keepBackup(id, blob) {
+    if (!id || !blob) return;
+    try { const b = backups(); b[id] = blob; localStorage.setItem("tb-backups", JSON.stringify(b)); localStorage.setItem("tb-last", id); } catch (e) {}
+  }
+  function extrasFor(u) {
+    if (!u || !A.catalog) return null;
+    const o = {};
+    for (const [slot, id] of Object.entries(u.equipped || {})) { const it = A.catalog.store.find((x) => x.id === id); if (it && u.owned.includes(id)) o[slot] = it.look; }
+    return Object.keys(o).length ? o : null;
+  }
+  function renderAcct() {
+    const u = A.user;
+    $("acctName").textContent = u ? u.name : "Playing as a guest";
+    $("acctSub").textContent = u ? `${u.stats.races} races · ${u.stats.wins} wins · ${Object.keys(u.ach).length}/${A.catalog?.ach.length || "?"} achievements`
+      : "Make an account to save your stats, earn coins and unlock car parts.";
+    const av = $("acctAv"); av.textContent = "";
+    if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = `${u.name}'s profile picture`; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
+    $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
+    $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
+    $("signOutBtn").classList.toggle("hidden", !u); $("signOutAllBtn").classList.toggle("hidden", !u);
+    $("signUpBtn").classList.toggle("hidden", !!u); $("logInBtn").classList.toggle("hidden", !!u);
+    $("gsiBtn").classList.toggle("hidden", !!u);
+    $("devLoginBtn").classList.toggle("hidden", !!u || !A.cfg?.dev);
+    A.extras = extrasFor(u);
+  }
+  socket.on("catalog", (c) => { A.catalog = c; renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  // The sign-in token goes into an HttpOnly cookie (page scripts, and so any injected script, can't read it).
+  // Only if that fails (very old browser) is it kept in localStorage as before.
+  function storeToken(token) {
+    fetch("/auth/cookie", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Scribble": "1" }, body: JSON.stringify({ token }) })
+      .then((r) => { if (r.ok) { try { localStorage.removeItem("tb-token"); } catch (e) {} } else throw 0; })
+      .catch(() => { try { localStorage.setItem("tb-token", token); } catch (e) {} });
+  }
+  socket.on("needBackup", () => socket.emit("auth:resume", { backup: backupFor(lastAcct()) }));
+  socket.on("account", (u) => {
+    if (u.token) { storeToken(u.token); delete u.token; }
+    if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
+    if (!A.user || A.user.id !== u.id) socket.emit("presets:get");
+    A.user = u; renderAcct();
+    if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
+    if (!$("hub").classList.contains("hidden")) renderHub();
+  });
+  socket.on("signedOut", () => { A.user = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  // ======================= Sign up / log in / 2FA / forgot password =======================
+  // modes: signup, login, code (2FA step), reset (forgot password)
+  let authMode = "signup", lastAuth = null, ticket2fa = null;
+  function authMsg(m, ok) { const e = $("authErr"); e.textContent = m || ""; e.classList.toggle("ok", !!ok); $("authGo").disabled = false; }
+  socket.on("authError", (m) => { if (!$("authBox").classList.contains("hidden")) authMsg(m); else popup(m, true); });
+  socket.on("need2fa", (d) => { ticket2fa = d.ticket; openAuth("code"); });
+  // "CAPTCHA": after a few failed tries the server asks this browser to do a small proof-of-work puzzle
+  // (about a second of number crunching: nothing for a person, expensive for a bot doing thousands of tries)
+  socket.on("authCaptcha", async (c) => {
+    if (!lastAuth) return;
+    authMsg("Checking you're not a robot..."); $("authGo").disabled = true;
+    const enc = new TextEncoder();
+    for (let n = 0; n < 5e6; n++) {
+      const h = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(c.salt + ":" + n)));
+      let z = 0; for (const b of h) { if (b === 0) { z += 8; continue; } z += Math.clz32(b) - 24; break; }
+      if (z >= c.bits) { authMsg("Checked ✓", true); socket.emit(lastAuth.ev, { ...lastAuth.data, pow: { salt: c.salt, nonce: n } }); return; }
+    }
+  });
+  function openAuth(mode) {
+    authMode = mode; authMsg("");
+    const T = { signup: ["Make an account", "Make my account"], login: ["Log in", "Log in"], code: ["Two-factor code", "Confirm"], reset: ["Forgot password", "Set new password"] }[mode];
+    $("authTitle").textContent = T[0]; $("authGo").textContent = T[1];
+    document.querySelectorAll("[data-am]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.am === mode)));
+    $("authTabs").classList.toggle("hidden", mode === "code");
+    $("authUserRow").classList.toggle("hidden", mode === "code");
+    $("authPassRow").classList.toggle("hidden", mode === "code");
+    $("authPass2Row").classList.toggle("hidden", mode !== "signup" && mode !== "reset");
+    $("authCodeRow").classList.toggle("hidden", mode !== "code" && mode !== "reset");
+    $("authMeter").classList.toggle("hidden", mode !== "signup" && mode !== "reset");
+    $("authForgot").classList.toggle("hidden", mode !== "login");
+    $("authPassLabel").firstChild.textContent = mode === "reset" ? "New password " : "Password ";
+    $("authCodeLabel").firstChild.textContent = mode === "reset" ? "Authenticator code or a backup code " : "6-digit code from your authenticator app (or a backup code) ";
+    $("authPass").autocomplete = mode === "login" ? "current-password" : "new-password";
+    $("authPass").placeholder = mode === "login" ? "" : "12+ characters, mix it up";
+    $("authNote").textContent = mode === "signup" ? "No email needed. Use a password you don't use anywhere else. After signing up you can turn on two-factor sign-in (Profile > Security)."
+      : mode === "reset" ? "Only works if you turned on two-factor sign-in. Without it there's no way to prove it's you (there's no email)." : mode === "code" ? "Open your authenticator app and type the code shown for Scribble GP." : "";
+    $("authBox").classList.remove("hidden");
+    if (mode === "signup" || mode === "reset") loadMeter();
+    setTimeout(() => (mode === "code" ? $("authCode") : $("authUser")).focus(), 50);
+  }
+  function closeAuth() { $("authBox").classList.add("hidden"); $("authPass").value = ""; $("authPass2").value = ""; $("authCode").value = ""; }
+  // password strength meter (zxcvbn, the same checker the server uses)
+  function loadMeter() {
+    if (window.zxcvbn || document.getElementById("zxcvbnJs")) return;
+    const sc = document.createElement("script"); sc.id = "zxcvbnJs"; sc.src = "/vendor/zxcvbn.js"; sc.onload = () => meter(); document.head.appendChild(sc);
+  }
+  function meter() {
+    const pw = $("authPass").value, box = $("authMeter"), bar = box.querySelector("i"), txt = box.querySelector("span");
+    if (!pw) { bar.style.width = "0"; txt.textContent = "12+ characters, with 3 of: lowercase, UPPERCASE, numbers, symbols"; return; }
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(pw)).length;
+    const z = window.zxcvbn ? window.zxcvbn(pw, [$("authUser").value, "scribble", "racing"]) : { score: Math.min(4, Math.floor(pw.length / 4)), feedback: {} };
+    let score = z.score; if (pw.length < 12 || (kinds < 3 && pw.length < 20)) score = Math.min(score, 1);
+    const L = [["Very weak", "#ff4b3e"], ["Weak", "#ff8a3d"], ["OK-ish", "#ffcc1f"], ["Strong", "#7bd66b"], ["Very strong", "#3ecf6a"]][score];
+    bar.style.width = (score + 1) * 20 + "%"; bar.style.background = L[1];
+    txt.textContent = L[0] + (pw.length < 12 ? ` · ${12 - pw.length} more characters` : kinds < 3 && pw.length < 20 ? " · add UPPERCASE, numbers or symbols" : z.feedback?.warning ? " · " + z.feedback.warning : "");
+  }
+  $("authPass").addEventListener("input", () => { meter(); if (!$("authGo").disabled) $("authErr").textContent = ""; });
+  $("signUpBtn").addEventListener("click", () => openAuth("signup"));
+  $("logInBtn").addEventListener("click", () => openAuth("login"));
+  $("authForgot").addEventListener("click", () => openAuth("reset"));
+  document.querySelectorAll("[data-am]").forEach((b) => b.addEventListener("click", () => openAuth(b.dataset.am)));
+  $("authClose").addEventListener("click", closeAuth);
+  $("authBox").addEventListener("click", (e) => { if (e.target.id === "authBox") closeAuth(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("authBox").classList.contains("hidden")) closeAuth(); });
+  $("authForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const username = $("authUser").value.trim(), password = $("authPass").value, code = $("authCode").value.trim();
+    const send = (ev, data) => { lastAuth = { ev, data }; authMsg(""); $("authGo").disabled = true; socket.emit(ev, data); };
+    if (authMode === "code") { if (!code) return authMsg("Type the code"); return send("auth:2fa", { ticket: ticket2fa, code }); }
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) return authMsg("Username: 3-16 letters, numbers or _");
+    if (authMode === "signup" || authMode === "reset") {
+      if (password.length < 12) return authMsg("Password needs at least 12 characters");
+      if (password !== $("authPass2").value) return authMsg("The two passwords don't match");
+    } else if (!password) return authMsg("Type your password");
+    if (authMode === "reset") { if (!code) return authMsg("Type an authenticator code or a backup code"); return send("auth:reset", { username, code, password }); }
+    send(authMode === "signup" ? "auth:signup" : "auth:login", { username, password, backup: backupFor("u_" + username.toLowerCase()) });
+  });
+  socket.on("achievement", (a) => {
+    const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
+    const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = a.icon;
+    const tx = document.createElement("div"); const sm = document.createElement("small"); sm.textContent = `Achievement unlocked · +${a.coins} coins`;
+    const b = document.createElement("b"); b.textContent = a.name; tx.append(sm, b); d.append(ic, tx);
+    // queue them so several at once don't pile up
+    const q = (A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("level"); setTimeout(() => { d.remove(); res(); }, 4300); })));
+  });
+  fetch("/auth/config").then((r) => r.json()).then((cfg) => {
+    A.cfg = cfg; renderAcct();
+    if (!cfg.googleClientId) return;
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = () => {
+      google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential, backup: backupFor(lastAcct()) }) });
+      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
+    };
+    document.head.appendChild(sc);
+  }).catch(() => {});
+  $("signOutAllBtn").addEventListener("click", () => {
+    const b = $("signOutAllBtn");
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Sure? Click again"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "🔒 Sign out everywhere"; }, 3000); return; }
+    socket.emit("auth:signoutAll"); fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
+  });
+  $("devLoginBtn").addEventListener("click", () => socket.emit("auth:dev", { name: nameIn.value || "Tester" }));
+  $("signOutBtn").addEventListener("click", () => {
+    let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
+    socket.emit("auth:signout", { token: tok });
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
+    try { window.google?.accounts.id.disableAutoSelect(); } catch (e) {}
+  });
+
+  // ---- the profile hub ----
+  function openHub(tab) { A.tab = tab || A.tab; $("hub").classList.remove("hidden"); if (!A.catalog) socket.emit("catalog"); renderHub(); }
+  function closeHub() { $("hub").classList.add("hidden"); }
+  document.querySelectorAll("[data-hub]").forEach((b) => b.addEventListener("click", () => openHub(b.dataset.hub)));
+  document.querySelectorAll("[data-ht]").forEach((b) => b.addEventListener("click", () => { A.tab = b.dataset.ht; renderHub(); }));
+  $("hubClose").addEventListener("click", closeHub);
+  $("hub").addEventListener("click", (e) => { if (e.target.id === "hub") closeHub(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("hub").classList.contains("hidden")) closeHub(); });
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  function renderHub() {
+    const u = A.user;
+    document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    $("hubGuest").classList.toggle("hidden", !!u);
+    $("hubTitle").textContent = u ? u.name : "Guest";
+    $("achCount").textContent = A.catalog ? `${u ? Object.keys(u.ach).length : 0}/${A.catalog.ach.length}` : "";
+    if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
+    else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
+    else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
+    else renderStore(u);
+  }
+  function renderStats(u) {
+    const box = $("hubStats"); box.textContent = "";
+    const st = u?.stats || {};
+    const n = (v) => (v || 0).toLocaleString();
+    const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "-");
+    const hours = (sec) => { const m = Math.round((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+    const groups = [
+      ["Racing", [["Races", n(st.races)], ["Wins", n(st.wins), 1], ["Win rate", pct(st.wins, st.races)], ["Podiums", n(st.podiums)], ["Top 5s", n(st.top5)], ["Best finish", st.bestFinish ? "P" + st.bestFinish : "-"], ["Points scored", n(st.points)], ["Time racing", hours(st.raceSec)]]],
+      ["Driving", [["Laps", n(st.laps)], ["Distance", `${(st.km || 0).toFixed(1)} km`], ["Overtakes", n(st.overtakes), 1], ["Most in a race", n(st.mostOvertakes)], ["Best comeback", st.bestComeback > 0 ? `+${st.bestComeback} places` : "-"], ["Fastest laps", n(st.fastestLaps)], ["Best lap ever", st.bestLap ? fmt(st.bestLap) : "-"], ["Clean laps", n(st.cleanLaps)], ["Crashes", n(st.crashes)], ["Slides in the wet", n(st.slips)]]],
+      ["Team boss", [["Pit stops", n(st.pitStops)], ["Wet races", n(st.rainRaces)], ["Wet wins", n(st.rainWins)], ["Best team level", n(st.maxLevel)], ["Upgrades picked", n(st.upgrades)], ["Boost used", `${Math.round(st.boostSec || 0)}s`]]],
+      ["Starts", [["Best reaction", st.bestReaction ? `${Math.round(st.bestReaction)} ms` : "-"], ["Great starts (<250ms)", n(st.perfectStarts)], ["Jump starts", n(st.jumpStarts)]]],
+      ["Championships and more", [["Driver titles", n(st.champDriver), 1], ["Team titles", n(st.champTeam), 1], ["Races with friends", n(st.multiRaces)], ["Friends beaten", n(st.beatPlayers)], ["Random tracks", n(st.randomRaces)], ["Your own tracks", n(st.drawnRaces)], ["Real tracks raced", n(st.realTracks?.length)], ["Track records set", n(Object.keys(st.pbs || {}).length)]]],
+    ];
+    for (const [title, items] of groups) {
+      box.appendChild(el("h3", "hub-h", title));
+      const g = el("div", "stat-grid");
+      for (const [label, val, hl] of items) { const d = el("div", "hstat" + (hl ? " hl" : "")); d.append(el("b", "", val), el("small", "", label)); g.appendChild(d); }
+      box.appendChild(g);
+    }
+  }
+  function renderAchs(u) {
+    const box = $("hubAch"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    const got = u?.ach || {}, list = A.catalog.ach, have = list.filter((a) => got[a.id]).length;
+    const earned = list.filter((a) => got[a.id]).reduce((t, a) => t + a.coins, 0);
+    box.appendChild(el("p", "hub-h", `${have} of ${list.length} unlocked · ${earned} coins earned from them`));
+    const bar = el("div", "ach-bar"); const fill = el("i"); fill.style.width = (have / list.length) * 100 + "%"; bar.appendChild(fill); box.appendChild(bar);
+    // filters: closest to unlocking first, so you always see what to go for next
+    const prog = u?.achProg || {};
+    const pctOf = (a) => (got[a.id] ? 1 : a.goal ? Math.min(1, (prog[a.id] || 0) / a.goal) : 0);
+    const f = A.achFilter || "todo";
+    // this week's challenges
+    if (u?.weekly) {
+      const wk = el("section", "weekly"); const days = Math.max(0, Math.ceil((u.weekly.ends - Date.now()) / 86400000));
+      wk.appendChild(el("h3", "hub-h", `📅 This week's challenges · new ones in ${days} day${days === 1 ? "" : "s"}`));
+      const wg = el("div", "ach-grid");
+      for (const c of u.weekly.list) {
+        const d = el("div", "ach" + (c.done ? " got" : ""));
+        const tx = el("div"); tx.append(el("b", "", c.name), el("small", "", c.desc));
+        if (!c.done) { const pb = el("div", "ach-prog"); const fi = el("i"); fi.style.width = (c.prog / c.goal) * 100 + "%"; pb.appendChild(fi); tx.append(pb, el("small", "ach-num", `${c.prog} / ${c.goal}`)); }
+        d.append(el("span", "ic", c.done ? "✅" : "📅"), tx, el("span", "rw", c.done ? "✓ +" + c.coins : "🪙 " + c.coins));
+        wg.appendChild(d);
+      }
+      wk.appendChild(wg); box.appendChild(wk);
+    } else if (!u) box.appendChild(el("p", "preset-note", "Sign in to get 3 new weekly challenges every Monday (they pay coins)."));
+    const fbar = el("div", "ach-filters");
+    for (const [k, label] of [["todo", "To do"], ["done", "Unlocked"], ["hard", "🔥 Insane"], ["all", "All"]]) {
+      const b = el("button", "chip" + (f === k ? " on" : ""), label); b.type = "button";
+      b.addEventListener("click", () => { A.achFilter = k; renderAchs(u); }); fbar.appendChild(b);
+    }
+    box.appendChild(fbar);
+    let shown = list.filter((a) => (f === "todo" ? !got[a.id] : f === "done" ? got[a.id] : f === "hard" ? a.coins >= 1000 : true));
+    shown = shown.sort((x, y) => (f === "done" ? (got[y.id] || 0) - (got[x.id] || 0) : pctOf(y) - pctOf(x) || x.coins - y.coins));
+    const g = el("div", "ach-grid");
+    for (const a of shown) {
+      const d = el("div", "ach" + (got[a.id] ? " got" : "") + (a.coins >= 1000 ? " insane" : ""));
+      const tx = el("div"); tx.append(el("b", "", a.name), el("small", "", a.desc));
+      if (a.goal && !got[a.id]) {
+        const cur = Math.min(a.goal, prog[a.id] || 0);
+        const pb = el("div", "ach-prog"); const fi = el("i"); fi.style.width = (cur / a.goal) * 100 + "%"; pb.appendChild(fi);
+        tx.append(pb, el("small", "ach-num", `${Math.floor(cur).toLocaleString()} / ${a.goal.toLocaleString()}`));
+      }
+      d.append(el("span", "ic", a.icon), tx, el("span", "rw", got[a.id] ? "✓ +" + a.coins : "🪙 " + a.coins.toLocaleString()));
+      g.appendChild(d);
+    }
+    if (!shown.length) g.appendChild(el("p", "preset-note", f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
+    box.appendChild(g);
+  }
+  const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
+  const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"] };
+  function itemPreview(it, w = 200, h = 110) {
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Preview of your car with the ${it.name}`);
+    drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
+    return cv;
+  }
+  function renderBoxes(box, u) {
+    const sec = el("section", "store-slot"); sec.appendChild(el("h3", "hub-h", "Chests: random items, better odds in the pricier ones"));
+    const g = el("div", "box-grid");
+    for (const b of A.catalog.boxes || []) {
+      const [ic, c1, c2] = BOX_LOOK[b.id] || ["📦", "#444", "#777"];
+      const card = el("div", "chest"); card.style.setProperty("--c1", c1); card.style.setProperty("--c2", c2);
+      card.append(el("div", "chest-ic", ic), el("b", "", b.name));
+      const odds = el("div", "odds");
+      for (const [r, w] of Object.entries(b.odds)) { const o = el("span", "", `${RARITY[r][0]} ${w}%`); o.style.color = RARITY[r][1]; odds.appendChild(o); }
+      const btn = el("button", "btn go", `Open · 🪙 ${b.price}`); btn.type = "button";
+      btn.disabled = !u || u.coins < b.price; btn.title = !u ? "Sign in first" : u.coins < b.price ? `You need ${b.price - u.coins} more coins` : "";
+      btn.addEventListener("click", () => { btn.disabled = true; socket.emit("store:open", b.id); });
+      card.append(odds, btn); g.appendChild(card);
+    }
+    sec.appendChild(g); box.appendChild(sec);
+  }
+  // opening a chest: a strip of items spins past and stops on what you got
+  socket.on("boxResult", (r) => {
+    const wrap = el("div", "reel-veil"), panel = el("div", "reel-panel panel"), strip = el("div", "reel-strip"), win = el("div", "reel-win");
+    const pool = A.catalog.store, N = 38, stopAt = 32;
+    for (let i = 0; i < N; i++) {
+      const it = i === stopAt ? r.item : pool[Math.floor(Math.random() * pool.length)];
+      const cell = el("div", "reel-cell"); cell.style.setProperty("--rc", RARITY[it.rarity][1]);
+      cell.append(itemPreview(it, 150, 84), el("small", "", it.name)); strip.appendChild(cell);
+    }
+    win.appendChild(strip); panel.append(el("h3", "", "Opening..."), win);
+    const res = el("div", "reel-res hidden"); panel.appendChild(res);
+    wrap.appendChild(panel); document.body.appendChild(wrap);
+    const cellW = 164, spinT = reducedMotion ? 1.4 : 3.2;
+    // Start from 0, make the browser actually lay that out, THEN set where it stops. (Setting both in the
+    // same frame meant some browsers skipped straight to the end: no spin. That was your friend's bug.)
+    strip.style.transition = "none"; strip.style.transform = "translateX(0px)";
+    void strip.getBoundingClientRect();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const w = win.clientWidth || Math.min(window.innerWidth - 64, 600);
+      strip.style.transition = `transform ${spinT}s cubic-bezier(.12,.8,.2,1)`;
+      strip.style.transform = `translateX(${-(stopAt * cellW - w / 2 + cellW / 2 - 6 + (Math.random() - 0.5) * 60)}px)`;
+    }));
+    // tick sounds as items fly past
+    if (!reducedMotion) for (let k = 0; k < 22; k++) setTimeout(() => sfx("tick"), 3000 * Math.pow(k / 22, 2.2));
+    setTimeout(() => {
+      const [rn, rc] = RARITY[r.rarity];
+      panel.querySelector("h3").textContent = r.rarity === "mythic" ? "💎 MYTHIC!!! THE RAREST THING IN THE GAME 💎" : r.rarity === "legendary" ? "🌟 LEGENDARY! 🌟" : "You got:";
+      res.textContent = "";
+      const nm = el("b", "", r.item.name); nm.style.color = rc;
+      res.append(el("span", "rtag", rn), nm, el("p", "", r.dup ? `You already had this one, so you get 🪙 ${r.refund} back.` : "It's yours! Equip it in the store."));
+      const row = el("div", "reel-row");
+      if (!r.dup) { const eq = el("button", "btn go", "Equip it"); eq.type = "button"; eq.addEventListener("click", () => { socket.emit("store:equip", { slot: r.item.slot, id: r.item.id }); wrap.remove(); }); row.appendChild(eq); }
+      const ok = el("button", "btn", "Nice"); ok.type = "button"; ok.addEventListener("click", () => wrap.remove()); row.appendChild(ok);
+      res.appendChild(row); res.classList.remove("hidden");
+      sfx(r.rarity === "legendary" || r.rarity === "epic" ? "win" : "level");
+      if (r.rarity === "legendary") banner("LEGENDARY!", "#ffb020");
+      if (r.rarity === "mythic") { banner("MYTHIC!", "#ff3b8a"); sfx("win"); }
+    }, reducedMotion ? 1600 : 3400);
+  });
+  // ---- Friends tab ----
+  socket.on("friends", (f) => { A.friends = f; if (A.tab === "friends") renderFriends(A.user); });
+  socket.on("friendMsg", (m) => { const e = document.getElementById("friendMsg"); if (e) { e.textContent = m.error || m.ok; e.className = "sec-msg " + (m.error ? "bad" : "good"); } if (m.ok) socket.emit("friends:get"); });
+  function renderFriends(u) {
+    const box = $("hubFriends"); box.textContent = "";
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to add friends, see when they're online and invite them to your room.")); return; }
+    const F2 = A.friends;
+    const top = el("section", "sec-box");
+    top.appendChild(el("h3", "hub-h", "➕ Add a friend"));
+    top.appendChild(el("p", "preset-note", `Type their username, or their friend code. Your friend code: ${F2?.code || u.friendCode}`));
+    const row = el("div", "sec-row"); const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 20; inp.placeholder = "Username or friend code"; inp.setAttribute("aria-label", "Friend's username or friend code");
+    const go = el("button", "btn go", "Send request"); go.type = "button";
+    const send = () => { if (inp.value.trim()) socket.emit("friends:add", inp.value.trim()); };
+    go.addEventListener("click", send); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+    row.append(inp, go); top.appendChild(row); const fm = el("p", "sec-msg"); fm.id = "friendMsg"; fm.setAttribute("role", "status"); top.appendChild(fm);
+    box.appendChild(top);
+    if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
+    const person = (f, buttons) => {
+      const d = el("div", "friend");
+      const dot = el("span", "fdot" + (f.online ? " on" : "")); dot.title = f.online ? "Online" : "Offline";
+      const tx = el("div"); tx.append(el("b", "", f.name), el("small", "", f.online ? `Online · ${f.where}` : "Offline"));
+      const bs = el("div", "sec-row"); for (const [label, cls, fn] of buttons) { const b = el("button", "btn " + cls, label); b.type = "button"; b.addEventListener("click", fn); bs.appendChild(b); }
+      d.append(dot, tx, bs); return d;
+    };
+    if (F2.reqIn.length) {
+      box.appendChild(el("h3", "hub-h", "📨 Friend requests"));
+      for (const f of F2.reqIn) box.appendChild(person(f, [["Accept", "go", () => socket.emit("friends:accept", f.id)], ["Decline", "ghost", () => socket.emit("friends:remove", f.id)]]));
+    }
+    box.appendChild(el("h3", "hub-h", `👥 Friends (${F2.friends.length})`));
+    if (!F2.friends.length) box.appendChild(el("p", "preset-note", "No friends yet. Add someone above, or use ⋯ › Add friend on a player in your room."));
+    for (const f of F2.friends) {
+      const b = [];
+      if (S.code && S.screen === "lobby") b.push(["Invite", "go", () => socket.emit("friends:invite", f.id)]);
+      if (f.online && f.room && f.room !== S.code) b.push(["Join them", "", () => { closeHub(); saveProfile(); S.solo = false; socket.emit("join", { code: f.room, profile: prof }); }]);
+      b.push(["Remove", "ghost", () => socket.emit("friends:remove", f.id)]);
+      box.appendChild(person(f, b));
+    }
+    if (F2.reqOut.length) { box.appendChild(el("h3", "hub-h", "⏳ Waiting for them to accept")); for (const f of F2.reqOut) box.appendChild(person(f, [["Cancel", "ghost", () => socket.emit("friends:remove", f.id)]])); }
+  }
+  // ---- Leaderboards tab ----
+  socket.on("lb", (d) => { A.lb = d; if (d.tracks) A.lbTracks = d.tracks; if (A.tab === "lb") renderLb(); });
+  function renderLb() {
+    const box = $("hubLb"); box.textContent = "";
+    const kinds = [["wins", "🏆 Most wins"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
+    const bar = el("div", "ach-filters");
+    for (const [k, label] of kinds) { const b = el("button", "chip" + ((A.lbKind || "wins") === k ? " on" : ""), label); b.type = "button"; b.addEventListener("click", () => { A.lbKind = k; A.lb = null; socket.emit("lb:get", { kind: k, track: A.lbTrack || "" }); renderLb(); }); bar.appendChild(b); }
+    box.appendChild(bar);
+    if ((A.lbKind || "wins") === "laps") {
+      const sel = document.createElement("select"); sel.setAttribute("aria-label", "Track");
+      const known = (S.f1 && S.f1.length ? S.f1 : A.catalog?.tracks || []).map((t) => [t.id, t.name]);
+      const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Pick a real track..."; sel.appendChild(o0);
+      for (const [id, name] of known) for (const [suf, tag] of [["", ""], ["_r", " (reversed)"]]) { const o = document.createElement("option"); o.value = id + suf; o.textContent = name + tag + ((A.lbTracks || []).includes(id + suf) ? " ●" : ""); sel.appendChild(o); }
+      if (!known.length) { box.appendChild(el("p", "preset-note", "Open a room once to load the track list.")); }
+      sel.value = A.lbTrack || ""; sel.addEventListener("change", () => { A.lbTrack = sel.value; socket.emit("lb:get", { kind: "laps", track: sel.value }); });
+      box.appendChild(sel); box.appendChild(el("p", "preset-note", "Fastest laps on real tracks by signed-in players (● = has times)."));
+    }
+    const L = A.lb;
+    if (!L) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
+    if (!L.list.length) { box.appendChild(el("p", "preset-note", "No times yet. Be the first!")); return; }
+    const ol = el("ol", "lb-list");
+    L.list.forEach((x, i) => {
+      const li = el("li", x.id === A.user?.id ? "mine" : "");
+      li.append(el("span", "lp", i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1)), el("span", "ln", x.name), el("span", "lv", L.kind === "laps" ? fmt3(x.v) : L.kind === "km" ? `${x.v.toLocaleString()} km` : x.v.toLocaleString()));
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+  }
+  // ---- Security tab: password, two-factor sign-in, backup codes, sign out everywhere ----
+  const SEC = { setup: null, codes: null };
+  socket.on("accountDeleted", (d) => {
+    // forget it in this browser too: its backup, the sign-in cookie and saved tracks copy on the account
+    try { const b = backups(); delete b[d.id]; localStorage.setItem("tb-backups", JSON.stringify(b)); if (localStorage.getItem("tb-last") === d.id) localStorage.removeItem("tb-last"); localStorage.removeItem("tb-token"); } catch (e) {}
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
+    $("hub").classList.add("hidden"); popup("Your account was deleted.", true);
+  });
+  socket.on("2faSetup", (d) => { SEC.setup = d; SEC.codes = null; if (A.tab === "sec") renderHub(); });
+  socket.on("2faCodes", (codes) => { SEC.codes = codes; SEC.setup = null; if (A.tab === "sec") renderHub(); });
+  socket.on("secMsg", (m) => { const e = document.getElementById("secMsg"); if (e) { e.textContent = m.error || m.ok || ""; e.className = "sec-msg " + (m.error ? "bad" : "good"); } });
+  function renderSec(u) {
+    const box = $("hubSec"); box.textContent = "";
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to change your password or turn on two-factor sign-in.")); return; }
+    const msg = el("p", "sec-msg"); msg.id = "secMsg"; msg.setAttribute("role", "status");
+    const field = (label, type, ac) => { const l = el("label", "f", label + " "); const i = document.createElement("input"); i.type = type; i.autocomplete = ac; i.maxLength = 128; l.appendChild(i); return [l, i]; };
+    // backup codes just made: show them ONCE
+    if (SEC.codes) {
+      const sec = el("section", "sec-box warn");
+      sec.append(el("h3", "hub-h", "🧾 Your backup codes (save these now!)"), el("p", "preset-note", "Each one works once, if you lose your phone or forget your password. Write them down or save them somewhere safe. You won't see them again."));
+      const pre = el("pre", "codes", SEC.codes.join("\n")); sec.appendChild(pre);
+      const row = el("div", "sec-row");
+      const cp = el("button", "btn", "📋 Copy"); cp.type = "button"; cp.addEventListener("click", () => { navigator.clipboard?.writeText(SEC.codes.join("\n")).then(() => { cp.textContent = "Copied ✓"; }); });
+      const ok = el("button", "btn go", "I saved them"); ok.type = "button"; ok.addEventListener("click", () => { SEC.codes = null; renderHub(); });
+      row.append(cp, ok); sec.appendChild(row); box.appendChild(sec);
+      return;
+    }
+    // two-factor
+    const tf = el("section", "sec-box"); tf.appendChild(el("h3", "hub-h", "📱 Two-factor sign-in"));
+    if (u.twoFA) {
+      tf.appendChild(el("p", "sec-state on", `✅ On. Backup codes left: ${u.backupLeft}`));
+      const [lc, ic] = field("Code from your app", "text", "one-time-code");
+      const [lp, ip2] = field("Password (to turn it off)", "password", "current-password");
+      const row = el("div", "sec-row");
+      const nb = el("button", "btn", "New backup codes"); nb.type = "button"; nb.addEventListener("click", () => socket.emit("2fa:newCodes", { code: ic.value }));
+      const off = el("button", "btn ghost", "Turn off"); off.type = "button"; off.addEventListener("click", () => socket.emit("2fa:disable", { code: ic.value, password: ip2.value }));
+      row.append(nb, off); tf.append(lc, u.hasPassword ? lp : el("span"), row);
+    } else if (SEC.setup) {
+      tf.appendChild(el("p", "preset-note", "1. Open an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password...) and scan this code:"));
+      const img = document.createElement("img"); img.src = SEC.setup.qr; img.alt = "QR code to add Scribble GP to your authenticator app"; img.className = "qr"; tf.appendChild(img);
+      tf.append(el("p", "preset-note", "Can't scan? Type this key into the app instead:"), el("code", "key", SEC.setup.secret));
+      tf.appendChild(el("p", "preset-note", "2. Type the 6-digit code the app shows:"));
+      const [lc, ic] = field("Code", "text", "one-time-code"); ic.inputMode = "numeric"; ic.maxLength = 6;
+      const go = el("button", "btn go", "Turn on"); go.type = "button"; go.addEventListener("click", () => socket.emit("2fa:enable", { code: ic.value }));
+      const cancel = el("button", "btn ghost", "Cancel"); cancel.type = "button"; cancel.addEventListener("click", () => { SEC.setup = null; renderHub(); });
+      const row = el("div", "sec-row"); row.append(go, cancel); tf.append(lc, row);
+    } else {
+      tf.appendChild(el("p", "preset-note", "Off. With it on, signing in needs your password AND a code from your phone, so a stolen password isn't enough. It also lets you reset a forgotten password."));
+      const on = el("button", "btn go", "Turn on two-factor sign-in"); on.type = "button"; on.addEventListener("click", () => socket.emit("2fa:setup")); tf.appendChild(on);
+    }
+    box.appendChild(tf);
+    // password
+    if (u.hasPassword) {
+      const pw = el("section", "sec-box"); pw.appendChild(el("h3", "hub-h", "🔑 Change password"));
+      const [l1, i1] = field("Current password", "password", "current-password");
+      const [l2, i2] = field("New password (12+ characters)", "password", "new-password");
+      const [l3, i3] = field("New password again", "password", "new-password");
+      const go = el("button", "btn", "Change password"); go.type = "button";
+      go.addEventListener("click", () => { if (i2.value !== i3.value) return socket.listeners("secMsg")[0]({ error: "The new passwords don't match" }); socket.emit("auth:changePassword", { old: i1.value, password: i2.value }); });
+      pw.append(l1, l2, l3, go); box.appendChild(pw);
+    }
+    const del = el("section", "sec-box danger-box"); del.appendChild(el("h3", "hub-h", "🗑️ Delete my account"));
+    del.appendChild(el("p", "preset-note", "Deletes your account, stats, coins, items and saved tracks from the server for good. This can't be undone."));
+    const [dl1, di1] = field("Password", "password", "current-password");
+    const [dl2, di2] = field("Code from your authenticator app", "text", "one-time-code");
+    const db = el("button", "btn danger-fill", "Delete my account forever"); db.type = "button";
+    db.addEventListener("click", () => {
+      if (db.dataset.sure !== "1") { db.dataset.sure = "1"; db.textContent = "Really? Click again to delete"; setTimeout(() => { db.dataset.sure = ""; db.textContent = "Delete my account forever"; }, 4000); return; }
+      socket.emit("auth:delete", { password: di1.value, code: di2.value });
+    });
+    if (u.hasPassword) del.appendChild(dl1); if (u.twoFA) del.appendChild(dl2); del.appendChild(db);
+    box.appendChild(del);
+    const so = el("section", "sec-box"); so.appendChild(el("h3", "hub-h", "🚪 Sessions"));
+    const all = el("button", "btn ghost", "🔒 Sign out on every device"); all.type = "button"; all.addEventListener("click", () => $("signOutAllBtn").click());
+    so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
+    box.appendChild(msg);
+  }
+  const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail" };
+  function renderStore(u) {
+    const box = $("hubStore"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    box.appendChild(el("p", "hub-h", u ? `You have 🪙 ${u.coins}. Earn more by unlocking achievements. Items show up on your car in every race.` : "Earn coins from achievements and spend them here. Items show up on your car in every race."));
+    renderBoxes(box, u);
+    const order = ["body", "livery"], rank = (x) => (order.indexOf(x) === -1 ? 99 : order.indexOf(x));
+    const slots = [...new Set(A.catalog.store.map((x) => x.slot))].sort((a, b) => rank(a) - rank(b));
+    for (const slot of slots) {
+      const sec = el("section", "store-slot"); sec.appendChild(el("h3", "hub-h", SLOT_NAMES[slot] || slot));
+      const g = el("div", "store-grid");
+      for (const it of A.catalog.store.filter((x) => x.slot === slot)) {
+        const owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
+        const card = el("div", "item" + (on ? " on" : ""));
+        const cv = itemPreview(it);
+        const rt = el("span", "rtag", RARITY[it.rarity]?.[0] || ""); rt.style.color = RARITY[it.rarity]?.[1];
+        card.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
+        card.append(cv, rt, el("b", "", it.name));
+        const row = el("div"); row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:.3rem";
+        if (!owned && it.loot) {
+          row.appendChild(el("span", "price", "📦 Chest only"));
+        } else if (!owned) {
+          row.appendChild(el("span", "price", `🪙 ${it.price}`));
+          const b = el("button", "btn go", "Buy"); b.type = "button";
+          b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
+          b.addEventListener("click", () => socket.emit("store:buy", it.id));
+          row.appendChild(b);
+        } else {
+          row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
+          const b = el("button", "btn", on ? "Take off" : "Equip"); b.type = "button";
+          b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on ? null : it.id }));
+          row.appendChild(b);
+        }
+        card.appendChild(row); g.appendChild(card);
+      }
+      sec.appendChild(g); box.appendChild(sec);
+    }
+  }
+  function renderMenuInfo() {
+    const m = S.menu; if (!m) return;
+    const t = $("onlineText"); t.textContent = "";
+    const b1 = document.createElement("b"); b1.textContent = m.online;
+    const b2 = document.createElement("b"); b2.textContent = m.racing;
+    t.append(b1, ` player${m.online === 1 ? "" : "s"} online · `, b2, " racing right now");
+    const box = $("lobbyList"); box.textContent = "";
+    if (!m.lobbies.length) { const d = document.createElement("div"); d.className = "lob-empty"; d.textContent = "No public lobbies yet. Make one and others can join!"; box.appendChild(d); return; }
+    for (const L of m.lobbies) {
+      const row = document.createElement("div"); row.className = "lob";
+      const who = document.createElement("div"); who.className = "who";
+      const b = document.createElement("b"); b.textContent = `${L.host}'s room`;
+      const sm = document.createElement("small"); sm.textContent = `${L.phase === "lobby" ? (L.track ? "Track ready" : "Drawing a track") : "Racing now"} · ${L.laps} laps · ${L.ai} AI`;
+      who.append(b, sm);
+      const cnt = document.createElement("span"); cnt.className = "cnt"; cnt.textContent = `${L.players}/${L.max}`;
+      const j = document.createElement("button"); j.type = "button"; j.className = "join-btn"; j.textContent = L.players >= L.max ? "Full" : "Join"; j.disabled = L.players >= L.max;
+      j.addEventListener("click", () => { saveProfile(); S.solo = false; socket.emit("join", { code: L.code, profile: prof }); });
+      row.append(who, cnt, j); box.appendChild(row);
+    }
+  }
+  $("joinBtn").addEventListener("click", () => {
+    const code = codeIn.value.trim().toUpperCase();
+    if (code.length !== 4) { menuErr.textContent = "Room codes are 4 letters"; return; }
+    saveProfile(); S.solo = false; socket.emit("join", { code, profile: prof });
+  });
+  codeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("joinBtn").click(); } });
+  $("menuForm").addEventListener("submit", (e) => e.preventDefault());
+
+  // a clear tab title for every screen (handy with lots of tabs, and for bookmarks)
+  function setTitle() {
+    const T = "Scribble GP";
+    document.title = S.screen === "menu" ? "Scribble GP: Team Boss · Draw a track, race your friends"
+      : S.screen === "lobby" ? `Room ${S.lobby?.code || ""} · ${T}`
+      : S.screen === "race" ? (S.titleRace || `Racing · ${T}`)
+      : S.screen === "results" ? `Results · ${T}` : T;
+  }
+  function show(screen) {
+    S.screen = screen; setTimeout(setTitle, 0);
+    $("menu").classList.toggle("hidden", screen !== "menu");
+    $("lobby").classList.toggle("hidden", screen !== "lobby");
+    document.body.classList.toggle("in-lobby", screen === "lobby");
+    $("hud").classList.toggle("hidden", screen !== "race");
+    $("results").classList.toggle("hidden", screen !== "results");
+    if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
+    if (screen === "lobby") requestAnimationFrame(sizeBoard);
+    if (screen === "menu") socket.emit("menuInfo");
+    if (screen !== "race") setNitro(false);
+    if (screen === "race" || screen === "menu") closeFinale();
+    if (MUS && MUS.started) setTimeout(() => pickMusic(false), 50);
+    if (screen !== "lobby") setEditing(false);
+  }
+
+  socket.on("joinError", (m) => {
+    // coming back after an update: the host is rebuilding the room, keep knocking for a bit
+    if (S.restore && !S.restore.host && S.restore.tries++ < 12) { setTimeout(() => socket.emit("join", { code: S.restore.code, profile: prof }), 2000); return; }
+    if (S.restore) { S.restore = null; $("netVeil").classList.add("hidden"); show("menu"); menuErr.textContent = "The game updated and that room didn't come back. Jump back in:"; return; }
+    menuErr.textContent = m;
+  });
+  const saveRejoin = (extra) => { try { const o = { ...(JSON.parse(sessionStorage.getItem("tb-rejoin") || "{}")), ...extra, at: Date.now() }; sessionStorage.setItem("tb-rejoin", JSON.stringify(o)); } catch (e) {} };
+  socket.on("joined", (j) => {
+    S.code = j.code; S.me = j.you; S.upInfo = j.upgrades; S.f1 = j.f1 || []; show("lobby");
+    saveRejoin({ code: j.code, key: j.rejoinKey });
+    $("netVeil").classList.add("hidden");
+    if (S.restore) {
+      const R = S.restore; S.restore = null; S.restarting = false;
+      if (R.host && S.host !== false) {       // we're the host: put the room back how it was
+        setTimeout(() => { if (R.settings) socket.emit("settings", R.settings); if (R.stroke) setTimeout(() => socket.emit("track", { stroke: R.stroke, map: R.settings?.map || "normal" }), 300); }, 300);
+      }
+      popup("Back! The update ended the race, but your room is back.", false);
+    }
+  });
+  // keep the "come back here" note fresh (and remember the room so the host can rebuild it after an update)
+  setInterval(() => { if (S.code) saveRejoin({ code: S.code, host: !!S.host, pub: !!S.lobby?.public, settings: S.lobby?.settings || null, stroke: S.host ? S.lobby?.stroke || null : null }); }, 5000);
+  // ---- dropped connection / server restart: reconnect and take your car back ----
+  socket.on("disconnect", () => { if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔧 The game is updating. Back in a minute..." : "📡 Connection lost. Reconnecting..."; } });
+  socket.on("serverRestart", () => { S.restarting = true; if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 The game is updating. Back in a minute..."; } else popup("The game is updating: back in a minute!", true); });
+  socket.on("connect", () => {
+    let rj = null; try { rj = JSON.parse(sessionStorage.getItem("tb-rejoin") || "null"); } catch (e) {}
+    // reconnected, or the page was reloaded less than 2 minutes after being in a room: go back in
+    if (rj && rj.code && (S.code ? rj.code === S.code : Date.now() - (rj.at || 0) < 120e3)) { S.rejoinTry = rj; socket.emit("rejoin", rj); }
+  });
+  socket.on("rejoinFail", (why) => {
+    const rj = S.rejoinTry; S.rejoinTry = null;
+    const was = S.code; S.code = null; S.track = null;
+    try { sessionStorage.removeItem("tb-rejoin"); } catch (e) {}
+    if (why === "gone" && rj) {
+      // the whole room is gone: the server restarted (an update). The host rebuilds it with the same code,
+      // everyone else waits for it and joins again.
+      S.restore = { code: rj.code, host: !!rj.host, settings: rj.settings, stroke: rj.stroke, tries: 0 };
+      $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 The game updated. Putting your room back...";
+      saveProfile();
+      if (rj.host) socket.emit("create", prof, { public: !!rj.pub, code: rj.code });
+      else setTimeout(() => socket.emit("join", { code: rj.code, profile: prof }), 1500);
+      return;
+    }
+    // the room is there but our seat isn't (reloaded in a lobby, or the host already rebuilt it after an update): join again
+    if (why === "expired" && rj) { saveProfile(); if (was) popup("Back! The update ended the race, but your room is back.", false); socket.emit("join", { code: rj.code, profile: prof }); return; }
+    $("netVeil").classList.add("hidden");
+    if (was) { show("menu"); menuErr.textContent = "That room's gone (it ended while you were away)."; }
+    S.restarting = false;
+  });
+  socket.on("lobby", (l) => {
+    S.lobby = l; S.host = l.hostId === S.me;
+    if (l.phase === "lobby" && (S.screen === "results" && !S.resultsHold)) show("lobby");
+    renderLobby();
+  });
+  socket.on("track", (t) => {
+    S.track = t; S.hostDraft = null;
+    if (S.lobby) updateEditUi();
+    renderTrackCard();
+    S.geo = t ? buildGeo(t) : null;
+    drawBoard();
+  });
+  socket.on("trackResult", (r) => {
+    if (!r.error && P.steps.length) { P.steps.shift()(); return; }
+    if (!r.error && P.loading) { boardHint(`Loaded "${P.loading}"!`, false); P.loading = null; return; }
+    if (r.error) { P.steps = []; P.loading = null; }
+    if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
+    if (r.error) boardHint(r.error, true);
+    else if (r.moved) boardHint("Start/finish line moved!", false);
+    else if (r.reversed !== undefined) boardHint(r.reversed ? "Track reversed: racing the other way!" : "Back to the original direction.", false);
+    else if (r.f1) boardHint(`${r.f1}! Real layout, sized by its real length. Reverse or move the start line if you like.`, false);
+    else if (r.random) boardHint(`Random track: ${r.bridges || 0} bridge${r.bridges === 1 ? "" : "s"}${r.maxLevel >= 2 ? ", with a DOUBLE ramp!" : ""} Hit Random again for another.`, false);
+    else boardHint("Nice track! Press Start race when everyone's ready.", false);
+  });
+  socket.on("toast", (t) => popup(t, true));
+
+  socket.on("race", (r) => {
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])) };
+    snaps.length = 0; rt = 0; S.geo = S.track ? buildGeo(S.track) : null; resetTiles();
+    S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
+    S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99;
+    for (const c of r.cars) if (c.owner === S.me) S.myCar = c.id;
+    setOrder("normal", true); updateBox(); disarmLeave();
+    $("feed").textContent = ""; $("popups").textContent = "";
+    $("qualiBox").classList.add("hidden"); $("mustPit").classList.add("hidden"); S.mustPit = null; setPausedUi(false);
+    S.lapRef = null; $("lapDelta").classList.add("hidden");
+    $("pauseBtn").classList.toggle("hidden", !S.host);
+    S.race.quali = r.quali || 0;
+    document.body.classList.toggle("spectating", !S.myCar);
+    if (!S.myCar) { $("specName").textContent = "the leader"; }
+    show("race");
+    const L = $("lights"); L.classList.add("hidden");
+    L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
+    $("lightsSay").innerHTML = S.myCar ? "Press <kbd>Space</kbd> the moment the lights go out!" : "Watching this race. You're in the next one!";
+    $("goBtn").classList.toggle("hidden", !S.myCar);
+    resize();
+  });
+  let tpTimer = null;
+  socket.on("tirePick", (p) => {
+    if (!S.myCar) return;          // spectators don't pick tires
+    tut("tires");
+    const box = $("tirePick"); box.classList.toggle("hidden", !S.myCar);
+    const row = $("tpRow"); row.textContent = "";
+    S.startPick = p.raining ? "wet" : "inter";
+    for (const [k, T] of Object.entries(TIRES)) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "tp"; b.dataset.k = k;
+      const nm = document.createElement("div"); nm.className = "nm"; nm.append(badge(k), T.name);
+      const stat = (label, v) => { const d = document.createElement("div"); d.className = "stat"; d.append(label); const i = document.createElement("i"); const bb = document.createElement("b"); bb.style.width = v * 100 + "%"; i.appendChild(bb); d.appendChild(i); return d; };
+      const note = document.createElement("div"); note.className = "note"; note.textContent = T.note;
+      const est = p.perLap && p.perLap[k];
+      const wear = document.createElement("div"); wear.className = "wear";
+      if (est) { wear.textContent = `~${Math.round(est * 100)}% per lap `; const sm = document.createElement("small"); sm.textContent = `(lasts ~${(1 / est).toFixed(1)} laps)`; wear.appendChild(sm); }
+      b.append(nm, stat("Speed", T.speed), stat(k === "wet" ? "Rain grip" : "Grip", T.grip), stat("Lasts", T.life), wear, note);
+      b.addEventListener("click", () => { S.startPick = k; socket.emit("compound", k); markPick(); sfx("tick"); });
+      row.appendChild(b);
+    }
+    markPick();
+    $("tpHint").textContent = p.raining ? "🌧 It's raining! Anything but Wets will slide all over the place." : p.weather === "dynamic" ? "⛅ The weather could change mid-race." : "☀ Dry track today.";
+    const end = performance.now() + p.until;
+    clearInterval(tpTimer);
+    tpTimer = setInterval(() => {
+      const left = Math.max(0, end - performance.now());
+      $("tpTime").textContent = Math.ceil(left / 1000) + "s"; $("tpBar").style.width = (left / p.until) * 100 + "%";
+      if (left <= 0) clearInterval(tpTimer);
+    }, 100);
+  });
+  function markPick() { document.querySelectorAll(".tp").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.startPick))); }
+  socket.on("lightsBegin", () => { tut("lights"); });
+  socket.on("lightsBegin", () => {
+    clearInterval(tpTimer); $("tirePick").classList.add("hidden");
+    const L = $("lights"); L.classList.remove("hidden"); L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
+  });
+  socket.on("crash", (d) => {
+    banner("CRASH!", "#ff7043"); sfx("jump"); addShake(18);
+    popup(`Hit ${d.with}! Damage ${d.damage}%${d.damage > 40 ? ". Box to fix it!" : ""}`, true);
+  });
+  socket.on("puncture", () => {
+    banner("PUNCTURE!", "#e53935"); sfx("jump"); addShake(12);
+    popup("Limping back to the pits...", true);
+  });
+  socket.on("lights", ({ n }) => {
+    const bulbs = $("lights").querySelectorAll(".bulb");
+    for (let i = 0; i < bulbs.length; i++) bulbs[i].classList.toggle("on", i < n);
+    sfx("light");
+  });
+  socket.on("lightsOut", () => { setTimeout(() => tut("boost"), 2500); });
+  socket.on("lightsOut", () => {
+    S.lightsOutAt = performance.now();
+    $("lights").querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
+    sfx("go");
+    banner("GO!", "#3ecf6a");
+    // if you never press, the car still launches slowly after 1.2s
+    setTimeout(() => $("lights").classList.add("hidden"), 1300);
+  });
+  socket.on("startResult", (r) => {
+    if (r.jump) {
+      banner("JUMP START!", "#e53935"); sfx("jump"); addShake(14);
+      const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+      $("lightsSay").textContent = "Jump start! Your driver is held for 3 seconds.";
+      popup("Penalty: held on the grid for 3s", true);
+    } else {
+      const ms = r.ms;
+      const rating = ms < 200 ? "Lightning!" : ms < 300 ? "Great start!" : ms < 450 ? "Good start" : "Slow start...";
+      popup(`${rating} ${ms}ms`, ms >= 450);
+      $("lightsSay").textContent = `Reaction: ${ms}ms. ${rating}`;
+    }
+  });
+  function react() {
+    if (S.screen !== "race" || !S.myCar || S.reacted) return;
+    S.reacted = true;
+    const ms = S.lightsOutAt ? Math.round(performance.now() - S.lightsOutAt) : -1;
+    socket.emit("react", ms);
+    $("goBtn").classList.add("hidden");
+    if (S.lightsOutAt) $("lights").classList.add("hidden");
+  }
+  $("goBtn").addEventListener("click", react);
+
+  // ---- replay: the last 25 seconds of every race are kept, so you can watch the finish again ----
+  const RP = { buf: [], timers: [] };
+  socket.on("state", (st) => {
+    if (st.phase === "race") { const now = performance.now(); RP.buf.push({ at: now, st }); while (RP.buf.length && now - RP.buf[0].at > 25000) RP.buf.shift(); }
+    if (!S.replaying) onState(st);
+  });
+  function startReplay() {
+    if (RP.buf.length < 30 || !S.race) return;
+    const clip = RP.buf.slice(), t0 = clip[0].at;
+    S.replaying = true; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.lapRef = null;
+    document.body.classList.add("replaying", "spectating"); $("specBar").classList.add("hidden");
+    show("race"); $("replayBar").classList.remove("hidden");
+    const winner = S.lastResults?.rows?.[0]; const w = winner && [...S.race.info.values()].find((c) => c.name === winner.name);
+    S.camTarget = w ? w.id : null;
+    RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at - t0));
+    RP.timers.push(setTimeout(stopReplay, clip[clip.length - 1].at - t0 + 1500));
+  }
+  function stopReplay() {
+    if (!S.replaying) return;
+    RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false; S.camTarget = null;
+    document.body.classList.remove("replaying"); document.body.classList.toggle("spectating", !S.myCar); $("replayBar").classList.add("hidden");
+    show(S.lobby?.phase === "lobby" ? "lobby" : "results");
+  }
+  function onState(st) {
+    S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.standings = st.standings; S.gaps = st.gaps || [];
+    S.ql = st.ql ?? -1;
+    if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
+    pushSnap(st);
+    for (const a of st.cars) {
+      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost] = a;
+      let c = S.cars.get(id);
+      if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost });
+    }
+    lapDelta();
+    if (S.tutorial) {            // tutorial hints that depend on your car
+      const c = S.cars.get(S.myCar);
+      if (c) { if (c.tire < 0.45 && !S.box) tut("pit"); if (S.tutPits !== undefined && c.pits > S.tutPits) tut("afterPit"); S.tutPits = c.pits; }
+    }
+    S.weather = st.weather;
+    if (S.myCar) {
+      const pos = S.standings.indexOf(S.myCar) + 1;
+      if (pos && S.lastPos !== 99 && pos !== S.lastPos) { sfx(pos < S.lastPos ? "pass" : "lost"); const el = $("posText"); el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+      S.lastPos = pos;
+    }
+  }
+  // my own team's numbers (XP, upgrades, tires, boost)
+  socket.on("me", (m) => {
+
+    S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound;
+    renderPitPick(m);
+    if (S.nextComp !== m.next) { S.nextComp = m.next; renderNextTires(); }
+    updateBox();
+  });
+  socket.on("feed", (f) => {
+    if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
+    if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
+    if (f.t === "crash" && S.track) {           // flying debris where it happened
+      for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
+      if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
+    }
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : "";
+    if (!txt) return;
+    const d = document.createElement("div"); d.textContent = txt;
+    if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
+    const feed = $("feed"); feed.prepend(d);
+    while (feed.children.length > 6) feed.lastChild.remove();
+    setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 400); }, 5000);
+    if (f.t === "pit" && f.id === S.myCar) sfx("pit");
+  });
+  socket.on("xp", ({ label }) => popup(label));
+  socket.on("levelUp", ({ level }) => { popup(`Team level ${level}!`); sfx("level"); });
+  socket.on("offer", (o) => { showCards(o); tut("upgrade"); });
+  socket.on("offerCleared", () => { S.offer = null; S.cardsLater = false; hideCards(); renderPill(); S.up = null; $("garage").textContent = ""; });
+  socket.on("picked", ({ key, up, now }) => { S.up = up; S.justPicked = key; renderGarage(); popup(`${S.upInfo[key].name}: now ${now}!`); });
+  socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => tut("done"), 1600); });
+  // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
+  let fireworks = [];
+  socket.on("feed", (f) => {
+    if (f.t !== "winner") return;
+    const w = [...S.cars.values()].find((c) => c.name === f.name);
+    banner(`🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
+    if (w) {
+      S.camTarget = w.id; S.winnerCamUntil = performance.now() + 4000;
+      if (!reducedMotion) for (let k = 0; k < 5; k++) setTimeout(() => fireworks.push({ x: w.x + (Math.random() - 0.5) * 300, y: w.y + (Math.random() - 0.5) * 220, t: performance.now(), hue: Math.floor(Math.random() * 360) }), k * 450);
+    }
+  });
+
+  // ======================= Lobby =======================
+  const board = $("board"), bctx = board.getContext("2d");
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season" };
+  $("smoothBtn").addEventListener("click", () => {
+    if (!S.host || !S.lobby) return;
+    const on = !S.lobby.settings.smooth;
+    socket.emit("settings", { smooth: on });
+    boardHint(on ? "Smooth track ON: straights get straighter, curves get smoother." : "Smooth track OFF: the track follows your drawing exactly.", false);
+  });
+  // real F1 circuits
+  function openF1() {
+    const g = $("f1Grid");
+    if (!g.childElementCount) for (const tr of S.f1 || []) {
+      const b = document.createElement("button"); b.type = "button";
+      const cv = document.createElement("canvas"); cv.width = 320; cv.height = 176;
+      const c = cv.getContext("2d"), s2 = Math.min(300 / tr.w, 160 / tr.h), ox = (320 - tr.w * s2) / 2, oy = (176 - tr.h * s2) / 2;
+      c.lineJoin = "round"; c.lineWidth = 7; c.strokeStyle = "#ffcc1f"; c.beginPath();
+      tr.pts.forEach(([x, y], i) => (i ? c.lineTo(ox + x * s2, oy + y * s2) : c.moveTo(ox + x * s2, oy + y * s2))); c.closePath(); c.stroke();
+      const nm = document.createElement("b"); nm.textContent = tr.name;
+      const sm = document.createElement("small"); sm.textContent = `${tr.place} · ${tr.km} km`;
+      b.append(cv, nm, sm);
+      b.addEventListener("click", () => { S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("f1Track", { id: tr.id }); boardHint(`Loading ${tr.name}...`, false); closeF1(); });
+      g.appendChild(b);
+    }
+    $("f1Modal").classList.remove("hidden");
+  }
+  function closeF1() { $("f1Modal").classList.add("hidden"); }
+  $("f1Btn").addEventListener("click", () => { if (S.host) openF1(); });
+  $("f1Close").addEventListener("click", closeF1);
+  $("f1Modal").addEventListener("click", (e) => { if (e.target === $("f1Modal")) closeF1(); });
+  // XP per second (host): 10 to 50
+  $("sXp").addEventListener("input", () => { $("sXpOut").textContent = $("sXp").value + " XP/s"; });
+  $("sXp").addEventListener("change", () => { if (S.host) socket.emit("settings", { xpRate: Number($("sXp").value) }); });
+  $("pubToggle").addEventListener("click", () => { if (S.host && S.lobby) socket.emit("setPublic", !S.lobby.public); });
+  for (const [id, key] of Object.entries(sel)) {
+    $(id).addEventListener("change", () => {
+      if (!S.host) return;
+      if (key === "map" && S.track) socket.emit("clearTrack");
+      socket.emit("settings", { [key]: $(id).value });
+      if (key === "map") setTimeout(drawBoard, 50);
+    });
+  }
+  // points system
+  const ordinal = (n) => n + (["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || "th");
+  function sendPoints(text) { if (S.host) socket.emit("settings", { points: text }); }
+  $("sPreset").addEventListener("change", () => {
+    const v = $("sPreset").value;
+    if (v === "custom") { $("sPoints").focus(); return; }
+    const total = (S.lobby?.players.length || 1) + (S.lobby?.settings.ai || 0);
+    const text = v === "everyone" ? Array.from({ length: total }, (_, i) => total - i).join(",") : v;
+    $("sPoints").value = text.split(",").join(", "); sendPoints(text);
+  });
+  $("sPoints").addEventListener("change", () => { $("sPreset").value = "custom"; sendPoints($("sPoints").value); });
+  let champView = "drivers";
+  $("champDrivers").addEventListener("click", () => { champView = "drivers"; renderLobby(); });
+  $("champTeams").addEventListener("click", () => { champView = "teams"; renderLobby(); });
+  // AI roster: host renames AI drivers, numbers and teams
+  function renderRoster(l) {
+    const box = $("roster"), open = $("aiBox").open;
+    $("aiSummary").textContent = `AI DRIVERS (${l.roster.length})${S.host ? ": tap to rename" : ""}`;
+    if (!open && box.childElementCount === l.roster.length) return;
+    if (box.contains(document.activeElement)) return;          // don't wipe what you're typing
+    box.textContent = "";
+    l.roster.forEach((r, i) => {
+      const row = document.createElement("div"); row.className = "ai-row";
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = r.color;
+      const mk = (val, type, key, extra) => {
+        const inp = document.createElement("input"); inp.type = type; inp.value = val; inp.disabled = !S.host || l.phase !== "lobby";
+        inp.setAttribute("aria-label", `AI ${i + 1} ${key}`); Object.assign(inp, extra || {});
+        inp.addEventListener("change", () => socket.emit("aiEdit", { i, [key]: inp.value }));
+        return inp;
+      };
+      row.append(sw, mk(r.name, "text", "name", { maxLength: 12 }), mk(r.number, "number", "number", { min: 0, max: 99 }), mk(r.team, "text", "team", { maxLength: 20 }));
+      row.lastChild.setAttribute("list", "teamList");
+      box.appendChild(row);
+    });
+  }
+  $("aiBox").addEventListener("toggle", () => S.lobby && renderRoster(S.lobby));
+  $("startBtn").addEventListener("click", () => socket.emit("start"));
+  $("leaveBtn").addEventListener("click", () => { try { sessionStorage.removeItem("tb-rejoin"); } catch (e) {} socket.emit("leave"); S.code = null; S.track = null; hideCards(); show("menu"); });
+  $("garageBtn").addEventListener("click", () => { $("menu").classList.remove("hidden"); $("soloBtn").classList.add("hidden"); $("createBtn").parentElement.classList.add("hidden"); document.querySelector(".sep-or").classList.add("hidden"); addDoneBtn(); });
+  function addDoneBtn() {
+    if ($("doneBtn")) { $("doneBtn").classList.remove("hidden"); return; }
+    const b = document.createElement("button"); b.type = "button"; b.className = "btn go"; b.id = "doneBtn"; b.textContent = "Done";
+    b.addEventListener("click", () => { $("menu").classList.add("hidden"); b.classList.add("hidden"); $("soloBtn").classList.remove("hidden"); $("createBtn").parentElement.classList.remove("hidden"); document.querySelector(".sep-or").classList.remove("hidden"); saveProfile(); });
+    $("soloBtn").after(b);
+  }
+  $("copyBtn").addEventListener("click", async () => {
+    const url = location.origin + location.pathname + "?room=" + S.code;
+    try { await navigator.clipboard.writeText(url); $("copyBtn").textContent = "Copied!"; } catch (e) { $("copyBtn").textContent = S.code; }
+    setTimeout(() => ($("copyBtn").textContent = "Copy invite link"), 1800);
+  });
+  // side panel tabs
+  document.querySelectorAll(".rc-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".rc-tabs [data-tab]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    document.querySelectorAll(".rc-pane").forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.tab));
+    if (b.dataset.tab === "ai" && S.lobby) renderRoster(S.lobby);
+    sfx("tick");
+  }));
+  // track info card: length, corners, bridges, rough lap time
+  function renderTrackCard() {
+    const card = $("trackCard"), t = S.track;
+    card.classList.toggle("hidden", !t);
+    if (!t) return;
+    let corners = 0, inCorner = false;
+    const k = Math.max(3, Math.round(240 / (t.length / t.N)));      // about 480px of track either side
+    for (let i = 0; i < t.N; i++) {
+      const a = t.tan[(i - k + t.N) % t.N], b = t.tan[(i + k) % t.N];
+      const turn = Math.abs(wrapAngle(Math.atan2(b.y, b.x) - Math.atan2(a.y, a.x)));
+      if (turn > 0.6 && !inCorner) { corners++; inCorner = true; } else if (turn < 0.3) inCorner = false;
+    }
+    const km = (t.length / 10 / 1000).toFixed(2), lap = t.length / 640;
+    card.textContent = "";
+    if (t.name) { const h = document.createElement("div"); h.style.gridColumn = "1 / -1"; const b = document.createElement("b"); b.textContent = t.name; h.appendChild(b); card.appendChild(h); }
+    for (const [v, l] of [[`${km} km`, "Lap length"], [corners, "Corners"], [t.bridges || 0, t.bridges === 1 ? "Bridge" : "Bridges"], [`~${Math.round(lap)}s`, "Lap time"], [t.reverse ? "Reversed" : "Normal", "Direction"], [t.pitLane.side > 0 ? "Right" : "Left", "Pit lane side"]]) {
+      const d = document.createElement("div"); const b = document.createElement("b"); b.textContent = v; const s2 = document.createElement("span"); s2.textContent = l;
+      d.append(b, s2); card.appendChild(d);
+    }
+  }
+  function renderLobby() {
+    const l = S.lobby; if (!l) return;
+    $("roomCode").textContent = l.code;
+    $("aiCount").textContent = l.settings.ai;
+    const av = $("avatars"); av.textContent = "";
+    for (const p of l.players) { const cv = document.createElement("canvas"); cv.width = 92; cv.height = 56; cv.title = p.name; drawCar(cv.getContext("2d"), p, 46, 28, 0, 1.55); av.appendChild(cv); }
+    renderTrackCard();
+    const pl = $("plist"); pl.textContent = "";
+    for (const p of l.players) {
+      const li = document.createElement("li");
+      const cv = document.createElement("canvas"); cv.width = 112; cv.height = 64;
+      drawCar(cv.getContext("2d"), p, 56, 32, 0, 1.9);
+      if (p.id === S.me) li.classList.add("me");
+      const n = document.createElement("span"); n.className = "nm"; n.textContent = `#${p.number} ${p.name}`;
+      const tm = document.createElement("span"); tm.className = "team"; tm.textContent = p.team || ""; n.appendChild(tm);
+      const t = document.createElement("span"); t.className = "tg"; t.innerHTML = "";
+      if (p.id === l.hostId) { const cr = document.createElement("span"); cr.className = "crown"; cr.textContent = "👑 host"; t.append(cr, document.createElement("br")); }
+      t.append((p.id === S.me ? "you · " : "") + `Lv ${p.level}`);
+      const total = l.players.length + (l.settings.ai || 0);
+      if (S.host && l.phase === "lobby") {
+        const gs = document.createElement("select"); gs.className = "grid-sel"; gs.setAttribute("aria-label", `Starting spot for ${p.name}`); gs.title = "Where they start on the grid";
+        const o0 = document.createElement("option"); o0.value = "0"; o0.textContent = "Grid: back"; gs.appendChild(o0);
+        const oR = document.createElement("option"); oR.value = "-1"; oR.textContent = "Grid: 🎲 random"; gs.appendChild(oR);
+        for (let k = 1; k <= total; k++) { const o = document.createElement("option"); o.value = String(k); o.textContent = k === 1 ? "Grid: pole" : `Grid: P${k}`; gs.appendChild(o); }
+        gs.value = String(Math.min(p.gridPos || 0, total));
+        gs.addEventListener("change", () => socket.emit("gridPos", { id: p.id, pos: Number(gs.value) }));
+        t.append(document.createElement("br"), gs);
+      } else if (p.gridPos === -1) { const g = document.createElement("span"); g.className = "grid-tag"; g.textContent = " · random grid spot"; t.append(g); }
+      else if (p.gridPos) { const g = document.createElement("span"); g.className = "grid-tag"; g.textContent = ` · starts ${p.gridPos === 1 ? "on pole" : "P" + p.gridPos}`; t.append(g); }
+      li.append(cv, n, t);
+      if (S.host && p.id !== S.me) {
+        const mk = document.createElement("button"); mk.type = "button"; mk.className = "mk"; mk.textContent = "Make host";
+        mk.title = "Let them draw the track and start races";
+        mk.addEventListener("click", () => socket.emit("setHost", p.id));
+        const kk = document.createElement("button"); kk.type = "button"; kk.className = "mk kick"; kk.textContent = "Kick";
+        kk.title = "Remove them from the room";
+        kk.addEventListener("click", () => {
+          if (kk.dataset.armed) { socket.emit("kick", p.id); return; }
+          kk.dataset.armed = "1"; kk.textContent = "Sure?"; setTimeout(() => { kk.dataset.armed = ""; kk.textContent = "Kick"; }, 2500);
+        });
+        const col = document.createElement("div"); col.style.cssText = "display:flex;flex-direction:column;gap:0.2rem";
+        col.append(mk, kk); li.appendChild(col);
+      }
+      if (p.id !== S.me) li.appendChild(playerMenu(p));
+      if (isBlockedP(p)) { li.classList.add("blocked"); n.firstChild.textContent = `#${p.number} Blocked driver`; }
+      pl.appendChild(li);
+    }
+    renderTeams(l);
+    // warn when the grid gets big
+    const total = l.players.length + (l.settings.ai || 0), cw = $("crowdWarn");
+    cw.classList.toggle("hidden", total <= 20); cw.classList.toggle("bad", total > 40);
+    cw.textContent = total > 40 ? `⚠ ${total} drivers is a LOT. Expect traffic jams, messy starts, and lag on slower phones and laptops.`
+      : `⚠ ${total} drivers: races get crowded and starts get messy. Slower phones or laptops might lag.`;
+    if (total > 20 && S.host && S.track && l.phase === "lobby") $("hostNote").textContent = `Heads up: ${total} drivers on the grid.`;
+    $("resetChampBtn").classList.toggle("hidden", !S.host);
+    const s = l.settings;
+    for (const [id, key] of Object.entries(sel)) {
+      if (document.activeElement === $(id)) continue;
+      $(id).value = key === "teamColors" || key === "teams" ? (s[key] ? "on" : "off") : String(s[key]);
+      $(id).disabled = !S.host || l.phase !== "lobby";
+    }
+    $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
+    // teams on/off, XP rate, public/private
+    $("sTeamColors").disabled = !S.host || l.phase !== "lobby" || !s.teams;
+    $("teamsSection").classList.toggle("hidden", !s.teams); $("teamsOff").classList.toggle("hidden", !!s.teams);
+    $("champTeams").classList.toggle("hidden", !s.teams);
+    if (!s.teams && champView === "teams") champView = "drivers";
+    if (document.activeElement !== $("sXp")) { $("sXp").value = s.xpRate || 10; $("sXpOut").textContent = (s.xpRate || 10) + " XP/s"; }
+    $("sXp").disabled = !S.host || l.phase !== "lobby";
+    const pt = $("pubToggle"); pt.textContent = l.public ? "🌍 Public" : "🔒 Private"; pt.classList.toggle("on", !!l.public); pt.disabled = !S.host;
+    pt.title = S.host ? (l.public ? "Anyone can find and join this room. Click to make it invite-only." : "Only people with the code can join. Click to list it publicly.") : "Only the host can change this";
+    // points
+    if (document.activeElement !== $("sPoints")) $("sPoints").value = s.points.join(", ");
+    const presetMatch = [...$("sPreset").options].find((o) => o.value === s.points.join(","));
+    if (document.activeElement !== $("sPreset")) $("sPreset").value = presetMatch ? presetMatch.value : "custom";
+    $("sPoints").disabled = $("sPreset").disabled = !S.host || l.phase !== "lobby";
+    $("ptsPreview").textContent = s.points.slice(0, 10).map((p, i) => `${ordinal(i + 1)}: ${p}`).join(", ") + (s.points.length > 10 ? `, ... (${s.points.length} places score)` : "") + ". Everyone else: 0.";
+    renderRoster(l);
+    // team names you can pick from when typing yours
+    const teams = new Set([...l.players.map((p) => p.team), ...l.roster.map((r) => r.team)].filter(Boolean));
+    $("teamList").textContent = "";
+    for (const t of teams) { const o = document.createElement("option"); o.value = t; $("teamList").appendChild(o); }
+    $("sMap").disabled = !S.host || l.phase !== "lobby";
+    $("startBtn").classList.toggle("hidden", !S.host);
+    $("startBtn").disabled = !S.track || l.phase !== "lobby";
+    $("hostNote").textContent = l.phase === "race" || l.phase === "lights" ? "A race is running. You'll be on the grid for the next one." :
+      S.host ? (S.track ? "" : "Draw a track on the board to start.") : "The host draws the track and starts the race. Customize your car with My car.";
+    $("boardTools").classList.toggle("hidden", !S.host);
+    $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    document.querySelector(".dock").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    $("gridRandomBtn").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    const meP = l.players.find((x) => x.id === S.me);
+    S.spectating = !!meP?.spectator;
+    $("spectateBtn").textContent = S.spectating ? "🏎️ Race instead of watching" : "👀 Spectate the next race";
+    $("spectateBtn").setAttribute("aria-pressed", String(S.spectating)); $("spectateBtn").classList.toggle("on", S.spectating);
+    $("spectateBtn").disabled = l.phase !== "lobby";
+    $("lastSeasonBtn").classList.toggle("hidden", !l.hasLastSeason && !S.lastSeason?.history?.length);
+    updateEditUi();
+    const cb = $("champBody"); cb.textContent = "";
+    $("champTitle").textContent = s.season ? `Championship: race ${Math.min(l.raceNo + 1, s.season)} of ${s.season} next` : l.raceNo ? `Championship (after ${l.raceNo} race${l.raceNo > 1 ? "s" : ""})` : "Championship";
+    $("champDrivers").setAttribute("aria-pressed", String(champView === "drivers"));
+    $("champTeams").setAttribute("aria-pressed", String(champView === "teams"));
+    const myTeam = l.players.find((p) => p.id === S.me)?.team;
+    const champ = champView === "teams"
+      ? (l.teamChamp.length ? l.teamChamp : [...new Set(l.players.map((p) => p.team))].map((t) => ({ n: t, p: 0 })))
+      : (l.champ.length ? l.champ : l.players.map((p) => ({ n: p.name, p: 0 })));
+    champ.slice(0, 12).forEach((x, i) => {
+      const tr = document.createElement("tr"); if (x.n === (champView === "teams" ? myTeam : prof.name)) tr.className = "me";
+      const a = document.createElement("td"); a.textContent = i + 1;
+      const b = document.createElement("td"); b.textContent = x.n;
+      const c = document.createElement("td"); c.className = "n"; c.textContent = x.p + " pts";
+      tr.append(a, b, c); cb.appendChild(tr);
+    });
+    if (!S.track && S.host && !S.draft) boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can mix in Freehand too." : "Click to place corners. You can mix in Freehand too.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
+    if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
+    drawBoard();
+  }
+  // Teams: every team with its drivers (players + AI), and a Join button
+  function renderTeams(l) {
+    const box = $("teamsList"); if (!box) return;
+    const me = l.players.find((p) => p.id === S.me);
+    const teams = new Map();
+    const add = (team, m) => { if (!team) return; if (!teams.has(team)) teams.set(team, []); teams.get(team).push(m); };
+    for (const p of l.players) add(p.team, { name: p.name, color: p.color, ai: false });
+    for (const r of l.roster) add(r.team, { name: r.name, color: r.color, ai: true, hired: !!r.origTeam });
+    const key = JSON.stringify([...teams]) + me?.team;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key; box.textContent = "";
+    // your team first, then teams with players, then AI teams
+    const order = [...teams.entries()].sort((a, b) => (b[0] === me?.team) - (a[0] === me?.team) || b[1].filter((m) => !m.ai).length - a[1].filter((m) => !m.ai).length);
+    for (const [team, members] of order) {
+      const card = document.createElement("div"); card.className = "team-card" + (team === me?.team ? " mine" : "");
+      const th = document.createElement("div"); th.className = "th";
+      const b = document.createElement("b"); b.textContent = team; th.appendChild(b);
+      if (team === me?.team) {
+        const y = document.createElement("span"); y.className = "you"; y.textContent = "YOUR TEAM"; th.appendChild(y);
+        if (l.phase === "lobby") {
+          const ed = document.createElement("button"); ed.type = "button"; ed.className = "team-edit"; ed.textContent = "✏️"; ed.title = "Rename your team"; ed.setAttribute("aria-label", "Rename your team");
+          ed.addEventListener("click", () => {
+            const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 20; inp.value = team; inp.className = "team-name-in"; inp.setAttribute("aria-label", "New team name");
+            const ok = document.createElement("button"); ok.type = "button"; ok.className = "join-btn"; ok.textContent = "Save";
+            const go = () => { const v = inp.value.trim(); if (v && v !== team) socket.emit("renameTeam", v); box.dataset.key = ""; renderTeams(S.lobby); };
+            ok.addEventListener("click", go); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); if (e.key === "Escape") { box.dataset.key = ""; renderTeams(S.lobby); } });
+            th.textContent = ""; th.append(inp, ok); inp.focus(); inp.select();
+          });
+          th.insertBefore(ed, y);
+        }
+      }
+      else {
+        const j = document.createElement("button"); j.type = "button"; j.className = "join-btn"; j.textContent = "Join";
+        j.addEventListener("click", () => joinTeam(team));
+        th.appendChild(j);
+      }
+      const ms = document.createElement("div"); ms.className = "members";
+      for (const m of members) {
+        const s2 = document.createElement("span"); s2.className = "m" + (m.ai ? " ai" : "");
+        const i2 = document.createElement("i"); i2.style.background = m.color; s2.append(i2, m.name + (m.ai ? " (AI)" : ""));
+        if (m.ai && team === me?.team && m.hired && l.phase === "lobby") {
+          const x = document.createElement("button"); x.type = "button"; x.className = "m-x"; x.textContent = "✕"; x.title = `Send ${m.name} back to their old team`;
+          x.addEventListener("click", () => socket.emit("aiTeammate", { remove: m.name })); s2.appendChild(x);
+        }
+        ms.appendChild(s2);
+      }
+      card.append(th, ms);
+      if (team === me?.team && l.phase === "lobby" && members.filter((m) => m.ai).length < 3) {
+        const add = document.createElement("button"); add.type = "button"; add.className = "btn ai-mate";
+        add.textContent = members.length < 2 ? "🤖 Add an AI teammate" : "🤖 Add another AI teammate";
+        add.title = "An AI driver races for your team and scores team points (it takes one from the AI teams)";
+        add.addEventListener("click", () => { socket.emit("aiTeammate", {}); sfx("tick"); });
+        card.appendChild(add);
+      }
+      box.appendChild(card);
+    }
+  }
+  function joinTeam(team) {
+    prof.team = team; teamIn.value = team;
+    try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {}
+    socket.emit("setTeam", team); sfx("tick"); popup(`Joined ${team}!`);
+  }
+  $("newTeamBtn").addEventListener("click", () => { const v = $("newTeamIn").value.trim(); if (v) { joinTeam(v); $("newTeamIn").value = ""; } });
+  $("newTeamIn").addEventListener("keydown", (e) => { if (e.key === "Enter") $("newTeamBtn").click(); });
+  $("resetChampBtn").addEventListener("click", () => {
+    const b = $("resetChampBtn");
+    if (b.classList.contains("armed")) { socket.emit("resetChamp"); b.classList.remove("armed"); b.textContent = "Reset championship"; return; }
+    b.classList.add("armed"); b.textContent = "Click again to wipe all points";
+    setTimeout(() => { b.classList.remove("armed"); b.textContent = "Reset championship"; }, 3000);
+  });
+  socket.on("kicked", (d) => { S.code = null; S.track = null; show("menu"); menuErr.textContent = `You were removed from the room${d?.by ? " by " + d.by : ""}.`; });
+  function boardHint(t, bad) { const h = $("boardHint"); h.textContent = t; h.style.color = bad ? "#ff8a80" : ""; }
+  // the drawing board shows the whole map; bigger maps = more room to draw
+  const B = { w: 0, h: 0, s: 1, ox: 0, oy: 0, bw: 1600, bh: 1000 };
+  function sizeBoard() {
+    // clientWidth/Height are the board's real layout size. (getBoundingClientRect() also counts
+    // CSS transforms: measured while the lobby's slide-in animation was still scaling the board
+    // to 96%, the drawing ended up a few % away from the mouse. That was the offset bug.)
+    const w = board.clientWidth, h = board.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!w || !h) return;
+    board.width = Math.round(w * dpr); board.height = Math.round(h * dpr); B.w = w; B.h = h; B.dpr = dpr;
+    drawBoard();
+  }
+  window.addEventListener("resize", () => { if (S.screen === "lobby") sizeBoard(); });
+  function boardDims() {
+    const m = MAP_SIZES[S.lobby?.settings.map || "normal"]; B.bw = m[0]; B.bh = m[1];
+    // phones: the hint and tools sit above/below the board, so the map can use all of it
+    const compact = getComputedStyle($("boardHint")).position === "static";
+    const top = compact ? 8 : 50, bottom = compact ? 22 : 40;
+    // big screens: keep the map clear of the tool dock on the left
+    const dock = document.querySelector(".dock"), dr = !compact && dock && !dock.classList.contains("hidden") ? dock.getBoundingClientRect() : null;
+    const left = dr && dr.height > dr.width ? dr.right - board.getBoundingClientRect().left + 10 : compact ? 8 : 20, right = compact ? 8 : 20;
+    B.s = Math.min((B.w - left - right) / B.bw, (B.h - top - bottom) / B.bh); B.ox = left + (B.w - left - right - B.bw * B.s) / 2; B.oy = top + (B.h - top - bottom - B.bh * B.s) / 2;
+  }
+  // redraw whenever the board changes size (phones rotating, the lobby laying itself out, etc.)
+  if (window.ResizeObserver) new ResizeObserver(() => { if (S.screen === "lobby") sizeBoard(); }).observe(board);
+  // ======================= Drawing board =======================
+  function paintBoardBg(th, T, G) {
+    const cv = document.createElement("canvas"); cv.width = board.width; cv.height = board.height;
+    const c = cv.getContext("2d"), dpr = B.dpr || 1;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
+    // drop shadow under the map
+    c.save(); c.shadowColor = "rgba(0,0,0,0.55)"; c.shadowBlur = 24 / B.s; c.shadowOffsetY = 6 / B.s; c.fillStyle = th.ground; c.fillRect(0, 0, B.bw, B.bh); c.restore();
+    // the same ground texture as the race (1 board unit = 3 world px)
+    const pat = c.createPattern(tex("ground", th), "repeat");
+    if (pat.setTransform) pat.setTransform(new DOMMatrix().scale(1 / 3));
+    c.fillStyle = pat; c.fillRect(0, 0, B.bw, B.bh);
+    c.save(); c.beginPath(); c.rect(0, 0, B.bw, B.bh); c.clip();
+    if (T && G) {
+      c.save(); c.translate(T.minX, T.minY); c.scale(1 / T.scale, 1 / T.scale); c.translate(-T.pad, -T.pad);
+      if (settings.scenery !== "off") drawDecor(c, T, G, th, {});
+      drawStatic(c, T, G, th, { board: true, noGround: true });
+      c.restore();
+    }
+    // faint drawing grid + a soft vignette so the middle of the board pops
+    c.strokeStyle = th.night ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.09)"; c.lineWidth = 1 / B.s; c.beginPath();
+    for (let x = 0; x <= B.bw; x += 100) { c.moveTo(x, 0); c.lineTo(x, B.bh); }
+    for (let y = 0; y <= B.bh; y += 100) { c.moveTo(0, y); c.lineTo(B.bw, y); }
+    c.stroke();
+    const vg = c.createRadialGradient(B.bw / 2, B.bh / 2, Math.min(B.bw, B.bh) * 0.35, B.bw / 2, B.bh / 2, Math.hypot(B.bw, B.bh) * 0.6);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, th.night ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)");
+    c.fillStyle = vg; c.fillRect(0, 0, B.bw, B.bh);
+    c.restore();
+    c.strokeStyle = "rgba(255,255,255,0.18)"; c.lineWidth = 2 / B.s; c.strokeRect(0, 0, B.bw, B.bh);
+    return cv;
+  }
+  function drawBoard() {
+    if (!B.w) return;
+    boardDims();
+    const c = bctx, dpr = B.dpr || 1;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h);
+    const themeKey = S.lobby?.settings.theme || "grass", th = THEMES[themeKey]; th.key = themeKey;
+    const T = S.track;
+    // everyone else watches the host's drawing appear live
+    const watching = !S.host && S.hostDraft && S.hostDraft.length > 1;
+    const showTrack = T && !S.draft && !watching;
+    if (showTrack && !S.geo) S.geo = buildGeo(T);
+    // The board background (textured ground, scenery, the finished track) is painted once into a
+    // cached picture and just copied every frame, so it can look like the race and still be fast.
+    const bgKey = [board.width, board.height, B.ox, B.oy, B.s, themeKey, showTrack ? S.geo.id : "-", settings.scenery, showTrack ? gridCount() : 0, settings.raceline].join("|");
+    if (B.bgKey !== bgKey) { B.bgKey = bgKey; B.bg = paintBoardBg(th, showTrack ? T : null, showTrack ? S.geo : null); }
+    c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(B.bg, 0, 0); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.save(); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
+    if (showTrack) {
+      const G = S.geo;
+      c.save(); c.translate(T.minX, T.minY); c.scale(1 / T.scale, 1 / T.scale); c.translate(-T.pad, -T.pad);
+      const arrows = (up) => {
+        c.fillStyle = "rgba(255,255,255,0.85)";
+        const step = Math.max(8, Math.floor(T.N / 18));
+        for (let i = 8; i < T.N; i += step) {
+          if ((T.elev[i] > 0.02) !== up) continue;
+          const p = T.pts[i]; c.save(); c.translate(p.x, p.y); c.rotate(Math.atan2(T.tan[i].y, T.tan[i].x));
+          c.beginPath(); c.moveTo(27, 0); c.lineTo(-18, -21); c.lineTo(-18, 21); c.closePath(); c.fill(); c.restore();
+        }
+      };
+      arrows(false);
+      for (const br of G.bridges) drawBridge(c, T, G, th, br);
+      arrows(true);
+      const p0 = T.pts[0];
+      c.fillStyle = "#fff"; c.font = `700 ${(12 / B.s) * T.scale}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.textBaseline = "bottom";
+      c.lineWidth = 4 * T.scale / B.s / 2; c.strokeStyle = "rgba(0,0,0,0.6)";
+      c.strokeText("START", p0.x, p0.y - hwAt(T, 0) - 16); c.fillText("START", p0.x, p0.y - hwAt(T, 0) - 16);
+      c.restore();
+    }
+    drawCutPreview(c);
+    // the drawing you're working on (or the host's, live)
+    const d = S.draft || (watching ? { pts: S.hostDraft, corners: [] } : null);
+    if (d && d.pts.length) {
+      const P = d.pts;
+      c.lineJoin = "round"; c.lineCap = "round";
+      const layer = (extra, color) => {
+        c.strokeStyle = color;
+        let i0 = 0;
+        for (let i = 1; i <= P.length; i++) {
+          if (i < P.length && P[i][2] === P[i0][2]) continue;
+          c.lineWidth = P[i0][2] / 3 + extra; c.beginPath(); c.moveTo(P[i0][0], P[i0][1]);
+          for (let k = i0 + 1; k <= Math.min(i, P.length - 1); k++) c.lineTo(P[k][0], P[k][1]);
+          if (i0 === P.length - 1) c.lineTo(P[i0][0] + 0.01, P[i0][1]);
+          c.stroke(); i0 = i;
+        }
+      };
+      layer(5, th.curbB); layer(0, th.asphalt);
+      c.lineWidth = 2 / B.s; c.strokeStyle = "rgba(255,204,31,0.8)"; c.setLineDash([8 / B.s, 6 / B.s]);
+      c.beginPath(); P.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); c.setLineDash([]);
+      for (const i of new Set(d.corners)) { if (!P[i]) continue; c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(P[i][0], P[i][1], 5 / B.s, 0, Math.PI * 2); c.fill(); }
+      c.fillStyle = "#3ecf6a"; c.beginPath(); c.arc(P[0][0], P[0][1], 9 / B.s, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#fff"; c.lineWidth = 2 / B.s; c.stroke();
+      if (d.cut && d.pieces && !d.pieces.length) {         // redraw: start from here
+        const L = P[P.length - 1];
+        c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(L[0], L[1], 9 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(L[0], L[1], (14 + 4 * Math.sin(performance.now() / 200)) / B.s, 0, Math.PI * 2); c.strokeStyle = "rgba(255,204,31,0.7)"; c.stroke();
+      }
+    }
+    // rubber band for straight lines (Straight tool, or Shift while drawing)
+    const rubber = (a, b) => { c.setLineDash([10 / B.s, 8 / B.s]); c.lineWidth = brushW / 3; c.strokeStyle = "rgba(255,204,31,0.35)"; c.lineCap = "round"; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]); };
+    if (d && drawMode === "line" && hover) rubber(d.pts[d.pts.length - 1], hover);
+    if (d && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, S.shiftEnd);
+    // brush size preview under the pointer
+    if (hover && S.host && S.lobby?.phase === "lobby" && !startMode && !cut) {
+      c.strokeStyle = "rgba(255,255,255,0.7)"; c.lineWidth = 1.5 / B.s;
+      c.beginPath(); c.arc(hover[0], hover[1], brushW / 6, 0, Math.PI * 2); c.stroke();
+    }
+    c.restore();
+    c.strokeStyle = "rgba(255,255,255,0.25)"; c.lineWidth = 2; c.strokeRect(B.ox, B.oy, B.bw * B.s, B.bh * B.s);
+    c.fillStyle = "rgba(255,255,255,0.5)"; c.font = "600 12px 'Chakra Petch', sans-serif"; c.textAlign = "right"; c.textBaseline = "alphabetic";
+    c.fillText(`Map: ${S.lobby?.settings.map || "normal"}`, B.ox + B.bw * B.s, B.oy + B.bh * B.s + 16);
+  }
+
+  // Drawing: Freehand and Straight both add to the SAME drawing, so you can mix them:
+  // drag a curvy bit, click a few straight lines, drag some more... then close the loop.
+  // The width brush sets how wide the road is for whatever you draw next.
+  let drawMode = "free", hover = null, drawing = false, shiftAnchor = null, startMode = false;
+  let cut = null;          // Redraw part: { a, b, flip } indexes into the track's stroke (board units)
+  let brushW = 130;
+  try { brushW = WIDTHS.map((x) => x[0]).includes(+localStorage.getItem("tb-brush")) ? +localStorage.getItem("tb-brush") : 130; } catch (e) {}
+  S.draft = null;
+  function renderBrush() {
+    const box = $("brush");
+    if (!box.childElementCount) for (const [wv, label] of WIDTHS) {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.w = wv; b.title = `${label} ([ and ] keys)`; b.setAttribute("aria-label", label); b.setAttribute("role", "radio");
+      const i = document.createElement("i"); i.style.height = Math.round(wv / 26) + "px"; b.appendChild(i);
+      b.addEventListener("click", () => setBrush(wv));
+      box.appendChild(b);
+    }
+    box.querySelectorAll("button").forEach((b) => { b.setAttribute("aria-pressed", String(+b.dataset.w === brushW)); b.setAttribute("aria-checked", String(+b.dataset.w === brushW)); });
+  }
+  function setBrush(wv) {
+    brushW = wv; renderBrush(); sfx("tick"); drawBoard();
+    try { localStorage.setItem("tb-brush", String(wv)); } catch (e) {}
+    boardHint(`${WIDTHS.find((x) => x[0] === wv)[1]}: whatever you draw next is this wide. Thick and thin bits blend smoothly.`, false);
+  }
+  renderBrush();
+  const nearPx = (a, b, px) => Math.hypot(a[0] - b[0], a[1] - b[1]) * B.s < px;
+  const lastPt = () => S.draft.pts[S.draft.pts.length - 1];
+  function addStraight(p) {
+    const a = lastPt(), L = Math.hypot(p[0] - a[0], p[1] - a[1]), n = Math.max(1, Math.ceil(L / 8));
+    for (let k = 1; k <= n; k++) S.draft.pts.push([a[0] + (p[0] - a[0]) * (k / n), a[1] + (p[1] - a[1]) * (k / n), brushW]);
+  }
+  const markCorner = () => S.draft.corners.push(S.draft.pts.length - 1);
+  function draftLen(pts = S.draft.pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; }
+  let draftSentAt = 0, draftTimer = null;
+  function shareDraft() {
+    if (!S.host) return;
+    const send = () => { draftTimer = null; draftSentAt = performance.now(); const P = S.draft?.pts; socket.emit("draft", P ? P.filter((_, i) => i % 2 === 0 || i === P.length - 1).map((q) => [Math.round(q[0]), Math.round(q[1]), q[2]]) : null); };
+    if (!S.draft) { clearTimeout(draftTimer); send(); return; }
+    if (!draftTimer) draftTimer = setTimeout(send, Math.max(0, 150 - (performance.now() - draftSentAt)));
+  }
+  socket.on("draft", (d) => {
+    S.hostDraft = d;
+    if (!S.host && S.screen === "lobby") { if (d) boardHint(`${S.lobby?.players.find((p) => p.id === S.lobby.hostId)?.name || "The host"} is drawing the track...`, false); drawBoard(); }
+  });
+  function updateDraftUi() {
+    shareDraft();
+    $("undoPt").classList.toggle("hidden", !S.draft && !(S.lastDraft && S.host));
+    $("closeLoop").classList.toggle("hidden", !S.draft || S.draft.pts.length < 3);
+  }
+  function hintDraft() {
+    boardHint(drawMode === "line" ? (isTouch() ? "Tap to add straight lines. Tap the green dot (or Finish loop) to close it." : "Click to add straight lines. Click the green dot (or Finish loop) to close it.") : "Keep going: drag for curves, or switch to Straight. Come back to the green dot (or Finish loop) to close it.", false);
+  }
+  // round off the corners where straight lines meet, so cars can actually drive them
+  function roundDraftCorners(pts, corners) {
+    const n = pts.length, cum = [0];
+    for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const cs = [...new Set(corners)].filter((i) => i > 0 && i < n - 1).sort((a, b) => a - b);
+    const plan = cs.map((v, k) => {
+      const prev = k ? cs[k - 1] : 0, next = k < cs.length - 1 ? cs[k + 1] : n - 1;
+      const r = Math.min(70, (cum[v] - cum[prev]) * 0.45, (cum[next] - cum[v]) * 0.45);
+      let a = v, b = v;
+      while (a > 0 && cum[v] - cum[a] < r) a--;
+      while (b < n - 1 && cum[b] - cum[v] < r) b++;
+      return { v, a, b, r };
+    });
+    for (const { v, a, b, r } of plan.reverse()) {
+      if (r < 3 || b - a < 2) continue;
+      const A = pts[a], V = pts[v], Bp = pts[b], m = Math.max(6, Math.ceil((r * 2) / 6)), curve = [];
+      for (let k = 0; k <= m; k++) {
+        const t = k / m, u = 1 - t;
+        curve.push([u * u * A[0] + 2 * u * t * V[0] + t * t * Bp[0], u * u * A[1] + 2 * u * t * V[1] + t * t * Bp[1], Math.round(A[2] + (Bp[2] - A[2]) * t)]);
+      }
+      pts.splice(a, b - a + 1, ...curve);
+    }
+    return pts;
+  }
+  function finishDraft() {
+    const d = S.draft;
+    if (!d || d.pts.length < 3 || draftLen() < 150) { boardHint("Draw a bit more first!", true); return; }
+    let pts = d.pts.map((q) => q.slice());
+    if (d.cut && d.keep) {   // after a redraw: put the direction and the start line back where they were
+      P.steps = [];
+      if (d.keep.reverse) P.steps.push(() => socket.emit("reverse"));
+      if (d.keep.start) P.steps.push(() => socket.emit("setStart", { x: d.keep.start[0], y: d.keep.start[1] }));
+    }
+    // remember the drawing, so Undo after finishing brings it back without the join
+    // (the auto-filled bit, or the stroke you closed it with)
+    const gapPx = Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) * B.s;
+    S.lastDraft = { d: JSON.parse(JSON.stringify(d)), autoFill: gapPx > 30 };
+    if (!d.corners.length && gapPx > 30) {
+      // freehand: join the gap with a smooth curve here (so it's exactly what Undo takes away)
+      const a = pts[pts.length - 1], b = pts[0], a0 = pts[Math.max(0, pts.length - 4)], b1 = pts[Math.min(3, pts.length - 1)];
+      const D = Math.hypot(b[0] - a[0], b[1] - a[1]) * 1.1;
+      const na = Math.hypot(a[0] - a0[0], a[1] - a0[1]) || 1, nb = Math.hypot(b1[0] - b[0], b1[1] - b[1]) || 1;
+      const ta = [((a[0] - a0[0]) / na) * D, ((a[1] - a0[1]) / na) * D], tb = [((b1[0] - b[0]) / nb) * D, ((b1[1] - b[1]) / nb) * D];
+      const m = Math.max(4, Math.ceil(D / 4));
+      for (let k = 1; k < m; k++) {
+        const t = k / m, t2 = t * t, t3 = t2 * t, h1 = 2 * t3 - 3 * t2 + 1, h2 = t3 - 2 * t2 + t, h3 = -2 * t3 + 3 * t2, h4 = t3 - t2;
+        pts.push([h1 * a[0] + h2 * ta[0] + h3 * b[0] + h4 * tb[0], h1 * a[1] + h2 * ta[1] + h3 * b[1] + h4 * tb[1], Math.round(a[2] + (b[2] - a[2]) * t)]);
+      }
+    }
+    if (d.corners.length) {
+      // close with a straight line back to the start, then round every corner (the joins at the start too)
+      let corners = d.corners.slice();
+      if (!nearPx(pts[pts.length - 1], pts[0], 6)) {
+        corners.push(pts.length - 1);
+        const a = pts[pts.length - 1], b = pts[0], L = Math.hypot(b[0] - a[0], b[1] - a[1]), m = Math.max(1, Math.ceil(L / 8));
+        for (let k = 1; k < m; k++) pts.push([a[0] + (b[0] - a[0]) * (k / m), a[1] + (b[1] - a[1]) * (k / m), Math.round(a[2] + (b[2] - a[2]) * (k / m))]);
+      }
+      corners.push(0);
+      // start the loop in the middle of the longest stretch between corners, so no corner sits on the join
+      const n = pts.length, cs = [...new Set(corners.map((i) => ((i % n) + n) % n))].sort((a, b) => a - b);
+      let bestGap = -1, start = 0;
+      cs.forEach((ci, k) => { const nx = k < cs.length - 1 ? cs[k + 1] : cs[0] + n, gap = nx - ci; if (gap > bestGap) { bestGap = gap; start = (ci + Math.floor(gap / 2)) % n; } });
+      pts = [...pts.slice(start), ...pts.slice(0, start)];
+      pts = roundDraftCorners(pts, cs.map((i) => (i - start + n) % n));
+    }
+    S.draft = null; drawing = false; updateDraftUi();
+    socket.emit("track", { stroke: pts.map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10, q[2]]), map: S.lobby.settings.map });
+    boardHint("Building track...", false); drawBoard();
+  }
+  document.querySelectorAll("[data-dm]").forEach((b) => b.addEventListener("click", () => {
+    drawMode = b.dataset.dm;
+    document.querySelectorAll("[data-dm]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (S.draft) hintDraft();
+    else boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can switch back to Freehand any time." : "Click to place corners. You can switch back to Freehand any time.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
+    drawBoard();
+  }));
+  function undoDraft() {
+    if (!S.draft && S.lastDraft && S.host && S.lobby?.phase === "lobby") {
+      // undo after finishing: the drawing comes back, minus the join
+      const { d, autoFill } = S.lastDraft; S.lastDraft = null;
+      S.draft = d;
+      if (!autoFill) { const at = d.pieces.pop(); if (at) { d.pts.length = at; d.corners = d.corners.filter((i) => i < at); } }
+      boardHint(autoFill ? "The auto-filled bit is gone. Draw the join yourself (or Finish loop again)." : "Your last stroke is gone. Keep drawing!", false);
+      updateDraftUi(); drawBoard(); return;
+    }
+    const d = S.draft; if (!d) return;
+    const at = d.pieces.pop();
+    if (at === undefined || (!at && !d.cut)) { S.draft = null; if (d.cut) boardHint("Redraw cancelled: your old track is back.", false); }
+    else { d.pts.length = at; d.corners = d.corners.filter((i) => i < at); }
+    updateDraftUi(); drawBoard();
+  }
+  $("undoPt").addEventListener("click", undoDraft);
+  $("closeLoop").addEventListener("click", finishDraft);
+  $("startLineBtn").addEventListener("click", () => {
+    if (!S.track) { boardHint("Draw a track first.", true); return; }
+    endCut(); startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
+    boardHint(startMode ? "Click anywhere on the track to put the start/finish line there." : "", false);
+  });
+  $("reverseBtn").addEventListener("click", () => { if (S.track) socket.emit("reverse"); else boardHint("Draw a track first.", true); });
+  // ---- Phone mode: the board in the room is only a preview (swipe over it to scroll). Tapping it
+  // (or "Draw the track") opens a full-screen editor: big board on top, all the tools below, Done.
+  var editing = false;       // (var: show() can run before this line on startup)
+  function phoneMode() { return document.body.classList.contains("phone"); }
+  function setEditing(on) {
+    on = !!(on && S.host && S.lobby?.phase === "lobby");
+    if (on === !!editing) return;
+    editing = on;
+    document.body.classList.toggle("editing-track", on);
+    if (!on) { if (drawing) { drawing = false; } if (cut) endCut(); }
+    else boardHint(S.track ? "Draw a new track, or use the track tools. Tap Done when you're happy." : "Draw your track in one loop with your finger. Tap Done when you're happy.", false);
+    requestAnimationFrame(sizeBoard);
+  }
+  // ---- saved tracks (presets): kept in this browser, and on your account when signed in ----
+  const P = { list: [], steps: [] };
+  function localPresets() { try { return JSON.parse(localStorage.getItem("tb-presets") || "[]"); } catch (e) { return []; } }
+  function storeLocal(list) { try { localStorage.setItem("tb-presets", JSON.stringify(list)); } catch (e) { popup("This browser is out of space for saved tracks", true); } }
+  function mergePresets(a, b) { const m = new Map(); for (const x of [...a, ...b]) { const k = x.name.toLowerCase(), o = m.get(k); if (!o || (x.saved || 0) > (o.saved || 0)) m.set(k, x); } return [...m.values()].sort((x, y) => (y.saved || 0) - (x.saved || 0)); }
+  P.list = localPresets();
+  socket.on("presets", (list) => {
+    if (!list) return;
+    const merged = mergePresets(P.list, list);
+    // anything only this browser had goes up to the account too
+    for (const x of merged) if (!list.some((y) => y.name.toLowerCase() === x.name.toLowerCase() && (y.saved || 0) >= (x.saved || 0))) socket.emit("presets:save", x);
+    P.list = merged; storeLocal(merged);
+    if (!$("presetBox").classList.contains("hidden")) renderPresets();
+  });
+  function openPresets() {
+    $("presetBox").classList.remove("hidden");
+    $("presetName").value = S.track?.name || "";
+    renderPresets(); setTimeout(() => $("presetName").focus(), 50);
+  }
+  function renderPresets() {
+    const canSave = S.host && S.lobby?.phase === "lobby" && S.track && S.lobby?.stroke;
+    $("presetSaveBtn").disabled = !canSave; $("presetName").disabled = !canSave;
+    $("presetNote").textContent = !S.host ? "Only the host can load tracks, but you can look." : !S.track ? "Draw a track (or roll a random one) to save it." : A.user ? "Saved to your account and this browser, so updates never delete them." : "Saved in this browser (updates never delete them). Make an account to have them on other devices too.";
+    const g = $("presetGrid"); g.textContent = "";
+    if (!P.list.length) { g.appendChild(el("p", "preset-note", "No saved tracks yet. Make one you love, give it a name and hit Save.")); return; }
+    for (const pr of P.list) {
+      const card = el("div", "preset");
+      const cv = document.createElement("canvas"); cv.width = 240; cv.height = 140; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Outline of the saved track ${pr.name}`);
+      const c = cv.getContext("2d"), xs = pr.stroke.map((q) => q[0]), ys = pr.stroke.map((q) => q[1]);
+      const mnx = Math.min(...xs), mxx = Math.max(...xs), mny = Math.min(...ys), mxy = Math.max(...ys), sc = Math.min(220 / (mxx - mnx || 1), 120 / (mxy - mny || 1));
+      c.lineJoin = c.lineCap = "round"; c.strokeStyle = "#ffcc1f"; c.lineWidth = 5; c.beginPath();
+      pr.stroke.forEach((q, i) => { const x = 120 + (q[0] - (mnx + mxx) / 2) * sc, y = 70 + (q[1] - (mny + mxy) / 2) * sc; i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.stroke();
+      if (pr.start) { c.fillStyle = "#fff"; c.beginPath(); c.arc(120 + (pr.start[0] - (mnx + mxx) / 2) * sc, 70 + (pr.start[1] - (mny + mxy) / 2) * sc, 5, 0, Math.PI * 2); c.fill(); }
+      card.append(cv, el("b", "", pr.name), el("small", "", `${pr.map} map${pr.reverse ? " · reversed" : ""} · ${new Date(pr.saved).toLocaleDateString()}`));
+      const row = el("div", "row");
+      const ld = el("button", "btn go", "Load"); ld.type = "button"; ld.disabled = !S.host || S.lobby?.phase !== "lobby";
+      ld.addEventListener("click", () => loadPreset(pr));
+      const del = el("button", "btn ghost", "Delete"); del.type = "button"; del.style.flex = "0 0 auto";
+      del.addEventListener("click", () => {
+        if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Sure?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Delete"; }, 2500); return; }
+        P.list = P.list.filter((x) => x !== pr); storeLocal(P.list); if (A.user) socket.emit("presets:delete", pr.name); renderPresets();
+      });
+      row.append(ld, del); card.appendChild(row); g.appendChild(card);
+    }
+  }
+  function currentPreset(name) {
+    const T = S.track, p0 = T.pts[0];
+    return { name, stroke: S.lobby.stroke, map: S.lobby.settings.map, smooth: !!S.lobby.settings.smooth, theme: S.lobby.settings.theme, reverse: !!T.reverse,
+      start: [T.minX + (p0.x - T.pad) / T.scale, T.minY + (p0.y - T.pad) / T.scale], saved: Date.now() };
+  }
+  $("presetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("presetName").value.trim().slice(0, 30);
+    if (!name) { $("presetName").focus(); return; }
+    if (!S.track || !S.lobby?.stroke) return;
+    const pr = currentPreset(name);
+    P.list = mergePresets(P.list.filter((x) => x.name.toLowerCase() !== name.toLowerCase()), [pr]); storeLocal(P.list);
+    if (A.user) socket.emit("presets:save", pr);
+    popup(`Saved "${name}"!`); sfx("level"); renderPresets();
+  });
+  function loadPreset(pr) {
+    if (!S.host) return;
+    const st = S.lobby.settings;
+    if (!!st.smooth !== !!pr.smooth || (pr.theme && pr.theme !== st.theme)) socket.emit("settings", { smooth: !!pr.smooth, ...(pr.theme ? { theme: pr.theme } : {}) });
+    endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
+    // after it's built: turn it round if it was reversed, then put the start line back
+    P.steps = []; if (pr.reverse) P.steps.push(() => socket.emit("reverse")); if (pr.start) P.steps.push(() => socket.emit("setStart", { x: pr.start[0], y: pr.start[1] }));
+    P.loading = pr.name;
+    setTimeout(() => socket.emit("track", { stroke: pr.stroke, map: pr.map }), pr.smooth !== !!st.smooth ? 250 : 0);
+    $("presetBox").classList.add("hidden"); boardHint(`Loading "${pr.name}"...`, false);
+  }
+  $("presetBtn").addEventListener("click", openPresets);
+  $("presetClose").addEventListener("click", () => $("presetBox").classList.add("hidden"));
+  $("presetBox").addEventListener("click", (e) => { if (e.target.id === "presetBox") $("presetBox").classList.add("hidden"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("presetBox").classList.contains("hidden")) $("presetBox").classList.add("hidden"); });
+  $("lastSeasonBtn").addEventListener("click", () => { if (S.lastSeason) openFinale(S.lastSeason); else socket.emit("lastSeason"); });
+  // quick emotes
+  S.emotes = new Map();
+  document.querySelectorAll("[data-emote]").forEach((b) => b.addEventListener("click", () => {
+    socket.emit("emote", b.dataset.emote);
+    document.querySelectorAll("[data-emote]").forEach((x) => { x.disabled = true; setTimeout(() => (x.disabled = false), 1500); });
+  }));
+  socket.on("emote", (m) => {
+    if (localBlocked().includes(String(m.name).toLowerCase())) return;       // blocked: you don't see their emotes
+    if (m.car && S.screen === "race") S.emotes.set(m.car, { e: m.e, until: performance.now() + 2600 });
+    else popup(`${m.name}: ${m.e}`);
+    if (m.pid !== S.me) sfx("tick");
+  });
+  // daily login reward
+  socket.on("daily", (d) => { banner(`DAILY BONUS +${d.coins} 🪙`, "#ffcc1f"); popup(d.streak > 1 ? `🔥 ${d.streak}-day streak! Come back tomorrow for more.` : "Come back tomorrow for a bigger bonus!"); sfx("level"); });
+  socket.on("teamRenamed", (nu) => { prof.team = nu; teamIn.value = nu; try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {} });
+  socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
+  // ---- live delta to your best lap: time at each point of this lap vs. the same point on your best lap ----
+  function lapDelta() {
+    if (S.replaying) return;
+    const me = S.cars.get(S.myCar), T = S.track; if (!me || !T || me.fin) return;
+    const B = 240, L = S.lapRef || (S.lapRef = { cur: [], best: null, bestT: 0, start: null, lap: me.laps });
+    const bk = Math.floor((me.idx / T.N) * B);
+    if (me.laps !== L.lap) {
+      if (L.start !== null && me.laps === L.lap + 1) {
+        const lapT = S.t - L.start;
+        if (!L.best || lapT < L.bestT) { L.best = L.cur; L.bestT = lapT; }
+      }
+      L.cur = []; L.start = me.laps >= 0 ? S.t : null; L.lap = me.laps;
+    }
+    if (L.start !== null && L.cur[bk] === undefined) L.cur[bk] = S.t - L.start;
+    const box = $("lapDelta");
+    if (!L.best || L.cur[bk] === undefined || L.best[bk] === undefined) { if (!L.best) box.classList.add("hidden"); return; }
+    const d = L.cur[bk] - L.best[bk];
+    box.classList.remove("hidden"); box.classList.toggle("up", d < -0.005); box.classList.toggle("down", d > 0.005);
+    $("lapDeltaVal").textContent = (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2) + "s";
+  }
+  // ---- spectating: pick who the camera follows ----
+  function specMove(d) {
+    const ids = S.standings; if (!ids.length) return;
+    if (d === 0) S.camTarget = null;
+    else { const cur = Math.max(0, ids.indexOf(S.camTarget ?? ids[0])); S.camTarget = ids[(cur + d + ids.length) % ids.length]; }
+    const c = S.cars.get(S.camTarget ?? ids[0]);
+    $("specName").textContent = S.camTarget ? `P${ids.indexOf(S.camTarget) + 1} ${c?.name || ""}` : "the leader";
+  }
+  $("specPrev").addEventListener("click", () => specMove(-1));
+  $("specNext").addEventListener("click", () => specMove(1));
+  $("specLead").addEventListener("click", () => specMove(0));
+  // ======================= Tutorial: a guided first race =======================
+  const TUT = {
+    lobby: ["👋 Welcome to Scribble GP!", "This is your room. Normally you draw a track here (or roll a random one) - we made one for you. You're the <b>team boss</b>: your AI driver steers, you make the calls. Press <b>Start race</b>!"],
+    tires: ["🛞 Pick your starting tires", "<b>Fast</b> is quickest but wears out fast. <b>Durable</b> lasts longest but is slow. <b>Wets</b> are for rain. For your first race, <b>Intermediate</b> is a safe pick."],
+    lights: ["🚦 Get a rocket start", "Watch the 5 red lights. Press <b>Space</b> (or tap the screen) the moment they go <b>out</b>. Too early = jump start!"],
+    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake."],
+    upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick one of the cards (keys <b>1 / 2 / 3</b>) to upgrade your car or driver. They stack up during the race."],
+    pit: ["🔧 Tires wearing out", "See the tire bar at the bottom? When it gets low the car slows down and can get a puncture. Press <b>B</b> (Box this lap) to pit for fresh tires - you choose which set on the way in."],
+    afterPit: ["✅ Nice stop!", "Fresh tires! In longer races, timing your stops (and the weather) is how races are won. <b>Tab</b> watches other cars, <b>O</b> opens settings."],
+    done: ["🏁 You're ready!", "That's everything you need. Try <b>⚡ Quick Play</b> to race real people, or <b>Make a room</b> and send the invite link to friends. Make an account to save your stats and earn coins!"],
+  };
+  function tut(step) {
+    if (!S.tutorial || !TUT[step] || (S.tutSeen || (S.tutSeen = new Set())).has(step)) return;
+    S.tutSeen.add(step);
+    const [title, body] = TUT[step];
+    $("tutTitle").textContent = title; $("tutBody").innerHTML = body;      // (our own fixed text, never player text)
+    $("tutCard").classList.remove("hidden"); sfx("tick");
+    clearTimeout(S.tutT); if (step !== "done" && step !== "lobby") S.tutT = setTimeout(() => $("tutCard").classList.add("hidden"), 14000);
+    if (step === "done") { try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} S.tutorial = false; }
+  }
+  function startTutorial() {
+    saveProfile(); S.solo = true; S.tutorial = true; S.tutSeen = new Set(); S.tutPits = undefined; S.tutSetup = true;
+    socket.emit("create", prof);
+  }
+  $("tutNext").addEventListener("click", () => $("tutCard").classList.add("hidden"));
+  $("tutQuit").addEventListener("click", () => { S.tutorial = false; $("tutCard").classList.add("hidden"); try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} });
+  // set up the tutorial room: short, easy, dry, one random track
+  socket.on("lobby", (l) => {
+    if (!S.tutSetup || l.hostId !== S.me) return;
+    S.tutSetup = false;
+    socket.emit("settings", { laps: 3, ai: 3, aiLevel: "easy", speed: 1, weather: "sunny", quali: 0, wear: "high", theme: "grass", season: 0 });
+    setTimeout(() => socket.emit("randomTrack", { map: "small" }), 200);
+    setTimeout(() => tut("lobby"), 900);
+  });
+  // first visit: point at the tutorial
+  try { if (!localStorage.getItem("tb-tut-done")) { $("tutBtn").classList.add("pulse"); $("tutBtn").textContent = "🎓 New? Tutorial"; } } catch (e) {}
+  // ---- other players: add friend / block / report ----
+  function localBlocked() { try { return JSON.parse(localStorage.getItem("tb-blocked") || "[]"); } catch (e) { return []; } }
+  function isBlockedP(p) { return localBlocked().includes(p.name.toLowerCase()); }
+  function playerMenu(p) {
+    const d = document.createElement("details"); d.className = "pmenu";
+    const sm = document.createElement("summary"); sm.textContent = "⋯"; sm.setAttribute("aria-label", `Options for ${p.name}`); d.appendChild(sm);
+    const box = document.createElement("div"); box.className = "pmenu-list";
+    const item = (label, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.addEventListener("click", () => { d.open = false; fn(); }); box.appendChild(b); };
+    if (p.signedIn) item("➕ Add friend", () => socket.emit("friends:addPid", p.id));
+    const blocked = isBlockedP(p);
+    item(blocked ? "✅ Unblock" : "🚫 Block", () => {
+      const L = localBlocked().filter((x) => x !== p.name.toLowerCase()); if (!blocked) L.push(p.name.toLowerCase());
+      try { localStorage.setItem("tb-blocked", JSON.stringify(L.slice(-300))); } catch (e) {}
+      socket.emit("block", { pid: p.id, on: !blocked });
+      popup(blocked ? `${p.name} unblocked` : `${p.name} blocked: you won't see their emotes${S.host ? ", and they're out of your room" : ""}.`); renderLobby();
+    });
+    for (const [why, label] of [["name", "🚩 Report name"], ["team", "🚩 Report team name"], ["spam", "🚩 Report spam"]]) item(label, () => socket.emit("report", { pid: p.id, why }));
+    d.appendChild(box); return d;
+  }
+  // friend invites
+  socket.on("invite", (d) => {
+    if (S.screen === "race") return popup(`${d.from} invited you to a room (you'll see it after this race)`);
+    $("inviteText").textContent = `👋 ${d.from} invited you to their room`; $("inviteBox").classList.remove("hidden"); S.inviteCode = d.code; sfx("level");
+    clearTimeout(S.inviteT); S.inviteT = setTimeout(() => $("inviteBox").classList.add("hidden"), 20000);
+  });
+  $("inviteJoin").addEventListener("click", () => { $("inviteBox").classList.add("hidden"); saveProfile(); S.solo = false; socket.emit("join", { code: S.inviteCode, profile: prof }); });
+  $("inviteNo").addEventListener("click", () => $("inviteBox").classList.add("hidden"));
+  socket.on("friendsChanged", (d) => { if (d?.msg) popup("👥 " + d.msg); if (A.tab === "friends" && !$("hub").classList.contains("hidden")) socket.emit("friends:get"); });
+  // ---- pause (host) ----
+  function setPausedUi(on, by) {
+    S.paused = on;
+    $("pauseVeil").classList.toggle("hidden", !on);
+    $("pauseBy").textContent = on ? `${by || "The host"} paused the race.` : "";
+    $("resumeBtn").classList.toggle("hidden", !S.host);
+    $("pauseBtn").innerHTML = on ? "<kbd>P</kbd> Resume race" : "<kbd>P</kbd> Pause race";
+    if (on) setNitro(false);
+  }
+  socket.on("paused", (d) => { S.pausedBy = d.by; setPausedUi(d.on, d.by); });
+  const togglePause = () => { if (S.host && S.screen === "race") socket.emit("pause"); };
+  $("pauseBtn").addEventListener("click", togglePause);
+  $("resumeBtn").addEventListener("click", togglePause);
+  document.addEventListener("keydown", (e) => { if ((e.key === "p" || e.key === "P") && !e.repeat && S.screen === "race" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) togglePause(); });
+  // ---- you NEED to pit ----
+  const MUST_WHY = { rain: "It's pouring and you're on dry tires. Wets are much faster now.", tires: "Your tires won't make it to the flag.", damage: "The car is badly damaged." };
+  socket.on("mustPit", (d) => {
+    S.mustPit = d;
+    if (!d) { $("mustPit").classList.add("hidden"); return; }
+    $("mustWhy").textContent = MUST_WHY[d.reason] + (d.reason === "tires" ? ` (${d.tire}% left)` : "");
+    $("mustPit").classList.remove("hidden"); sfx("warn");
+  });
+  $("mustBox").addEventListener("click", () => { if (!S.box) $("boxBtn").click(); $("mustPit").classList.add("hidden"); });
+  $("mustHide").addEventListener("click", () => $("mustPit").classList.add("hidden"));
+  // ---- qualifying results = the grid ----
+  socket.on("qualiResults", (q) => {
+    const ol = $("qualiList"); ol.textContent = "";
+    q.rows.forEach((r, i) => {
+      const li = document.createElement("li"); li.style.animationDelay = Math.min(i, 20) * 0.04 + "s";
+      if (r.owner === S.me) li.classList.add("mine");
+      const pp = document.createElement("span"); pp.className = "pp"; pp.textContent = i === 0 ? "POLE" : "P" + (i + 1);
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = r.color;
+      const nm = document.createElement("span"); nm.textContent = r.name + (r.team ? ` · ${r.team}` : "");
+      const tm = document.createElement("span"); tm.textContent = r.best === null ? "no lap" : i === 0 ? fmt3(r.best) : `+${r.gap.toFixed(3)}`;
+      li.append(pp, dot, nm, tm); ol.appendChild(li);
+    });
+    $("qualiBox").classList.remove("hidden"); $("mustPit").classList.add("hidden"); setPausedUi(false);
+    const mine = q.rows.findIndex((r) => r.owner === S.me);
+    if (mine === 0) { banner("POLE POSITION!", "#ffcc1f"); sfx("win"); }
+  });
+  const fmt3 = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(3).padStart(6, "0")}`; };
+  $("spectateBtn").addEventListener("click", () => { socket.emit("spectate", !S.spectating); sfx("tick"); });
+  $("gridRandomBtn").addEventListener("click", () => { socket.emit("gridRandomAll"); sfx("tick"); });
+  $("editTrackBtn").addEventListener("click", () => setEditing(true));
+  $("doneEditBtn").addEventListener("click", () => setEditing(false));
+  board.addEventListener("click", () => { if (phoneMode() && !editing && S.host && S.lobby?.phase === "lobby") setEditing(true); });
+  function updateEditUi() {
+    const can = S.host && S.lobby?.phase === "lobby";
+    $("editTrackBtn").classList.toggle("hidden", !can);
+    $("editTrackBtn").textContent = S.track ? "✏️ Edit the track" : "✏️ Draw the track";
+    if (!can) setEditing(false);
+    else if (phoneMode() && !editing && !S.track && !S.draft) boardHint("Tap the board (or Draw the track) to open the track editor.", false);
+  }
+  // ---- Redraw part: click two spots on the track, the part between them is deleted, and the rest
+  // of the loop becomes your drawing again. Carry on drawing from the yellow dot and come back to
+  // the green one (or hit Finish loop to just join the gap).
+  const cutStroke = () => S.lobby?.stroke || null;
+  function nearestStroke(p) {
+    const st = cutStroke(); if (!st) return null;
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < st.length; i++) { const d = (st[i][0] - p[0]) ** 2 + (st[i][1] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
+    return Math.sqrt(bd) * B.s < 45 ? bi : null;
+  }
+  // the part that goes: [from, from+len] going forwards round the loop
+  function cutRange(a, b, flip) {
+    const n = cutStroke().length, fwd = (b - a + n) % n;
+    const shortFwd = fwd <= n - fwd;
+    return shortFwd !== !!flip ? { from: a, len: fwd } : { from: b, len: n - fwd };
+  }
+  function endCut() { cut = null; $("cutBtn").classList.remove("on"); $("cutBar").classList.add("hidden"); drawBoard(); }
+  function cutClick(p) {
+    const i = nearestStroke(p);
+    if (i === null) { boardHint("Click right on the track.", true); return; }
+    if (cut.a === null || cut.b !== null) { cut.a = i; cut.b = null; cut.flip = false; $("cutBar").classList.add("hidden"); boardHint("Now click where the part you don't like ends.", false); }
+    else {
+      const n = cutStroke().length, d = Math.min((i - cut.a + n) % n, (cut.a - i + n) % n);
+      if (d < 3) { boardHint("Pick a spot a bit further along the track.", true); return; }
+      cut.b = i; $("cutBar").classList.remove("hidden");
+      boardHint("The red part will be deleted. Wrong part? Hit Other side.", false);
+    }
+    sfx("tick"); drawBoard();
+  }
+  function doCut() {
+    const st = cutStroke(); if (!cut || cut.b === null || !st) return;
+    const n = st.length, { from, len } = cutRange(cut.a, cut.b, cut.flip);
+    if (n - len < 4) { boardHint("That's almost the whole track. Use Clear to start over.", true); return; }
+    const pts = [];
+    for (let k = 0; k <= n - len; k++) { const q = st[(from + len + k) % n]; pts.push([q[0], q[1], q[2]]); }
+    // keep the start line where it was (unless it was on the part you deleted) and keep the direction
+    const T = S.track, p0 = T.pts[0], sx = T.minX + (p0.x - T.pad) / T.scale, sy = T.minY + (p0.y - T.pad) / T.scale;
+    let si = 0, sd = Infinity; st.forEach((q, i) => { const dd = (q[0] - sx) ** 2 + (q[1] - sy) ** 2; if (dd < sd) { sd = dd; si = i; } });
+    const inCut = ((si - from + n) % n) <= len;
+    S.keepReverse = false;
+    S.draft = { pts, corners: [], pieces: [], cut: true, keep: { reverse: !!T.reverse, start: inCut ? null : [sx, sy] } }; S.lastDraft = null;
+    endCut(); updateDraftUi();
+    boardHint(isTouch() ? "Draw the new part from the yellow dot back to the green dot (or tap Finish loop to just join it)." : "Draw the new part from the yellow dot back to the green dot (or Finish loop to just join it). Undo brings the old part back.", false);
+    drawBoard();
+  }
+  $("cutBtn").addEventListener("click", () => {
+    if (cut) { endCut(); boardHint("", false); return; }
+    if (!cutStroke() || !S.track) { boardHint("Draw a track first.", true); return; }
+    startMode = false; $("startLineBtn").classList.remove("on");
+    S.draft = null; drawing = false; updateDraftUi();
+    cut = { a: null, b: null, flip: false }; $("cutBtn").classList.add("on");
+    boardHint("Click where the part you don't like starts.", false); drawBoard();
+  });
+  $("cutDo").addEventListener("click", doCut);
+  $("cutFlip").addEventListener("click", () => { if (cut) { cut.flip = !cut.flip; drawBoard(); } });
+  $("cutCancel").addEventListener("click", () => { endCut(); boardHint("", false); });
+  // red highlight of the part that would go
+  function drawCutPreview(c) {
+    const st = cutStroke(); if (!cut || !st || cut.a === null) return;
+    let b = cut.b;
+    if (b === null && hover) b = nearestStroke(hover);
+    c.lineCap = "round"; c.lineJoin = "round";
+    if (b !== null && b !== cut.a) {
+      const { from, len } = cutRange(cut.a, b, cut.flip), n = st.length;
+      c.beginPath();
+      for (let k = 0; k <= len; k++) { const q = st[(from + k) % n]; k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }
+      c.strokeStyle = cut.b === null ? "rgba(255,90,80,0.45)" : "rgba(255,70,60,0.75)";
+      c.lineWidth = Math.max(10 / B.s, st[cut.a][2] / 3 + 8); c.stroke();
+      c.setLineDash([8 / B.s, 6 / B.s]); c.lineWidth = 2 / B.s; c.strokeStyle = "#fff"; c.stroke(); c.setLineDash([]);
+    }
+    for (const i of [cut.a, b]) {
+      if (i === null || !st[i]) continue;
+      c.fillStyle = "#ff5a50"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
+      c.beginPath(); c.arc(st[i][0], st[i][1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+    }
+  }
+  // screen -> board units. Scales by the on-screen size vs. the layout size, so the point under the
+  // mouse is always exactly where the pen draws (even mid-animation or with any UI size).
+  const toBoard = (e) => {
+    const r = board.getBoundingClientRect(), kx = r.width ? B.w / r.width : 1, ky = r.height ? B.h / r.height : 1;
+    return [clamp(((e.clientX - r.left) * kx - B.ox) / B.s, 0, B.bw), clamp(((e.clientY - r.top) * ky - B.oy) / B.s, 0, B.bh)];
+  };
+  board.addEventListener("pointerdown", (e) => {
+    if (!S.host || S.lobby?.phase !== "lobby") return;
+    if (phoneMode() && !editing) return;            // phone mode: touching the board just scrolls (tap opens the editor)
+    const p = toBoard(e);
+    if (cut) { cutClick(p); return; }
+    if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
+    if (drawMode === "line") {
+      if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [0], pieces: [0] }; S.lastDraft = null; }
+      else if (S.draft.pts.length >= 3 && nearPx(p, S.draft.pts[0], 18) && draftLen() > 150) { finishDraft(); return; }
+      else { S.draft.pieces.push(S.draft.pts.length); markCorner(); addStraight(p); markCorner(); }
+      updateDraftUi(); hintDraft(); drawBoard(); return;
+    }
+    board.setPointerCapture(e.pointerId);
+    drawing = true;
+    if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [], pieces: [0] }; S.lastDraft = null; }
+    else {
+      S.draft.pieces.push(S.draft.pts.length);
+      if (!nearPx(p, lastPt(), 14)) { markCorner(); addStraight(p); markCorner(); }    // started somewhere else: join with a straight line
+    }
+    shiftAnchor = e.shiftKey ? lastPt() : null;
+    updateDraftUi(); drawBoard();
+  });
+  board.addEventListener("pointermove", (e) => {
+    const p = toBoard(e); hover = p;
+    if (!drawing) { if (S.host && S.lobby?.phase === "lobby") drawBoard(); return; }
+    if (e.shiftKey) {                  // hold Shift: a straight line from where Shift was pressed
+      if (!shiftAnchor) shiftAnchor = lastPt();
+      S.shiftEnd = p; drawBoard(); return;
+    }
+    if (shiftAnchor) commitShift();
+    // use every pointer sample the browser collected since the last frame, so fast strokes
+    // follow the mouse exactly instead of cutting corners
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    let added = false;
+    for (const ev of evs.length ? evs : [e]) {
+      const q = toBoard(ev), l = lastPt();
+      if (Math.hypot(q[0] - l[0], q[1] - l[1]) * B.s >= 2) { S.draft.pts.push([q[0], q[1], brushW]); added = true; }
+    }
+    if (added) { drawBoard(); shareDraft(); }
+  });
+  board.addEventListener("pointerleave", () => { hover = null; if (!drawing) drawBoard(); });
+  function commitShift() {
+    if (!shiftAnchor || !S.shiftEnd || !S.draft) { shiftAnchor = null; return; }
+    markCorner(); addStraight(S.shiftEnd); markCorner();
+    shiftAnchor = null; S.shiftEnd = null;
+  }
+  window.addEventListener("keyup", (e) => { if (e.key === "Shift" && drawing && shiftAnchor) { commitShift(); drawBoard(); } });
+  window.addEventListener("keydown", (e) => {
+    if (S.screen !== "lobby" || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "Escape" && editing && !cut && !S.draft) { setEditing(false); return; }
+    if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
+    if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && S.draft) { e.preventDefault(); undoDraft(); }
+    if (e.key === "[" || e.key === "]") { const ws = WIDTHS.map((x) => x[0]), i = ws.indexOf(brushW); setBrush(ws[clamp(i + (e.key === "]" ? 1 : -1), 0, ws.length - 1)]); }
+  });
+  const endDraw = () => {
+    if (!drawing) return;
+    drawing = false;
+    if (shiftAnchor) commitShift();
+    const d = S.draft; if (!d) return;
+    const P = d.pts, a = P[0], b = P[P.length - 1];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of P) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
+    const gap = Math.hypot(b[0] - a[0], b[1] - a[1]), diag = Math.hypot(x1 - x0, y1 - y0);
+    // back near the start? finish the loop. (One single freehand stroke gets a bit more leeway, like before.)
+    const closed = P.length > 12 && draftLen() > 250 && (nearPx(a, b, 26) || (!d.cut && d.pieces.length === 1 && !d.corners.length && gap < diag * 0.22));
+    if (closed) finishDraft(); else { updateDraftUi(); hintDraft(); drawBoard(); }
+  };
+  board.addEventListener("pointerup", endDraw); board.addEventListener("pointercancel", endDraw);
+  $("randomBtn").addEventListener("click", () => {
+    endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
+    socket.emit("randomTrack", { map: S.lobby.settings.map });
+    boardHint("Making a random track...", false);
+  });
+  $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("clearTrack"); });
+
+
+  // ======================= Race HUD pieces =======================
+  function setOrder() {}      // team orders were removed: your tires decide how fast you go
+  function renderNextTires() {
+    const box = $("nextTires");
+    if (box.childElementCount === 1) {
+      for (const k of Object.keys(TIRES)) {
+        const b = document.createElement("button"); b.type = "button"; b.dataset.k = k; b.appendChild(badge(k)); b.setAttribute("aria-label", "Next tires: " + TIRES[k].name);
+        b.addEventListener("click", () => { socket.emit("compound", k); S.nextComp = k; renderNextTires(); sfx("tick"); popup(`Next stop: ${TIRES[k].name} tires`); });
+        box.appendChild(b);
+      }
+    }
+    box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.nextComp)));
+  }
+  // In the pit lane: big tire cards. Whatever's picked when the car reaches its box goes on
+  // (if you don't pick, the "Next tires" choice from the team radio stays).
+  let pitPickShown = false;
+  function renderPitPick(m) {
+    const me = S.cars.get(S.myCar), show = (m.box || m.heading || m.pitLane) && !m.pitting && !!me && !(me.pit >= 0) && !me.fin;
+    const box = $("pitPick");
+    if (!show) { if (pitPickShown) { box.classList.add("hidden"); pitPickShown = false; } return; }
+    const row = $("ppRow");
+    if (!pitPickShown) {
+      pitPickShown = true; box.classList.remove("hidden"); row.textContent = ""; sfx("card");
+      for (const [k, T] of Object.entries(TIRES)) {
+        const b = document.createElement("button"); b.type = "button"; b.className = "pp"; b.dataset.k = k;
+        const nm = document.createElement("div"); nm.className = "nm"; nm.append(badge(k), T.name);
+        const life = document.createElement("div"); life.className = "life";
+        const note = document.createElement("small"); note.textContent = k === "wet" ? "For rain" : k === "fast" ? "Quickest" : k === "durable" ? "Slowest" : "Middle";
+        b.append(nm, life, note);
+        b.addEventListener("click", () => { socket.emit("compound", k); S.nextComp = k; renderNextTires(); markPitPick(); sfx("tick"); });
+        row.appendChild(b);
+      }
+    }
+    $("ppTitle").textContent = m.pitLane ? "🔧 In the pit lane: last chance to pick!" : "🔧 Boxing this lap: pick your tires";
+    $("ppSub").textContent = `${m.lapsLeft} lap${m.lapsLeft === 1 ? "" : "s"} left after the stop · keys 1-4`;
+    row.querySelectorAll(".pp").forEach((b) => {
+      const L = m.life?.[b.dataset.k] || 0, el = b.querySelector(".life");
+      el.textContent = L >= m.lapsLeft ? `Lasts ${L.toFixed(1)} laps ✓` : `Lasts ${L.toFixed(1)} laps`;
+      el.classList.toggle("short", L < m.lapsLeft);
+    });
+    markPitPick();
+  }
+  function markPitPick() { $("ppRow").querySelectorAll(".pp").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.nextComp))); }
+  function updateBox() {
+    if (S.boxShown === S.box) return; S.boxShown = S.box;
+    const b = $("boxBtn"); b.classList.toggle("on", S.box);
+    b.innerHTML = S.box ? "<kbd>B</kbd> Boxing this lap! (cancel)" : "<kbd>B</kbd> Box this lap";
+  }
+  document.querySelectorAll(".order").forEach((b) => b.addEventListener("click", () => setOrder(b.dataset.o)));
+  $("boxBtn").addEventListener("click", () => { socket.emit("box"); sfx("tick"); });
+  // Leave race: click twice (so you don't do it by accident)
+  let leaveArmed = 0;
+  function disarmLeave() { leaveArmed = 0; const b = $("leaveRaceBtn"); b.classList.remove("armed"); b.textContent = "Leave race"; }
+  function leaveRace() {
+    if (!S.myCar) { show("lobby"); return; }
+    if (performance.now() - leaveArmed > 3000) {
+      leaveArmed = performance.now(); const b = $("leaveRaceBtn");
+      b.classList.add("armed"); b.textContent = "Click again to leave (the AI takes over)";
+      setTimeout(() => { if (performance.now() - leaveArmed >= 2900) disarmLeave(); }, 3000);
+      return;
+    }
+    socket.emit("retire"); disarmLeave();
+  }
+  $("leaveRaceBtn").addEventListener("click", leaveRace);
+  socket.on("retired", () => {
+    setNitro(false); S.myCar = null; engineSound(0, false);
+    show("lobby"); renderLobby();
+    popup("You left the race. Back in the room.");
+  });
+
+  let offerSeq = 0;
+  S.cardsLater = false;
+  function showCards(o) {
+    S.offer = o; offerSeq++;
+    if (S.screen !== "race") { S.offer = null; renderPill(); return; }             // upgrades only happen during a race
+    if (S.cardsLater) { renderPill(); return; }
+    if (!$("lights").classList.contains("hidden")) { setTimeout(() => { if (S.offer === o) showCards(o); }, 800); return; }   // don't cover the GO button
+    $("cardsTitle").textContent = o.pending > 1 ? `Level up! Upgrade your team (${o.pending} to pick)` : "Level up! Upgrade your team";
+    const row = $("cardRow"); row.textContent = "";
+    o.cards.forEach((c, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "card";
+      const top = document.createElement("div"); top.className = "top";
+      const k = document.createElement("kbd"); k.textContent = i + 1;
+      const n = document.createElement("span"); n.textContent = c.name;
+      const kd = document.createElement("span"); kd.className = "kind " + c.kind.toLowerCase(); kd.textContent = c.kind;
+      top.append(k, n, kd);
+      const d = document.createElement("div"); d.className = "desc"; d.textContent = c.desc;
+      const fx = document.createElement("div"); fx.className = "fx";
+      if (c.next) { fx.append(c.level ? `Now ${c.now} → ` : "Get "); const nx = document.createElement("span"); nx.textContent = c.next; fx.appendChild(nx); }
+      const pips = document.createElement("div"); pips.className = "pips";
+      for (let l = 0; l < c.max; l++) { const p = document.createElement("i"); if (l < c.level) p.className = "on"; pips.appendChild(p); }
+      b.append(top, d, fx, pips);
+      b.addEventListener("click", () => pickCard(i));
+      row.appendChild(b);
+    });
+    $("cards").classList.add("hidden"); void $("cards").offsetWidth; $("cards").classList.remove("hidden");
+    $("upPill").classList.add("hidden");
+    sfx("card");
+  }
+  // tuck the cards away into a little "upgrades waiting" pill
+  function renderPill() {
+    const n = S.offer ? S.offer.pending || 1 : 0;
+    const pill = $("upPill");
+    pill.textContent = `🎁 ${n} upgrade${n > 1 ? "s" : ""} waiting (U)`;
+    pill.classList.toggle("hidden", !n || S.screen === "menu");
+    $("cards").classList.add("hidden");
+  }
+  function laterCards() { if (!S.offer) return; S.cardsLater = true; renderPill(); }
+  function openCards() { if (!S.offer) { socket.emit("wantOffer"); return; } S.cardsLater = false; showCards(S.offer); }
+  $("laterBtn").addEventListener("click", laterCards);
+  $("upPill").addEventListener("click", openCards);
+  function pickCard(i) {
+    if (!S.offer || !S.offer.cards[i]) return;
+    socket.emit("pick", i);
+    [...$("cardRow").children].forEach((c, j) => c.classList.add(j === i ? "chosen" : "gone"));
+    S.offer = null; const seq = offerSeq;
+    setTimeout(() => { if (seq === offerSeq) hideCards(); }, 340);
+  }
+  function hideCards() { S.offer = null; $("cards").classList.add("hidden"); $("upPill").classList.add("hidden"); }
+  function renderGarage() {
+    const g = $("garage"); g.textContent = "";
+    if (!S.up || !S.upInfo) return;
+    for (const kind of ["Driver", "Car"]) {
+      const h = document.createElement("h4"); h.textContent = kind === "Driver" ? prof.name.toUpperCase() : "CAR"; g.appendChild(h);
+      for (const [k, u] of Object.entries(S.upInfo)) {
+        if (u.kind !== kind) continue;
+        const row = document.createElement("div"); row.className = "g";
+        const n = document.createElement("span"); n.textContent = u.name;
+        const pips = document.createElement("span"); pips.className = "pips";
+        for (let l = 0; l < u.max; l++) { const p = document.createElement("i"); if (l < S.up[k]) p.className = "on" + (k === S.justPicked && l === S.up[k] - 1 ? " new" : ""); pips.appendChild(p); }
+        row.append(n, pips); g.appendChild(row);
+        if (S.up[k] > 0 && u.levels) { const f = document.createElement("div"); f.className = "gfx"; f.textContent = u.levels[S.up[k]]; g.appendChild(f); }
+      }
+    }
+    S.justPicked = null;
+  }
+  function banner(text, color) { const b = $("banner"); b.textContent = text; b.style.color = color || "#fff"; b.classList.remove("show"); void b.offsetWidth; b.classList.add("show"); }
+  function popup(text, warn) {
+    const el = document.createElement("div"); el.className = "popup" + (warn ? " warn" : ""); el.textContent = text;
+    const box = $("popups"); box.appendChild(el);
+    while (box.children.length > 4) box.firstChild.remove();
+    setTimeout(() => el.remove(), 1650);
+  }
+  function addShake(n) { if (settings.shake === "on" && !reducedMotion) S.shake = Math.max(S.shake, n); }
+  function fmt(t) { if (!isFinite(t) || t <= 0) return "--"; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(1).padStart(4, "0")}`; }
+
+  // ======================= Results + podium =======================
+  let confetti = [];
+  function renderTeamResults(r) {
+    const tb = $("resTeams"); tb.textContent = "";
+    const earned = {};
+    for (const x of r.rows) if (x.team) earned[x.team] = (earned[x.team] || 0) + x.pts;
+    (r.teamChamp || []).slice(0, 8).forEach((t, i) => {
+      const tr = document.createElement("tr");
+      const mine = r.rows.find((x) => x.owner === S.me)?.team === t.n; if (mine) tr.className = "me";
+      for (const [v, cls] of [[i + 1], [t.n], [`+${earned[t.n] || 0}`, "n"], [`${t.p} pts`, "n"]]) { const d = document.createElement("td"); d.textContent = v; if (cls) d.className = cls; tr.appendChild(d); }
+      tb.appendChild(tr);
+    });
+  }
+  $("replayBtn").addEventListener("click", startReplay);
+  $("replayExit").addEventListener("click", stopReplay);
+  $("replayCam").addEventListener("click", () => {
+    const ids = S.standings; if (!ids.length) return;
+    const cur = Math.max(0, ids.indexOf(S.camTarget ?? ids[0])); S.camTarget = ids[(cur + 1) % ids.length];
+    const c = S.cars.get(S.camTarget); $("replayCam").textContent = `Follow: ${c?.name || "?"}`;
+  });
+  function showResults(r) {
+    S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
+    renderTeamResults(r);
+    $("resTeamsBox").classList.toggle("hidden", r.teams === false);
+    const sb = $("seasonBox"); sb.textContent = ""; S.resultsLen = r.season ? 40 : 12;
+    clearTimeout(S.finaleTimer);
+    // everyone in the room gets the finale (not just whoever is still on the results screen)
+    if (r.season) { S.lastSeason = r.season; S.finaleTimer = setTimeout(() => { if (S.screen !== "menu" && S.screen !== "race") openFinale(r.season); }, 7000); }
+    if (r.season) {
+      const box = document.createElement("div"); box.className = "season-box";
+      const h = document.createElement("h3"); h.textContent = `🏆 Season over! (${r.season.races} races)`;
+      const champs = document.createElement("div"); champs.className = "champs";
+      const col = (label, list) => {
+        const d = document.createElement("div"); d.append(label);
+        const b = document.createElement("b"); b.textContent = list[0] ? `${list[0].n} (${list[0].p} pts)` : "-"; d.appendChild(b);
+        const ol = document.createElement("ol"); list.slice(1, 4).forEach((x) => { const li = document.createElement("li"); li.value = list.indexOf(x) + 1; li.textContent = `${x.n}: ${x.p}`; ol.appendChild(li); }); d.appendChild(ol);
+        return d;
+      };
+      champs.appendChild(col("Driver champion", r.season.drivers));
+      if (r.season.teams.length) champs.appendChild(col("Team champion", r.season.teams));
+      const see = document.createElement("button"); see.type = "button"; see.className = "btn go fin-open"; see.textContent = "🏆 See how the season went";
+      see.addEventListener("click", () => openFinale(r.season));
+      box.append(h, champs, see); sb.appendChild(box);
+      const me = r.rows.find((x) => x.owner === S.me);
+      if (me && r.season.drivers[0]?.n === me.name) setTimeout(() => banner("CHAMPION!", "#ffcc1f"), 1500);
+    }
+    S.results = r;
+    if (S.offer) renderPill();          // keep waiting upgrades, just tucked away during the podium
+    $("resTitle").innerHTML = "";
+    const mine = r.rows.findIndex((x) => x.owner === S.me);
+    $("resTitle").append(mine >= 0 ? `${r.rows[mine].name} finished ` : `Race ${r.raceNo} results `);
+    if (mine >= 0) { const s = document.createElement("span"); s.textContent = "P" + (mine + 1); $("resTitle").append(s); }
+    const body = $("resBody"); body.textContent = "";
+    r.rows.forEach((x, i) => {
+      const tr = document.createElement("tr"); if (x.owner === S.me) tr.className = "me"; tr.style.animationDelay = (0.4 + i * 0.06) + "s";
+      const td = (t, cls) => { const d = document.createElement("td"); d.textContent = t; if (cls) d.className = cls; return d; };
+      const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}`);
+      tr.append(td(i + 1), nm, td(x.team || ""), td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
+      body.appendChild(tr);
+    });
+    S.podium = r.rows.slice(0, 3); S.podiumAt = performance.now();
+    confetti = [];
+    if (!reducedMotion) for (let i = 0; i < 120; i++) confetti.push({ x: Math.random(), y: -Math.random() * 0.6, vx: (Math.random() - 0.5) * 0.15, vy: 0.2 + Math.random() * 0.3, r: Math.random() * 6, c: ["#ffcc1f", "#e53935", "#3b82f6", "#3ecf6a", "#fff"][i % 5], s: 4 + Math.random() * 5 });
+    sfx(mine === 0 ? "win" : "level");
+    S.resultsAt = performance.now();
+    setTimeout(() => { show("results"); if (S.offer) renderPill(); }, 1400);
+  }
+  // ---- Season finale: who won, and a "bump chart" of how everyone moved up and down ----
+  const finLerp = (a, b, t) => a + (b - a) * t;
+  const FIN_COLORS = ["#ffcc1f", "#4fa3ff", "#ff5a5f", "#3ecf6a", "#c77dff", "#ff9f1c", "#2ec4b6", "#ff70a6", "#a3e635", "#e2e8f0", "#f97316", "#60a5fa"];
+  const F = { season: null, kind: "teams", lines: [], hi: null, t0: 0, raf: 0 };
+  function finaleData(season, kind) {
+    const H = season.history || [], mine = new Set((kind === "teams" ? season.mine?.teams : season.mine?.drivers) || []);
+    const last = H.length ? H[H.length - 1][kind] : [];
+    // top 10 at the end, plus your own team/driver if they finished lower
+    const pick = last.slice(0, Math.min(20, last.length)).map((x) => x.n);
+    for (const x of last) if (mine.has(x.n) && !pick.includes(x.n)) pick.push(x.n);
+    return pick.map((n, k) => {
+      const pos = H.map((snap) => { const i = snap[kind].findIndex((x) => x.n === n); return i >= 0 ? i + 1 : null; });
+      const firstPos = pos.find((v) => v !== null), fin = pos[pos.length - 1];
+      return { n, pos, pts: last.find((x) => x.n === n)?.p || 0, final: fin, move: firstPos && fin ? firstPos - fin : 0, color: FIN_COLORS[k % FIN_COLORS.length], mine: mine.has(n) };
+    });
+  }
+  function openFinale(season) {
+    if (!season?.history?.length) return;
+    F.season = season; F.kind = season.teams?.length ? "teams" : "drivers";
+    $("finTeams").classList.toggle("hidden", !season.teams?.length);
+    $("finKicker").textContent = `Season over after ${season.races} races`;
+    const ch = $("finChamps"); ch.textContent = "";
+    const hero = (label, list, colors, big) => {
+      if (!list?.[0]) return;
+      const d = document.createElement("div"); d.className = "fin-champ" + (big ? " big" : "");
+      d.style.setProperty("--c", "#ffcc1f");
+      const l = document.createElement("span"); l.className = "lbl"; l.textContent = label;
+      const n = document.createElement("strong"); n.textContent = list[0].n;
+      const p = document.createElement("span"); p.className = "pts"; p.textContent = `${list[0].p} points`;
+      d.append(l, n, p); ch.appendChild(d);
+    };
+    hero("Team champions", season.teams, season.colors?.teams, true);
+    hero("Driver champion", season.drivers, season.colors?.drivers, !season.teams?.length);
+    $("finale").classList.remove("hidden");
+    setFinKind(F.kind);
+    sfx("win");
+    const myTeam = season.mine?.teams || [], myDrv = season.mine?.drivers || [];
+    if (season.teams?.[0] && myTeam.includes(season.teams[0].n)) setTimeout(() => banner("TEAM CHAMPIONS!", "#ffcc1f"), 900);
+    else if (season.drivers?.[0] && myDrv.includes(season.drivers[0].n)) setTimeout(() => banner("CHAMPION!", "#ffcc1f"), 900);
+  }
+  function closeFinale() { $("finale").classList.add("hidden"); cancelAnimationFrame(F.raf); F.raf = 0; }
+  function setFinKind(kind) {
+    F.kind = kind; F.lines = finaleData(F.season, kind); F.hi = null; F.t0 = performance.now();
+    $("finTeams").setAttribute("aria-selected", String(kind === "teams")); $("finDrivers").setAttribute("aria-selected", String(kind === "drivers"));
+    const ol = $("finTable"); ol.textContent = "";
+    F.lines.forEach((L, i) => {
+      const li = document.createElement("li"); li.style.setProperty("--c", L.color); li.style.animationDelay = (0.25 + i * 0.07) + "s";
+      if (L.mine) li.classList.add("mine");
+      const pos = document.createElement("span"); pos.className = "fp"; pos.textContent = L.final ?? "-";
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = L.n;
+      const mv = document.createElement("span"); mv.className = "mv " + (L.move > 0 ? "up" : L.move < 0 ? "down" : "same");
+      mv.textContent = L.move > 0 ? `▲ ${L.move}` : L.move < 0 ? `▼ ${-L.move}` : "=";
+      mv.title = L.move ? `${Math.abs(L.move)} place${Math.abs(L.move) > 1 ? "s" : ""} ${L.move > 0 ? "up" : "down"} since race 1` : "Same place as after race 1";
+      const pt = document.createElement("span"); pt.className = "pt"; pt.textContent = L.pts;
+      li.append(pos, nm, mv, pt);
+      li.addEventListener("pointerenter", () => { F.hi = L.n; }); li.addEventListener("pointerleave", () => { F.hi = null; });
+      li.addEventListener("click", () => { F.hi = F.hi === L.n ? null : L.n; });
+      ol.appendChild(li);
+    });
+    if (!F.raf) F.raf = requestAnimationFrame(finLoop);
+  }
+  $("finTeams").addEventListener("click", () => setFinKind("teams"));
+  $("finDrivers").addEventListener("click", () => setFinKind("drivers"));
+  $("finClose").addEventListener("click", closeFinale);
+  function finLoop(now) {
+    F.raf = 0;
+    if ($("finale").classList.contains("hidden")) return;
+    drawFinChart(now);
+    const left = Math.max(0, (S.resultsLen || 12) - Math.floor((now - S.resultsAt) / 1000));
+    $("finBack").textContent = S.screen === "results" ? (left > 0 ? `Back to the garage in ${left}s` : "Back to the garage...") : "";
+    F.raf = requestAnimationFrame(finLoop);
+  }
+  function drawFinChart(now) {
+    const cv = $("finChart"), w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    const lines = F.lines, R = F.season.history.length;
+    const maxPos = Math.max(2, ...lines.flatMap((L) => L.pos.filter((v) => v !== null)));
+    const padL = 34, padR = Math.min(150, w * 0.3), padT = 16, padB = 28;
+    const X = (i) => padL + (R <= 1 ? (w - padL - padR) / 2 : (i / (R - 1)) * (w - padL - padR));
+    const Y = (p) => padT + ((p - 1) / Math.max(1, maxPos - 1)) * (h - padT - padB);
+    const ink = getComputedStyle(document.documentElement).getPropertyValue("--soft").trim() || "#aab0bd";
+    // grid: one column per race, one row per place
+    c.font = "600 11px 'Chakra Petch', sans-serif"; c.textBaseline = "middle";
+    for (let i = 0; i < R; i++) {
+      c.strokeStyle = "rgba(128,128,140,0.18)"; c.lineWidth = 1; c.beginPath(); c.moveTo(X(i), padT - 6); c.lineTo(X(i), h - padB + 4); c.stroke();
+      c.fillStyle = ink; c.textAlign = "center"; c.fillText(`R${i + 1}`, X(i), h - 10);
+    }
+    const step = maxPos > 16 ? 5 : maxPos > 10 ? 2 : 1;
+    c.textAlign = "right";
+    for (let p = 1; p <= maxPos; p++) if (p === 1 || p % step === 0) { c.fillStyle = ink; c.fillText(`P${p}`, padL - 8, Y(p)); }
+    // lines grow race by race
+    const prog = reducedMotion ? R : Math.min(R - 1, ((now - F.t0) / 2600) * Math.max(1, R - 1));
+    const order = lines.slice().sort((a, b) => (a.n === F.hi) - (b.n === F.hi) || a.mine - b.mine);
+    for (const L of order) {
+      const dim = F.hi && F.hi !== L.n;
+      c.globalAlpha = dim ? 0.18 : 1;
+      c.strokeStyle = L.color; c.lineWidth = L.n === F.hi ? 5 : L.mine ? 4.5 : 2.6; c.lineJoin = "round"; c.lineCap = "round";
+      if (L.mine && !dim) { c.shadowColor = L.color; c.shadowBlur = 10; }
+      c.beginPath(); let started = false, lx = 0, ly = 0;
+      for (let i = 0; i < R; i++) {
+        if (L.pos[i] === null) { started = false; continue; }
+        if (i > prog + 1e-6) {
+          // partly drawn segment to the next race
+          if (started && i - 1 <= prog && L.pos[i - 1] !== null) { const f = prog - (i - 1); const x = finLerp(X(i - 1), X(i), f), y = finLerp(Y(L.pos[i - 1]), Y(L.pos[i]), f); c.lineTo(x, y); lx = x; ly = y; }
+          break;
+        }
+        const x = X(i), y = Y(L.pos[i]);
+        started ? c.lineTo(x, y) : c.moveTo(x, y); started = true; lx = x; ly = y;
+      }
+      c.stroke(); c.shadowBlur = 0;
+      c.fillStyle = L.color;
+      for (let i = 0; i < R && i <= prog + 1e-6; i++) if (L.pos[i] !== null) { c.beginPath(); c.arc(X(i), Y(L.pos[i]), L.mine || L.n === F.hi ? 4.5 : 3.2, 0, Math.PI * 2); c.fill(); }
+      // name label once the line reaches the last race
+      if (prog >= R - 1 - 1e-6 && L.final) {
+        c.textAlign = "left"; c.font = `${L.mine || L.n === F.hi ? 700 : 600} 12px 'Chakra Petch', sans-serif`;
+        const label = L.n.length > 16 ? L.n.slice(0, 15) + "…" : L.n;
+        c.fillText(`${L.final}. ${label}`, X(R - 1) + 10, Y(L.final));
+      }
+      c.globalAlpha = 1;
+    }
+  }
+  function drawPodium(now) {
+    const cv = $("podium"), r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!r.width) return;
+    if (cv.width !== Math.round(r.width * dpr)) { cv.width = r.width * dpr; cv.height = r.height * dpr; }
+    const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, r.width, r.height);
+    const w = r.width, h = r.height, k = Math.min(1, (now - S.podiumAt - 1400) / 700);
+    const steps = [[1, 0.5, 70], [0, 0.22, 50], [2, 0.78, 35]];
+    for (const [i, fx, ph] of steps) {
+      const car = S.podium[i]; if (!car) continue;
+      const rise = Math.max(0, Math.min(1, k * 1.4 - (i === 0 ? 0.4 : i === 1 ? 0 : 0.2)));
+      const x = w * fx, stepH = ph * rise;
+      c.fillStyle = ["#ffcc1f", "#cfd8dc", "#d7a26b"][i]; c.fillRect(x - 50, h - stepH, 100, stepH);
+      c.fillStyle = "#1b1b1b"; c.font = "400 22px 'Russo One', sans-serif"; c.textAlign = "center"; c.fillText(String(i + 1), x, h - stepH + 26);
+      if (rise > 0.1) {
+        drawCar(c, car, x, h - stepH - 18 - (reducedMotion ? 0 : Math.abs(Math.sin(now / 300 + i)) * 4), -Math.PI / 2 + 0.0001, 1.2, { glow: car.owner === S.me });
+        c.fillStyle = "#fff"; c.font = "700 13px 'Chakra Petch', sans-serif"; c.fillText(car.name, x, h - stepH - 50);
+      }
+    }
+    c.globalAlpha = 1;
+    for (const p of confetti) {
+      p.x += p.vx * 0.016; p.y += p.vy * 0.016; p.r += 0.1;
+      if (p.y > 1.1) { p.y = -0.1; p.x = Math.random(); }
+      c.save(); c.translate(p.x * w, p.y * h); c.rotate(p.r); c.fillStyle = p.c; c.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); c.restore();
+    }
+    const left = Math.max(0, (S.resultsLen || 12) - Math.floor((now - S.resultsAt) / 1000));
+    $("backText").textContent = left > 0 ? `Back to the garage in ${left}s` : "Back to the garage...";
+    if (left <= 0 && S.lobby?.phase === "lobby") show("lobby");
+  }
+
+  // ======================= Race rendering =======================
+  const scr = { w: 0, h: 0, dpr: 1 };
+  function resize() {
+    scr.dpr = Math.min(window.devicePixelRatio || 1, 2); scr.w = window.innerWidth; scr.h = window.innerHeight;
+    view.width = scr.w * scr.dpr; view.height = scr.h * scr.dpr;
+    const mw = mini.getBoundingClientRect().width || 180, mh = mini.getBoundingClientRect().height || 130;
+    mini.width = mw * scr.dpr; mini.height = mh * scr.dpr;
+  }
+  window.addEventListener("resize", () => { resize(); if (settings.ui === "auto") applySettings(); });
+  const cam = { x: 0, y: 0, z: 1 };
+  const hwAt = (t, i) => (t.hw ? t.hw[i] : t.trackW / 2);
+  // same pit lane math as the server (the lane sits a fixed gap outside the road edge)
+  function lanePointW(t, k) {
+    const pl = t.pitLane, i = ((pl.entry + Math.floor(k)) % t.N + t.N) % t.N, j = (i + 1) % t.N, f = k - Math.floor(k);
+    const ramp = clamp(Math.min(k, pl.len - k) / 5, 0, 1), off = pl.side * (hwAt(t, i) + (pl.gap ?? 62)) * ramp;
+    return { x: t.pts[i].x + (t.pts[j].x - t.pts[i].x) * f + t.nor[i].x * off, y: t.pts[i].y + (t.pts[j].y - t.pts[i].y) * f + t.nor[i].y * off, i };
+  }
+  // indices of each raised (bridge) stretch of the track
+  function elevSegments(t) {
+    const out = []; if (!t.elev) return out;
+    let cur = null;
+    for (let i = 0; i < t.N; i++) {
+      if (t.elev[i] > 0.02) { if (!cur) cur = []; cur.push(i); }
+      else if (cur) { out.push(cur); cur = null; }
+    }
+    if (cur) { if (out.length && out[0][0] === 0) out[0] = [...cur, ...out[0]]; else out.push(cur); }
+    return out;
+  }
+  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150" };
+  // The road is drawn as "runs": stretches where the width is (almost) the same, each stroked
+  // with its own line width. Width changes are gradual, so the joins are invisible.
+  function widthRuns(t, idxs, cum, closed) {
+    const runs = [], qz = (i) => Math.round(hwAt(t, i) / 2) * 2;
+    let a = 0;
+    for (let k = 1; k <= idxs.length; k++) {
+      if (k < idxs.length && qz(idxs[k]) === qz(idxs[a])) continue;
+      const p = new Path2D(), end = Math.min(idxs.length - 1, k);
+      for (let m = a; m <= end; m++) { const q = t.pts[idxs[m]]; m === a ? p.moveTo(q.x, q.y) : p.lineTo(q.x, q.y); }
+      if (closed && a === 0 && k === idxs.length) { p.lineTo(t.pts[idxs[0]].x, t.pts[idxs[0]].y); p.closePath(); }
+      runs.push({ p, hw: qz(idxs[a]), dash: cum[idxs[a]] });
+      a = k;
+    }
+    return runs;
+  }
+  // Build everything about the track that never changes (once per track).
+  let geoSeq = 0;
+  function buildGeo(t) {
+    const N = t.N, g = { id: ++geoSeq, gravel: new Path2D(), lane: new Path2D(), wall: new Path2D(), garages: [] };
+    const cum = [0];
+    for (let i = 1; i <= N; i++) cum.push(cum[i - 1] + Math.hypot(t.pts[i % N].x - t.pts[i - 1].x, t.pts[i % N].y - t.pts[i - 1].y));
+    g.cum = cum;
+    // start the runs where the width changes (so the loop's end joins the start cleanly)
+    let s0 = 0; const qz = (i) => Math.round(hwAt(t, i) / 2) * 2;
+    for (let i = 0; i < N; i++) if (qz(i) !== qz((i - 1 + N) % N)) { s0 = i; break; }
+    const all = Array.from({ length: N + 1 }, (_, k) => (s0 + k) % N);
+    const uniform = all.every((i) => qz(i) === qz(all[0]));
+    g.runs = uniform ? widthRuns(t, all.slice(0, N), cum, true) : widthRuns(t, all, cum, false);
+    const segs = [];
+    let i = 0;
+    while (i < N) {
+      if (!t.gravel[i]) { i++; continue; }
+      const side = t.gravel[i], from = i;
+      while (i < N && t.gravel[i] === side) i++;
+      segs.push([from, i - 1, side]);
+    }
+    for (const [a, b, side] of segs) {
+      const inner = [], outer = [];
+      for (let k = a; k <= b; k++) {
+        const p = t.pts[k], n = t.nor[k], hw = hwAt(t, k);
+        inner.push([p.x + n.x * side * (hw + 14), p.y + n.y * side * (hw + 14)]);
+        outer.push([p.x + n.x * side * (hw + 140), p.y + n.y * side * (hw + 140)]);
+      }
+      [...inner, ...outer.reverse()].forEach((q, j) => (j ? g.gravel.lineTo(q[0], q[1]) : g.gravel.moveTo(q[0], q[1])));
+      g.gravel.closePath();
+    }
+    const pl = t.pitLane;
+    for (let k = 0; k <= pl.len; k += 0.5) { const q = lanePointW(t, k); k ? g.lane.lineTo(q.x, q.y) : g.lane.moveTo(q.x, q.y); }
+    for (let k = 5; k <= pl.len - 5; k += 0.5) {
+      const q = lanePointW(t, k), n = t.nor[q.i], hw = hwAt(t, q.i);
+      const px = t.pts[q.i].x + n.x * pl.side * (hw + 24), py = t.pts[q.i].y + n.y * pl.side * (hw + 24);
+      k > 5 ? g.wall.lineTo(px, py) : g.wall.moveTo(px, py);
+    }
+    const teamColor = {};
+    for (const c of (S.race?.info ? S.race.info.values() : [])) if (!teamColor[c.team]) teamColor[c.team] = c.color;
+    for (const [team, k] of Object.entries(pl.boxes || {})) {
+      const q = lanePointW(t, k), n = t.nor[q.i], tn = t.tan[q.i];
+      g.garages.push({ x: q.x + n.x * pl.side * 52, y: q.y + n.y * pl.side * 52, sx: q.x, sy: q.y, ang: Math.atan2(tn.y, tn.x), team, color: teamColor[team] || "#666" });
+    }
+    g.entry = lanePointW(t, 2); g.exit = lanePointW(t, pl.len - 2);
+    // Bridges: each raised stretch is redrawn on top in the same style (so the ramps blend in),
+    // with a shadow that slides out as the road climbs and concrete barriers along the top.
+    // They're sorted low to high, so a double ramp is drawn over the bridge it crosses.
+    const P = (k, off, e, shift) => ({ x: t.pts[k].x + t.nor[k].x * off + (shift ? 18 * e : 0), y: t.pts[k].y + t.nor[k].y * off + (shift ? 26 * e : 0) });
+    const poly = (list) => { const p = new Path2D(); list.forEach((q, k) => (k ? p.lineTo(q.x, q.y) : p.moveTo(q.x, q.y))); p.closePath(); return p; };
+    g.segOf = new Int16Array(N).fill(-1);
+    g.bridges = elevSegments(t).map((seg) => {
+      const first = seg[0], last = seg[seg.length - 1], w = (k) => (k + N) % N;
+      const idxs = [w(first - 2), w(first - 1), ...seg, w(last + 1), w(last + 2)];
+      const peak = Math.max(...seg.map((k) => t.elev[k]));
+      const shadow = poly([...idxs.map((k) => P(k, hwAt(t, k) + 10, Math.min(1.6, t.elev[k]), true)), ...idxs.slice().reverse().map((k) => P(k, -(hwAt(t, k) + 10), Math.min(1.6, t.elev[k]), true))]);
+      const high = idxs.filter((k) => t.elev[k] >= 0.5), walls = [];
+      if (high.length > 1) for (const side of [-1, 1]) {
+        walls.push({
+          fill: poly([...high.map((k) => P(k, side * (hwAt(t, k) + 7))), ...high.slice().reverse().map((k) => P(k, side * (hwAt(t, k) + 17)))]),
+          top: (() => { const p = new Path2D(); high.forEach((k, m) => { const q = P(k, side * (hwAt(t, k) + 16)); m ? p.lineTo(q.x, q.y) : p.moveTo(q.x, q.y); }); return p; })(),
+        });
+      }
+      // expansion joints across the ramps so you can see the road climbing
+      const joints = new Path2D();
+      for (let m = 0; m < idxs.length; m += 2) { const k = idxs[m], e = t.elev[k]; if (e < 0.08 || e > peak - 0.05) continue; const a = P(k, hwAt(t, k) - 4), b = P(k, -(hwAt(t, k) - 4)); joints.moveTo(a.x, a.y); joints.lineTo(b.x, b.y); }
+      return { idxs, seg, peak, shadow, walls, joints, runs: widthRuns(t, idxs, cum, false), top: widthRuns(t, [w(first - 3), ...idxs, w(last + 3)], cum, false) };
+    }).sort((a, b) => a.peak - b.peak);
+    // every bit of road a bridge's deck is drawn over (ramps + the few points either side) belongs
+    // to that bridge: a car there is drawn right after it, so it never slips under its own ramp
+    g.bridges.forEach((br, k) => { const a = br.seg[0], b = br.seg[br.seg.length - 1]; for (let d = -5; d <= b - a + 5 + (b < a ? N : 0); d++) g.segOf[(a + d + N) % N] = k; });
+    if (t.line) { g.line = new Path2D(); t.pts.forEach((p, k) => { const x = p.x + t.nor[k].x * t.line[k], y = p.y + t.nor[k].y * t.line[k]; k ? g.line.lineTo(x, y) : g.line.moveTo(x, y); }); g.line.closePath(); }
+    g.trackPath = new Path2D(); t.pts.forEach((p, k) => (k ? g.trackPath.lineTo(p.x, p.y) : g.trackPath.moveTo(p.x, p.y))); g.trackPath.closePath();
+    return g;
+  }
+  // textures (made once)
+  const texCache = {};
+  function tex(kind, th) {
+    const key = kind + (th.ground || "");
+    if (texCache[key]) return texCache[key];
+    const cv = document.createElement("canvas"); cv.width = cv.height = 256;
+    const c = cv.getContext("2d");
+    let seed = kind === "gravel" ? 7 : 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    if (kind === "gravel") { c.fillStyle = GRAVEL[th.key] || GRAVEL.grass; c.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { c.fillStyle = i % 3 ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.12)"; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 2, 2 + rnd() * 2); } }
+    else {
+      c.fillStyle = th.ground; c.fillRect(0, 0, 256, 256);
+      // every pattern repeats cleanly every 256px, so the tiles join up without seams
+      const T = th.tex;
+      if (T === "stripes") { c.fillStyle = "rgba(255,255,255,0.045)"; for (let x = 0; x < 256; x += 64) c.fillRect(x, 0, 32, 256); }
+      if (T === "dunes") { c.strokeStyle = "rgba(120,80,30,0.13)"; c.lineWidth = 2.5; for (let y = 8; y < 256; y += 21) { c.beginPath(); for (let x = 0; x <= 256; x += 4) c.lineTo(x, y + Math.sin((x / 256) * Math.PI * 4 + y) * 5); c.stroke(); } }
+      if (T === "drifts") { for (let i = 0; i < 26; i++) { const x = rnd() * 256, y = rnd() * 256, r = 14 + rnd() * 30; for (const [ox, oy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) { const g = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); } } }
+      if (T === "slabs") { c.strokeStyle = "rgba(0,0,0,0.16)"; c.lineWidth = 2; for (let y = 0; y < 256; y += 32) { c.beginPath(); c.moveTo(0, y); c.lineTo(256, y); c.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < 256; x += 64) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 32); c.stroke(); } } }
+      if (T === "grid") { c.strokeStyle = "rgba(170,90,255,0.22)"; c.lineWidth = 1.5; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v, 0); c.lineTo(v, 256); c.moveTo(0, v); c.lineTo(256, v); c.stroke(); } }
+      if (T === "lava") { c.lineCap = "round"; for (let i = 0; i < 7; i++) { let x = rnd() * 256, y = rnd() * 256; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; c.lineTo(x, y); } c.strokeStyle = "rgba(255,80,10,0.18)"; c.lineWidth = 7; c.stroke(); c.strokeStyle = "rgba(255,170,40,0.55)"; c.lineWidth = 1.8; c.stroke(); } }
+      if (T === "leaves") { for (let i = 0; i < 160; i++) { c.fillStyle = ["rgba(230,120,30,0.5)", "rgba(200,60,30,0.45)", "rgba(240,190,60,0.45)"][i % 3]; c.save(); c.translate(rnd() * 256, rnd() * 256); c.rotate(rnd() * 6.3); c.beginPath(); c.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.restore(); } }
+      for (let i = 0; i < 420; i++) { c.fillStyle = th.speck[i % 2]; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 4, 2 + rnd() * 4); }
+    }
+    return (texCache[key] = cv);
+  }
+  function strokeRuns(c, runs, extra, color, dash) {
+    c.strokeStyle = color;
+    for (const r of runs) {
+      c.lineWidth = r.hw * 2 + extra;
+      if (dash) { c.setLineDash(dash); c.lineDashOffset = r.dash; }
+      c.stroke(r.p);
+    }
+    if (dash) { c.setLineDash([]); c.lineDashOffset = 0; }
+  }
+  // Everything that never moves: ground, gravel, pit lane, the road, kerbs, garages, start line.
+  // ======================= Scenery: buildings, trees and props around the track =======================
+  // Made once per track + theme with a seeded random, so it's the same for everyone in the room.
+  function seeded(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
+  function buildDecor(t, G, theme) {
+    const key = theme; G.decor = G.decor || {};
+    if (G.decor[key]) return G.decor[key];
+    let seed = 7; for (let i = 0; i < t.N; i += 17) seed = (seed * 31 + Math.round(t.pts[i].x + t.pts[i].y * 3)) | 0;
+    const R = seeded(seed ^ theme.length * 999);
+    // blocked area: the road + run-off + a gap, the pit lane and garages
+    const CELL = 40, cw = Math.ceil(t.W / CELL) + 1, ch = Math.ceil(t.H / CELL) + 1, used = new Uint8Array(cw * ch);
+    const block = (x, y, r) => { for (let gy = Math.max(0, Math.floor((y - r) / CELL)); gy <= Math.min(ch - 1, Math.floor((y + r) / CELL)); gy++) for (let gx = Math.max(0, Math.floor((x - r) / CELL)); gx <= Math.min(cw - 1, Math.floor((x + r) / CELL)); gx++) { const dx = gx * CELL + CELL / 2 - x, dy = gy * CELL + CELL / 2 - y; if (dx * dx + dy * dy < (r + CELL * 0.7) ** 2) used[gy * cw + gx] = 1; } };
+    const pl = t.pitLane || {};
+    for (let i = 0; i < t.N; i += 2) {
+      const inPit = pl.len && ((i - pl.entry + t.N) % t.N) < pl.len + 6;
+      block(t.pts[i].x, t.pts[i].y, t.hw[i] + (inPit ? 200 : theme === "city" || theme === "neon" ? 55 : 80));
+    }
+    for (const g of G.garages || []) block(g.x, g.y, 80);
+    const free = (x, y, r) => {
+      if (x - r < 0 || y - r < 0 || x + r > t.W || y + r > t.H) return false;
+      for (let gy = Math.floor((y - r) / CELL); gy <= Math.floor((y + r) / CELL); gy++) for (let gx = Math.floor((x - r) / CELL); gx <= Math.floor((x + r) / CELL); gx++) if (used[gy * cw + gx]) return false;
+      return true;
+    };
+    const items = [];
+    const put = (it) => { items.push(it); block(it.x, it.y, it.r); };
+    // grandstands along the start straight, both sides if there's room
+    const st = 0;
+    for (const side of [-1, 1]) for (const k of [-2, 2, 6]) {
+      const i = (st + Math.round(k * 120 / (t.length / t.N)) + t.N * 4) % t.N, p = t.pts[i], n = t.nor[i], tn = t.tan[i];
+      const off = t.hw[i] + 150, x = p.x + n.x * off * side, y = p.y + n.y * off * side;
+      if (free(x, y, 70)) put({ k: "stand", x, y, r: 75, ang: Math.atan2(tn.y, tn.x), side, w: 220, h: 60 });
+    }
+    // what grows / stands where, per theme
+    const P = {
+      grass:   { b: 0.18, bk: "farm", t: ["tree", "tree", "tree", "bush", "hay"] },
+      night:   { b: 0.2, bk: "farm", t: ["tree", "tree", "lamp", "bush"] },
+      desert:  { b: 0.12, bk: "adobe", t: ["cactus", "cactus", "rock", "rock", "tumble"] },
+      snow:    { b: 0.14, bk: "cabin", t: ["pine", "pine", "pine", "snowman", "rock"] },
+      autumn:  { b: 0.16, bk: "farm", t: ["fall", "fall", "fall", "hay", "pumpkin"] },
+      beach:   { b: 0.12, bk: "hut", t: ["palm", "palm", "umbrella", "umbrella", "towel"] },
+      city:    { b: 0.75, bk: "office", t: ["tree", "car", "car"] },
+      volcano: { b: 0.1, bk: "bunker", t: ["rock", "rock", "lava", "vent", "rock"] },
+      neon:    { b: 0.8, bk: "cyber", t: ["holo", "lampNeon", "car"] },
+    }[theme] || { b: 0.15, bk: "farm", t: ["tree"] };
+    const area = (t.W * t.H) / 1e6, tries = Math.round(area * (theme === "city" || theme === "neon" ? 700 : 300));
+    if (theme === "volcano") for (let k = 0; k < 20; k++) { const r = 180 + R() * 120, x = r + R() * (t.W - 2 * r), y = r + R() * (t.H - 2 * r); if (free(x, y, r)) { put({ k: "volcano", x, y, r }); break; } }
+    if (theme === "beach") { // a strip of sea along the emptiest edge
+      for (const edge of ["top", "bottom", "left", "right"]) {
+        const sea = { k: "sea", edge, depth: 170, x: t.W / 2, y: t.H / 2, r: 0 };
+        let ok = 0, tot = 0;
+        for (let q = 0; q < 1; q += 0.05) { tot++; const x = edge === "left" ? 90 : edge === "right" ? t.W - 90 : q * t.W, y = edge === "top" ? 90 : edge === "bottom" ? t.H - 90 : q * t.H; if (free(x, y, 80)) ok++; }
+        if (ok / tot > 0.85) { items.push(sea); break; }
+      }
+    }
+    for (let k = 0; k < tries; k++) {
+      const x = R() * t.W, y = R() * t.H;
+      if (R() < P.b) {
+        const big = P.bk === "office" || P.bk === "cyber";
+        const w = big ? 70 + R() * 130 : 60 + R() * 50, h = big ? 70 + R() * 130 : 45 + R() * 35, r = Math.hypot(w, h) / 2;
+        if (free(x, y, r)) put({ k: P.bk, x, y, r, w, h, ang: big ? (R() < 0.7 ? 0 : (R() - 0.5) * 0.5) : R() * Math.PI, hgt: big ? 20 + R() * 60 : 10, s: R(), c: Math.floor(R() * 6) });
+      } else {
+        const kind = P.t[Math.floor(R() * P.t.length)], r = { tree: 20 + R() * 16, fall: 20 + R() * 16, pine: 16 + R() * 12, palm: 22 + R() * 10, bush: 10 + R() * 6, car: 14, holo: 26, lamp: 8, lampNeon: 8 }[kind] || 12 + R() * 8;
+        if (free(x, y, r)) put({ k: kind, x, y, r, ang: R() * Math.PI * 2, s: R(), c: Math.floor(R() * 6) });
+      }
+    }
+    // draw order: sea, ground stuff, then taller things on top
+    const layer = { sea: 0, volcano: 1, lava: 1, towel: 1, vent: 1, stand: 2 };
+    items.sort((a, b) => (layer[a.k] ?? 3) - (layer[b.k] ?? 3) || a.y - b.y);
+    return (G.decor[key] = items);
+  }
+  const shadowCol = "rgba(0,0,0,0.28)";
+  function blob(c, x, y, r, col) { c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); }
+  function drawDecor(c, t, G, th, opts) {
+    const items = buildDecor(t, G, th.key || "grass");
+    const x0 = opts.x0 ?? 0, y0 = opts.y0 ?? 0, x1 = x0 + (opts.w ?? t.W), y1 = y0 + (opts.h ?? t.H);
+    const glow = th.key === "neon" || th.key === "night";
+    for (const d of items) {
+      if (d.k !== "sea" && (d.x + d.r + 40 < x0 || d.y + d.r + 40 < y0 || d.x - d.r - 40 > x1 || d.y - d.r - 40 > y1)) continue;
+      const { x, y, r } = d;
+      switch (d.k) {
+        case "sea": {
+          const D = d.depth, g = d.edge === "top" ? c.createLinearGradient(0, 0, 0, D) : d.edge === "bottom" ? c.createLinearGradient(0, t.H, 0, t.H - D) : d.edge === "left" ? c.createLinearGradient(0, 0, D, 0) : c.createLinearGradient(t.W, 0, t.W - D, 0);
+          g.addColorStop(0, "#1f8fb0"); g.addColorStop(0.75, "#35b8cf"); g.addColorStop(1, "rgba(120,220,230,0.9)");
+          c.fillStyle = g;
+          if (d.edge === "top") c.fillRect(0, 0, t.W, D); else if (d.edge === "bottom") c.fillRect(0, t.H - D, t.W, D); else if (d.edge === "left") c.fillRect(0, 0, D, t.H); else c.fillRect(t.W - D, 0, D, t.H);
+          c.strokeStyle = "rgba(255,255,255,0.35)"; c.lineWidth = 3;
+          for (let w = 30; w < D - 20; w += 38) { c.beginPath(); for (let q = 0; q <= 1.001; q += 0.02) { const L = d.edge === "top" || d.edge === "bottom" ? t.W : t.H, a = q * L, b = w + Math.sin(q * 40 + w) * 5; const px = d.edge === "top" || d.edge === "bottom" ? a : d.edge === "left" ? b : t.W - b, py = d.edge === "top" ? b : d.edge === "bottom" ? t.H - b : a; q ? c.lineTo(px, py) : c.moveTo(px, py); } c.stroke(); }
+          break;
+        }
+        case "stand": {
+          c.save(); c.translate(x, y); c.rotate(d.ang);
+          c.fillStyle = shadowCol; c.fillRect(-d.w / 2 + 8, -d.h / 2 + 10, d.w, d.h);
+          c.fillStyle = "#5c6470"; c.fillRect(-d.w / 2, -d.h / 2, d.w, d.h);
+          const R2 = seeded(Math.round(x * 7 + y));
+          for (let row = 0; row < 5; row++) for (let q = 0; q < 26; q++) { c.fillStyle = ["#e53935", "#ffcc1f", "#1e88e5", "#fff", "#43a047", "#ff7043"][Math.floor(R2() * 6)]; c.fillRect(-d.w / 2 + 6 + q * 8.2, -d.h / 2 + 8 + row * 9, 5, 5); }
+          c.fillStyle = "rgba(255,255,255,0.85)"; c.fillRect(-d.w / 2, (d.side > 0 ? -d.h / 2 - 6 : d.h / 2), d.w, 6);
+          c.restore(); break;
+        }
+        case "tree": case "fall": case "bush": {
+          const pal = d.k === "fall" ? [["#d9621f", "#f08a3a"], ["#b8321f", "#d9553a"], ["#e0a526", "#f3c44a"]][d.c % 3] : th.key === "night" ? ["#1f3a24", "#2b4d31"] : ["#2f6b2a", "#3f8a36"];
+          blob(c, x + r * 0.35, y + r * 0.4, r, shadowCol);
+          blob(c, x, y, r, pal[0]); blob(c, x - r * 0.25, y - r * 0.25, r * 0.62, pal[1]);
+          blob(c, x - r * 0.4, y - r * 0.4, r * 0.22, "rgba(255,255,255,0.12)"); break;
+        }
+        case "pine": {
+          blob(c, x + r * 0.3, y + r * 0.35, r, shadowCol);
+          for (const [k2, col] of [[1, "#1f4d34"], [0.68, "#2a6444"], [0.36, "#3b7d57"]]) { c.fillStyle = col; c.beginPath(); for (let a = 0; a < 16; a++) { const rr = (a % 2 ? 0.62 : 1) * r * k2, an = (a / 16) * Math.PI * 2 + d.ang; c.lineTo(x + Math.cos(an) * rr, y + Math.sin(an) * rr); } c.fill(); }
+          if (th.key === "snow") { blob(c, x - r * 0.2, y - r * 0.2, r * 0.45, "rgba(255,255,255,0.8)"); } break;
+        }
+        case "palm": {
+          blob(c, x + 8, y + 10, r * 0.8, shadowCol);
+          c.strokeStyle = "#2f8a3a"; c.lineCap = "round";
+          for (let a = 0; a < 7; a++) { const an = d.ang + a * 0.9; c.lineWidth = 7; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + Math.cos(an) * r * 0.6, y + Math.sin(an) * r * 0.6 - 4, x + Math.cos(an) * r, y + Math.sin(an) * r); c.stroke(); }
+          blob(c, x, y, 5, "#7a5230"); break;
+        }
+        case "cactus": {
+          blob(c, x + 6, y + 7, r * 0.6, shadowCol); c.fillStyle = "#3f8f4a"; c.strokeStyle = "#2a6a33"; c.lineWidth = 2;
+          c.save(); c.translate(x, y); c.rotate(d.ang);
+          rrect(c, -5, -r * 0.8, 10, r * 1.6, 5); c.fill(); c.stroke(); rrect(c, -r * 0.6, -4, r * 1.2, 8, 4); c.fill(); c.stroke(); c.restore(); break;
+        }
+        case "rock": {
+          c.fillStyle = shadowCol; c.beginPath(); c.ellipse(x + 5, y + 6, r, r * 0.8, d.ang, 0, Math.PI * 2); c.fill();
+          c.fillStyle = th.key === "volcano" ? "#3b3330" : th.key === "snow" ? "#9aa5b1" : "#9c8468";
+          c.beginPath(); for (let a = 0; a < 7; a++) { const an = d.ang + (a / 7) * Math.PI * 2, rr = r * (0.75 + ((a * 37 + d.c) % 5) * 0.07); c.lineTo(x + Math.cos(an) * rr, y + Math.sin(an) * rr); } c.fill();
+          c.fillStyle = "rgba(255,255,255,0.12)"; c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2); c.fill(); break;
+        }
+        case "volcano": {
+          for (const [k2, col] of [[1, "#3a2c27"], [0.78, "#4a3830"], [0.52, "#5b463b"], [0.3, "#2a1a14"]]) blob(c, x, y, r * k2, col);
+          const g = c.createRadialGradient(x, y, 0, x, y, r * 0.28); g.addColorStop(0, "#ffdf6b"); g.addColorStop(0.5, "#ff6a1a"); g.addColorStop(1, "rgba(255,60,10,0)");
+          c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 0.28, 0, Math.PI * 2); c.fill();
+          c.strokeStyle = "rgba(255,110,30,0.6)"; c.lineWidth = 4; for (let a = 0; a < 5; a++) { const an = d.s * 6 + a * 1.3; c.beginPath(); c.moveTo(x + Math.cos(an) * r * 0.3, y + Math.sin(an) * r * 0.3); c.lineTo(x + Math.cos(an + 0.2) * r * 0.9, y + Math.sin(an + 0.2) * r * 0.9); c.stroke(); }
+          break;
+        }
+        case "lava": case "vent": {
+          const g = c.createRadialGradient(x, y, 0, x, y, r * 1.3); g.addColorStop(0, "#ffd54a"); g.addColorStop(0.45, "#ff6a1a"); g.addColorStop(1, "rgba(120,20,0,0)");
+          c.fillStyle = g; c.beginPath(); c.ellipse(x, y, r * 1.3, r, d.ang, 0, Math.PI * 2); c.fill(); break;
+        }
+        case "hay": { blob(c, x + 4, y + 5, r * 0.8, shadowCol); blob(c, x, y, r * 0.8, "#d8b44a"); c.strokeStyle = "#b8922e"; c.lineWidth = 2; c.beginPath(); c.arc(x, y, r * 0.45, 0, Math.PI * 2); c.stroke(); break; }
+        case "pumpkin": { blob(c, x, y, r * 0.6, "#e8791f"); blob(c, x, y - r * 0.5, 2.5, "#3f6b2a"); break; }
+        case "snowman": { blob(c, x + 4, y + 4, r * 0.8, shadowCol); blob(c, x, y, r * 0.8, "#fff"); blob(c, x, y, r * 0.45, "#f1f5f9"); blob(c, x + 2, y, 2, "#ff7a1a"); break; }
+        case "tumble": { c.strokeStyle = "#a3824f"; c.lineWidth = 1.5; for (let a = 0; a < 6; a++) { c.beginPath(); c.arc(x + a - 3, y, r * 0.7, a, a + 4); c.stroke(); } break; }
+        case "umbrella": {
+          blob(c, x + 6, y + 7, r, shadowCol);
+          const cols = [["#e53935", "#fff"], ["#1e88e5", "#fff"], ["#ffcc1f", "#ff7043"]][d.c % 3];
+          for (let a = 0; a < 8; a++) { c.fillStyle = cols[a % 2]; c.beginPath(); c.moveTo(x, y); c.arc(x, y, r, d.ang + (a / 8) * Math.PI * 2, d.ang + ((a + 1) / 8) * Math.PI * 2); c.fill(); }
+          break;
+        }
+        case "towel": { c.save(); c.translate(x, y); c.rotate(d.ang); c.fillStyle = ["#ff70a6", "#2ec4b6", "#ffcc1f"][d.c % 3]; c.fillRect(-r, -r * 0.45, r * 2, r * 0.9); c.fillStyle = "rgba(255,255,255,0.6)"; c.fillRect(-r, -r * 0.1, r * 2, r * 0.2); c.restore(); break; }
+        case "car": {
+          c.save(); c.translate(x, y); c.rotate(Math.round(d.ang / (Math.PI / 2)) * (Math.PI / 2));
+          c.fillStyle = shadowCol; c.fillRect(-10, -5, 24, 13);
+          c.fillStyle = ["#e53935", "#1e88e5", "#f5f5f5", "#333", "#ffcc1f", "#43a047"][d.c]; rrect(c, -12, -6, 24, 12, 3); c.fill();
+          c.fillStyle = "rgba(20,30,40,0.7)"; c.fillRect(-4, -5, 9, 10); c.restore(); break;
+        }
+        case "lamp": case "lampNeon": {
+          const col = d.k === "lampNeon" ? ["#22e6ff", "#ff2bd6", "#a855f7"][d.c % 3] : "rgba(255,230,160,1)";
+          if (glow) { const g = c.createRadialGradient(x, y, 0, x, y, 60); g.addColorStop(0, d.k === "lampNeon" ? col.replace(")", ",0.35)").replace("#", "#") : "rgba(255,230,160,0.35)"); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = d.k === "lampNeon" ? hexA(col, 0.3) : "rgba(255,230,160,0.3)"; c.beginPath(); c.arc(x, y, 50, 0, Math.PI * 2); c.fill(); }
+          blob(c, x, y, 4, col); break;
+        }
+        case "holo": {
+          const col = ["#22e6ff", "#ff2bd6", "#a855f7", "#39ff88"][d.c % 4];
+          c.save(); c.translate(x, y); c.rotate(d.ang); c.shadowColor = col; c.shadowBlur = 18; c.strokeStyle = col; c.lineWidth = 3;
+          c.strokeRect(-22, -14, 44, 28); c.globalAlpha = 0.35; c.fillStyle = col; c.fillRect(-22, -14, 44, 28); c.globalAlpha = 1;
+          c.fillStyle = col; for (let q = 0; q < 3; q++) c.fillRect(-16, -8 + q * 7, 12 + ((d.c + q) % 3) * 8, 3); c.restore(); break;
+        }
+        default: drawBuilding(c, d, th);
+      }
+    }
+  }
+  function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
+  function drawBuilding(c, d, th) {
+    const { x, y, w, h, ang, hgt } = d, k = d.k;
+    c.save(); c.translate(x, y); c.rotate(ang);
+    // fake height: a shadow shifted down-right by how tall it is
+    const sh = k === "office" || k === "cyber" ? hgt : 12;
+    c.fillStyle = k === "cyber" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.3)";
+    c.beginPath(); c.moveTo(-w / 2, -h / 2); c.lineTo(w / 2, -h / 2); c.lineTo(w / 2 + sh * 0.6, -h / 2 + sh); c.lineTo(w / 2 + sh * 0.6, h / 2 + sh); c.lineTo(-w / 2 + sh * 0.6, h / 2 + sh); c.lineTo(-w / 2, h / 2); c.closePath(); c.fill();
+    if (k === "cyber") {
+      const neon = ["#22e6ff", "#ff2bd6", "#a855f7", "#39ff88", "#ffcc1f"][d.c % 5], neon2 = ["#ff2bd6", "#22e6ff", "#39ff88", "#a855f7", "#22e6ff"][d.c % 5];
+      c.fillStyle = ["#151027", "#1b1433", "#0f1426", "#1a0f24"][d.c % 4]; c.fillRect(-w / 2, -h / 2, w, h);
+      // glowing window grid
+      const R2 = seeded(Math.round(x * 13 + y * 7));
+      for (let wy = -h / 2 + 8; wy < h / 2 - 8; wy += 10) for (let wx = -w / 2 + 8; wx < w / 2 - 8; wx += 9) if (R2() < 0.45) { c.fillStyle = R2() < 0.8 ? hexA(neon, 0.55) : "rgba(255,255,255,0.7)"; c.fillRect(wx, wy, 5, 4); }
+      c.shadowColor = neon; c.shadowBlur = 16; c.strokeStyle = neon; c.lineWidth = 2.5; c.strokeRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3);
+      c.shadowColor = neon2; c.strokeStyle = neon2; c.lineWidth = 2; c.beginPath(); c.moveTo(-w / 2 + 6, -h / 2 + 6); c.lineTo(-w / 2 + Math.min(w, h) * 0.45, -h / 2 + 6); c.stroke();
+      if (d.s > 0.55) { c.fillStyle = hexA(neon2, 0.8); c.fillRect(-10, -h / 2 + 10, 20, 6); }         // rooftop sign
+      if (d.s < 0.25) { c.strokeStyle = "rgba(255,255,255,0.35)"; c.lineWidth = 1; c.beginPath(); c.arc(0, 0, Math.min(w, h) * 0.2, 0, Math.PI * 2); c.stroke(); }   // helipad
+      c.shadowBlur = 0;
+    } else if (k === "office") {
+      const roofs = ["#8a8f98", "#a3a8b0", "#6f757e", "#b6a58f", "#8c7f73", "#7c8a96"];
+      c.fillStyle = roofs[d.c]; c.fillRect(-w / 2, -h / 2, w, h);
+      c.strokeStyle = "rgba(0,0,0,0.25)"; c.lineWidth = 3; c.strokeRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3);
+      const R2 = seeded(Math.round(x * 5 + y * 11));
+      for (let q = 0; q < 2 + Math.floor(R2() * 4); q++) { c.fillStyle = "#c9ced4"; c.fillRect(-w / 2 + 8 + R2() * (w - 30), -h / 2 + 8 + R2() * (h - 26), 14, 10); c.fillStyle = "rgba(0,0,0,0.25)"; c.fillRect(-w / 2 + 8 + R2() * (w - 30), -h / 2 + 8 + R2() * (h - 26), 8, 8); }
+      if (d.s > 0.7) { c.fillStyle = "rgba(90,160,90,0.8)"; c.fillRect(-w / 4, -h / 4, w / 2, h / 2); }   // roof garden
+    } else {
+      // small houses: farm / cabin / adobe / hut / bunker
+      const roof = { farm: ["#9e3b2c", "#7d2f25"], cabin: ["#f3f6f8", "#d5dde3"], adobe: ["#c98a52", "#b0733f"], hut: ["#d9b36a", "#c29a52"], bunker: ["#4b4f55", "#3a3d42"] }[k] || ["#888", "#777"];
+      c.fillStyle = roof[0]; c.fillRect(-w / 2, -h / 2, w, h / 2); c.fillStyle = roof[1]; c.fillRect(-w / 2, 0, w, h / 2);
+      c.strokeStyle = "rgba(0,0,0,0.25)"; c.lineWidth = 2; c.strokeRect(-w / 2, -h / 2, w, h);
+      if (k === "cabin") { c.fillStyle = "#6b4a2f"; c.fillRect(w / 4, -h / 2 - 4, 8, 8); }
+      if (k === "farm" && d.s > 0.5) { c.fillStyle = "#c9c2b0"; blob(c, w / 2 + 16, 0, 12, "#c9c2b0"); }   // silo
+    }
+    c.restore();
+  }
+  // grid boxes, same maths as gridSlot() on the server: staggered, pole really in front
+  function gridCount() { return S.screen === "race" && S.race?.info ? S.race.info.size : S.lobby ? S.lobby.players.filter((p) => !p.spectator).length + (S.lobby.settings.ai || 0) : 0; }
+  function gridSlotC(t, g, total) {
+    const spacing = t.length / t.N, gap = clamp((t.length * 0.85 - 70) / Math.max(1, total), 34, 60);
+    const idx = (t.N - Math.round((70 + g * gap) / spacing) + t.N * 4) % t.N;
+    return { idx, lat: (g % 2 ? 1 : -1) * Math.min(28, t.hw[idx] - 20) };
+  }
+  function drawGridBoxes(c, t, total) {
+    if (!total || !t.length) return;
+    c.save(); c.strokeStyle = "rgba(255,255,255,0.8)"; c.fillStyle = "rgba(255,255,255,0.8)"; c.lineWidth = 2.5; c.lineCap = "square";
+    c.font = "700 13px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    for (let g = 0; g < total; g++) {
+      const { idx, lat } = gridSlotC(t, g, total), p = t.pts[idx], n = t.nor[idx], tn = t.tan[idx];
+      const x = p.x + n.x * lat, y = p.y + n.y * lat, a = Math.atan2(tn.y, tn.x);
+      c.save(); c.translate(x, y); c.rotate(a);
+      // "[" bracket in front of the car's nose, like painted grid slots
+      c.beginPath(); c.moveTo(18, -15); c.lineTo(28, -15); c.lineTo(28, 15); c.lineTo(18, 15); c.stroke();
+      c.translate(-34, 0); c.rotate(Math.PI / 2); c.fillText(String(g + 1), 0, 0);
+      c.restore();
+    }
+    c.restore();
+  }
+  function drawStatic(c, t, G, th, opts = {}) {
+    if (!opts.noGround) { c.fillStyle = c.createPattern(tex("ground", th), "repeat"); c.fillRect(opts.x0 ?? 0, opts.y0 ?? 0, opts.w ?? t.W, opts.h ?? t.H); }
+    if (!opts.noGround && settings.scenery !== "off") drawDecor(c, t, G, th, opts);
+    c.fillStyle = c.createPattern(tex("gravel", th), "repeat"); c.fill(G.gravel);
+    c.lineJoin = "round"; c.lineCap = "butt";
+    c.lineWidth = 58; c.strokeStyle = "#f4f4f4"; c.stroke(G.lane);
+    c.lineWidth = 50; c.strokeStyle = th.asphalt; c.stroke(G.lane);
+    c.lineCap = "round";
+    strokeRuns(c, G.runs, 24, th.runoff);
+    strokeRuns(c, G.runs, 14, th.curbA);
+    c.lineCap = "butt"; strokeRuns(c, G.runs, 14, th.curbB, [22, 22]); c.lineCap = "round";
+    strokeRuns(c, G.runs, 0, th.asphalt);
+    c.lineCap = "butt"; c.lineWidth = 3; c.strokeStyle = th.line; c.setLineDash([26, 30]);
+    for (const r of G.runs) { c.lineDashOffset = r.dash; c.stroke(r.p); }
+    c.setLineDash([]); c.lineDashOffset = 0; c.lineCap = "round";
+    if (settings.raceline === "on" && G.line && !opts.board) { c.setLineDash([14, 12]); c.lineWidth = 4; c.strokeStyle = "rgba(62,207,106,0.55)"; c.stroke(G.line); c.setLineDash([]); }
+    c.lineWidth = 12; c.strokeStyle = "#8d949b"; c.stroke(G.wall);
+    c.lineWidth = 4; c.setLineDash([16, 16]); c.strokeStyle = "#d32f2f"; c.stroke(G.wall); c.setLineDash([]);
+    for (const gr of G.garages) {
+      c.save(); c.translate(gr.x, gr.y); c.rotate(gr.ang);
+      c.fillStyle = "#2a2d33"; c.fillRect(-40, -22, 80, 44);
+      c.fillStyle = gr.color; c.fillRect(-40, -22, 80, 8);
+      if (!opts.board) {
+        c.fillStyle = "#fff"; c.font = "700 11px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+        c.save(); if (Math.cos(gr.ang) < 0) c.rotate(Math.PI); c.fillText(gr.team.slice(0, 14), 0, 4); c.restore();
+      }
+      c.restore();
+      c.save(); c.translate(gr.sx, gr.sy); c.rotate(gr.ang);
+      c.strokeStyle = "#ffcc1f"; c.lineWidth = 3; c.strokeRect(-24, -16, 48, 32);
+      c.restore();
+    }
+    drawGridBoxes(c, t, gridCount());
+    if (!opts.board) for (const [pt, label] of [[G.entry, "PIT 60"], [G.exit, "PIT EXIT"]]) {
+      const ang = Math.atan2(t.tan[pt.i].y, t.tan[pt.i].x);
+      c.save(); c.translate(pt.x, pt.y); c.rotate(ang);
+      c.fillStyle = "#fff"; c.fillRect(-3, -26, 6, 52);
+      c.fillStyle = "#ffcc1f"; c.font = "16px 'Russo One', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.save(); c.translate(-22, 0); c.rotate(Math.cos(ang) < 0 ? Math.PI / 2 : -Math.PI / 2); c.fillText(label, 0, 0); c.restore();
+      c.restore();
+    }
+    const s0 = t.pts[0], tn = t.tan[0], hw0 = hwAt(t, 0);
+    c.save(); c.translate(s0.x, s0.y); c.rotate(Math.atan2(tn.y, tn.x));
+    for (let r = 0; r < 2; r++) for (let q = 0; q < Math.ceil(hw0 / 5); q++) { c.fillStyle = (r + q) % 2 ? "#111" : "#fff"; c.fillRect(-10 + r * 10, -hw0 + q * 10, 10, Math.min(10, hw0 * 2 - q * 10)); }
+    c.restore();
+  }
+  // Double ramps (a bridge over a bridge) get their own colours so you can tell the levels apart:
+  // level 2 is a blue steel deck with cyan kerbs, level 3 a purple one with pink kerbs.
+  const RAMP_STYLE = {
+    2: { asphalt: "#2f4f86", runoff: "#1c2f52", curbA: "#5ee0ff", curbB: "#ffffff", line: "#bfe9ff", wall: "#9fd4ff", wallTop: "#3f7fc0" },
+    3: { asphalt: "#5b3a86", runoff: "#352252", curbA: "#ff7de0", curbB: "#ffffff", line: "#f3c9ff", wall: "#e2b6ff", wallTop: "#9a5cc8" },
+  };
+  function drawBridge(c, t, G, th, br) {
+    const lv = br.peak >= 2.5 ? 3 : br.peak >= 1.5 ? 2 : 1, rs = RAMP_STYLE[lv] || {};
+    c.fillStyle = lv > 1 ? "rgba(0,0,0,0.38)" : "rgba(0,0,0,0.3)"; c.fill(br.shadow);
+    c.lineJoin = "round"; c.lineCap = "butt";
+    strokeRuns(c, br.runs, 24, rs.runoff || th.runoff);
+    strokeRuns(c, br.runs, 14, rs.curbA || th.curbA);
+    strokeRuns(c, br.runs, 14, rs.curbB || th.curbB, [22, 22]);
+    strokeRuns(c, br.top, 0, rs.asphalt || th.asphalt);
+    c.lineWidth = 3; c.strokeStyle = rs.line || th.line; c.setLineDash([26, 30]);
+    for (const r of br.top) { c.lineDashOffset = r.dash; c.stroke(r.p); }
+    c.setLineDash([]); c.lineDashOffset = 0;
+    c.lineWidth = 2; c.strokeStyle = "rgba(0,0,0,0.22)"; c.stroke(br.joints);
+    for (const wl of br.walls) { c.fillStyle = rs.wall || "#c7ccd2"; c.fill(wl.fill); c.lineWidth = 3; c.strokeStyle = rs.wallTop || "#7d858d"; c.stroke(wl.top); }
+    c.lineCap = "round";
+  }
+
+  // ---- Tile cache: the static track is drawn ONCE into small canvases and reused every frame ----
+  const TILE = 384, TPAD = 2;
+  const tiles = new Map();
+  let tileQ = 1, tileSig = "", tileBudget = 0;
+  function resetTiles() { tiles.clear(); }
+  function pickQ(want) {
+    const Q = [0.5, 0.75, 1, 1.5, 2];
+    if (want > tileQ * 0.55 && want < tileQ * 1.25) return tileQ;           // hysteresis: don't flip back and forth
+    return Q.find((q) => q >= want * 0.92) || 2;
+  }
+  function getTile(t, G, th, tx, ty, q) {
+    const k = tx * 1000 + ty + q * 1e7;
+    let tl = tiles.get(k);
+    if (tl) { tiles.delete(k); tiles.set(k, tl); return tl; }
+    if (tileBudget <= 0) return null;
+    tileBudget--;
+    const size = Math.ceil((TILE + TPAD * 2) * q);
+    const cv = document.createElement("canvas"); cv.width = cv.height = size;
+    const c = cv.getContext("2d");
+    const x0 = tx * TILE - TPAD, y0 = ty * TILE - TPAD;
+    c.setTransform(q, 0, 0, q, -x0 * q, -y0 * q);
+    c.beginPath(); c.rect(x0, y0, TILE + TPAD * 2, TILE + TPAD * 2); c.clip();
+    drawStatic(c, t, G, th, { x0, y0, w: TILE + TPAD * 2, h: TILE + TPAD * 2 });
+    tl = { cv, c, x0, y0, q };
+    // skid marks already laid down in this tile
+    c.fillStyle = "rgba(15,15,15,0.18)";
+    for (let i = 0; i < S.skids.length; i += 2) { const sx = S.skids[i], sy = S.skids[i + 1]; if (sx > x0 - 4 && sy > y0 - 4 && sx < x0 + TILE + 8 && sy < y0 + TILE + 8) c.fillRect(sx - 2.5, sy - 2.5, 5, 5); }
+    tiles.set(k, tl);
+    while (tiles.size > 72) tiles.delete(tiles.keys().next().value);
+    return tl;
+  }
+  // new skid mark: paint it straight into the cached tiles (then it costs nothing to draw again)
+  function addSkid(x, y) {
+    S.skids.push(x, y);
+    if (S.skids.length > 9000) S.skids.splice(0, S.skids.length - 9000);
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const tl = tiles.get((tx + dx) * 1000 + ty + dy + tileQ * 1e7);
+      if (tl && x > tl.x0 - 4 && y > tl.y0 - 4 && x < tl.x0 + TILE + 2 * TPAD + 4 && y < tl.y0 + TILE + 2 * TPAD + 4) { tl.c.fillStyle = "rgba(15,15,15,0.18)"; tl.c.fillRect(x - 2.5, y - 2.5, 5, 5); }
+    }
+  }
+
+  // ---- Smooth car motion ----
+  // We show the race a moment (~2 server updates) in the past and move each car along a curve
+  // that follows its real speed and direction between updates. So at 2x/3x the cars follow the
+  // road through corners instead of cutting straight across the grass.
+  const snaps = [];
+  let rt = 0;
+  // How uneven the connection is decides how far behind we show the race: a steady connection
+  // gets a short delay (snappy), a jittery one (phones, free servers) a longer one (smooth).
+  let lastArrive = 0, jitter = 0.02, netDelay = 0.11;
+  function pushSnap(st) {
+    const now = performance.now() / 1000, mul = S.race?.speed || 1;
+    if (snaps.length && st.t < snaps[snaps.length - 1].t - 0.001) snaps.length = 0;
+    if (snaps.length && lastArrive) {
+      const gap = now - lastArrive, want = (st.t - snaps[snaps.length - 1].t) / mul;
+      jitter += (Math.min(0.4, Math.abs(gap - want)) - jitter) * 0.08;
+      netDelay = clamp(0.07 + jitter * 2.8, 0.08, 0.35);
+    }
+    lastArrive = now;
+    const m = new Map(); for (const a of st.cars) m.set(a[0], a);
+    snaps.push({ t: st.t, cars: m });
+    if (snaps.length > 16) snaps.shift();
+  }
+  function interpCars(dt) {
+    if (!snaps.length) return;
+    const mul = S.race?.speed || 1, last = snaps[snaps.length - 1], t = S.track;
+    const want = last.t - netDelay * mul;
+    // the display clock drifts toward where it should be by at most 12% (never a visible lurch)
+    if (Math.abs(rt - want) > 0.6 * mul) rt = want;
+    else rt += dt * mul * (1 + clamp(((want - rt) / mul) * 3, -0.12, 0.12));
+    rt = Math.min(rt, last.t + 0.25 * mul);
+    let a = snaps[0], b = snaps[0];
+    for (let i = snaps.length - 1; i >= 0; i--) if (snaps[i].t <= rt) { a = snaps[i]; b = snaps[Math.min(snaps.length - 1, i + 1)]; break; }
+    const D = b.t - a.t;
+    for (const c of S.cars.values()) {
+      const A = a.cars.get(c.id), Bq = b.cars.get(c.id);
+      if (!Bq) continue;
+      let x, y, teleport = false;
+      if (!A || D < 1e-4) {
+        const e = Math.max(0, Math.min(0.25 * mul, rt - b.t));
+        x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; c.drawIdx = Bq[25];
+      } else {
+        const u = (rt - a.t) / D;
+        c.drawIdx = u < 0.5 ? A[25] : Bq[25];
+        teleport = Math.hypot(Bq[1] - A[1], Bq[2] - A[2]) > (Math.hypot(A[23], A[24]) + Math.hypot(Bq[23], Bq[24])) * D * 0.75 + 60;
+        if (teleport) { x = Bq[1]; y = Bq[2]; c.h = Bq[3]; }
+        else if (u >= 1) { const e = rt - b.t; x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; }
+        else {
+          const u2 = u * u, u3 = u2 * u, h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = (u3 - 2 * u2 + u) * D, h4 = (u3 - u2) * D;
+          x = h1 * A[1] + h2 * Bq[1] + h3 * A[23] + h4 * Bq[23];
+          y = h1 * A[2] + h2 * Bq[2] + h3 * A[24] + h4 * Bq[24];
+          c.h = A[3] + wrapAngle(Bq[3] - A[3]) * u;
+        }
+      }
+      // If the target position suddenly jumps (a late update corrected it), don't pop: keep the
+      // car where it was drawn and blend the correction in over a few frames.
+      const vx = Bq[23] * mul, vy = Bq[24] * mul;
+      if (c.tx0 !== undefined && !teleport) {
+        const jx = x - (c.tx0 + vx * dt), jy = y - (c.ty0 + vy * dt);
+        if (Math.hypot(jx, jy) > 1.5) { c.ex = (c.ex || 0) - jx; c.ey = (c.ey || 0) - jy; }
+      }
+      c.tx0 = x; c.ty0 = y;
+      const k = Math.exp(-dt * 9);
+      c.ex = (c.ex || 0) * k; c.ey = (c.ey || 0) * k;
+      if (teleport || Math.hypot(c.ex, c.ey) > 160) c.ex = c.ey = 0;
+      c.x = x + c.ex; c.y = y + c.ey;
+      // Height comes from where the car is DRAWN on the track (not from the last update), so
+      // climbing onto and off a ramp is perfectly smooth. Same for which bridge it's drawn on.
+      if (t && t.elev && c.drawIdx !== undefined) {
+        const N = t.N; let best = c.drawIdx, bd = Infinity;
+        for (let o = -5; o <= 6; o++) { const i = (c.drawIdx + o + N) % N, q = t.pts[i], d = (q.x - c.x) ** 2 + (q.y - c.y) ** 2; if (d < bd) { bd = d; best = i; } }
+        const i1 = (best + 1) % N, i0 = (best - 1 + N) % N, p = t.pts[best];
+        const sx = t.pts[i1].x - p.x, sy = t.pts[i1].y - p.y, f = ((c.x - p.x) * sx + (c.y - p.y) * sy) / (sx * sx + sy * sy || 1);
+        c.lvl = f >= 0 ? t.elev[best] + (t.elev[i1] - t.elev[best]) * Math.min(1, f) : t.elev[best] + (t.elev[i0] - t.elev[best]) * Math.min(1, -f);
+        c.trackIdx = best;
+      } else c.lvl = Bq[22];
+    }
+  }
+
+  // headlight glow sprite (made once instead of a new gradient per car per frame)
+  let headSprite = null;
+  function headlight() {
+    if (headSprite) return headSprite;
+    const cv = document.createElement("canvas"); cv.width = cv.height = 220;
+    const c = cv.getContext("2d"), g = c.createRadialGradient(90, 110, 5, 110, 110, 110);
+    g.addColorStop(0, "rgba(255,245,200,0.28)"); g.addColorStop(1, "rgba(255,245,200,0)");
+    c.fillStyle = g; c.fillRect(0, 0, 220, 220);
+    return (headSprite = cv);
+  }
+
+  function renderRace(dt, now) {
+    const { w, h, dpr } = scr, t = S.track;
+    if (!t) return;
+    const th = THEMES[t.theme] || THEMES.grass; th.key = t.theme;
+    interpCars(dt);
+    if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; }
+    let target = S.camTarget && S.cars.get(S.camTarget);
+    if (!target) target = settings.cam === "leader" || !S.myCar ? S.cars.get(S.standings[0]) : S.cars.get(S.myCar);
+    if (!target) target = [...S.cars.values()][0];
+    if (!target || target.x === undefined) return;
+    const sp = Math.max(0, target.speed || 0);
+    const zoomBase = { close: 1.25, normal: 1, far: 0.72 }[settings.zoom] || 1;
+    const tz = Math.min(w, h) / 760 * zoomBase * (1.05 - 0.22 * clamp(sp / 860, 0, 1));
+    cam.z += (tz - cam.z) * Math.min(1, dt * 3);
+    const lx = Math.cos(target.h) * sp * 0.28, ly = Math.sin(target.h) * sp * 0.28;
+    if (!cam.x) { cam.x = target.x; cam.y = target.y; }
+    cam.x += (target.x + lx - cam.x) * Math.min(1, dt * 5); cam.y += (target.y + ly - cam.y) * Math.min(1, dt * 5);
+    S.shake *= Math.exp(-dt * 8);
+    const shx = S.shake ? (Math.random() - 0.5) * S.shake : 0, shy = S.shake ? (Math.random() - 0.5) * S.shake : 0;
+    const z = cam.z;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = th.ground; ctx.fillRect(0, 0, w, h);
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 - cam.x * z + shx), dpr * (h / 2 - cam.y * z + shy));
+    if (!S.geo) S.geo = buildGeo(t);
+    const G = S.geo;
+    // what part of the world is on screen
+    const vx0 = cam.x - w / 2 / z - 60, vy0 = cam.y - h / 2 / z - 60, vx1 = cam.x + w / 2 / z + 60, vy1 = cam.y + h / 2 / z + 60;
+    // static layer from the tile cache
+    const sig = `${G.id}|${t.theme}|${settings.raceline}|${settings.scenery}|${gridCount()}`;
+    if (sig !== tileSig) { tileSig = sig; resetTiles(); }
+    tileQ = pickQ(z * dpr);
+    tileBudget = S.phase === "race" ? 3 : 12;
+    ctx.imageSmoothingEnabled = true;
+    for (let ty = Math.max(0, Math.floor(vy0 / TILE)); ty <= Math.min(Math.floor(t.H / TILE), Math.floor(vy1 / TILE)); ty++) {
+      for (let tx = Math.max(0, Math.floor(vx0 / TILE)); tx <= Math.min(Math.floor(t.W / TILE), Math.floor(vx1 / TILE)); tx++) {
+        let tl = getTile(t, G, th, tx, ty, tileQ);
+        if (!tl) for (const q of [1, 0.75, 1.5, 0.5, 2]) { tl = tiles.get(tx * 1000 + ty + q * 1e7); if (tl) break; }   // any size will do until it's ready
+        if (!tl) { tileBudget = 1; tl = getTile(t, G, th, tx, ty, tileQ); }
+        if (tl) ctx.drawImage(tl.cv, (TPAD - 0.3) * tl.q, (TPAD - 0.3) * tl.q, (TILE + 0.6) * tl.q, (TILE + 0.6) * tl.q, tx * TILE - 0.3, ty * TILE - 0.3, TILE + 0.6, TILE + 0.6);
+      }
+    }
+    const visible = (c, m = 80) => c.x > vx0 - m && c.x < vx1 + m && c.y > vy0 - m && c.y < vy1 + m;
+    // skid marks (painted into the tiles)
+    if (settings.skids === "on" && S.phase === "race") {
+      for (const c of S.cars.values()) if (c.slide && c.lvl < 0.05 && !c.ghost) {
+        const fx = Math.cos(c.h), fy = Math.sin(c.h);
+        for (const s of [-1, 1]) addSkid(c.x - fx * 15 - fy * s * 10, c.y - fy * 15 + fx * s * 10);
+      }
+    }
+    // dust + smoke
+    const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" ? 0.35 : 1;
+    if (S.phase === "race" && fxLevel) for (const c of S.cars.values()) {
+      if (!visible(c, 200)) continue;
+      if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
+      else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
+      if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (c.dmg > 0.55 && Math.random() < 0.25 * Math.max(0.4, fxLevel)) puff(c, "rgba(60,60,60,0.45)");
+      if (c.extras?.trail && c.speed > 250 && S.particles.length < 300 && Math.random() < 0.35 * Math.max(0.4, fxLevel)) {
+        S.particles.push({ x: c.x - Math.cos(c.h) * 22, y: c.y - Math.sin(c.h) * 22, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 50, life: 0.7, age: 0, r: 7, shape: c.extras.trail, k: Math.floor(Math.random() * 4) });
+      }
+      if (c.punct && c.speed > 30 && Math.random() < 0.9 * fxLevel) {
+        S.particles.push({ x: c.x - Math.cos(c.h) * 18, y: c.y - Math.sin(c.h) * 18, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, life: 0.25, age: 0, r: 2, color: Math.random() < 0.5 ? "#ffcc1f" : "#ff7043" });
+      }
+      if (c.slide && Math.random() < 0.35 * fxLevel) puff(c, "rgba(230,230,230,0.5)");
+      if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
+      if (c.dmg > 0.05 && Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
+    }
+    S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape) q.r += 20 * dt; return q.age < q.life; });
+    for (const q of S.particles) {
+      if (q.shape) { trailShape(ctx, q.shape, q.x, q.y, 7 * (1 - 0.4 * q.age / q.life), 1 - q.age / q.life, q.k); continue; }
+      ctx.globalAlpha = 1 - q.age / q.life; ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Cars and bridges, bottom to top: cars on the ground, then each bridge (lowest first) with
+    // the cars driving on it (ramps included) drawn right after it. The server says which bit of
+    // track each car is on, so a car on a ramp is never hidden under its own bridge.
+    const layers = G.bridges.map(() => []), ground = [];
+    for (const c of S.cars.values()) {
+      if (c.x === undefined) continue;
+      const ix = c.trackIdx ?? c.drawIdx ?? c.idx, k = ix !== undefined ? G.segOf[ix] : -1;
+      (k >= 0 ? layers[k] : ground).push(c);
+    }
+    const mineLast = (a, b) => (a.id === S.myCar) - (b.id === S.myCar);
+    const drawOne = (c) => {
+      if (!visible(c)) return;
+      if (th.night) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.h); ctx.drawImage(headlight(), -30, -110); ctx.restore(); }
+      if (c.ghost && !c.fin) ctx.globalAlpha = 0.5;
+      if (c.lvl > 0.05) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(c.x + 16 * c.lvl, c.y + 22 * c.lvl, 26, 15, c.h, 0, Math.PI * 2); ctx.fill(); }
+      if (c.slip && settings.lines === "on" && !reducedMotion) {          // slipstream: wind streaks off the car
+        ctx.strokeStyle = "rgba(200,230,255,0.55)"; ctx.lineWidth = 2;
+        const fx = Math.cos(c.h), fy = Math.sin(c.h);
+        for (const s of [-1, 1]) { const ox = -fy * s * 14, oy = fx * s * 14, L = 30 + Math.random() * 20; ctx.beginPath(); ctx.moveTo(c.x + ox + fx * 18, c.y + oy + fy * 18); ctx.lineTo(c.x + ox - fx * L, c.y + oy - fy * L); ctx.stroke(); }
+      }
+      drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { boost: c.boost, nitro: c.nitroOn, glow: c.id === S.myCar });
+      ctx.globalAlpha = 1;
+      if (c.fin) {
+        if (!c.finPos) {
+          c.finPos = [...S.cars.values()].filter((o) => o.finPos).length + 1;
+          if (c.id === S.myCar) { banner(c.finPos === 1 ? "YOU WIN!" : `P${c.finPos}!`, "#ffcc1f"); addShake(6); }
+        }
+        ctx.save(); ctx.translate(c.x, c.y - 44);
+        for (let r2 = 0; r2 < 2; r2++) for (let q = 0; q < 3; q++) { ctx.fillStyle = (r2 + q) % 2 ? "#111" : "#fff"; ctx.fillRect(-22 + q * 6, -8 + r2 * 6, 6, 6); }
+        ctx.fillStyle = c.finPos === 1 ? "#ffcc1f" : "#fff"; ctx.font = "15px 'Russo One', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.strokeText("P" + c.finPos, 0, -2); ctx.fillText("P" + c.finPos, 0, -2);
+        ctx.restore();
+      }
+      if (c.pit >= 0) {
+        ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(c.x, c.y, 34, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "#ffcc1f"; ctx.beginPath(); ctx.arc(c.x, c.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c.pit); ctx.stroke();
+      }
+      const showName = settings.names === "all" || (settings.names === "mine" && c.id === S.myCar);
+      if (showName) {
+        const label = c.id === S.myCar ? `${c.name} (you)` : c.name;
+        ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
+        ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
+      }
+      const em = S.emotes && S.emotes.get(c.id);
+      if (em && em.until > performance.now()) {
+        const k = Math.min(1, (em.until - performance.now()) / 400), y = c.y - (showName ? 58 : 42);
+        ctx.globalAlpha = k; ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.beginPath(); ctx.arc(c.x, y, 17, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(c.x - 5, y + 14); ctx.lineTo(c.x, y + 22); ctx.lineTo(c.x + 5, y + 14); ctx.fill();
+        ctx.font = em.e === "GG" ? "800 14px 'Chakra Petch', sans-serif" : "20px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#111"; ctx.fillText(em.e, c.x, y + 1);
+        ctx.globalAlpha = 1;
+      }
+    };
+    ground.sort(mineLast).forEach(drawOne);
+    G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); layers[k].sort(mineLast).forEach(drawOne); });
+    // fireworks (in the world, around the winner)
+    fireworks = fireworks.filter((fw) => {
+      const k = (now - fw.t) / 1300; if (k > 1) return false;
+      for (let n = 0; n < 24; n++) {
+        const a = (n / 24) * Math.PI * 2, r = 20 + k * 150;
+        ctx.globalAlpha = 1 - k; ctx.fillStyle = `hsl(${fw.hue + n * 6} 90% 60%)`;
+        ctx.beginPath(); ctx.arc(fw.x + Math.cos(a) * r, fw.y + Math.sin(a) * r + k * k * 60, 4 * (1 - k) + 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1; return true;
+    });
+    // screen-space effects
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (S.weather && S.weather.wet > 0.02) {
+      const wv = S.weather.wet;
+      ctx.fillStyle = `rgba(30,45,70,${0.22 * wv})`; ctx.fillRect(0, 0, w, h);
+      if (S.weather.raining && !reducedMotion) {
+        ctx.strokeStyle = "rgba(200,215,235,0.45)"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let k = 0; k < 160 * wv; k++) { const rx = Math.random() * w, ry = Math.random() * h; ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 20); }
+        ctx.stroke();
+      }
+    }
+    if (th.night) {
+      if (!S.vignette || S.vignette.w !== w || S.vignette.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); S.vignette = { g, w, h }; }
+      ctx.fillStyle = S.vignette.g; ctx.fillRect(0, 0, w, h);
+    }
+    if (settings.lines === "on" && !reducedMotion && sp > 640) {
+      const a = clamp((sp - 640) / 240, 0, 1) * 0.35;
+      ctx.strokeStyle = target.nitroOn ? `rgba(120,200,255,${a + 0.15})` : `rgba(255,255,255,${a})`; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 14; i++) {
+        const ang = Math.random() * Math.PI * 2, r1 = Math.min(w, h) * (0.42 + Math.random() * 0.1), r2 = r1 + 40 + Math.random() * 60;
+        ctx.moveTo(w / 2 + Math.cos(ang) * r1, h / 2 + Math.sin(ang) * r1); ctx.lineTo(w / 2 + Math.cos(ang) * r2, h / 2 + Math.sin(ang) * r2);
+      }
+      ctx.stroke();
+    }
+    if (settings.minimap === "on" && (!S.miniAt || now - S.miniAt > 50)) { S.miniAt = now; renderMinimap(); }
+    if (!S.hudAt || now - S.hudAt > 100) { S.hudAt = now; updateHud(now); }
+    updateBoost();
+    const mine = S.cars.get(S.myCar);
+    engineSound(mine ? mine.speed : 0, S.screen === "race" && S.phase === "race" && !!mine);
+  }
+  function puff(c, color) {
+    if (S.particles.length > 300) return;
+    S.particles.push({ x: c.x - Math.cos(c.h) * 20, y: c.y - Math.sin(c.h) * 20, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, life: 0.6, age: 0, r: 6 + Math.random() * 6, color });
+  }
+  function renderMinimap() {
+    const t = S.track, mw = mini.width / scr.dpr, mh = mini.height / scr.dpr, pad = 10;
+    mctx.setTransform(scr.dpr, 0, 0, scr.dpr, 0, 0); mctx.clearRect(0, 0, mw, mh);
+    const s = Math.min((mw - pad * 2) / t.W, (mh - pad * 2) / t.H), ox = (mw - t.W * s) / 2, oy = (mh - t.H * s) / 2;
+    if (!S.geo) return;
+    mctx.save(); mctx.translate(ox, oy); mctx.scale(s, s);
+    mctx.lineWidth = 5 / s; mctx.strokeStyle = "rgba(255,255,255,0.35)"; mctx.lineJoin = "round"; mctx.stroke(S.geo.trackPath);
+    mctx.restore();
+    for (const c of S.cars.values()) {
+      if (c.x === undefined) continue;
+      mctx.beginPath(); mctx.arc(ox + c.x * s, oy + c.y * s, c.id === S.myCar ? 4.5 : 3.2, 0, Math.PI * 2);
+      mctx.fillStyle = c.color; mctx.globalAlpha = c.ghost ? 0.45 : 1; mctx.fill(); mctx.globalAlpha = 1;
+      if (c.id === S.myCar) { mctx.lineWidth = 1.5; mctx.strokeStyle = "#fff"; mctx.stroke(); }
+    }
+  }
+  // ---- Boost: hold the button (or Space / N). 100% tank, drains while held, refills slowly ----
+  let nitroHeld = false;
+  function setNitro(on) {
+    on = !!on && S.screen === "race" && !!S.myCar;
+    if (on === nitroHeld) return;
+    nitroHeld = on; socket.emit("nitro", on);
+    $("boostBtn").classList.toggle("on", on);
+  }
+  const boostBtn = $("boostBtn");
+  boostBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); boostBtn.setPointerCapture(e.pointerId); if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) boostBtn.addEventListener(ev, () => setNitro(false));
+  boostBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+  window.addEventListener("blur", () => setNitro(false));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) setNitro(false); });
+  let boostShown = "";
+  function updateBoost() {
+    const me = S.cars.get(S.myCar);
+    $("boostPanel").classList.toggle("hidden", !me);
+    if (!me) return;
+    const pct = Math.round(me.nitro ?? 100), key = pct + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0);
+    if (key === boostShown) return; boostShown = key;
+    $("boostPct").textContent = pct + "%"; $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
+    boostBtn.classList.toggle("empty", pct < 3);
+    $("slipTag").classList.toggle("hidden", !me.slip || !!me.fin);
+    $("slipTag").textContent = window.innerWidth <= 860 ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%";
+  }
+  let lastHudStand = "";
+  const fmtGap = (g, i) => (i === 0 ? "Leader" : g < 0 ? "+1 lap" : "+" + g.toFixed(1) + "s");
+  // Phones: stack the bottom HUD (radio, then tires/XP, then the pit tire picker) by measuring,
+  // so nothing hides behind anything at any interface size.
+  function layoutHud() {
+    const phone = window.innerWidth <= 860, bottom = $("hudBottom"), radio = $("radio"), pick = $("pitPick");
+    if (!phone || radio.classList.contains("hidden")) { bottom.style.bottom = ""; pick.style.bottom = ""; return; }
+    const rH = radio.getBoundingClientRect().height, bH = bottom.getBoundingClientRect().height;
+    bottom.style.bottom = `calc(${Math.round(rH + 12)}px + env(safe-area-inset-bottom, 0px))`;
+    pick.style.bottom = `calc(${Math.round(rH + bH + 18)}px + env(safe-area-inset-bottom, 0px))`;
+  }
+  window.addEventListener("resize", () => { if (S.screen === "race") layoutHud(); });
+  function updateHud(now) {
+    layoutHud();
+    const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
+    if (!me) return;
+    const pos = S.standings.indexOf(me.id) + 1, laps = S.race?.laps || 5;
+    $("posText").innerHTML = ""; $("posText").append("P" + pos);
+    const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm);
+    { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
+    $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
+    $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
+    $("bestText").textContent = "Best " + fmt(me.best);
+    const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
+    $("speedText").textContent = `${Math.round(spd)} ${settings.units === "mph" ? "mph" : "km/h"}`;
+    $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
+    $("tireName").style.color = me.punct || me.dmg > 0.4 ? "#ff8a80" : "";
+    if (me.inPit) $("speedText").textContent = "PIT LIMITER";
+    const W = S.weather;
+    if (W) {
+      const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
+      pill.textContent = W.raining ? `🌧 Raining, track ${Math.round(W.wet * 100)}% wet` : W.wet > 0.05 ? `⛅ Drying, track ${Math.round(W.wet * 100)}% wet` : "☀ Dry";
+      // forecast: a blurry hint of where the weather is heading (never exact, it's a guess)
+      const fc = $("forecast"); fc.classList.toggle("hidden", !W.dyn);
+      if (W.dyn) $("fcDot").style.left = (50 + clamp(W.trend || 0, -3, 3) * 15) + "%";
+      if (W.change >= 0 && W.change <= 20) { const s2 = document.createElement("span"); s2.className = "fc"; s2.textContent = W.raining ? `Clearing in ${W.change}s` : `Rain in ${W.change}s`; pill.appendChild(s2); }
+    }
+    // predicted wear: measure how fast YOUR tires are dropping over the last part of a lap
+    let perLap = S.xp?.perLap?.[me.comp] || 0;
+    if (S.track && me.id === S.myCar && !me.fin) {
+      const W2 = S.wearWin = S.wearWin || [];
+      if (W2.length && me.tire > W2[W2.length - 1].tire + 0.05) W2.length = 0;          // new tires: start over
+      if (!W2.length || me.prog - W2[W2.length - 1].prog >= 2) W2.push({ prog: me.prog, tire: me.tire });
+      while (W2.length > 2 && me.prog - W2[0].prog > S.track.N * 0.6) W2.shift();
+      const a = W2[0], b = W2[W2.length - 1];
+      if (b.prog - a.prog > S.track.N * 0.2 && a.tire > b.tire) perLap = (a.tire - b.tire) / ((b.prog - a.prog) / S.track.N);
+    }
+    if (perLap > 0 && !me.punct) {
+      const lapsLeft = me.tire / perLap;
+      $("tireName").textContent += `  ·  ~${Math.round(perLap * 100)}%/lap, ${lapsLeft < 10 ? lapsLeft.toFixed(1) : "10+"} laps left`;
+    }
+    const tp = Math.round((me.tire || 0) * 100), tc = me.tire > 0.6 ? "#3ecf6a" : me.tire > 0.35 ? "#ffcc1f" : "#e53935";
+    $("tirePct").textContent = tp + "%" + (me.tire < 0.35 && !S.box && !me.fin ? " (box soon!)" : "");
+    $("tireFill").style.width = tp + "%"; $("tireFill").style.background = tc;
+    if (S.xp) { $("lvlText").textContent = `Team Lv ${S.xp.level}`; $("xpText").textContent = `${S.xp.xp} / ${S.xp.need}`; $("xpFill").style.width = (S.xp.xp / S.xp.need) * 100 + "%"; }
+    $("pitRing").classList.toggle("hidden", !(me.pit >= 0 && me.id === S.myCar));
+    if (me.pit >= 0) { $("pitPct").textContent = Math.round(me.pit * 100) + "%"; $("pitFill").style.width = me.pit * 100 + "%"; }
+    $("radio").classList.toggle("hidden", !S.myCar);
+    // my gap to the car ahead and the car behind
+    const gi = S.standings.indexOf(me.id), ga = S.gaps[gi], gb = S.gaps[gi + 1];
+    $("gapAhead").textContent = gi > 0 && ga !== undefined ? (ga < 0 ? "Ahead +1 lap" : `Ahead ${ga.toFixed(1)}s`) : gi === 0 ? "Leading!" : "";
+    $("gapBehind").textContent = gb !== undefined && gi < S.standings.length - 1 ? (gb < 0 ? "Behind +1 lap" : `Behind ${gb.toFixed(1)}s`) : "";
+    // live standings list
+    const key = S.standings.join(",") + S.gaps.join(",") + [...S.cars.values()].map((c) => (c.pit >= 0 ? "p" : "") + (c.punct ? "x" : "") + (c.dmg > 0.3 ? "d" : "") + c.comp + Math.round(c.tire * 100)).join("");
+    if (key !== lastHudStand) {
+      lastHudStand = key;
+      const ol = $("standList"); ol.textContent = "";
+      // as many rows as fit (more cars = bigger list); hold Ctrl (or tap the list) to see everyone
+      const fit = Math.max(8, Math.floor((window.innerHeight * 0.42) / 19));
+      const all = S.lbAll || S.standings.length <= fit + 1;
+      $("standings").classList.toggle("all", !!S.lbAll);
+      const myI = S.standings.indexOf(S.myCar);
+      const show = all ? S.standings.map((id, i) => i) : [...Array(Math.min(fit, S.standings.length)).keys()];
+      if (!all && myI >= fit) show.push(-1, myI);
+      show.forEach((i) => {
+        if (i === -1) { const gap = document.createElement("li"); gap.className = "lb-gap"; gap.textContent = `··· ${S.standings.length - show.length + 2} more · hold Ctrl`; ol.appendChild(gap); return; }
+        const id = S.standings[i];
+        const c = S.cars.get(id); if (!c) return;
+        const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
+        const p = document.createElement("span"); p.className = "p"; p.textContent = i + 1;
+        const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
+        const n = document.createElement("span"); n.className = "n"; n.textContent = c.name;
+        const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
+        g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
+        g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);
+        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : c.dmg > 0.3 ? "DMG" : `${Math.round(c.tire * 100)}%`;
+        if (c.punct) x.style.color = "#ff8a80";
+        li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
+      });
+      if (!all && myI < fit && S.standings.length > fit) { const m = document.createElement("li"); m.className = "lb-gap"; m.textContent = `+${S.standings.length - fit} more · ${isTouch() ? "tap" : "hold Ctrl"}`; ol.appendChild(m); }
+    }
+    if (!$("garage").childElementCount && S.up) renderGarage();
+  }
+
+  // ======================= Input =======================
+  window.addEventListener("keydown", (e) => { if (e.key === "Control" && S.screen === "race") S.lbAll = true; });
+  window.addEventListener("keyup", (e) => { if (e.key === "Control") S.lbAll = false; });
+  window.addEventListener("blur", () => { S.lbAll = false; });
+  $("standings").addEventListener("click", () => { S.lbAll = !S.lbAll; });
+  window.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT") return;
+    if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }
+    if (e.code === "KeyO") { setEl.classList.contains("hidden") ? openSettings() : closeSettings(); return; }
+    if (e.code === "KeyU" && S.screen !== "menu") { $("cards").classList.contains("hidden") ? openCards() : laterCards(); return; }
+    // number keys pick tires first while the pit picker is open (the crew is waiting; upgrade cards can be clicked)
+    if (pitPickShown && { Digit1: 1, Digit2: 1, Digit3: 1, Digit4: 1 }[e.code]) { const b = $("ppRow").children[Number(e.code.slice(-1)) - 1]; if (b) b.click(); return; }
+    const pick = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+    if (pick !== undefined && !e.repeat && !$("cards").classList.contains("hidden")) { pickCard(pick); return; }
+    if (S.screen !== "race") return;
+    if (e.code === "Escape") { leaveRace(); return; }
+    if (e.code === "Space") { e.preventDefault(); if (e.repeat) return; if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); }
+    if (e.code === "KeyN" && !e.repeat) setNitro(true);
+    if (e.code === "KeyB" && !e.repeat) { socket.emit("box"); sfx("tick"); }
+    if (e.code === "Tab") {       // spectate: cycle who the camera follows
+      e.preventDefault();
+      const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);
+      S.camTarget = ids[(cur + 1) % ids.length];
+      if (S.camTarget === S.myCar) S.camTarget = null;
+      popup(`Watching ${S.cars.get(S.camTarget ?? S.myCar)?.name || ""}`);
+    }
+  });
+  window.addEventListener("keyup", (e) => { if (e.code === "Space" || e.code === "KeyN") setNitro(false); });
+  // tapping anywhere on the race view also counts as your start reaction (phones)
+  view.addEventListener("pointerdown", () => { if (S.screen === "race" && !$("lights").classList.contains("hidden")) react(); });
+
+  // ======================= Main loop =======================
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (S.screen === "menu" || !$("menu").classList.contains("hidden")) drawPreview(now);
+    if (S.screen === "race" || S.screen === "results") renderRace(dt, now);
+    if (S.screen === "results") drawPodium(now);
+    requestAnimationFrame(frame);
+  }
+  resize();
+  requestAnimationFrame(frame);
+})();

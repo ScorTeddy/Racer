@@ -5,7 +5,8 @@
 
 const fs = require("fs");
 const crypto = require("crypto");
-const accounts = require("./accounts");   // Google sign-in, stats, achievements, store
+const accounts = require("./accounts");
+const nameFilter = require("./filter");        // keeps rude names out of public view   // Google sign-in, stats, achievements, store
 const path = require("path");
 const http = require("http");
 const express = require("express");
@@ -132,7 +133,7 @@ app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");     // (Google sign-in uses a popup)
   res.setHeader("Content-Security-Policy", [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://accounts.google.com",
+    "script-src 'self' https://accounts.google.com",          // no inline scripts at all: an injected <script> can't run
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
@@ -143,7 +144,7 @@ app.use((req, res, next) => {
   ].join("; "));
   next();
 });
-app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny", index: false }));
+app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny", index: false, setHeaders: (res, fp) => { if (/game\.(js|css)$/.test(fp)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable"); } }));
 app.get("/auth/config", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.json(accounts.config()); });
 // ---- sign-in cookie: HttpOnly (page scripts can't read it), Secure (https only), SameSite=Strict ----
 const COOKIE = "tb_session";
@@ -170,7 +171,14 @@ app.post("/auth/logout", (req, res) => {
 });
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
-app.get("/", (req, res) => res.sendFile(indexFile));
+// the page is sent with version stamps on game.js / game.css, so after an update every browser loads the new code
+const fileHash = (f) => { try { return crypto.createHash("sha1").update(fs.readFileSync(path.join(__dirname, "public", f))).digest("hex").slice(0, 10); } catch (e) { return "0"; } };
+let indexHtml = null;
+function buildIndex() {
+  const html = fs.readFileSync(indexFile, "utf8");
+  indexHtml = html.replace('src="/game.js"', `src="/game.js?v=${fileHash("game.js")}"`).replace('href="/game.css"', `href="/game.css?v=${fileHash("game.css")}"`);
+}
+app.get("/", (req, res) => { if (!indexHtml || !PROD) buildIndex(); res.setHeader("Cache-Control", "no-cache"); res.type("html").send(indexHtml); });
 // password strength meter for the sign-up form (same zxcvbn the server uses)
 app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.sendFile(path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js")); });
 // ---- small pages + search engine files ----
@@ -829,7 +837,8 @@ function makeCode() {
   return c;
 }
 function cleanProfile(p) {
-  const name = typeof p?.name === "string" ? p.name.trim().slice(0, 12) : "";
+  let name = typeof p?.name === "string" ? p.name.trim().slice(0, 12) : "";
+  if (nameFilter.isBad(name)) name = "Racer" + Math.floor(100 + Math.random() * 900);
   return {
     name: name || "Racer",
     color: HEX.test(p?.color) ? p.color : "#ffcc1f",
@@ -839,7 +848,7 @@ function cleanProfile(p) {
     design: typeof p?.design === "string" && DESIGN.test(p.design) && /[0-9a-f]/.test(p.design) ? p.design : null,
   };
 }
-function cleanTeam(t) { return typeof t === "string" ? t.trim().replace(/\s+/g, " ").slice(0, 20) : ""; }
+function cleanTeam(t) { const v = typeof t === "string" ? t.trim().replace(/\s+/g, " ").slice(0, 20) : ""; return nameFilter.isBad(v) ? "" : v; }
 function parsePoints(v) {
   const arr = (Array.isArray(v) ? v : String(v || "").split(/[,\s]+/)).map((x) => Math.round(Number(x))).filter((x) => Number.isFinite(x) && x >= 0);
   return arr.slice(0, 80).map((x) => Math.min(999, x));
@@ -893,11 +902,11 @@ class Room {
   teamOrder() { return Object.entries(this.teamChamp).map(([n, p]) => ({ n, p })).sort((a, b) => b.p - a.p); }
 
   addPlayer(socket, profile) {
-    const p = { id: socket.id, ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false, uid: socket.data.uid || null, extras: socket.data.extras || null };
+    const p = { id: socket.id, rejoinKey: crypto.randomBytes(12).toString("hex"), ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false, uid: socket.data.uid || null, extras: socket.data.extras || null };
     this.players.set(socket.id, p);
     if (!this.hostId) this.hostId = socket.id;
     socket.leave("menu"); socket.join(this.code); socket.data.room = this.code;
-    socket.emit("joined", { code: this.code, you: socket.id, upgrades: upgradeInfo(), f1: f1List() });
+    socket.emit("joined", { code: this.code, you: socket.id, rejoinKey: p.rejoinKey, upgrades: upgradeInfo(), f1: f1List() });
     this.sendLobby();
     if (this.track) socket.emit("track", this.trackMsg());
     if (this.draft) socket.emit("draft", this.draft);
@@ -907,10 +916,12 @@ class Room {
       socket.emit("toast", "A race is on! Watching it now, you'll be on the grid for the next one.");
     }
   }
-  removePlayer(id) {
+  removePlayer(id, dropped) {
     const p = this.players.get(id);
     this.players.delete(id);
-    if (this.cars) { const c = this.cars.find((c) => c.owner === id); if (c) { c.owner = null; c.name = c.name + " (AI)"; } }
+    if (this.cars) { const c = this.cars.find((c) => c.owner === id); if (c) { c.owner = null; c.name = c.name + " (AI)"; if (dropped && p) c.rejoinKey = p.rejoinKey; } }
+    // lost connection (not "Leave"): keep their seat, level and upgrades for 2 minutes so they can come back
+    if (dropped && p && this.phase !== "lobby") { this.gone = this.gone || new Map(); this.gone.set(p.rejoinKey, { p, until: Date.now() + 120e3 }); }
     if (this.hostId === id) this.hostId = this.players.keys().next().value || null;
     menuDirty = true;
     if (!this.players.size) { rooms.delete(this.code); return; }
@@ -2049,8 +2060,29 @@ function menuInfo() {
 setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menuInfo", menuInfo()); } }, 1500);
 
 // ======================= Connections =======================
+// who's online (signed-in players): account id -> socket ids
+const online = new Map();
+function onlineInfo(uid) {
+  const set = online.get(uid); if (!set || !set.size) return null;
+  for (const sid of set) { const so = io.sockets.sockets.get(sid); const code = so?.data.room; if (code && rooms.get(code)) { const r = rooms.get(code); return { online: true, room: r.players.size < MAX_PLAYERS ? code : null, where: r.phase === "lobby" ? "in a room" : "racing" }; } }
+  return { online: true, where: "on the menu" };
+}
+function hostBlocks(r, uid) {
+  if (!uid) return false;
+  const h = r.players.get(r.hostId); const hu = h?.uid && accounts.cachedUser(h.uid);
+  return !!(hu && (hu.blocked || []).includes(uid));
+}
+// the server is about to restart (Render sends SIGTERM on every update): save, tell everyone, then stop
+let restarting = false;
+async function shutdown() {
+  if (restarting) return; restarting = true;
+  io.emit("serverRestart");
+  try { await accounts.flush(); } catch (e) {}
+  setTimeout(() => process.exit(0), 1500);
+}
+process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
+const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2116,10 +2148,26 @@ io.on("connection", (socket) => {
   const isHost = () => { const r = room(); return r && r.hostId === socket.id; };
   const leave = () => { const r = room(); if (r) { socket.leave(r.code); r.removePlayer(socket.id); } socket.data.room = null; socket.join("menu"); menuDirty = true; };
 
-  socket.on("create", (profile, opts) => { if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit"); leave(); const r = new Room(makeCode(), opts?.public === true); rooms.set(r.code, r); r.addPlayer(socket, profile); });
+  socket.on("create", (profile, opts) => {
+    if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit");
+    leave();
+    // a host coming back after an update asks for their old room code (if nobody has it)
+    const want = String(opts?.code || "").toUpperCase();
+    const code = /^[A-HJ-NP-Z]{4}$/.test(want) && !rooms.has(want) ? want : makeCode();
+    const r = new Room(code, opts?.public === true); rooms.set(r.code, r); r.addPlayer(socket, profile); });
+  // Quick Play: the busiest public room with space (lobby first, a race you can watch next), or a new public room
+  socket.on("quickPlay", (profile) => {
+    const open = [...rooms.values()].filter((r) => r.public && r.players.size && r.players.size < MAX_PLAYERS && !hostBlocks(r, socket.data.uid));
+    open.sort((a, b) => (a.phase === "lobby" ? 0 : 1) - (b.phase === "lobby" ? 0 : 1) || b.players.size - a.players.size);
+    if (open[0]) { leave(); open[0].addPlayer(socket, profile); socket.emit("toast", "Found a room!"); return; }
+    if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit");
+    leave(); const r = new Room(makeCode(), true); rooms.set(r.code, r); r.addPlayer(socket, profile);
+    socket.emit("toast", "No open rooms right now, so you made a public one. Others will join you!");
+  });
   socket.on("join", (d) => {
     const r = rooms.get(String(d?.code || "").toUpperCase().trim());
     if (!r) return socket.emit("joinError", "No room with that code");
+    if (hostBlocks(r, socket.data.uid)) return socket.emit("joinError", "You can't join that room");
     if (r.players.size >= MAX_PLAYERS) return socket.emit("joinError", "That room is full (6 players max)");
     leave(); r.addPlayer(socket, d.profile);
   });
@@ -2185,10 +2233,12 @@ io.on("connection", (socket) => {
       if (tickets2fa.size > 5000) tickets2fa.clear();
       return socket.emit("need2fa", { ticket });
     }
-    socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u);
+    socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u); goOnline();
     socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
     const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
   };
+  const goOnline = () => { const id = socket.data.uid; if (!id) return; if (!online.has(id)) online.set(id, new Set()); online.get(id).add(socket.id); };
+  const goOffline = () => { const id = socket.data.uid; const set = id && online.get(id); if (set) { set.delete(socket.id); if (!set.size) online.delete(id); } };
   const authFail = (e) => socket.emit("authError", e.message || "Sign-in failed");
   const gated = (d) => { const g = authGate(ip, d); if (!g) return false; if (g.captcha) socket.emit("authCaptcha", g.captcha); else authFail(new Error(g.error)); return true; };
   socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || ""), d?.backup).then(signedIn, authFail); });
@@ -2279,7 +2329,7 @@ io.on("connection", (socket) => {
     try {
       const u = await accounts.resumeOrRestore(String(d?.token || cookieTok || ""), d?.backup);
       if (!u) return socket.emit("signedOut");
-      socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
+      socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u); goOnline();
       socket.emit("account", accounts.publicUser(u)); daily(u);
       const p = me(); if (p) { p.uid = u.id; p.extras = socket.data.extras; room().sendLobby(); }
     } catch (e) { authFail(e); }
@@ -2287,7 +2337,7 @@ io.on("connection", (socket) => {
   // signed in with the cookie? log straight back in (if the server forgot you, ask the browser for its backup)
   if (cookieTok) accounts.userBySessionOnly(cookieTok).then((u) => {
     if (!u) return socket.emit("needBackup");
-    socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
+    socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u); goOnline();
     socket.emit("account", accounts.publicUser(u)); daily(u);
   }).catch(() => {});
   socket.on("auth:signoutAll", async () => {
@@ -2298,7 +2348,7 @@ io.on("connection", (socket) => {
   });
   socket.on("auth:signout", async (d) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
-    if (u) accounts.dropSession(u, String(d?.token || cookieTok || ""));
+    if (u) accounts.dropSession(u, String(d?.token || cookieTok || "")); goOffline();
     socket.data.uid = null; socket.data.extras = null;
     const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
     socket.emit("signedOut");
@@ -2311,7 +2361,7 @@ io.on("connection", (socket) => {
     socket.emit("presets", u.presets);
   });
   socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
-  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES }));
+  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
   const storeAction = async (fn) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("toast", "Sign in to use the store");
@@ -2337,6 +2387,58 @@ io.on("connection", (socket) => {
   });
   socket.on("spectate", (on) => { const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return; p.spectator = !!on; r.sendLobby(); });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
+  // ---- leaderboards ----
+  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps"].includes(d?.kind) ? d.kind : "wins"; socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  // ---- friends ----
+  const pingUser = (id, ev, data) => { for (const sid of online.get(id) || []) io.to(sid).emit(ev, data); };
+  const myUser = async () => (socket.data.uid ? accounts.getUser(socket.data.uid) : null);
+  const sendFriends = async (u) => socket.emit("friends", await accounts.friendList(u, onlineInfo));
+  socket.on("friends:get", async () => { const u = await myUser(); if (u) sendFriends(u); });
+  socket.on("friends:add", async (q) => {
+    const u = await myUser(); if (!u) return socket.emit("toast", "Sign in to add friends");
+    const r = await accounts.friendAdd(u, q); if (r.error) return socket.emit("friendMsg", { error: r.error });
+    socket.emit("friendMsg", { ok: `Friend request sent to ${r.name}!` }); sendFriends(u);
+    if (r.other) pingUser(r.other, "friendsChanged", { msg: `${u.name} wants to be friends` });
+  });
+  socket.on("friends:addPid", async (pid) => {      // "Add friend" on someone in your room
+    const u = await myUser(), r = room(); const t = r?.players.get(String(pid || ""));
+    if (!u) return socket.emit("toast", "Sign in to add friends");
+    if (!t?.uid) return socket.emit("toast", "They need to be signed in to be friends");
+    const res = await accounts.friendAdd(u, accounts.friendCode(t.uid));
+    socket.emit("toast", res.error || `Friend request sent to ${res.name}!`);
+    if (res.other) pingUser(res.other, "friendsChanged", { msg: `${u.name} wants to be friends` });
+  });
+  socket.on("friends:accept", async (id) => { const u = await myUser(); if (!u) return; const r = await accounts.friendAccept(u, String(id)); if (r.error) return socket.emit("friendMsg", { error: r.error }); sendFriends(u); pingUser(r.other, "friendsChanged", { msg: `${u.name} accepted your friend request!` }); });
+  socket.on("friends:remove", async (id) => { const u = await myUser(); if (!u) return; await accounts.friendRemove(u, String(id)); sendFriends(u); pingUser(String(id), "friendsChanged", {}); });
+  socket.on("friends:invite", async (id) => {
+    const u = await myUser(), r = room(); if (!u || !r) return;
+    if (!(u.friends || []).includes(String(id))) return;
+    pingUser(String(id), "invite", { from: u.name, code: r.code });
+    socket.emit("friendMsg", { ok: "Invite sent!" });
+  });
+  // ---- block + report ----
+  socket.on("block", async (d) => {
+    const u = await myUser(), r = room(); const target = r?.players.get(String(d?.pid || ""));
+    if (u && target?.uid) { accounts.setBlocked(u, target.uid, d?.on !== false); socket.emit("account", accounts.publicUser(u)); }
+    if (d?.on !== false && target && r && r.hostId === socket.id && r.phase === "lobby") {    // you're the host: they're out
+      const ts = io.sockets.sockets.get(target.id); if (ts) { ts.emit("kicked"); ts.leave(r.code); ts.data.room = null; ts.join("menu"); } r.removePlayer(target.id);
+    }
+  });
+  socket.on("report", (d) => {
+    const r = room(), p = me(); const target = r?.players.get(String(d?.pid || ""));
+    if (!r || !p || !target || target.id === p.id) return;
+    const why = ["name", "team", "spam", "other"].includes(d?.why) ? d.why : "other";
+    console.warn(`[report] room ${r.code}: ${p.name} reported ${target.name} (team ${target.team}) for: ${why}`);
+    target.reports = target.reports || new Set(); target.reports.add(p.uid || p.id);
+    socket.emit("toast", "Thanks, reported.");
+    // 2 different players reported the same name: it's replaced for everyone
+    if (target.reports.size >= 2 && (why === "name" || why === "team")) {
+      target.name = "Racer" + Math.floor(100 + Math.random() * 900); if (why === "team") target.team = target.name + " Racing";
+      const c = r.cars?.find((c) => c.owner === target.id); if (c) { c.name = target.name; c.team = target.team; }
+      io.to(target.id).emit("toast", "Your name was reported by other players, so it was changed.");
+      r.sendLobby();
+    }
+  });
   socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
   socket.on("gridRandomAll", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
@@ -2353,7 +2455,7 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const i = Math.round(Number(d?.i)); if (!(i >= 0 && i < r.roster.length)) return;
     const R = r.roster[i];
-    if (typeof d.name === "string" && d.name.trim()) R.name = d.name.trim().slice(0, 12);
+    if (typeof d.name === "string" && d.name.trim() && !nameFilter.isBad(d.name)) R.name = d.name.trim().slice(0, 12);
     if (d.number !== undefined && Number.isFinite(Number(d.number))) R.number = clamp(Math.round(Number(d.number)), 0, 99);
     if (typeof d.team === "string") R.team = cleanTeam(d.team) || R.team;
     if (HEX.test(d.color)) R.color = d.color;
@@ -2394,7 +2496,8 @@ io.on("connection", (socket) => {
   socket.on("renameTeam", (name) => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return;
     const old = p.team, nu = cleanTeam(name);
-    if (!nu || nu === old) return;
+    if (!nu) return socket.emit("toast", "Please pick a different team name");
+    if (nu === old) return;
     const taken = [...r.players.values()].some((x) => x.team === nu) || r.roster.some((x) => x.team === nu);
     if (taken) return socket.emit("toast", "Another team already has that name");
     for (const x of r.players.values()) if (x.team === old) { x.team = nu; io.to(x.id).emit("teamRenamed", nu); }
@@ -2441,7 +2544,30 @@ io.on("connection", (socket) => {
     r.emit("toast", `${r.players.get(id).name} is the host now`);
   });
   socket.on("leave", leave);
-  socket.on("disconnect", () => { const r = room(); if (r) r.removePlayer(socket.id); menuDirty = true; });
+  socket.on("disconnect", () => {
+    const r = room(); if (r) r.removePlayer(socket.id, true); menuDirty = true;
+    if (socket.data.uid) { const set = online.get(socket.data.uid); if (set) { set.delete(socket.id); if (!set.size) online.delete(socket.data.uid); } }
+  });
+  // ---- came back after a dropped connection: get your car back ----
+  socket.on("rejoin", (d) => {
+    const r = rooms.get(String(d?.code || "").toUpperCase()); if (!r) return socket.emit("rejoinFail", "gone");
+    const g = r.gone?.get(String(d?.key || "")); if (!g || Date.now() > g.until) return socket.emit("rejoinFail", "expired");
+    r.gone.delete(String(d.key)); leave();
+    const p = g.p; p.id = socket.id; p.nitroHeld = false;
+    r.players.set(socket.id, p);
+    socket.leave("menu"); socket.join(r.code); socket.data.room = r.code;
+    if (!r.hostId || !r.players.has(r.hostId)) r.hostId = socket.id;
+    const c = r.cars && r.cars.find((c) => c.rejoinKey === p.rejoinKey && !c.owner);
+    if (c) { c.owner = socket.id; c.name = c.name.replace(/ \(AI\)$/, ""); delete c.rejoinKey; }
+    socket.emit("joined", { code: r.code, you: socket.id, rejoinKey: p.rejoinKey, upgrades: upgradeInfo(), f1: f1List() });
+    r.sendLobby();
+    if (r.track) socket.emit("track", r.trackMsg());
+    if (r.cars && r.lastRaceMsg && ["race", "lights", "tires"].includes(r.phase)) {
+      socket.emit("race", { ...r.lastRaceMsg, cars: r.lastRaceMsg.cars.map((x) => (c && x.id === c.id ? { ...x, owner: socket.id } : x)) });
+      r.resendOffer(p);
+    }
+    r.emit("toast", `${p.name} is back!`); socket.emit("toast", c ? "Reconnected: your car is yours again!" : "Reconnected!");
+  });
 });
 
 // Main loop: 30 ticks a second. Each room is guarded so one broken race can't freeze the others.
