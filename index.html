@@ -203,8 +203,39 @@
         <span class="dock-label">Draw</span>
         <button type="button" class="tool" data-dm="free" aria-pressed="true" title="Drag to draw. Hold Shift for a straight bit"><span>✏️</span>Freehand</button>
         <button type="button" class="tool" data-dm="line" aria-pressed="false" title="Click to add straight lines"><span>📐</span>Straight</button>
+        <button type="button" class="tool" data-dm="curve" aria-pressed="false" title="Click points and the road curves smoothly through them"><span>🪢</span>Curve</button>
+        <button type="button" class="tool" data-dm="mirror" aria-pressed="false" title="Draw one half, get a perfectly symmetric track"><span>🪞</span>Mirror</button>
+        <button type="button" class="tool" data-dm="stamp" aria-pressed="false" title="Drag a box to drop in a ready-made shape"><span>🔷</span>Shapes</button>
         <button type="button" class="tool hidden" id="undoPt" title="Undo the last piece (Ctrl+Z)"><span>↩️</span>Undo</button>
         <button type="button" class="tool hidden" id="closeLoop" title="Join the end back to the start"><span>⭕</span>Finish loop</button>
+        <button type="button" class="tool hidden" id="redoPt" title="Redo (Ctrl+Y)"><span>↪️</span>Redo</button>
+      </div>
+      <div class="dock-group hidden" id="stampPick" role="radiogroup" aria-label="Shape to drop in">
+        <span class="dock-label">Shape (drag a box)</span>
+        <button type="button" class="tool on" data-shape="oval"><span>⭕</span>Oval</button>
+        <button type="button" class="tool" data-shape="stadium"><span>🏟️</span>Stadium</button>
+        <button type="button" class="tool" data-shape="eight"><span>♾️</span>Figure 8</button>
+        <button type="button" class="tool" data-shape="bean"><span>🫘</span>Bean</button>
+        <button type="button" class="tool" data-shape="tri"><span>🔺</span>Triangle</button>
+        <button type="button" class="tool" data-shape="flower"><span>🌸</span>Flower</button>
+        <button type="button" class="tool" data-shape="zigzag"><span>⚡</span>Zigzag</button>
+        <button type="button" class="tool" data-shape="clover"><span>🍀</span>Clover</button>
+      </div>
+      <div class="dock-group" id="snapTools">
+        <button type="button" class="tool" id="snapBtn" aria-pressed="false" title="Straight lines snap to 15° angles and the grid"><span>🧲</span>Snap</button>
+        <button type="button" class="tool" id="moreBtn" aria-expanded="false" title="Rotate, flip, resize, wider road..."><span>✨</span>Edit track</button>
+      </div>
+      <div class="dock-group hidden" id="moreTools" aria-label="Change the whole track">
+        <span class="dock-label">Change the whole track</span>
+        <button type="button" class="tool" data-tf="rot"><span>⟳</span>Rotate</button>
+        <button type="button" class="tool" data-tf="flipx"><span>⇋</span>Flip ↔</button>
+        <button type="button" class="tool" data-tf="flipy"><span>⇅</span>Flip ↕</button>
+        <button type="button" class="tool" data-tf="big"><span>➕</span>Bigger</button>
+        <button type="button" class="tool" data-tf="small"><span>➖</span>Smaller</button>
+        <button type="button" class="tool" data-tf="center"><span>🎯</span>Center</button>
+        <button type="button" class="tool" data-tf="wide"><span>🛣️</span>Wider road</button>
+        <button type="button" class="tool" data-tf="narrow"><span>🪡</span>Narrower</button>
+        <button type="button" class="tool" data-tf="wiggle"><span>〰️</span>Wiggle</button>
       </div>
       <div class="dock-group" id="widthTools">
         <span class="dock-label">Road width</span>

@@ -919,3 +919,7 @@
   .fc-bar { position: relative; width: 8rem; height: 0.4rem; border-radius: 99px; background: linear-gradient(90deg, #ffcc1f, #6b7280 50%, #3b82f6); }
   .fc-bar i { position: absolute; top: 50%; width: 0.8rem; height: 0.8rem; margin: -0.4rem 0 0 -0.4rem; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.5); transition: left 2.5s ease; left: 50%; }
   body.rm *, body.rm *::before, body.rm *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+
+/* the drawing tools can get long (Shapes / Edit track open): let the dock scroll instead of running off screen */
+@media (min-width: 861px) { .dock { max-height: calc(100% - 1.5rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; } }
+#stampPick .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); }

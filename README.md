@@ -53,6 +53,14 @@ It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 s
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
+## Drawing tools
+Freehand, Straight, **Curve** (click points, smooth Catmull-Rom road through them, click the first point to close),
+**Mirror** (draw half, starting/ending near the dashed middle line: the other half is mirrored), **Shapes** (drag
+a box: oval, stadium, figure 8, bean, triangle, flower, zigzag, clover), **Snap** (15° angles, 25-unit lengths for
+straights), Undo/**Redo** (Ctrl+Z / Ctrl+Y), and **Edit track** for the whole finished track: rotate, flip ↔/↕,
+bigger/smaller, center, wider/narrower road, wiggle (adds S-bends). Settings > Drawing board look: Clean / Light
+(default, a few faded props) / Full.
+
 ## Launch checklist bits
 Custom 404 page, "Race solo" above the fold on phones, footer links (FAQ / Privacy) on the menu and every page,
 breadcrumbs on the pages, 5 FAQs (with FAQPage schema), robots.txt + sitemap.xml (use your real address

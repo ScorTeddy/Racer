@@ -58,6 +58,7 @@
     { key: "cam", label: "Camera follows", hint: "Tab also switches who you're watching", def: "me", opts: [["me", "My car"], ["leader", "Leader"]] },
     { key: "names", label: "Name tags", def: "all", opts: [["all", "All"], ["mine", "Mine"], ["off", "Off"]] },
     { key: "fx", label: "Smoke and dust", def: "high", opts: [["high", "High"], ["low", "Low"], ["off", "Off"]] },
+    { key: "boardScenery", label: "Drawing board look", hint: "How much scenery shows on the board while you draw (the race always gets the full thing)", def: "light", opts: [["off", "Clean"], ["light", "Light"], ["full", "Full"]] },
     { key: "scenery", label: "Scenery", hint: "Buildings, trees and props around the track (turn off on slow devices)", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "skids", label: "Skid marks", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "lines", label: "Speed lines", def: "on", opts: [["on", "On"], ["off", "Off"]] },
@@ -1741,7 +1742,11 @@
     c.save(); c.beginPath(); c.rect(0, 0, B.bw, B.bh); c.clip();
     if (T && G) {
       c.save(); c.translate(T.minX, T.minY); c.scale(1 / T.scale, 1 / T.scale); c.translate(-T.pad, -T.pad);
-      if (settings.scenery !== "off") drawDecor(c, T, G, th, {});
+      // the board stays calm: "light" = a few faded props (grandstands, the odd tree), "full" = like the race
+      if (settings.scenery !== "off" && settings.boardScenery !== "off") {
+        if (settings.boardScenery === "full") drawDecor(c, T, G, th, {});
+        else { c.save(); c.globalAlpha = 0.5; drawDecor(c, T, G, th, { lite: true }); c.restore(); }
+      }
       drawStatic(c, T, G, th, { board: true, noGround: true });
       c.restore();
     }
@@ -1751,7 +1756,7 @@
     for (let y = 0; y <= B.bh; y += 100) { c.moveTo(0, y); c.lineTo(B.bw, y); }
     c.stroke();
     const vg = c.createRadialGradient(B.bw / 2, B.bh / 2, Math.min(B.bw, B.bh) * 0.35, B.bw / 2, B.bh / 2, Math.hypot(B.bw, B.bh) * 0.6);
-    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, th.night ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)");
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, th.night ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.14)");
     c.fillStyle = vg; c.fillRect(0, 0, B.bw, B.bh);
     c.restore();
     c.strokeStyle = "rgba(255,255,255,0.18)"; c.lineWidth = 2 / B.s; c.strokeRect(0, 0, B.bw, B.bh);
@@ -1771,7 +1776,7 @@
     if (showTrack && !S.geo) S.geo = buildGeo(T);
     // The board background (textured ground, scenery, the finished track) is painted once into a
     // cached picture and just copied every frame, so it can look like the race and still be fast.
-    const bgKey = [board.width, board.height, B.ox, B.oy, B.s, themeKey, showTrack ? S.geo.id : "-", settings.scenery, showTrack ? gridCount() : 0, settings.raceline].join("|");
+    const bgKey = [board.width, board.height, B.ox, B.oy, B.s, themeKey, showTrack ? S.geo.id : "-", settings.scenery, settings.boardScenery, showTrack ? gridCount() : 0, settings.raceline].join("|");
     if (B.bgKey !== bgKey) { B.bgKey = bgKey; B.bg = paintBoardBg(th, showTrack ? T : null, showTrack ? S.geo : null); }
     c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(B.bg, 0, 0); c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.save(); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
@@ -1825,10 +1830,34 @@
         c.beginPath(); c.arc(L[0], L[1], (14 + 4 * Math.sin(performance.now() / 200)) / B.s, 0, Math.PI * 2); c.strokeStyle = "rgba(255,204,31,0.7)"; c.stroke();
       }
     }
+    // mirror mode: the middle line, and a see-through preview of the mirrored half
+    if (drawMode === "mirror" && S.host && (S.draft || !S.track)) {
+      c.setLineDash([10 / B.s, 10 / B.s]); c.strokeStyle = "rgba(255,255,255,0.45)"; c.lineWidth = 2 / B.s;
+      c.beginPath(); c.moveTo(B.bw / 2, 0); c.lineTo(B.bw / 2, B.bh); c.stroke(); c.setLineDash([]);
+      if (d && d.mirror && d.pts.length > 1) {
+        c.globalAlpha = 0.45; c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = th.asphalt; c.lineWidth = d.pts[0][2] / 3;
+        c.beginPath(); d.pts.forEach((q, i) => (i ? c.lineTo(B.bw - q[0], q[1]) : c.moveTo(B.bw - q[0], q[1]))); c.stroke(); c.globalAlpha = 1;
+      }
+    }
+    // curve mode: the points you placed
+    if (d && d.ctrl) for (const [i, q] of d.ctrl.entries()) { c.fillStyle = i ? "#4fa3ff" : "#3ecf6a"; c.strokeStyle = "#fff"; c.lineWidth = 2 / B.s; c.beginPath(); c.arc(q[0], q[1], 6 / B.s, 0, Math.PI * 2); c.fill(); c.stroke(); }
+    if (d && d.ctrl && hover && drawMode === "curve") {   // where the next bit would go
+      const prev = spline([...d.ctrl.slice(-3), [hover[0], hover[1], brushW]], false);
+      c.setLineDash([8 / B.s, 6 / B.s]); c.strokeStyle = "rgba(79,163,255,0.6)"; c.lineWidth = brushW / 3; c.globalAlpha = 0.5;
+      c.beginPath(); prev.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+    }
+    // shapes: preview inside the box being dragged
+    if (drawMode === "stamp" && stampStart && S.stampEnd) {
+      c.setLineDash([6 / B.s, 6 / B.s]); c.strokeStyle = "rgba(255,255,255,0.5)"; c.lineWidth = 1.5 / B.s;
+      c.strokeRect(Math.min(stampStart[0], S.stampEnd[0]), Math.min(stampStart[1], S.stampEnd[1]), Math.abs(S.stampEnd[0] - stampStart[0]), Math.abs(S.stampEnd[1] - stampStart[1])); c.setLineDash([]);
+      const sp = shapePts(stampShape, stampStart, S.stampEnd);
+      c.strokeStyle = th.asphalt; c.lineWidth = brushW / 3; c.lineJoin = "round"; c.globalAlpha = 0.75;
+      c.beginPath(); sp.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.stroke(); c.globalAlpha = 1;
+    }
     // rubber band for straight lines (Straight tool, or Shift while drawing)
     const rubber = (a, b) => { c.setLineDash([10 / B.s, 8 / B.s]); c.lineWidth = brushW / 3; c.strokeStyle = "rgba(255,204,31,0.35)"; c.lineCap = "round"; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]); };
-    if (d && drawMode === "line" && hover) rubber(d.pts[d.pts.length - 1], hover);
-    if (d && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, S.shiftEnd);
+    if (d && drawMode === "line" && hover) rubber(d.pts[d.pts.length - 1], snapPt(d.pts[d.pts.length - 1], hover));
+    if (d && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, snapPt(shiftAnchor, S.shiftEnd));
     // brush size preview under the pointer
     if (hover && S.host && S.lobby?.phase === "lobby" && !startMode && !cut) {
       c.strokeStyle = "rgba(255,255,255,0.7)"; c.lineWidth = 1.5 / B.s;
@@ -1844,6 +1873,7 @@
   // drag a curvy bit, click a few straight lines, drag some more... then close the loop.
   // The width brush sets how wide the road is for whatever you draw next.
   let drawMode = "free", hover = null, drawing = false, shiftAnchor = null, startMode = false;
+  let stampShape = "oval", stampStart = null, snapOn = false; const redoStack = [];
   let cut = null;          // Redraw part: { a, b, flip } indexes into the track's stroke (board units)
   let brushW = 130;
   try { brushW = WIDTHS.map((x) => x[0]).includes(+localStorage.getItem("tb-brush")) ? +localStorage.getItem("tb-brush") : 130; } catch (e) {}
@@ -1866,8 +1896,84 @@
   renderBrush();
   const nearPx = (a, b, px) => Math.hypot(a[0] - b[0], a[1] - b[1]) * B.s < px;
   const lastPt = () => S.draft.pts[S.draft.pts.length - 1];
+  // ---- extra drawing tools ----
+  // smooth curve through points (Catmull-Rom). closed = loop back to the first point.
+  function spline(ctrl, closed) {
+    const n = ctrl.length; if (n < 2) return ctrl.map((q) => q.slice());
+    const out = [], P = (i) => (closed ? ctrl[(i + n) % n] : ctrl[Math.max(0, Math.min(n - 1, i))]);
+    const segs = closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      const L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), m = Math.max(4, Math.ceil(L / 5));
+      for (let k = 0; k < m; k++) {
+        const t = k / m, t2 = t * t, t3 = t2 * t, f = (j) => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3);
+        out.push([clamp(f(0), 0, B.bw), clamp(f(1), 0, B.bh), Math.round(p1[2] + (p2[2] - p1[2]) * t)]);
+      }
+    }
+    if (!closed) out.push(ctrl[n - 1].slice());
+    return out;
+  }
+  // ready-made shapes, drawn into the box you drag (x, y from -1 to 1)
+  const SHAPES = {
+    oval: (t) => [Math.cos(t), Math.sin(t)],
+    stadium: (t) => { const c = Math.cos(t), s2 = Math.sin(t); return [Math.sign(c) * Math.min(1, Math.abs(c) * 1.6), s2]; },
+    eight: (t) => [Math.sin(t), Math.sin(2 * t) * 0.9],
+    bean: (t) => { const x = Math.cos(t), y = Math.sin(t); return [x, y * (0.95 - 0.55 * Math.max(0, y) * (1 - x * x))]; },
+    tri: (t) => { const r = 0.82 + 0.18 * Math.cos(3 * t); return [r * Math.cos(t - Math.PI / 2), r * Math.sin(t - Math.PI / 2)]; },
+    flower: (t) => { const r = 0.78 + 0.22 * Math.cos(5 * t); return [r * Math.cos(t), r * Math.sin(t)]; },
+    clover: (t) => { const r = 0.62 + 0.38 * Math.cos(4 * t); return [r * Math.cos(t), r * Math.sin(t)]; },
+    zigzag: null,     // made from points below
+  };
+  function shapePts(kind, a, b) {
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, hw = (x1 - x0) / 2, hh = (y1 - y0) / 2;
+    const map = ([x, y]) => [clamp(cx + x * hw, 0, B.bw), clamp(cy + y * hh, 0, B.bh), brushW];
+    if (kind === "zigzag") {   // a long loop with a zigzag top edge
+      const c = [[-1, 0.8], [1, 0.8], [1, -0.2], [0.6, -0.9], [0.2, -0.1], [-0.2, -0.9], [-0.6, -0.1], [-1, -0.9]].map(map);
+      return spline(c, true);
+    }
+    const f = SHAPES[kind] || SHAPES.oval, N = 260, out = [];
+    for (let i = 0; i < N; i++) out.push(map(f((i / N) * Math.PI * 2)));
+    return out;
+  }
+  // Snap: straight lines go in 15° steps and in 25-unit lengths
+  function snapPt(a, p) {
+    if (!snapOn || !a) return p;
+    const ang = Math.round(Math.atan2(p[1] - a[1], p[0] - a[0]) / (Math.PI / 12)) * (Math.PI / 12);
+    const L = Math.max(25, Math.round(Math.hypot(p[0] - a[0], p[1] - a[1]) / 25) * 25);
+    return [clamp(a[0] + Math.cos(ang) * L, 0, B.bw), clamp(a[1] + Math.sin(ang) * L, 0, B.bh)];
+  }
+  // change the whole finished track: rotate, flip, resize, center, road width, wiggle
+  function transformTrack(kind) {
+    const st = S.lobby?.stroke; if (!S.host || !st || !S.track) { boardHint("Make a track first.", true); return; }
+    let pts = st.map((q) => q.slice());
+    const box = () => { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; for (const q of pts) { a = Math.min(a, q[0]); b = Math.min(b, q[1]); c = Math.max(c, q[0]); d = Math.max(d, q[1]); } return { x0: a, y0: b, x1: c, y1: d, cx: (a + c) / 2, cy: (b + d) / 2 }; };
+    let bx = box();
+    const scale = (k) => { pts = pts.map((q) => [bx.cx + (q[0] - bx.cx) * k, bx.cy + (q[1] - bx.cy) * k, q[2]]); };
+    if (kind === "rot") pts = pts.map((q) => [bx.cx - (q[1] - bx.cy), bx.cy + (q[0] - bx.cx), q[2]]);
+    if (kind === "flipx") pts = pts.map((q) => [2 * bx.cx - q[0], q[1], q[2]]);
+    if (kind === "flipy") pts = pts.map((q) => [q[0], 2 * bx.cy - q[1], q[2]]);
+    if (kind === "big") scale(1.15);
+    if (kind === "small") scale(1 / 1.15);
+    if (kind === "center") pts = pts.map((q) => [q[0] + B.bw / 2 - bx.cx, q[1] + B.bh / 2 - bx.cy, q[2]]);
+    if (kind === "wide" || kind === "narrow") { const k = kind === "wide" ? 1.15 : 1 / 1.15; pts = pts.map((q) => [q[0], q[1], clamp(Math.round(q[2] * k), 84, 260)]); }
+    if (kind === "wiggle") {   // gentle S-bends along the whole lap
+      const n = pts.length, cum = [0]; for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      const ph = Math.random() * 6.3;
+      pts = pts.map((q, i) => { const a = pts[(i - 3 + n) % n], b = pts[(i + 3) % n], tx = b[0] - a[0], ty = b[1] - a[1], L = Math.hypot(tx, ty) || 1, o = Math.sin(cum[i] / 70 + ph) * 12; return [q[0] - (ty / L) * o, q[1] + (tx / L) * o, q[2]]; });
+    }
+    // keep it on the map: shrink if it got too big, then slide it back inside
+    bx = box(); const m = 30, W = B.bw - 2 * m, H = B.bh - 2 * m, k = Math.min(1, W / (bx.x1 - bx.x0 || 1), H / (bx.y1 - bx.y0 || 1));
+    if (k < 1) scale(k * 0.98);
+    bx = box(); const dx = bx.x0 < m ? m - bx.x0 : bx.x1 > B.bw - m ? B.bw - m - bx.x1 : 0, dy = bx.y0 < m ? m - bx.y0 : bx.y1 > B.bh - m ? B.bh - m - bx.y1 : 0;
+    pts = pts.map((q) => [q[0] + dx, q[1] + dy, q[2]]);
+    P.steps = []; if (S.track.reverse) P.steps.push(() => socket.emit("reverse"));
+    S.draft = null; S.lastDraft = null; updateDraftUi();
+    socket.emit("track", { stroke: pts, map: S.lobby.settings.map });
+    boardHint({ rot: "Rotated!", flipx: "Flipped left to right!", flipy: "Flipped upside down!", big: "Bigger!", small: "Smaller!", center: "Centered on the map!", wide: "Wider road!", narrow: "Narrower road!", wiggle: "Added some wiggles! (hit it again for more)" }[kind], false);
+  }
   function addStraight(p) {
-    const a = lastPt(), L = Math.hypot(p[0] - a[0], p[1] - a[1]), n = Math.max(1, Math.ceil(L / 8));
+    const a = lastPt(); p = snapPt(a, p); const L = Math.hypot(p[0] - a[0], p[1] - a[1]), n = Math.max(1, Math.ceil(L / 8));
     for (let k = 1; k <= n; k++) S.draft.pts.push([a[0] + (p[0] - a[0]) * (k / n), a[1] + (p[1] - a[1]) * (k / n), brushW]);
   }
   const markCorner = () => S.draft.corners.push(S.draft.pts.length - 1);
@@ -1887,8 +1993,10 @@
     shareDraft();
     $("undoPt").classList.toggle("hidden", !S.draft && !(S.lastDraft && S.host));
     $("closeLoop").classList.toggle("hidden", !S.draft || S.draft.pts.length < 3);
+    if (typeof updateRedo === "function" && $("redoPt")) updateRedo();
   }
   function hintDraft() {
+    if (drawMode === "curve") return boardHint("Keep clicking to add points. Click the first point (or Finish loop) to close it smoothly.", false);
     boardHint(drawMode === "line" ? (isTouch() ? "Tap to add straight lines. Tap the green dot (or Finish loop) to close it." : "Click to add straight lines. Click the green dot (or Finish loop) to close it.") : "Keep going: drag for curves, or switch to Straight. Come back to the green dot (or Finish loop) to close it.", false);
   }
   // round off the corners where straight lines meet, so cars can actually drive them
@@ -1917,6 +2025,7 @@
   }
   function finishDraft() {
     const d = S.draft;
+    if (d && d.ctrl && d.base === 0 && d.ctrl.length >= 3) { d.pts = spline(d.ctrl, true); d.corners = []; }
     if (!d || d.pts.length < 3 || draftLen() < 150) { boardHint("Draw a bit more first!", true); return; }
     let pts = d.pts.map((q) => q.slice());
     if (d.cut && d.keep) {   // after a redraw: put the direction and the start line back where they were
@@ -1963,7 +2072,10 @@
   document.querySelectorAll("[data-dm]").forEach((b) => b.addEventListener("click", () => {
     drawMode = b.dataset.dm;
     document.querySelectorAll("[data-dm]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    if (S.draft) hintDraft();
+    $("stampPick").classList.toggle("hidden", drawMode !== "stamp"); requestAnimationFrame(sizeBoard);
+    const MH = { curve: "Click points and the road curves smoothly through them. Click the first point (or Finish loop) to close it.", mirror: "Draw HALF a track, starting and ending near the dashed middle line. Let go and you get the other half mirrored.", stamp: "Pick a shape, then drag a box on the board to drop it in." };
+    if (MH[drawMode] && !(S.draft && drawMode === "curve")) boardHint(MH[drawMode], false);
+    else if (S.draft) hintDraft();
     else boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can switch back to Freehand any time." : "Click to place corners. You can switch back to Freehand any time.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
     drawBoard();
   }));
@@ -1977,12 +2089,35 @@
       updateDraftUi(); drawBoard(); return;
     }
     const d = S.draft; if (!d) return;
+    if (d.ctrl) {                                  // curve: take the last point off
+      redoStack.push({ ctrl: d.ctrl.pop() });
+      if (d.ctrl.length <= (d.base === 0 ? 0 : 1)) { if (d.base === 0) S.draft = null; else { d.pts.length = d.base + 1; delete d.ctrl; } }
+      else d.pts = d.pts.slice(0, d.base).concat(spline(d.ctrl, false));
+      updateDraftUi(); updateRedo(); drawBoard(); return;
+    }
     const at = d.pieces.pop();
+    if (at !== undefined && at > 0) redoStack.push({ at, pts: d.pts.slice(at), corners: d.corners.filter((i) => i >= at) });
     if (at === undefined || (!at && !d.cut)) { S.draft = null; if (d.cut) boardHint("Redraw cancelled: your old track is back.", false); }
     else { d.pts.length = at; d.corners = d.corners.filter((i) => i < at); }
     updateDraftUi(); drawBoard();
   }
   $("undoPt").addEventListener("click", undoDraft);
+  function updateRedo() { $("redoPt").classList.toggle("hidden", !redoStack.length || !S.draft); }
+  function redoDraft() {
+    const r = redoStack.pop(), d = S.draft; if (!r || !d) return;
+    if (r.ctrl && d.ctrl) { d.ctrl.push(r.ctrl); d.pts = d.pts.slice(0, d.base).concat(spline(d.ctrl, false)); }
+    else if (r.pts) { d.pieces.push(r.at); d.pts.length = r.at; d.pts.push(...r.pts); d.corners.push(...r.corners); }
+    updateDraftUi(); updateRedo(); drawBoard();
+  }
+  $("redoPt").addEventListener("click", redoDraft);
+  // shapes, snap, whole-track edits
+  document.querySelectorAll("[data-shape]").forEach((b) => b.addEventListener("click", () => {
+    stampShape = b.dataset.shape; document.querySelectorAll("[data-shape]").forEach((x) => x.classList.toggle("on", x === b));
+    boardHint(`Drag a box on the board to drop in a ${b.textContent.trim().toLowerCase()}.`, false);
+  }));
+  $("snapBtn").addEventListener("click", () => { snapOn = !snapOn; $("snapBtn").setAttribute("aria-pressed", String(snapOn)); $("snapBtn").classList.toggle("on", snapOn); boardHint(snapOn ? "Snap on: straight lines go in 15° steps (Straight tool, or Shift while drawing)." : "Snap off.", false); drawBoard(); });
+  $("moreBtn").addEventListener("click", () => { const open = $("moreTools").classList.toggle("hidden") === false; $("moreBtn").setAttribute("aria-expanded", String(open)); $("moreBtn").classList.toggle("on", open); requestAnimationFrame(sizeBoard); });
+  document.querySelectorAll("[data-tf]").forEach((b) => b.addEventListener("click", () => transformTrack(b.dataset.tf)));
   $("closeLoop").addEventListener("click", finishDraft);
   $("startLineBtn").addEventListener("click", () => {
     if (!S.track) { boardHint("Draw a track first.", true); return; }
@@ -2331,6 +2466,17 @@
     const p = toBoard(e);
     if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
+    redoStack.length = 0; updateRedo();
+    if (drawMode === "stamp") { board.setPointerCapture(e.pointerId); drawing = true; stampStart = p; S.stampEnd = p; drawBoard(); return; }
+    if (drawMode === "curve") {
+      if (!S.draft) { S.draft = { pts: [], corners: [], pieces: [], ctrl: [], base: 0 }; S.lastDraft = null; }
+      const d = S.draft;
+      if (!d.ctrl) { d.ctrl = [lastPt().slice()]; d.base = d.pts.length - 1; }     // carry on from what's already drawn
+      if (d.base === 0 && d.ctrl.length >= 3 && nearPx(p, d.ctrl[0], 18)) { finishDraft(); return; }
+      d.ctrl.push([p[0], p[1], brushW]);
+      d.pts = d.pts.slice(0, d.base).concat(spline(d.ctrl, false));
+      updateDraftUi(); hintDraft(); drawBoard(); shareDraft(); return;
+    }
     if (drawMode === "line") {
       if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [0], pieces: [0] }; S.lastDraft = null; }
       else if (S.draft.pts.length >= 3 && nearPx(p, S.draft.pts[0], 18) && draftLen() > 150) { finishDraft(); return; }
@@ -2339,7 +2485,7 @@
     }
     board.setPointerCapture(e.pointerId);
     drawing = true;
-    if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [], pieces: [0] }; S.lastDraft = null; }
+    if (!S.draft) { S.draft = { pts: [[p[0], p[1], brushW]], corners: [], pieces: [0], mirror: drawMode === "mirror" }; S.lastDraft = null; }
     else {
       S.draft.pieces.push(S.draft.pts.length);
       if (!nearPx(p, lastPt(), 14)) { markCorner(); addStraight(p); markCorner(); }    // started somewhere else: join with a straight line
@@ -2350,6 +2496,7 @@
   board.addEventListener("pointermove", (e) => {
     const p = toBoard(e); hover = p;
     if (!drawing) { if (S.host && S.lobby?.phase === "lobby") drawBoard(); return; }
+    if (drawMode === "stamp") { S.stampEnd = p; drawBoard(); return; }
     if (e.shiftKey) {                  // hold Shift: a straight line from where Shift was pressed
       if (!shiftAnchor) shiftAnchor = lastPt();
       S.shiftEnd = p; drawBoard(); return;
@@ -2377,14 +2524,26 @@
     if (e.key === "Escape" && editing && !cut && !S.draft) { setEditing(false); return; }
     if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
     if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); redoDraft(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && S.draft) { e.preventDefault(); undoDraft(); }
     if (e.key === "[" || e.key === "]") { const ws = WIDTHS.map((x) => x[0]), i = ws.indexOf(brushW); setBrush(ws[clamp(i + (e.key === "]" ? 1 : -1), 0, ws.length - 1)]); }
   });
   const endDraw = () => {
     if (!drawing) return;
     drawing = false;
+    if (drawMode === "stamp") {                 // drop in the shape
+      const a = stampStart, b = S.stampEnd; stampStart = null; S.stampEnd = null;
+      if (!a || !b || Math.abs(a[0] - b[0]) < 60 || Math.abs(a[1] - b[1]) < 60) { boardHint("Drag a bigger box to drop in the shape.", true); drawBoard(); return; }
+      S.draft = { pts: shapePts(stampShape, a, b), corners: [], pieces: [0] }; S.lastDraft = null;
+      finishDraft(); return;
+    }
     if (shiftAnchor) commitShift();
     const d = S.draft; if (!d) return;
+    if (d.mirror && drawMode === "mirror" && !d.cut) {      // one half drawn: add its mirror image and close it
+      if (draftLen() < 80) { updateDraftUi(); drawBoard(); return; }
+      const half = d.pts.map((q) => q.slice()), M = half.map((q) => [B.bw - q[0], q[1], q[2]]).reverse();
+      d.pts = half.concat(M); d.corners = []; finishDraft(); return;
+    }
     const P = d.pts, a = P[0], b = P[P.length - 1];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const q of P) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
@@ -2995,7 +3154,9 @@
     const items = buildDecor(t, G, th.key || "grass");
     const x0 = opts.x0 ?? 0, y0 = opts.y0 ?? 0, x1 = x0 + (opts.w ?? t.W), y1 = y0 + (opts.h ?? t.H);
     const glow = th.key === "neon" || th.key === "night";
+    let n = 0;
     for (const d of items) {
+      if (opts.lite && d.k !== "stand" && d.k !== "sea" && (n++ % 4 !== 0 || d.k === "car" || d.k === "lamp" || d.k === "lampNeon" || d.k === "holo" || d.k === "lava" || d.k === "vent" || d.k === "towel" || d.k === "umbrella")) continue;
       if (d.k !== "sea" && (d.x + d.r + 40 < x0 || d.y + d.r + 40 < y0 || d.x - d.r - 40 > x1 || d.y - d.r - 40 > y1)) continue;
       const { x, y, r } = d;
       switch (d.k) {
