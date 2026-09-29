@@ -108,6 +108,7 @@
     <div class="rc-spacer"></div>
     <button type="button" class="btn" id="garageBtn">🏎️ My car</button>
     <button type="button" class="btn" data-hub="stats" title="Stats, achievements and store">🏅 Profile</button>
+    <button type="button" class="gear rc-gear" data-chat aria-label="Chat" title="Chat (Enter)">💬<span class="chat-badge hidden"></span></button>
     <button type="button" class="gear rc-gear" data-settings aria-label="Settings">⚙</button>
     <button type="button" class="btn ghost" id="leaveBtn">Leave</button>
   </header>
@@ -374,6 +375,19 @@
 </div>
 
 <div class="tut-card panel hidden" id="tutCard" role="dialog" aria-live="polite" aria-labelledby="tutTitle"><b id="tutTitle"></b><p id="tutBody"></p><div class="sec-row"><button type="button" class="btn go" id="tutNext">Got it</button><button type="button" class="btn ghost" id="tutQuit">Skip tutorial</button></div></div>
+<button type="button" class="chat-btn" id="chatBtn" aria-label="Open chat" aria-expanded="false">💬<span class="chat-badge hidden" id="chatBadge"></span></button>
+<div class="chat-box panel hidden" id="chatBox" role="dialog" aria-label="Chat">
+  <div class="chat-head">
+    <div class="chat-tabs" role="tablist">
+      <button type="button" role="tab" data-ch="global">🌍 Global</button>
+      <button type="button" role="tab" data-ch="room">🏁 Room</button>
+      <button type="button" role="tab" data-ch="team">🤝 Team</button>
+    </div>
+    <button type="button" class="chat-x" id="chatClose" aria-label="Close chat">✕</button>
+  </div>
+  <div class="chat-list" id="chatList" aria-live="polite"></div>
+  <form class="chat-foot" id="chatForm"><input type="text" id="chatIn" maxlength="140" placeholder="Say something nice..." autocomplete="off" spellcheck="true" aria-label="Chat message"><button type="submit" class="btn go">Send</button></form>
+</div>
 <div class="net-veil hidden" id="netVeil" role="alert"><div class="panel"><div class="spinner" aria-hidden="true"></div><b id="netMsg">Reconnecting...</b><small>Your car is kept for 2 minutes, you'll get it back.</small></div></div>
 <div class="invite-box hidden" id="inviteBox" role="alert"><span id="inviteText"></span><button type="button" class="btn go" id="inviteJoin">Join</button><button type="button" class="btn ghost" id="inviteNo">Not now</button></div>
 

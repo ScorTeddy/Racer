@@ -100,6 +100,20 @@ const UPGRADES = {
   saver:   { kind: "Car",    name: "Nitro Saver",    desc: "Boost drains 3% slower per level",       max: 4, fx: (n) => `${3 * n}% slower boost drain` },
   enhance: { kind: "Car",    name: "Enhancer",       desc: "+3% to EVERY stat (the ones you have and any you get later)", max: 4, fx: (n) => `+${3 * n}% to everything` },
 };
+// Super rare cards: now and then one of the three cards is one of these instead
+// (chance per level-up). They upgrade everything at once, and the car gets an aura for everyone to see.
+const RARE_CARDS = [
+  { key: "__max",  tier: "mythic",    chance: 0.00001, name: "GOD MODE",     desc: "Every upgrade straight to MAX", icon: "🌈" },
+  { key: "__all2", tier: "legendary", chance: 0.0001,  name: "Double Surge", desc: "Every upgrade +2 levels",       icon: "👑" },
+  { key: "__all1", tier: "epic",      chance: 0.001,   name: "Full Upgrade", desc: "Every upgrade +1 level",        icon: "💎" },
+];
+const RARE_BY_KEY = Object.fromEntries(RARE_CARDS.map((r) => [r.key, r]));
+const TIER_RANK = { epic: 1, legendary: 2, mythic: 3 };
+function rollRareCard(rand = Math.random()) {
+  let acc = 0;
+  for (const r of RARE_CARDS) { acc += r.chance; if (rand < acc) return r; }
+  return null;
+}
 // AI difficulty (Race tab): how good the AI drivers are, how quickly they upgrade, how often they slip up
 const AI_LEVELS = {
   easy:    { skill: [0.8, 0.86], power: 0.96, xp: 0.75, mistakes: 1.8, aggr: 0.8, react: [0.3, 0.6] },
@@ -198,7 +212,16 @@ app.get("/", (req, res) => { if (!indexHtml || !PROD) buildIndex(); res.setHeade
 // password strength meter for the sign-up form (same zxcvbn the server uses)
 app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.sendFile(path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js")); });
 // ---- small pages + search engine files ----
-const pub = (f) => path.join(__dirname, "public", f);
+// (in public/, or next to server.js if the files were uploaded without the folder)
+const pub = (f) => { const a = path.join(__dirname, "public", f); return fs.existsSync(a) ? a : path.join(__dirname, f); };
+// the few site files that may sit next to server.js: served by name only (never the code or data next to them)
+for (const [f, type, age] of [["site.css", "text/css", 3600], ["favicon.svg", "image/svg+xml", 604800], ["og-image.png", "image/png", 604800], ["music/music.json", "application/json", 3600]]) {
+  app.get("/" + f, (req, res, next) => {
+    const fp = [path.join(__dirname, "public", f), path.join(__dirname, path.basename(f))].find((x) => fs.existsSync(x));
+    if (!fp) return next();
+    res.setHeader("Cache-Control", `public, max-age=${age}`); res.type(type); res.sendFile(fp);
+  });
+}
 app.get("/faq", (req, res) => res.sendFile(pub("faq.html")));
 app.get("/privacy", (req, res) => res.sendFile(pub("privacy.html")));
 const siteUrl = (req) => (PROD ? "https://" : req.protocol + "://") + req.get("host");
@@ -663,7 +686,7 @@ function propellerRaw(M) {
 // ---- extra-random shapes ----
 // "Noodle": a turtle that drives straights, sweepers, hairpins, chicanes and even full spirals,
 // then steers back home with a smooth curve. Wild shapes; the rating throws out undrivable ones.
-function rawNoodle(M, very) {
+function rawNoodle(M, very, tight) {
   const P = [[0, 0]]; let x = 0, y = 0, h = Math.random() * Math.PI * 2;
   const step = (len, turn) => {          // drive len units while turning 'turn' radians in total
     const n = Math.max(2, Math.round(len / 4));
@@ -674,7 +697,7 @@ function rawNoodle(M, very) {
     const r = very ? 0.3 + Math.random() * 0.7 : Math.random(), side = Math.random() < 0.5 ? -1 : 1;
     if (r < 0.2) step(60 + Math.random() * 160, 0);                                            // straight
     else if (r < 0.45) { const a = 0.5 + Math.random() * 1.6; step(a * (40 + Math.random() * 80), side * a); } // sweeper
-    else if (r < 0.62) step(Math.PI * (22 + Math.random() * 14), side * Math.PI);               // hairpin
+    else if (r < 0.62) step(Math.PI * (tight ? 19 + Math.random() * 4 : 22 + Math.random() * 14), side * Math.PI);   // hairpin (tight: a proper slow one)
     else if (r < 0.8) { const a = 0.6 + Math.random() * 0.7, l = 25 + Math.random() * 25; step(l, side * a); step(l * 2, -side * a * 2); step(l, side * a); } // chicane
     else if (r < 0.9) { const a = Math.PI * (1.6 + Math.random() * 0.9); step(a * (45 + Math.random() * 30), side * a); } // spiral: loops over itself (bridge)
     else { for (let j = 0; j < 3 + Math.floor(Math.random() * 3); j++) step(30 + Math.random() * 20, (j % 2 ? -1 : 1) * side * (0.9 + Math.random() * 0.6)); } // snake
@@ -741,7 +764,7 @@ function resampleRaw(P, M) {
   return out;
 }
 // wonk: "little" (gentle, flowing), "regular", or "very" (absurd: loops, spirals, bridges everywhere)
-function randomStroke(board, propeller, wonk = "regular", pick = null) {
+function randomStroke(board, propeller, wonk = "regular", pick = null, tight = false) {
   const [BW, BH] = board, M = wonk === "very" ? 640 : 420;
   const style = Math.random();
   // what kind of random: classic waves (~30%), noodle (~40%), scatter spline (~15%), wild waves (~15%)
@@ -760,7 +783,7 @@ function randomStroke(board, propeller, wonk = "regular", pick = null) {
     co.push({ k, ax: gauss() * a, bx: gauss() * a, ay: gauss() * a, by: gauss() * a });
   }
   const eight = (kind === "classic" || kind === "wild") && Math.random() < (wonk === "little" ? 0.1 : wonk === "very" ? 0.4 : 0.25);   // figure-eight base shape: always at least one bridge
-  const raw = propeller ? propellerRaw(M) : kind === "noodle" ? rawNoodle(M, wonk === "very") : kind === "scatter" ? rawScatter(M, wonk) : kind === "spiro" ? rawSpiro(M) : kind === "knot" ? rawKnot(M) : [];
+  const raw = propeller ? propellerRaw(M) : kind === "noodle" ? rawNoodle(M, wonk === "very" && !tight, tight) : kind === "scatter" ? rawScatter(M, wonk) : kind === "spiro" ? rawSpiro(M) : kind === "knot" ? rawKnot(M) : [];
   if ((kind === "spiro" || kind === "knot") && Math.random() < 0.6) {          // bend the spirograph out of shape
     const warp = co.slice(0, 3).map((c) => ({ ...c, ax: c.ax * 0.8, bx: c.bx * 0.8, ay: c.ay * 0.8, by: c.by * 0.8 }));
     raw.forEach((q, s) => { const th = (s / M) * Math.PI * 2; for (const c of warp) { q[0] += c.ax * Math.cos(c.k * th) + c.bx * Math.sin(c.k * th); q[1] += c.ay * Math.cos(c.k * th) + c.by * Math.sin(c.k * th); } });
@@ -786,7 +809,7 @@ function randomStroke(board, propeller, wonk = "regular", pick = null) {
 }
 // Is this shape a good, fun track? Bridges must cross at a decent angle, nothing may
 // run so close to another part of the track that the roads overlap, and it should twist.
-function rateTrack(shape) {
+function rateTrack(shape, tight = false) {
   const W = shape.base, N = W.length;
   const tan = [], hw = W.map((p) => p.w / 2);
   for (let i = 0; i < N; i++) { const a = W[(i - 1 + N) % N], b = W[(i + 1) % N], L = dist(a, b) || 1; tan.push({ x: (b.x - a.x) / L, y: (b.y - a.y) / L }); }
@@ -794,7 +817,14 @@ function rateTrack(shape) {
   const spacing = length / N;
   const { crossings, maxLevel } = computeElev(W, tan, hw, spacing);
   if (crossings.some((c) => c.sin < 0.5)) return null;                            // too shallow a crossing
-  for (let i = 0; i < N; i++) if (circR(W[(i - 2 + N) % N], W[i], W[(i + 2) % N]) < Math.max(70, hw[i] * 0.8)) return null;   // hairpin too tight
+  // hairpin too tight? ("tight" tracks allow a few properly tight ones, but never more than 3)
+  let tightTurns = 0, inTight = false;
+  for (let i = 0; i < N; i++) {
+    const r = circR(W[(i - 2 + N) % N], W[i], W[(i + 2) % N]);
+    if (r < (tight ? Math.max(46, hw[i] * 0.6) : Math.max(70, hw[i] * 0.8))) return null;
+    if (r < 70 && !inTight) { tightTurns++; inTight = true; } else if (r > 110) inTight = false;
+  }
+  if (tightTurns > 3) return null;
   for (let a = 0; a < crossings.length; a++) for (let b = a + 1; b < crossings.length; b++) if (dist(crossings[a], crossings[b]) < 110) return null;
   // near misses: separate bits of road that almost touch without properly crossing
   const grid = segGrid(W, 200);
@@ -817,12 +847,12 @@ function rateTrack(shape) {
     if (turn > 0.6 && !inC) { corners++; inC = true; } else if (turn < 0.3) inC = false;
     const t0 = tan[i], t1 = tan[(i + 1) % N]; twist += Math.abs(wrapAngle(Math.atan2(t1.y, t1.x) - Math.atan2(t0.y, t0.x)));
   }
-  return { crossings: crossings.length, maxLevel, corners, twist, length };
+  return { crossings: crossings.length, maxLevel, corners, twist, length, tightTurns };
 }
 // quick check on the raw drawing: no cusps (spots where the curve nearly stops and turns back)
-function strokeOk(st) {
+function strokeOk(st, minR = 27) {
   const n = st.length, P = (i) => { const q = st[(i + n) % n]; return { x: q[0], y: q[1] }; };
-  for (let i = 0; i < n; i++) if (circR(P(i - 3), P(i), P(i + 3)) < 27) return false;
+  for (let i = 0; i < n; i++) if (circR(P(i - 3), P(i), P(i + 3)) < minR) return false;
   return true;
 }
 const WONK = ["little", "regular", "very"];
@@ -831,23 +861,24 @@ function makeRandomTrack(board, wonk = "regular") {
   const wantDouble = wonk === "regular" && Math.random() < 0.22;
   const maxCross = wonk === "little" ? 1 : wonk === "very" ? 14 : 5;
   // very wonky: pick the style first, so it isn't always whichever style scores the most bridges
-  let pick = wonk === "very" ? ["knot", "knot", "knot", "spiro", "spiro", "wild", "noodle"][Math.floor(Math.random() * 7)] : null;
+  const tight = wonk === "very" && Math.random() < 0.35;     // now and then: a few really tight hairpins
+  let pick = tight ? "noodle" : wonk === "very" ? ["knot", "knot", "knot", "spiro", "spiro", "wild", "noodle"][Math.floor(Math.random() * 7)] : null;
   let best = null, bestScore = -Infinity, fallback = null, good = 0;
   const t0 = Date.now();
   // stop once there's a handful of good ones to pick from: it's a random track, it doesn't need to be the best of 400
   for (let tries = 0; tries < 400 && Date.now() - t0 < (best ? 250 : 2500) && good < (wonk === "very" ? 4 : 8); tries++) {
-    if (pick && !best && tries === 60) pick = Math.random() < 0.5 ? "knot" : "spiro";   // that style isn't working out: try a surer one
-    const stroke = randomStroke(board, wantDouble && tries % 3 === 0, wonk, pick);
-    if (!strokeOk(stroke)) continue;
+    if (pick && !best && tries === (tight ? 120 : 60)) pick = Math.random() < 0.5 ? "knot" : "spiro";   // that style isn't working out: try a surer one
+    const stroke = randomStroke(board, wantDouble && tries % 3 === 0, wonk, pick, tight);
+    if (!strokeOk(stroke, tight ? 16 : 27)) continue;
     const shape = buildTrack(stroke, board);
     if (!shape.error && !fallback) fallback = { stroke, shape };
     if (shape.error) continue;
-    const r = rateTrack(shape);
+    const r = rateTrack(shape, tight);
     if (!r || r.crossings > maxCross) continue;
     good++;
     let score;
     if (wonk === "little") score = 20 - Math.abs(r.corners - 8) - r.twist * 0.3 + Math.random() * 8;                 // flowing, not twisty
-    else if (wonk === "very") score = Math.min(r.corners, 40) + r.twist * 1.4 + Math.min(r.crossings, 12) * 7 + r.maxLevel * 6 + Math.random() * 10 - (r.crossings < 2 ? 40 : 0);
+    else if (wonk === "very") score = Math.min(r.corners, 40) + r.twist * 1.4 + Math.min(r.crossings, 12) * 7 + r.maxLevel * 6 + Math.random() * 10 - (r.crossings < 2 ? 40 : 0) + (tight ? Math.min(r.tightTurns, 2) * 12 : 0);
     else {
       score = Math.min(r.corners, 20) + r.twist * 0.9 + Math.min(r.crossings, 3) * 5 + Math.random() * 10;
       if (r.crossings === 0) score -= 12;
@@ -992,7 +1023,12 @@ class Room {
     if (dropped && p && this.phase !== "lobby") { this.gone = this.gone || new Map(); this.gone.set(p.rejoinKey, { p, until: Date.now() + 120e3 }); }
     if (this.hostId === id) this.hostId = this.players.keys().next().value || null;
     menuDirty = true;
-    if (!this.players.size) { rooms.delete(this.code); return; }
+    if (!this.players.size) {
+      // everyone lost connection mid-race (a wifi blip, a phone locking): hold the race still so they
+      // can come back to it, instead of throwing the room away. It goes if nobody's back in time.
+      if (dropped && this.gone?.size && ["tires", "lights", "race"].includes(this.phase)) { if (!this.frozen) { this.frozen = true; this.frozenAt = Date.now(); this.waitFor = this.gone.size; } return; }
+      rooms.delete(this.code); return;
+    }
     if (p) this.emit("toast", `${p.name} left`);
     this.sendLobby();
   }
@@ -1079,7 +1115,7 @@ class Room {
     this.paused = false;
     const humans = [...this.players.values()].filter((p) => !p.spectator);   // spectators just watch
     for (const h of humans) {
-      h.level = 1; h.xp = 0; h.up = blankUp(); h.pendingPicks = 0; h.offer = null; h.offered = null; h.nitroHeld = false;
+      h.level = 1; h.xp = 0; h.up = blankUp(); h.rare = null; h.pendingPicks = 0; h.offer = null; h.offered = null; h.nitroHeld = false;
       io.to(h.id).emit("offerCleared");
     }
     const aiCount = clamp(s.ai, 0, MAX_AI);
@@ -1154,7 +1190,7 @@ class Room {
         else Object.assign(c, paint[c.team]);
       }
     }
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity;
+    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null;
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -1202,8 +1238,10 @@ class Room {
     if (this.phase === "race") this.applyLaunch(c, p);
   }
   applyLaunch(c, p) {
-    if (p.jump) { c.launchAt = 3.0; c.boostUntil = 0; return; }
-    if (p.reaction === null) { c.launchAt = 1.2; return; }
+    // jumped the start (or never reacted): held on the grid, and see-through until they're up to
+    // speed, so the cars behind drive straight through instead of getting stuck behind them
+    if (p.jump) { c.launchAt = 3.0; c.boostUntil = 0; c.ghostUntil = c.launchAt + 4; return; }
+    if (p.reaction === null) { c.launchAt = 1.2; c.ghostUntil = c.launchAt + 3; return; }
     c.launchAt = Math.max(this.time, p.reaction / 1000);
     c.boostUntil = c.launchAt + clamp(0.9 - p.reaction / 700, 0, 0.8);
   }
@@ -1874,8 +1912,13 @@ class Room {
     }
     if (c.tireAtLap !== undefined && c.tire < c.tireAtLap && c.pitting <= 0) { const w = c.tireAtLap - c.tire; c.lapWearMeas = c.lapWearMeas ? c.lapWearMeas * 0.5 + w * 0.5 : w; }
     c.tireAtLap = c.tire;
+    // the leader starts the last lap: everyone gets the call
+    if (!this.qualifying && !this.lastLapCalled && this.settings.laps > 1 && c.lapsDone === this.settings.laps - 1) { this.lastLapCalled = true; this.emit("feed", { t: "lastLap", name: c.name }); }
     if (c.lapsDone >= this.settings.laps && !c.finished) {
       c.finished = true; c.finishTime = this.time; c.nitroOn = c.aiNitro = false;
+      // photo finish: crossed the line within 0.15s of the car before
+      const prev = this.lastFinish; this.lastFinish = c;
+      if (prev && c.finishTime - prev.finishTime < 0.15) this.emit("feed", { t: "photo", name: prev.name, other: c.name, gap: Math.max(0.001, c.finishTime - prev.finishTime) });
       if (this.finishDeadline === Infinity) { this.finishDeadline = this.time + 30; this.emit("feed", { t: "winner", name: c.name }); }
     }
   }
@@ -1979,7 +2022,9 @@ class Room {
     if (p.pendingPicks > 0 && !p.offer && this.cars && this.phase === "race") this.makeOffer(p);
   }
   offerMsg(p) {
-    return { pending: p.pendingPicks, cards: p.offer.map((k) => { const u = UPGRADES[k]; return { key: k, kind: u.kind, name: u.name, desc: u.desc, max: u.max, level: p.up[k], now: u.fx(p.up[k]), next: u.fx(p.up[k] + 1) }; }) };
+    return { pending: p.pendingPicks, cards: p.offer.map((k) => {
+      const rare = RARE_BY_KEY[k]; if (rare) return { key: k, kind: "Rare", tier: rare.tier, icon: rare.icon, name: rare.name, desc: rare.desc, max: 0, level: 0, now: "", next: rare.desc };
+      const u = UPGRADES[k]; return { key: k, kind: u.kind, name: u.name, desc: u.desc, max: u.max, level: p.up[k], now: u.fx(p.up[k]), next: u.fx(p.up[k] + 1) }; }) };
   }
   makeOffer(p) {
     // deal the upgrades offered least this race first (random among ties), so every one comes up
@@ -1988,6 +2033,8 @@ class Room {
     const opts = Object.keys(UPGRADES).filter((k) => p.up[k] < UPGRADES[k].max).map((k) => [k, (seen[k] || 0) + Math.random() * 0.5]);
     const pick = opts.sort((a, b) => a[1] - b[1]).slice(0, 3).map(([k]) => k);
     for (const k of pick) seen[k] = (seen[k] || 0) + 1;
+    const rare = pick.length && rollRareCard();
+    if (rare) pick[Math.floor(Math.random() * pick.length)] = rare.key;   // a super rare card takes one of the slots
     p.offer = pick;
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", this.offerMsg(p));
@@ -2010,9 +2057,19 @@ class Room {
   pick(p, i) {
     if (!p.offer) return;
     const k = p.offer[Number(i)]; if (!k) return;
-    p.up[k]++; p.offer = null; p.pendingPicks--;
+    const rare = RARE_BY_KEY[k];
+    if (rare) {
+      for (const u of Object.keys(UPGRADES)) p.up[u] = rare.key === "__max" ? UPGRADES[u].max : Math.min(UPGRADES[u].max, p.up[u] + (rare.key === "__all2" ? 2 : 1));
+      if (!p.rare || TIER_RANK[rare.tier] > TIER_RANK[p.rare]) p.rare = rare.tier;
+    } else p.up[k]++;
+    p.offer = null; p.pendingPicks--;
     const car = this.carOf(p.id); if (car) car.st = this.stats(car);
-    io.to(p.id).emit("picked", { key: k, up: p.up, now: UPGRADES[k].fx(p.up[k]) });
+    io.to(p.id).emit("picked", { key: k, up: p.up, now: rare ? rare.desc : UPGRADES[k].fx(p.up[k]), name: rare ? rare.name : UPGRADES[k].name, rare: p.rare || null });
+    if (rare) {
+      // everyone sees it: an announcement, and an aura round the car for the rest of the race
+      if (car) { car.rare = p.rare; const m = this.lastRaceMsg?.cars.find((x) => x.id === car.id); if (m) m.rare = p.rare; }
+      this.emit("rareCard", { name: p.name, card: rare.name, tier: rare.tier, icon: rare.icon, car: car ? car.id : null, aura: p.rare });
+    }
     if (p.pendingPicks > 0) this.makeOffer(p);
   }
 
@@ -2116,7 +2173,7 @@ class Room {
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
-      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, xpRate: this.settings.xpRate,
+      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, xpRate: this.settings.xpRate,
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
   }
@@ -2239,7 +2296,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
+const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2277,6 +2334,16 @@ function loginFailed(name) {
   f.n++; if (f.n >= 10) { f.until = Date.now() + 10 * 60e3; f.n = 0; }
   loginFails.set(k, f); if (loginFails.size > 5000) loginFails.clear();
 }
+// ======================= Chat =======================
+// Global (everyone online; signed-in players only, so there's always someone accountable), room,
+// and team chat. Every message is length-capped, word-filtered, link-free and rate-limited; players
+// you blocked are never shown to you, and 3 different reports mute someone for 10 minutes.
+const CHAT_MAX = 140, GLOBAL_KEEP = 40;
+const globalChat = [], chatById = new Map(), chatReports = new Map(), chatMuted = new Map();
+const LINKY = /(https?:\/\/|www\.|discord\.gg|\b[a-z0-9-]+\.(com|net|org|gg|io|ly|xyz|me|tv|co|app|link)\b)/i;
+function chatBlockedFor(sock, uid) { const b = uid && sock.data.uid && accounts.cachedUser(sock.data.uid)?.blocked; return !!(b && b.includes(uid)); }
+function sendChat(targets, msg, uid) { for (const sk of targets) if (sk && !chatBlockedFor(sk, uid)) sk.emit("chat", msg); }
+
 io.on("connection", (socket) => {
   socket.emit("build", buildId());     // browsers still running old code reload after an update
   const ip = ipOf(socket.request);
@@ -2712,6 +2779,48 @@ io.on("connection", (socket) => {
     const r = room(); if (r) r.removePlayer(socket.id, true); menuDirty = true;
     if (socket.data.uid) { const set = online.get(socket.data.uid); if (set) { set.delete(socket.id); if (!set.size) online.delete(socket.data.uid); } }
   });
+  // ---- chat ----
+  let chatTimes = [];
+  socket.on("chat", (d) => {
+    const ch = ["global", "room", "team"].includes(d?.ch) ? d.ch : null; if (!ch) return;
+    const text = String(d?.text || "").replace(/\s+/g, " ").trim().slice(0, CHAT_MAX); if (!text) return;
+    const uid = socket.data.uid || null, now = Date.now();
+    if (uid && (chatMuted.get(uid) || 0) > now) return socket.emit("chatNote", "You're muted from chat for a few minutes (reported by other players).");
+    chatTimes = chatTimes.filter((t) => now - t < 15000);
+    if (chatTimes.length && now - chatTimes[chatTimes.length - 1] < 900) return socket.emit("chatNote", "Slow down a little!");
+    if (chatTimes.length >= 6) return socket.emit("chatNote", "Too many messages: wait a few seconds.");
+    if (nameFilter.isBad(text)) return socket.emit("chatNote", "Keep it friendly! That message wasn't sent.");
+    if (LINKY.test(text)) return socket.emit("chatNote", "No links in chat, sorry.");
+    const r = room(), p = me();
+    let name, targets;
+    if (ch === "global") {
+      if (!uid) return socket.emit("chatNote", "Sign in to chat with everyone (you can still read it).");
+      name = p?.name || accounts.cachedUser(uid)?.name || "Racer";
+      targets = io.sockets.sockets.values();
+    } else {
+      if (!r || !p) return socket.emit("chatNote", "Join a room first.");
+      name = p.name;
+      if (ch === "team") {
+        if (!r.settings.teams || !p.team) return socket.emit("chatNote", "Team chat needs teams to be on.");
+        targets = [...r.players.values()].filter((o) => o.team === p.team).map((o) => io.sockets.sockets.get(o.id));
+      } else targets = [...r.players.keys()].map((id) => io.sockets.sockets.get(id));
+    }
+    chatTimes.push(now);
+    const msg = { id: crypto.randomBytes(6).toString("hex"), ch, name, text, pid: socket.id, color: p?.color || null, t: now };
+    chatById.set(msg.id, { uid, pid: socket.id, name, text });
+    if (chatById.size > 2000) chatById.delete(chatById.keys().next().value);
+    if (ch === "global") { globalChat.push({ ...msg, uid }); if (globalChat.length > GLOBAL_KEEP) globalChat.shift(); }
+    sendChat(targets, msg, uid);
+  });
+  socket.on("chat:history", () => socket.emit("chatHistory", globalChat.filter((m) => !chatBlockedFor(socket, m.uid)).map(({ uid, ...m }) => m)));
+  socket.on("chat:report", (id) => {
+    const m = chatById.get(String(id || "")); if (!m || m.pid === socket.id) return;
+    console.warn(`[chat report] "${m.name}": ${m.text}`);
+    socket.emit("chatNote", "Thanks, reported.");
+    const key = m.uid || m.pid, who = socket.data.uid || socket.id;
+    const set = chatReports.get(key) || new Set(); set.add(who); chatReports.set(key, set);
+    if (set.size >= 3 && m.uid) { chatMuted.set(m.uid, Date.now() + 10 * 60e3); chatReports.delete(key); }
+  });
   // ---- came back after a dropped connection: get your car back ----
   socket.on("rejoin", async (d) => {
     const code = String(d?.code || "").toUpperCase();
@@ -2749,4 +2858,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };

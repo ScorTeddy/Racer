@@ -270,6 +270,16 @@
     const L = CAR_LEN, Wd = CAR_WID, X = car.extras || {};
     const hueNow = (performance.now() / 8) % 360;
     c.save(); c.translate(x, y); c.rotate(heading); c.scale(scale, scale);
+    if (opts.aura) {                         // super rare card: a glowing ring with sparks orbiting the car
+      const t = performance.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(t * 4), myth = opts.aura === "mythic";
+      const col = (k) => myth ? `hsl(${(hueNow * 2 + k * 60) % 360},100%,62%)` : opts.aura === "legendary" ? "#ffc21f" : "#c77dff";
+      c.save(); c.globalAlpha = 0.45 + 0.3 * pulse; c.shadowColor = col(0); c.shadowBlur = 16 + 12 * pulse; c.strokeStyle = col(0); c.lineWidth = myth ? 3.5 : 2.5;
+      c.beginPath(); c.ellipse(0, 0, L * 0.72 + 3 * pulse, Wd * 0.95 + 3 * pulse, 0, 0, Math.PI * 2); c.stroke();
+      const n = myth ? 7 : opts.aura === "legendary" ? 5 : 3;
+      c.globalAlpha = 0.95;
+      for (let k = 0; k < n; k++) { const a = t * (myth ? 3 : 2) + (k / n) * Math.PI * 2; c.fillStyle = col(k); c.shadowColor = col(k); c.beginPath(); c.arc(Math.cos(a) * (L * 0.72 + 3), Math.sin(a) * (Wd * 0.95 + 3), myth ? 2.6 : 2, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    }
     if (X.glow) {                            // store: underglow
       const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow;
       c.save(); c.globalAlpha = 0.55; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
@@ -316,11 +326,12 @@
     } else if (car.livery === "checker") {
       for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#fff"; c.fillRect(-L / 2 + i * 4, -Wd / 2 + j * 6, 4, 6); }
     }
-    if (X.livery) drawLivery(c, X.livery, car.color, L, Wd, hueNow);
+    if (X.livery && (X.livery !== "gpLegend" || B === "f1")) drawLivery(c, X.livery, car.color, L, Wd, hueNow);
     if (X.decal) drawDecal(c, X.decal, L, Wd, B);
     if (car.design) { const d = designCanvas(car.design); if (d) { const sm = c.imageSmoothingEnabled; c.imageSmoothingEnabled = false; c.drawImage(d, -L / 2, -Wd / 2, L, Wd); c.imageSmoothingEnabled = sm; } }
     c.restore();
     c.lineWidth = 2; c.strokeStyle = "rgba(0,0,0,0.45)"; bodyPath(c, B, L, Wd); c.stroke();
+    if (X.livery === "gpLegend" && B === "f1") { c.save(); c.shadowColor = "#ffcf40"; c.shadowBlur = 10 + 4 * Math.sin(performance.now() / 300); c.lineWidth = 1.2; c.strokeStyle = "rgba(255,215,90,0.9)"; bodyPath(c, B, L, Wd); c.stroke(); c.restore(); }
     if (!open) {
       c.fillStyle = "rgba(20,24,32,0.88)"; rrect(c, -6, -Wd / 2 + 4, 16, Wd - 8, 4); c.fill();
       c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(6, -Wd / 2 + 5, 3, Wd - 10);
@@ -450,6 +461,29 @@
       case "ice": c.fillStyle = lin(["#e0f7ff", "#8fd3fe", "#e0f7ff"], true); c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(255,255,255,0.9)"; c.lineWidth = 0.8; for (let k = 0; k < 5; k++) { const cx = x0 + R() * L, cy = y0 + R() * Wd; for (let a = 0; a < 3; a++) { c.beginPath(); c.moveTo(cx - Math.cos(a) * 3, cy - Math.sin(a) * 3); c.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); c.stroke(); } } break;
       case "pixel": for (let i = 0; i < L; i += 4) for (let j = 0; j < Wd; j += 4) { c.fillStyle = ["#ff2bd6", "#22e6ff", "#ffe066", "#39ff88", "#7c3aed", "#111"][Math.floor(R() * 6)]; c.fillRect(x0 + i, y0 + j, 4, 4); } break;
       case "rainbow": for (let k = 0; k < 7; k++) { c.fillStyle = `hsl(${(k * 51 + hue) % 360},90%,58%)`; c.fillRect(x0, y0 + (k / 7) * Wd, L, Wd / 7 + 0.5); } break;
+      // ---- second wave ----
+      case "hazard": c.fillStyle = "#ffcc00"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#151515"; for (let k = -3; k < 10; k++) { const x = x0 + k * 7; c.beginPath(); c.moveTo(x, y0); c.lineTo(x + 3.5, y0); c.lineTo(x + 3.5 + Wd * 0.6, -y0); c.lineTo(x + Wd * 0.6, -y0); c.fill(); } break;
+      case "retro": c.fillStyle = "#8fc7e8"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#ff7a1a"; c.fillRect(x0, -4, L, 8); c.fillStyle = "#8fc7e8"; c.fillRect(x0, -1, L, 2); c.fillStyle = "rgba(255,255,255,0.5)"; c.fillRect(x0, y0 + 2, L, 1); break;
+      case "sakura": c.fillStyle = lin(["#ffe4ef", "#ffb6d2"], true); c.fillRect(x0, y0, L, Wd); c.strokeStyle = "#5b3a29"; c.lineWidth = 0.9; c.beginPath(); c.moveTo(x0, 4); c.quadraticCurveTo(x0 + L * 0.3, -2, x0 + L * 0.6, 3); c.quadraticCurveTo(x0 + L * 0.8, 6, -x0, 0); c.stroke(); for (let k = 0; k < 9; k++) { const px = x0 + R() * L, py = y0 + R() * Wd; c.fillStyle = k % 3 ? "#ff7eb6" : "#fff"; for (let p5 = 0; p5 < 5; p5++) { const a = p5 * 1.2566; c.beginPath(); c.arc(px + Math.cos(a) * 1.1, py + Math.sin(a) * 1.1, 0.9, 0, Math.PI * 2); c.fill(); } } break;
+      case "synthwave": { c.fillStyle = lin(["#1a0533", "#5b0e7a", "#ff2e97"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = lin(["#ffe66d", "#ff6b35"], true); c.beginPath(); c.arc(x0 + L * 0.62, 1, 6, Math.PI, 0); c.fill(); c.fillStyle = "#1a0533"; for (let k = 0; k < 3; k++) c.fillRect(x0 + L * 0.62 - 6, -2.5 + k * 1.3, 12, 0.6); c.strokeStyle = "#22e6ff"; c.lineWidth = 0.6; for (let k = 0; k < 4; k++) { c.beginPath(); c.moveTo(x0, 2 + k * 2.6); c.lineTo(-x0, 2 + k * 2.6); c.stroke(); } for (let k = 0; k < 9; k++) { c.beginPath(); c.moveTo(x0 + L * 0.5 + (k - 4) * 1.5, 2); c.lineTo(x0 + L * 0.5 + (k - 4) * 7, -y0); c.stroke(); } break; }
+      case "koi": c.fillStyle = "#fbfbf7"; c.fillRect(x0, y0, L, Wd); for (let k = 0; k < 6; k++) { c.fillStyle = k % 3 === 2 ? "#151515" : "#f25c05"; c.beginPath(); c.ellipse(x0 + 4 + R() * (L - 8), y0 + 3 + R() * (Wd - 6), 3 + R() * 4, 2 + R() * 3, R() * 3, 0, Math.PI * 2); c.fill(); } c.strokeStyle = "rgba(0,0,0,0.12)"; c.lineWidth = 0.5; for (let j = 0; j < Wd; j += 3) for (let i = (j / 3) % 2 ? 1.5 : 0; i < L; i += 3) { c.beginPath(); c.arc(x0 + i, y0 + j, 1.5, 0, Math.PI); c.stroke(); } break;
+      case "graffiti": c.fillStyle = "#23252b"; c.fillRect(x0, y0, L, Wd); c.lineCap = "round"; for (let k = 0; k < 7; k++) { c.strokeStyle = ["#ff2bd6", "#22e6ff", "#ffe066", "#39ff88", "#ff6b35"][k % 5]; c.lineWidth = 1.2 + R() * 1.6; c.beginPath(); let x = x0 + R() * L, y = y0 + R() * Wd; c.moveTo(x, y); for (let q = 0; q < 3; q++) { const nx = x + (R() - 0.5) * 16, ny = y + (R() - 0.5) * 12; c.quadraticCurveTo(x + (R() - 0.5) * 10, y + (R() - 0.5) * 10, nx, ny); x = nx; y = ny; } c.stroke(); } for (let k = 0; k < 10; k++) { c.fillStyle = "rgba(255,255,255,0.8)"; c.fillRect(x0 + R() * L, y0 + R() * Wd, 0.7, 0.7); } break;
+      case "stealth": c.fillStyle = "#16171b"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#24262c"; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x0 + L * 0.45, 0); c.lineTo(x0, -y0); c.fill(); c.fillStyle = "#1d1f24"; c.beginPath(); c.moveTo(-x0, y0); c.lineTo(x0 + L * 0.55, 0); c.lineTo(-x0, -y0); c.fill(); c.strokeStyle = "#ff1e3c"; c.lineWidth = 0.9; c.beginPath(); c.moveTo(x0, y0 + 3); c.lineTo(x0 + L * 0.4, -1); c.lineTo(-x0, -1); c.stroke(); break;
+      case "toxic": { const t = performance.now() / 1000; c.fillStyle = "#101a0c"; c.fillRect(x0, y0, L, Wd); c.fillStyle = `rgba(120,255,60,${0.55 + 0.25 * Math.sin(t * 3)})`; for (let k = 0; k < 8; k++) { const x = x0 + 3 + k * 5.6, len = 4 + ((Math.sin(t * 2 + k * 1.7) + 1) * 0.5) * 8; c.beginPath(); c.moveTo(x - 2, y0); c.lineTo(x + 2, y0); c.lineTo(x + 1, y0 + len); c.arc(x, y0 + len, 1.4, 0, Math.PI); c.lineTo(x - 2, y0); c.fill(); c.beginPath(); c.moveTo(x - 2, -y0); c.lineTo(x + 2, -y0); c.lineTo(x + 1, -y0 - len * 0.7); c.arc(x, -y0 - len * 0.7, 1.4, Math.PI, 0, true); c.fill(); } c.fillStyle = "rgba(180,255,120,0.9)"; c.beginPath(); c.arc(x0 + L * 0.5, 0, 3.2, 0, Math.PI * 2); c.fill(); break; }
+      case "nebula": { const t = performance.now() / 1000; c.fillStyle = "#070818"; c.fillRect(x0, y0, L, Wd); for (let k = 0; k < 3; k++) { const cx = x0 + L * (0.25 + 0.25 * k) + Math.sin(t * 0.7 + k * 2) * 5, cy = Math.cos(t * 0.5 + k) * 4, g = c.createRadialGradient(cx, cy, 0, cx, cy, 14); g.addColorStop(0, `hsla(${(hue + k * 110) % 360},95%,65%,0.75)`); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g; c.fillRect(x0, y0, L, Wd); } for (let k = 0; k < 20; k++) { const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 2 + k)); c.fillStyle = `rgba(255,255,255,${tw})`; c.fillRect(x0 + R() * L, y0 + R() * Wd, 0.9, 0.9); } break; }
+      case "matrix": { const t = performance.now() / 1000; c.fillStyle = "#020a04"; c.fillRect(x0, y0, L, Wd); c.font = "700 4px monospace"; c.textAlign = "center"; c.textBaseline = "middle"; for (let col = 0; col < 10; col++) { const speed = 6 + ((col * 37) % 7), head = ((t * speed + col * 13) % (Wd + 14)) + y0 - 6; for (let k = 0; k < 6; k++) { const y = head - k * 4; if (y < y0 - 2 || y > -y0 + 2) continue; c.fillStyle = k ? `rgba(40,255,90,${0.8 - k * 0.13})` : "#d8ffe0"; c.fillText(String.fromCharCode(0x30a0 + ((col * 7 + k * 5 + Math.floor(t * 8)) % 90)), x0 + 2.3 + col * 4.6, y); } } break; }
+      case "inferno": { const t = performance.now() / 1000; c.fillStyle = lin(["#2a0600", "#140300"]); c.fillRect(x0, y0, L, Wd); for (const [col, sc] of [["#ff3d00", 1], ["#ff9100", 0.72], ["#ffe082", 0.42]]) { c.fillStyle = col; c.beginPath(); c.moveTo(-x0, y0 * sc); for (let k = 0; k <= 12; k++) { const yy = y0 * sc + (k / 12) * (-2 * y0 * sc), flick = Math.sin(t * 9 + k * 1.9) * 3 + Math.sin(t * 5.3 + k) * 2; c.lineTo(-x0 - (L * 0.55 * sc + (k % 2 ? 0 : 6 + flick)), yy); } c.lineTo(-x0, -y0 * sc); c.closePath(); c.fill(); } break; }
+      case "prism": { const t = performance.now() / 1000; c.fillStyle = "#e9eef5"; c.fillRect(x0, y0, L, Wd); for (let k = 0; k < 7; k++) { const x = x0 - 10 + ((k * 9 + t * 22) % (L + 20)); c.fillStyle = `hsla(${(k * 51 + hue) % 360},95%,62%,0.8)`; c.beginPath(); c.moveTo(x, y0); c.lineTo(x + 5, y0); c.lineTo(x + 12, -y0); c.lineTo(x + 7, -y0); c.fill(); } c.fillStyle = "rgba(255,255,255,0.55)"; c.beginPath(); c.moveTo(x0, y0); c.lineTo(-x0, 0); c.lineTo(x0, -y0 * 0.2); c.fill(); break; }
+      case "gpLegend": {   // MYTHIC, open-wheel racer only: black and gold, a chrome sweep and sparkles
+        const t = performance.now() / 1000;
+        c.fillStyle = lin(["#050505", "#15120a", "#050505"], true); c.fillRect(x0, y0, L, Wd);
+        c.fillStyle = lin(["#7a5a12", "#ffe38a", "#c9971f", "#fff4c7", "#a67c1b"]); c.fillRect(x0, -1.3, L, 2.6);
+        c.fillRect(x0, y0 + 3, L, 0.8); c.fillRect(x0, -y0 - 3.8, L, 0.8);
+        c.fillStyle = "#ffd76a"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(-x0, sg * 2); c.lineTo(-x0 - 12, sg * 7); c.lineTo(-x0 - 14, sg * 5.5); c.lineTo(-x0 - 4, sg * 1.2); c.fill(); }
+        const sx = x0 - 12 + ((t * 30) % (L + 24)); const sg2 = c.createLinearGradient(sx - 6, 0, sx + 6, 0); sg2.addColorStop(0, "rgba(255,255,255,0)"); sg2.addColorStop(0.5, "rgba(255,248,220,0.75)"); sg2.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = sg2; c.fillRect(x0, y0, L, Wd);
+        for (let k = 0; k < 7; k++) { const tw = Math.max(0, Math.sin(t * 3 + k * 2.1)); if (tw < 0.3) continue; const px = x0 + R() * L, py = y0 + R() * Wd, r = 1.6 * tw; c.fillStyle = `rgba(255,236,160,${tw})`; c.beginPath(); c.moveTo(px, py - r); c.lineTo(px + r * 0.3, py); c.lineTo(px, py + r); c.lineTo(px - r * 0.3, py); c.fill(); c.beginPath(); c.moveTo(px - r, py); c.lineTo(px, py + r * 0.3); c.lineTo(px + r, py); c.lineTo(px, py - r * 0.3); c.fill(); }
+        break;
+      }
       case "midnight": c.fillStyle = lin(["#0b1026", "#1e2a5a", "#0b1026"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "#e2e8f0"; c.beginPath(); c.moveTo(-x0, -1.5); c.lineTo(x0 + L * 0.3, -3.5); c.lineTo(x0 + L * 0.3, 3.5); c.lineTo(-x0, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.fillRect(x0 + L * 0.25, -1, L * 0.5, 2); break;
     }
   }
@@ -836,11 +870,12 @@
     if (!shown.length) g.appendChild(el("p", "preset-note", f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
     box.appendChild(g);
   }
+  const RARE_TIER = { epic: { label: "EPIC", odds: "0.1%", color: "#c77dff", icon: "💎" }, legendary: { label: "LEGENDARY", odds: "0.01%", color: "#ffc21f", icon: "👑" }, mythic: { label: "MYTHIC", odds: "0.001%", color: "#ff3b8a", icon: "🌈" } };
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
   const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"] };
   function itemPreview(it, w = 200, h = 110) {
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Preview of your car with the ${it.name}`);
-    drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
+    drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: it.onlyBody ? { body: it.onlyBody, [it.slot]: it.look } : { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
     return cv;
   }
   function renderBoxes(box, u) {
@@ -1121,6 +1156,8 @@
     $("menu").classList.toggle("hidden", screen !== "menu");
     $("lobby").classList.toggle("hidden", screen !== "lobby");
     document.body.classList.toggle("in-lobby", screen === "lobby");
+    document.body.classList.toggle("in-race", screen === "race");
+    if (typeof renderChat === "function") renderChat();
     $("hud").classList.toggle("hidden", screen !== "race");
     $("results").classList.toggle("hidden", screen !== "results");
     if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
@@ -1223,6 +1260,7 @@
 
   socket.on("race", (r) => {
     S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])) };
+    S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
     snaps.length = 0; rt = 0; S.geo = S.track ? buildGeo(S.track) : null; resetTiles();
     S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
     S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99;
@@ -1372,6 +1410,7 @@
   socket.on("me", (m) => {
 
     S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound;
+    if ((m.rare || null) !== (S.myRare || null)) { S.myRare = m.rare || null; renderGarage(); }
     renderPitPick(m);
     if (S.nextComp !== m.next) { S.nextComp = m.next; renderNextTires(); }
     updateBox();
@@ -1379,11 +1418,13 @@
   socket.on("feed", (f) => {
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
+    if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "photo") setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600);
     if (f.t === "crash" && S.track) {           // flying debris where it happened
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -1396,7 +1437,16 @@
   socket.on("levelUp", ({ level }) => { popup(`Team level ${level}!`); sfx("level"); });
   socket.on("offer", (o) => { showCards(o); tut("upgrade"); });
   socket.on("offerCleared", () => { S.offer = null; S.cardsLater = false; hideCards(); renderPill(); S.up = null; $("garage").textContent = ""; });
-  socket.on("picked", ({ key, up, now }) => { S.up = up; S.justPicked = key; renderGarage(); popup(`${S.upInfo[key].name}: now ${now}!`); });
+  socket.on("picked", ({ key, up, now, name, rare }) => { S.up = up; S.justPicked = key; if (rare) S.myRare = rare; renderGarage(); popup(`${name || S.upInfo[key]?.name}: ${key.startsWith("__") ? now : "now " + now}!`); });
+  // someone got a super rare card: everyone hears about it, and their car glows for the rest of the race
+  socket.on("rareCard", (r) => {
+    const T = RARE_TIER[r.tier] || RARE_TIER.epic;
+    if (r.car !== null && r.car !== undefined) (S.rareCars ||= new Map()).set(r.car, r.aura || r.tier);
+    banner(`${r.icon} ${r.name}: ${r.card}!`, T.color); sfx("level");
+    const d = document.createElement("div"); d.textContent = `${r.icon} ${r.name} pulled a ${T.label} card: ${r.card}!`; d.style.color = T.color; d.style.fontWeight = "800";
+    const feed = $("feed"); feed.prepend(d); while (feed.children.length > 6) feed.lastChild.remove();
+    setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 400); }, 9000);
+  });
   socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => tut("done"), 1600); });
   // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
   let fireworks = [];
@@ -2607,6 +2657,68 @@
   $("clearBtn").addEventListener("click", () => { endCut(); S.draft = null; S.lastDraft = null; updateDraftUi(); socket.emit("clearTrack"); });
 
 
+  // ======================= Chat =======================
+  const CHAT = S.chat = { msgs: { global: [], room: [], team: [] }, tab: null, open: false, unread: { global: 0, room: 0, team: 0 } };
+  const chatTabs = () => ({ global: true, room: !!S.code, team: !!(S.code && S.lobby?.settings?.teams) });
+  function chatTab() { const CHAT = S.chat, ok = chatTabs(); if (!CHAT.tab || !ok[CHAT.tab]) CHAT.tab = ok.room ? "room" : "global"; return CHAT.tab; }
+  function chatLine(m) {
+    const d = el("div", "m" + (m.pid === socket.id ? " me" : ""));
+    const b = el("b", "", m.name + ":"); if (m.color && m.pid !== socket.id) b.style.color = m.color;
+    d.append(b, document.createTextNode(m.text));
+    if (m.pid !== socket.id && m.id) { const rp = el("button", "rp", "⚑"); rp.type = "button"; rp.title = "Report this message"; rp.setAttribute("aria-label", `Report message from ${m.name}`); rp.addEventListener("click", () => { socket.emit("chat:report", m.id); rp.remove(); }); d.appendChild(rp); }
+    return d;
+  }
+  function renderChat() {
+    const CHAT = S.chat; if (!CHAT) return;            // (can be called before the chat is set up)
+    const ok = chatTabs(), tab = chatTab();
+    document.querySelectorAll("#chatBox [data-ch]").forEach((b) => { b.classList.toggle("hidden", !ok[b.dataset.ch]); b.setAttribute("aria-selected", String(b.dataset.ch === tab)); b.classList.toggle("new", b.dataset.ch !== tab && CHAT.unread[b.dataset.ch] > 0); });
+    const total = Object.entries(CHAT.unread).reduce((a, [k, n]) => a + (ok[k] ? n : 0), 0);
+    for (const bd of [$("chatBadge"), ...document.querySelectorAll("[data-chat] .chat-badge")]) { bd.textContent = total > 9 ? "9+" : String(total); bd.classList.toggle("hidden", !total || CHAT.open); }
+    if (!CHAT.open) return;
+    const list = $("chatList"); list.textContent = "";
+    const ms = CHAT.msgs[tab];
+    if (!ms.length) list.appendChild(el("div", "empty", tab === "global" ? "Chat with everyone playing right now. Be nice!" : tab === "team" ? "Only your team sees this." : "Everyone in this room sees this."));
+    for (const m of ms) list.appendChild(m.note ? el("div", "note", m.text) : chatLine(m));
+    list.scrollTop = list.scrollHeight;
+    $("chatIn").placeholder = tab === "global" && !A.user ? "Sign in to chat with everyone" : tab === "team" ? "Message your team..." : "Say something nice...";
+  }
+  function openChat(on) {
+    CHAT.open = on; $("chatBox").classList.toggle("hidden", !on); $("chatBtn").setAttribute("aria-expanded", String(on));
+    if (on) { CHAT.unread[chatTab()] = 0; renderChat(); setTimeout(() => $("chatIn").focus(), 30); } else { $("chatIn").blur(); renderChat(); }
+  }
+  $("chatBtn").addEventListener("click", () => openChat(!CHAT.open));
+  document.querySelectorAll("[data-chat]").forEach((b) => b.addEventListener("click", () => openChat(!CHAT.open)));
+  $("chatClose").addEventListener("click", () => openChat(false));
+  document.querySelectorAll("#chatBox [data-ch]").forEach((b) => b.addEventListener("click", () => { CHAT.tab = b.dataset.ch; CHAT.unread[CHAT.tab] = 0; renderChat(); $("chatIn").focus(); }));
+  $("chatForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const t = $("chatIn").value.trim(); if (!t) return;
+    socket.emit("chat", { ch: chatTab(), text: t }); $("chatIn").value = "";
+  });
+  $("chatIn").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); openChat(false); } e.stopPropagation(); });
+  // Enter opens chat (in a room or a race), unless you're typing somewhere else
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || CHAT.open || /INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement?.tagName || "") || (S.screen !== "race" && S.screen !== "lobby")) return;
+    e.preventDefault(); openChat(true);
+  });
+  const addChat = (ch, m) => { const a = CHAT.msgs[ch]; a.push(m); if (a.length > 80) a.shift(); };
+  socket.on("chat", (m) => {
+    if (!CHAT.msgs[m.ch]) return;
+    addChat(m.ch, m);
+    if (!(CHAT.open && chatTab() === m.ch) && m.pid !== socket.id) CHAT.unread[m.ch]++;
+    // in a race, room and team messages also pop up in the feed
+    if (S.screen === "race" && m.ch !== "global" && !CHAT.open && m.pid !== socket.id) {
+      const d = document.createElement("div"); d.textContent = `💬 ${m.ch === "team" ? "[Team] " : ""}${m.name}: ${m.text}`;
+      const feed = $("feed"); feed.prepend(d); while (feed.children.length > 6) feed.lastChild.remove();
+      setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 400); }, 6000);
+    }
+    renderChat();
+  });
+  socket.on("chatHistory", (list) => { if (Array.isArray(list)) { CHAT.msgs.global = list.slice(-80); renderChat(); } });
+  socket.on("chatNote", (t) => { addChat(chatTab(), { note: true, text: t }); if (!CHAT.open) popup(t, true); renderChat(); });
+  socket.on("connect", () => socket.emit("chat:history"));
+  socket.on("joined", () => { CHAT.msgs.room = []; CHAT.msgs.team = []; CHAT.unread.room = CHAT.unread.team = 0; CHAT.tab = null; renderChat(); });
+
   // ======================= Race HUD pieces =======================
   function setOrder() {}      // team orders were removed: your tires decide how fast you go
   function renderNextTires() {
@@ -2686,16 +2798,20 @@
     if (!$("lights").classList.contains("hidden")) { setTimeout(() => { if (S.offer === o) showCards(o); }, 800); return; }   // don't cover the GO button
     $("cardsTitle").textContent = o.pending > 1 ? `Level up! Upgrade your team (${o.pending} to pick)` : "Level up! Upgrade your team";
     const row = $("cardRow"); row.textContent = "";
+    const rareCard = o.cards.find((c) => c.tier);
+    if (rareCard) { $("cardsTitle").textContent = `✨ A SUPER RARE CARD APPEARED! ✨`; banner(`${rareCard.icon} ${RARE_TIER[rareCard.tier].label} CARD!`, RARE_TIER[rareCard.tier].color); sfx("win"); }
     o.cards.forEach((c, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "card";
+      const b = document.createElement("button"); b.type = "button"; b.className = "card" + (c.tier ? ` rare tier-${c.tier}` : "");
       const top = document.createElement("div"); top.className = "top";
       const k = document.createElement("kbd"); k.textContent = i + 1;
       const n = document.createElement("span"); n.textContent = c.name;
-      const kd = document.createElement("span"); kd.className = "kind " + c.kind.toLowerCase(); kd.textContent = c.kind;
+      const kd = document.createElement("span"); kd.className = "kind " + c.kind.toLowerCase(); kd.textContent = c.tier ? `${RARE_TIER[c.tier].label} · ${RARE_TIER[c.tier].odds}` : c.kind;
+      if (c.tier) n.textContent = `${c.icon} ${c.name}`;
       top.append(k, n, kd);
       const d = document.createElement("div"); d.className = "desc"; d.textContent = c.desc;
       const fx = document.createElement("div"); fx.className = "fx";
-      if (c.next) { fx.append(c.level ? `Now ${c.now} → ` : "Get "); const nx = document.createElement("span"); nx.textContent = c.next; fx.appendChild(nx); }
+      if (c.next && c.tier) { const nx = document.createElement("span"); nx.textContent = c.next; fx.appendChild(nx); }
+      else if (c.next) { fx.append(c.level ? `Now ${c.now} → ` : "Get "); const nx = document.createElement("span"); nx.textContent = c.next; fx.appendChild(nx); }
       const pips = document.createElement("div"); pips.className = "pips";
       for (let l = 0; l < c.max; l++) { const p = document.createElement("i"); if (l < c.level) p.className = "on"; pips.appendChild(p); }
       b.append(top, d, fx, pips);
@@ -2728,7 +2844,9 @@
   function hideCards() { S.offer = null; $("cards").classList.add("hidden"); $("upPill").classList.add("hidden"); }
   function renderGarage() {
     const g = $("garage"); g.textContent = "";
+    g.classList.remove("aura-epic", "aura-legendary", "aura-mythic");
     if (!S.up || !S.upInfo) return;
+    if (S.myRare) { g.classList.add("aura-" + S.myRare); const t = document.createElement("div"); t.className = "g-aura"; t.textContent = `${RARE_TIER[S.myRare].icon} ${RARE_TIER[S.myRare].label} POWER`; g.appendChild(t); }
     for (const kind of ["Driver", "Car"]) {
       const h = document.createElement("h4"); h.textContent = kind === "Driver" ? prof.name.toUpperCase() : "CAR"; g.appendChild(h);
       for (const [k, u] of Object.entries(S.upInfo)) {
@@ -3644,7 +3762,7 @@
         const fx = Math.cos(c.h), fy = Math.sin(c.h);
         for (const s of [-1, 1]) { const ox = -fy * s * 14, oy = fx * s * 14, L = 30 + Math.random() * 20; ctx.beginPath(); ctx.moveTo(c.x + ox + fx * 18, c.y + oy + fy * 18); ctx.lineTo(c.x + ox - fx * L, c.y + oy - fy * L); ctx.stroke(); }
       }
-      drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { boost: c.boost, nitro: c.nitroOn, glow: c.id === S.myCar });
+      drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { boost: c.boost, nitro: c.nitroOn, glow: c.id === S.myCar, aura: S.rareCars?.get(c.id) });
       ctx.globalAlpha = 1;
       if (c.fin) {
         if (!c.finPos) {

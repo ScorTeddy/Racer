@@ -552,6 +552,21 @@ STORE.push(
   { id: "decal_wings", slot: "decal", name: "Angel wings decal", look: "wings", loot: true, rarity: "epic" },
   { id: "liv_pixel", slot: "livery", name: "Pixel livery", look: "pixel", loot: true, rarity: "legendary" },
   { id: "liv_rainbow", slot: "livery", name: "Rainbow Road livery", look: "rainbow", loot: true, rarity: "legendary" },
+  // the second wave of liveries (several of these are animated)
+  { id: "liv_hazard", slot: "livery", name: "Hazard livery", look: "hazard", loot: true, rarity: "rare" },
+  { id: "liv_retro", slot: "livery", name: "Retro Racer livery", look: "retro", loot: true, rarity: "rare" },
+  { id: "liv_sakura", slot: "livery", name: "Sakura livery", look: "sakura", loot: true, rarity: "rare" },
+  { id: "liv_synthwave", slot: "livery", name: "Synthwave livery", look: "synthwave", loot: true, rarity: "epic" },
+  { id: "liv_koi", slot: "livery", name: "Koi livery", look: "koi", loot: true, rarity: "epic" },
+  { id: "liv_graffiti", slot: "livery", name: "Graffiti livery", look: "graffiti", loot: true, rarity: "epic" },
+  { id: "liv_stealth", slot: "livery", name: "Stealth livery", look: "stealth", loot: true, rarity: "epic" },
+  { id: "liv_toxic", slot: "livery", name: "Toxic livery (animated)", look: "toxic", loot: true, rarity: "epic" },
+  { id: "liv_nebula", slot: "livery", name: "Nebula livery (animated)", look: "nebula", loot: true, rarity: "legendary" },
+  { id: "liv_matrix", slot: "livery", name: "Code Rain livery (animated)", look: "matrix", loot: true, rarity: "legendary" },
+  { id: "liv_inferno", slot: "livery", name: "Inferno livery (animated)", look: "inferno", loot: true, rarity: "legendary" },
+  { id: "liv_prism", slot: "livery", name: "Prism livery (animated)", look: "prism", loot: true, rarity: "legendary" },
+  // mythic, and it only fits the open-wheel racer
+  { id: "liv_gp_legend", slot: "livery", name: "Grand Prix Legend livery (Open-wheel racer only)", look: "gpLegend", loot: true, rarity: "mythic", box: "legend", onlyBody: "f1" },
   // car bodies: ONLY in the Legendary chest. The open-wheel racer is the rarest thing in the game.
   { id: "body_kart", slot: "body", name: "Go-kart body", look: "kart", loot: true, rarity: "legendary", box: "legend" },
   { id: "body_muscle", slot: "body", name: "Muscle car body", look: "muscle", loot: true, rarity: "legendary", box: "legend" },
@@ -581,7 +596,9 @@ function openBox(u, boxId) {
   u.coins -= box.price;
   let roll = Math.random() * 100, rarity = "common";
   for (const [r, w] of Object.entries(box.odds)) { if (roll < w) { rarity = r; break; } roll -= w; }
-  const pool = STORE.filter((x) => x.rarity === rarity && (!x.box || x.box === box.id));
+  const hasBody = (x) => !x.onlyBody || u.owned.includes(STORE.find((b) => b.slot === "body" && b.look === x.onlyBody)?.id);
+  let pool = STORE.filter((x) => x.rarity === rarity && (!x.box || x.box === box.id));
+  if (pool.some(hasBody)) pool = pool.filter(hasBody);
   // favour things you don't own yet (but duplicates can still happen)
   const fresh = pool.filter((x) => !u.owned.includes(x.id));
   const from = fresh.length && Math.random() < 0.75 ? fresh : pool;
@@ -600,6 +617,7 @@ function extrasOf(u) {
   if (!u) return null;
   const out = {};
   for (const [slot, id] of Object.entries(u.equipped || {})) { const it = STORE_BY_ID.get(id); if (it && it.slot === slot && u.owned.includes(id)) out[slot] = it.look; }
+  for (const [slot, id] of Object.entries(u.equipped || {})) { const it = STORE_BY_ID.get(id); if (it?.onlyBody && out.body !== it.onlyBody) delete out[slot]; }
   return Object.keys(out).length ? out : null;
 }
 function buy(u, id) {

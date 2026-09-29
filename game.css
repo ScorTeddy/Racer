@@ -923,3 +923,49 @@
 /* the drawing tools can get long (Shapes / Edit track open): let the dock scroll instead of running off screen */
 @media (min-width: 861px) { .dock { max-height: calc(100% - 1.5rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; } }
 #stampPick .tool.on, #wonkTools .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); color: var(--ink); }
+
+/* ---- chat ---- */
+.chat-btn { position: fixed; z-index: 29; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); width: 3rem; height: 3rem; border-radius: 50%; border: 2px solid var(--edge); background: var(--panel-solid); color: var(--ink); font-size: 1.35rem; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,0.4); display: grid; place-items: center; transition: transform 140ms ease, border-color 140ms ease; }
+.chat-btn:hover { transform: scale(1.07); border-color: var(--yellow); }
+.chat-badge { position: absolute; top: -0.25rem; right: -0.25rem; min-width: 1.2rem; height: 1.2rem; padding: 0 0.3rem; border-radius: 99px; background: #ff3b30; color: #fff; font-size: 0.7rem; font-weight: 700; display: grid; place-items: center; }
+body.in-race .chat-btn { top: calc(0.5rem + env(safe-area-inset-top, 0px)); bottom: auto; right: auto; left: calc(50% + 4.2rem); width: 2.3rem; height: 2.3rem; font-size: 1.05rem; }
+body.in-lobby .chat-btn { display: none; }          /* the lobby has its own chat button in the top bar */
+[data-chat] { position: relative; }
+body.in-lobby .chat-box { top: calc(5.2rem + env(safe-area-inset-top, 0px)); bottom: auto; right: 1rem; }
+.chat-box { position: fixed; z-index: 29; right: 1rem; bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px)); width: min(22rem, calc(100vw - 2rem)); height: min(26rem, calc(100vh - 7rem)); display: flex; flex-direction: column; padding: 0.5rem; gap: 0.4rem; background: var(--panel-solid); box-shadow: 0 16px 40px rgba(0,0,0,0.5); animation: pop 200ms ease both; }
+body.in-race .chat-box { top: calc(3.2rem + env(safe-area-inset-top, 0px)); bottom: auto; left: 50%; right: auto; transform: translateX(-50%); height: min(20rem, calc(100vh - 12rem)); pointer-events: auto; }
+body.phone.in-lobby .chat-box { top: calc(3.4rem + env(safe-area-inset-top, 0px)); }
+.chat-head { display: flex; align-items: center; gap: 0.3rem; }
+.chat-tabs { display: flex; gap: 0.25rem; flex: 1; }
+.chat-tabs button { flex: 1; border: 1.5px solid var(--edge); background: transparent; color: var(--soft); font-weight: 700; font-size: 0.78rem; padding: 0.3rem 0.2rem; border-radius: 0.5rem; cursor: pointer; position: relative; }
+.chat-tabs button[aria-selected="true"] { background: rgba(255,204,31,0.16); color: var(--ink); border-color: var(--yellow); }
+.chat-tabs button.new::after { content: ""; position: absolute; top: 0.2rem; right: 0.25rem; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: #ff3b30; }
+.chat-x { border: 0; background: transparent; color: var(--soft); font-size: 1rem; cursor: pointer; padding: 0.2rem 0.4rem; }
+.chat-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.2rem; padding: 0.2rem; font-size: 0.86rem; overscroll-behavior: contain; }
+.chat-list .m { line-height: 1.3; word-wrap: break-word; overflow-wrap: anywhere; position: relative; padding-right: 1.1rem; }
+.chat-list .m b { margin-right: 0.3rem; }
+.chat-list .m.me b { color: var(--yellow); }
+.chat-list .m .rp { position: absolute; right: 0; top: 0; border: 0; background: transparent; color: var(--soft); cursor: pointer; opacity: 0; font-size: 0.75rem; }
+.chat-list .m:hover .rp, .chat-list .m .rp:focus { opacity: 1; }
+.chat-list .note { color: var(--soft); font-style: italic; font-size: 0.8rem; }
+.chat-list .empty { color: var(--soft); text-align: center; margin: auto; font-size: 0.82rem; }
+.chat-foot { display: flex; gap: 0.35rem; }
+.chat-foot input { flex: 1; min-width: 0; padding: 0.45rem 0.6rem; border-radius: 0.6rem; border: 1.5px solid var(--edge); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; font-size: 0.9rem; }
+.chat-foot .btn { padding: 0.4rem 0.8rem; }
+body.spectating .chat-btn { display: grid; }
+
+/* ---- super rare upgrade cards + auras ---- */
+.card.rare { --aura: #c77dff; border-color: var(--aura); background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--aura) 35%, transparent), var(--panel-solid) 70%); animation: flip 560ms cubic-bezier(.2,.9,.3,1.25) both, auraPulse 1.1s ease-in-out 560ms infinite alternate; }
+.card.rare .kind { background: var(--aura); color: #111; }
+.card.rare .fx span { color: var(--aura); font-weight: 800; }
+.card.tier-legendary { --aura: #ffc21f; }
+.card.tier-mythic { --aura: #ff3b8a; animation: flip 560ms cubic-bezier(.2,.9,.3,1.25) both, rainbowGlow 1.6s linear 560ms infinite; }
+@keyframes auraPulse { from { box-shadow: 0 0 10px var(--aura), 0 0 0 1px var(--aura); } to { box-shadow: 0 0 30px var(--aura), 0 0 60px color-mix(in srgb, var(--aura) 50%, transparent), 0 0 0 2px var(--aura); } }
+@keyframes rainbowGlow { 0% { box-shadow: 0 0 26px #ff3b3b, 0 0 0 2px #ff3b3b; border-color: #ff3b3b; } 17% { box-shadow: 0 0 26px #ffb020, 0 0 0 2px #ffb020; border-color: #ffb020; } 33% { box-shadow: 0 0 26px #ffe600, 0 0 0 2px #ffe600; border-color: #ffe600; } 50% { box-shadow: 0 0 26px #39ff88, 0 0 0 2px #39ff88; border-color: #39ff88; } 67% { box-shadow: 0 0 26px #22e6ff, 0 0 0 2px #22e6ff; border-color: #22e6ff; } 83% { box-shadow: 0 0 26px #b45cff, 0 0 0 2px #b45cff; border-color: #b45cff; } 100% { box-shadow: 0 0 26px #ff3b3b, 0 0 0 2px #ff3b3b; border-color: #ff3b3b; } }
+.garage.aura-epic { --aura: #c77dff; border-color: var(--aura); animation: inR 420ms cubic-bezier(.2,.9,.3,1.1) 160ms both, auraPulse 1.2s ease-in-out infinite alternate; }
+.garage.aura-legendary { --aura: #ffc21f; border-color: var(--aura); animation: inR 420ms cubic-bezier(.2,.9,.3,1.1) 160ms both, auraPulse 1.2s ease-in-out infinite alternate; }
+.garage.aura-mythic { animation: inR 420ms cubic-bezier(.2,.9,.3,1.1) 160ms both, rainbowGlow 1.6s linear infinite; }
+.garage .g-aura { text-align: center; font-weight: 800; letter-spacing: 0.06em; font-size: 0.72rem; padding: 0.15rem 0; background: linear-gradient(90deg, #ff3b3b, #ffb020, #ffe600, #39ff88, #22e6ff, #b45cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.garage.aura-epic .g-aura { background: none; color: #c77dff; } .garage.aura-legendary .g-aura { background: none; color: #ffc21f; }
+.garage[class*="aura-"] .pips i.on { background: var(--aura, #ff3b8a); box-shadow: 0 0 6px var(--aura, #ff3b8a); }
+body.rm .card.rare, body.rm .garage[class*="aura-"] { animation: none; }
