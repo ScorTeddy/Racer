@@ -686,6 +686,16 @@
   .emo { cursor: pointer; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.05); border-radius: 0.5rem; min-width: 1.9rem; height: 1.9rem; padding: 0 0.2rem; font-size: 0.95rem; font-weight: 800; color: var(--ink); line-height: 1; }
   .emo:hover { background: rgba(255,255,255,0.14); transform: translateY(-1px); }
   .emo:disabled { opacity: 0.4; }
+  .vol { display: flex; align-items: center; gap: 0.6rem; min-width: 12rem; }
+  .vol input[type="range"] { flex: 1; accent-color: var(--yellow); min-height: 1.6rem; cursor: pointer; }
+  .vol span { width: 2.6rem; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--soft); }
+  .now-row { align-items: center; } #nowPlaying { color: var(--soft); font-size: 0.85rem; font-weight: 600; }
+  .spectate-btn { width: 100%; margin: 0.3rem 0; font-size: 0.85rem; }
+  .spectate-btn.on { background: rgba(79,163,255,0.18); border-color: #4fa3ff; }
+  .spec-bar { display: none; position: absolute; left: 50%; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); align-items: center; gap: 0.5rem; padding: 0.45rem 0.7rem; pointer-events: auto; z-index: 6; white-space: nowrap; }
+  .spec-bar .btn { min-height: 2.2rem; padding: 0.2rem 0.7rem; }
+  body.spectating .spec-bar { display: flex; }
+  body.spectating #radio, body.spectating #hudBottom, body.spectating #garage, body.spectating #lapDelta, body.spectating .standing, body.spectating #offerBox { display: none !important; }
   .ai-mate { width: 100%; margin-top: 0.4rem; min-height: 2.2rem; font-size: 0.82rem; }
   .m-x { cursor: pointer; border: 0; background: none; color: var(--soft); font-size: 0.7rem; padding: 0 0 0 0.25rem; }
   .m-x:hover { color: #ff6b61; }
@@ -959,6 +969,7 @@
       <section class="rc-pane" data-pane="drivers">
         <p class="pane-lead">Everyone in the room is the boss of their own team.</p>
         <ul class="plist" id="plist"></ul>
+        <button type="button" class="btn spectate-btn" id="spectateBtn" aria-pressed="false">👀 Spectate the next race</button>
         <div class="emote-row lobby" aria-label="Quick emotes"><span>Say:</span><button type="button" class="emo" data-emote="👍" aria-label="Emote 👍">👍</button><button type="button" class="emo" data-emote="😂" aria-label="Emote 😂">😂</button><button type="button" class="emo" data-emote="😮" aria-label="Emote 😮">😮</button><button type="button" class="emo" data-emote="😡" aria-label="Emote 😡">😡</button><button type="button" class="emo" data-emote="🔥" aria-label="Emote 🔥">🔥</button><button type="button" class="emo" data-emote="GG" aria-label="Emote GG">GG</button><button type="button" class="emo" data-emote="🏁" aria-label="Emote 🏁">🏁</button><button type="button" class="emo" data-emote="😭" aria-label="Emote 😭">😭</button></div>
         <button type="button" class="btn grid-random hidden" id="gridRandomBtn" title="Every player starts in a random spot, rolled again each race">🎲 Random grid for everyone</button>
         <div class="sect">Teams</div>
@@ -1088,6 +1099,7 @@
   <div class="banner" id="banner"></div>
   <div class="pitring panel hidden" id="pitRing"><div class="meter-label"><span>Pit stop</span><span id="pitPct">0%</span></div><div class="meter"><div id="pitFill"></div></div></div>
   <div class="popups" id="popups"></div>
+  <div class="spec-bar panel" id="specBar"><b>👀 Spectating</b><span>Watching <b id="specName">the leader</b></span><button type="button" class="btn" id="specPrev" aria-label="Watch the car ahead">◀</button><button type="button" class="btn" id="specNext" aria-label="Watch the car behind">▶</button><button type="button" class="btn" id="specLead">Leader</button></div>
   <div class="pause-veil hidden" id="pauseVeil" role="status"><div class="panel"><b>⏸ Race paused</b><span id="pauseBy">The host paused the race.</span><button type="button" class="btn go hidden" id="resumeBtn">▶ Resume (P)</button></div></div>
   <div class="must-pit hidden" id="mustPit" role="alert">
     <div class="mp-head">⚠️ YOU NEED TO PIT</div>
@@ -1283,9 +1295,10 @@
   const SETTINGS = [
     { key: "phone", label: "Phone mode", hint: "Scroll the room without drawing by accident. Tap the board to open a full-screen track editor with big tools. Auto: on for phones.", def: "auto", opts: [["auto", "Auto"], ["on", "On"], ["off", "Off"]] },
     { key: "ui", label: "Interface size", hint: "How big buttons and text are (Auto: a bit smaller on phones)", def: "auto", opts: [["auto", "Auto"], ["s", "Small"], ["m", "Normal"], ["l", "Big"], ["xl", "Huge"]] },
-    { key: "music", label: "Music volume", hint: "Soundtrack in the menus and races", def: "low", opts: [["off", "Off"], ["low", "Low"], ["med", "Med"], ["high", "High"]] },
-    { key: "track", label: "Soundtrack", hint: "Auto picks a song for the menu, the race and the results", def: "auto", opts: [["auto", "Auto"], ["shuffle", "Shuffle"], ["0", "Grid Walk"], ["1", "Full Throttle"], ["2", "Neon Overdrive"], ["3", "Pit Wall Funk"], ["4", "Victory Lap"], ["5", "Rain Tyres"]] },
-    { key: "sound", label: "Sound effects", def: "med", opts: [["off", "Off"], ["low", "Low"], ["med", "Med"], ["high", "High"]] },
+    { key: "vMaster", label: "🔊 Master volume", hint: "Everything at once", def: 80, range: true },
+    { key: "vMusic", label: "🎵 Music", hint: "", def: 45, range: true },
+    { key: "vFx", label: "💥 Sound effects", hint: "Lights, engines, overtakes...", def: 70, range: true },
+    { key: "track", label: "Soundtrack", hint: "Auto: calmer songs in the menus, fast ones in the race. Music by Kevin MacLeod (incompetech.com), CC BY 3.0", def: "auto", opts: [["auto", "Auto"], ["shuffle", "Shuffle all"], ["race", "Race songs only"]] },
     { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "units", label: "Speed units", def: "kmh", opts: [["kmh", "km/h"], ["mph", "mph"]] },
     { key: "zoom", label: "Camera zoom", def: "normal", opts: [["close", "Close"], ["normal", "Normal"], ["far", "Far"]] },
@@ -1304,6 +1317,10 @@
   const settings = {};
   for (const x of SETTINGS) settings[x.key] = x.def;
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
+  // old Off/Low/Med/High sound settings -> the new sliders
+  { const OLD = { off: 0, low: 25, med: 55, high: 100 }; if (typeof settings.sound === "string" && OLD[settings.sound] !== undefined) { settings.vFx = OLD[settings.sound]; delete settings.sound; } if (typeof settings.music === "string") { settings.vMusic = settings.music === "off" ? 0 : OLD[settings.music] ?? 45; delete settings.music; } if (!["auto", "shuffle", "race"].includes(settings.track)) settings.track = "auto"; }
+  const fxVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vFx) / 100);
+  const musicVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vMusic) / 100);
   let reducedMotion = false;
   const isPhone = () => Math.min(window.innerWidth, window.innerHeight) < 560;
   const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
@@ -1317,7 +1334,7 @@
     reducedMotion = settings.motion === "on" || (settings.motion === "system" && sys);
     document.body.classList.toggle("rm", reducedMotion);
     mini.classList.toggle("hidden", settings.minimap === "off");
-    if (MUS && MUS.started) { if (MUS.bus) musicBus(); if (MUS.audioEl) MUS.audioEl.volume = Math.min(1, 0.6 * VOL[settings.music || "low"]); if (VOL[settings.music || "low"] === 0) { stopSynth(); stopCustom(); } else if (MUS.lastTrack !== settings.track || (!MUS.timer && !MUS.audioEl)) { MUS.lastTrack = settings.track; pickMusic(true); } }
+    if (MUS && MUS.started) { setMusicVolume(); if (MUS.lastTrack !== settings.track || (!MUS.el && musicVol() > 0)) { MUS.lastTrack = settings.track; pickMusic(true); } }
     const phone = settings.phone === "on" || (settings.phone !== "off" && isTouch() && Math.min(window.innerWidth, window.innerHeight) < 760);
     if (phone !== document.body.classList.contains("phone")) {
       document.body.classList.toggle("phone", phone);
@@ -1332,6 +1349,14 @@
       const row = document.createElement("div"); row.className = "set-row";
       const l = document.createElement("div"); const b = document.createElement("b"); b.textContent = x.label; l.appendChild(b);
       if (x.hint) { const s = document.createElement("small"); s.textContent = x.hint; l.appendChild(s); }
+      if (x.range) {           // volume sliders
+        const wrap = document.createElement("div"); wrap.className = "vol";
+        const r = document.createElement("input"); r.type = "range"; r.min = "0"; r.max = "100"; r.step = "1"; r.value = String(settings[x.key]); r.setAttribute("aria-label", x.label);
+        const out = document.createElement("span"); out.textContent = settings[x.key] + "%";
+        r.addEventListener("input", () => { settings[x.key] = Number(r.value); out.textContent = r.value + "%"; applySettings(); });
+        r.addEventListener("change", () => sfx("tick"));
+        wrap.append(r, out); row.append(l, wrap); body.appendChild(row); continue;
+      }
       const seg = document.createElement("div"); seg.className = "seg"; seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", x.label);
       for (const [v, t] of x.opts) {
         const o = document.createElement("button"); o.type = "button"; o.textContent = t; o.setAttribute("role", "radio");
@@ -1340,6 +1365,13 @@
         seg.appendChild(o);
       }
       row.append(l, seg); body.appendChild(row);
+      if (x.key === "track") {   // now playing + skip
+        const np = document.createElement("div"); np.className = "set-row now-row";
+        const t2 = document.createElement("div"); t2.id = "nowPlaying"; t2.textContent = MUS?.now ? `♪ ${MUS.now}` : "♪ Nothing playing yet (click anywhere to start)";
+        const sk = document.createElement("button"); sk.type = "button"; sk.className = "btn"; sk.textContent = "⏭ Next song";
+        sk.addEventListener("click", () => { MUS.started = true; pickMusic(true); });
+        np.append(t2, sk); body.appendChild(np);
+      }
     }
   }
   const setEl = $("settings");
@@ -1357,114 +1389,67 @@
     if (actx.state === "suspended") actx.resume();
     return actx;
   }
-  const VOL = { off: 0, low: 0.25, med: 0.55, high: 1 };
 
   // ======================= Music =======================
-  // Original tracks made right here with the Web Audio synth (drums, bass, chords, arp and a lead).
-  // Your own free-to-use songs can be added too: put MP3s in public/music/ and list them in
-  // public/music/music.json (see the README). Those show up in the Soundtrack list.
-  const SONGS = [
-    { title: "Grid Walk", bpm: 88, root: 57, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 5, 2, 6], kick: "x...x...x..x....", snare: "....x.......x...", hat: "x.x.x.x.x.x.x.x.", bass: "0..0..0.0...0.4.", arp: "0.2.4.2.0.2.4.2.", lead: 0.35, wave: "triangle", mood: "menu" },
-    { title: "Full Throttle", bpm: 128, root: 52, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 5, 2, 6], kick: "x...x...x...x...", snare: "....x.......x...", hat: "..x...x...x...x.", bass: "0.00.00.0.00.00.", arp: "0240024002400240", lead: 0.6, wave: "sawtooth", mood: "race" },
-    { title: "Neon Overdrive", bpm: 140, root: 54, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 3, 5, 4], kick: "x..xx...x..xx...", snare: "....x.......x..x", hat: "xxxxxxxxxxxxxxxx", bass: "0000000000000000", arp: "0474047404740474", lead: 0.7, wave: "square", mood: "race" },
-    { title: "Pit Wall Funk", bpm: 110, root: 50, scale: [0, 2, 3, 5, 7, 9, 10], prog: [0, 3, 0, 4], kick: "x..x..x...x..x..", snare: "....x.......x...", hat: "x.xxx.xxx.xxx.xx", bass: "0..7.0..3.4.0..7", arp: "................", lead: 0.5, wave: "square", mood: "race" },
-    { title: "Victory Lap", bpm: 120, root: 60, scale: [0, 2, 4, 5, 7, 9, 11], prog: [0, 4, 5, 3], kick: "x.......x.......", snare: "....x.......x...", hat: "x.x.x.x.x.x.x.x.", bass: "0...0...0...0...", arp: "0.2.4.7.4.2.0.2.", lead: 0.55, wave: "triangle", mood: "results" },
-    { title: "Rain Tyres", bpm: 96, root: 55, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 6, 5, 4], kick: "x.....x...x.....", snare: "....x.......x...", hat: "..x...x...x...x.", bass: "0.......0...4...", arp: "0...2...4...7...", lead: 0.3, wave: "sine", mood: "menu" },
-  ];
-  var MUS = { song: -1, step: 0, next: 0, timer: 0, bus: null, noise: null, custom: [], audioEl: null, bar: 0, melody: [] };
+  // Real songs by Kevin MacLeod (incompetech.com), free to use under Creative Commons BY 3.0 as long
+  // as he's credited (the game shows the credit when a song starts and in Settings). They stream from
+  // the Internet Archive's copy of his library, so there are no files to upload.
+  // You can add your own free-to-use songs too: public/music/music.json (see the README).
+  const IA = "https://archive.org/download/Incompetech/mp3-royaltyfree/";
+  const KM = { artist: "Kevin MacLeod", license: "CC BY 3.0" };
+  const BUILTIN = [
+    { title: "Aces High", file: "Aces High.mp3", mood: "race" },
+    { title: "Basic Implosion", file: "Basic Implosion.mp3", mood: "race" },
+    { title: "Bit Shift", file: "Bit Shift.mp3", mood: "race" },
+    { title: "Blip Stream", file: "BlipStream.mp3", mood: "race" },
+    { title: "Black Vortex", file: "BlackVortex.mp3", mood: "race" },
+    { title: "Big Rock", file: "Big Rock.mp3", mood: "race" },
+    { title: "Action", file: "Action.mp3", mood: "race" },
+    { title: "Back on Track", file: "Back on Track.mp3", mood: "race" },
+    { title: "Blown Away", file: "BlownAway.mp3", mood: "race" },
+    { title: "Backed Vibes (Clean)", file: "Backed Vibes Clean.mp3", mood: "menu" },
+    { title: "Big Mojo", file: "Big Mojo.mp3", mood: "menu" },
+    { title: "Bass Walker", file: "Bass Walker.mp3", mood: "menu" },
+    { title: "Airport Lounge", file: "Airport Lounge.mp3", mood: "menu" },
+    { title: "Beachfront Celebration", file: "Beachfront Celebration.mp3", mood: "results" },
+    { title: "At Launch", file: "At Launch.mp3", mood: "results" },
+  ].map((x) => ({ ...KM, ...x, url: IA + encodeURIComponent(x.file) }));
+  var MUS = { el: null, list: BUILTIN.slice(), cur: null, started: false, now: "", recent: [] };
   fetch("music/music.json").then((r) => (r.ok ? r.json() : [])).then((list) => {
     if (!Array.isArray(list)) return;
-    MUS.custom = list.filter((x) => x && x.file).map((x) => ({ title: String(x.title || x.file), artist: String(x.artist || ""), file: "music/" + String(x.file).replace(/^\/+/, ""), license: String(x.license || ""), mood: x.mood || "any" }));
+    for (const x of list) if (x && x.file) MUS.list.push({ title: String(x.title || x.file), artist: String(x.artist || ""), license: String(x.license || ""), mood: x.mood || "any", url: "music/" + String(x.file).replace(/^\/+/, "") });
   }).catch(() => {});
-  const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
-  function musicBus() {
-    const a = audio(); if (!a) return null;
-    if (!MUS.bus) {
-      MUS.bus = a.createGain(); MUS.bus.connect(a.destination);
-      const len = a.sampleRate * 0.5, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-      MUS.noise = buf;
-    }
-    MUS.bus.gain.setTargetAtTime(0.5 * VOL[settings.music || "low"], a.currentTime, 0.2);
-    return MUS.bus;
+  function stopMusic() { if (MUS.el) { MUS.el.pause(); MUS.el = null; } MUS.cur = null; }
+  function setMusicVolume() { if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol())); if (musicVol() <= 0) stopMusic(); }
+  function playTrack(tr) {
+    if (musicVol() <= 0) { stopMusic(); return; }
+    stopMusic();
+    const el2 = new Audio(); el2.preload = "auto"; el2.src = tr.url; el2.volume = Math.min(1, musicVol());
+    el2.addEventListener("ended", () => { if (MUS.el === el2) pickMusic(true); });
+    el2.addEventListener("error", () => { if (MUS.el === el2) { MUS.bad = (MUS.bad || 0) + 1; if (MUS.bad < 4) setTimeout(() => pickMusic(true), 800); } });
+    el2.play().then(() => { MUS.bad = 0; }).catch(() => {});
+    MUS.el = el2; MUS.cur = tr; MUS.now = `${tr.title} · ${tr.artist}${tr.license ? " (" + tr.license + ")" : ""}`;
+    MUS.recent = [tr.url, ...MUS.recent].slice(0, 5);
+    const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now;
+    if (S.screen !== "race") popup(`♪ ${tr.title} · ${tr.artist}`);
   }
-  function note(a, bus, freq, t, dur, type, vol, cutoff) {
-    const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(freq, t);
-    let out = o;
-    if (cutoff) { const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = cutoff; o.connect(f); out = f; }
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    out.connect(g).connect(bus); o.start(t); o.stop(t + dur + 0.05);
-  }
-  function drum(a, bus, kind, t) {
-    if (kind === "kick") { const o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.14); g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22); o.connect(g).connect(bus); o.start(t); o.stop(t + 0.25); return; }
-    const src = a.createBufferSource(); src.buffer = MUS.noise; const f = a.createBiquadFilter(), g = a.createGain();
-    f.type = kind === "hat" ? "highpass" : "bandpass"; f.frequency.value = kind === "hat" ? 7000 : 1800;
-    const dur = kind === "hat" ? 0.04 : 0.16; g.gain.setValueAtTime(kind === "hat" ? 0.18 : 0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f).connect(g).connect(bus); src.start(t); src.stop(t + dur + 0.02);
-  }
-  function scheduleMusic() {
-    const a = actx, bus = MUS.bus, S2 = SONGS[MUS.song]; if (!a || !bus || !S2) return;
-    const stepT = 60 / S2.bpm / 4;
-    while (MUS.next < a.currentTime + 0.15) {
-      const st = MUS.step % 16, t = MUS.next;
-      if (st === 0) {
-        MUS.bar++;
-        // a new little melody every 2 bars, made from the song's scale
-        if (MUS.bar % 2 === 1) { MUS.melody = Array.from({ length: 16 }, (_, i) => (Math.random() < S2.lead * (i % 2 ? 0.45 : 0.9) ? Math.floor(Math.random() * 7) + (Math.random() < 0.3 ? 7 : 0) : null)); }
-      }
-      const chord = S2.prog[Math.floor(MUS.bar / 1) % 4], deg = (d) => { const k = chord + d; return S2.root + S2.scale[((k % 7) + 7) % 7] + 12 * Math.floor(k / 7); };
-      if (S2.kick[st] === "x") drum(a, bus, "kick", t);
-      if (S2.snare[st] === "x") drum(a, bus, "snare", t);
-      if (S2.hat[st] === "x") drum(a, bus, "hat", t);
-      const b = S2.bass[st]; if (b !== ".") note(a, bus, midi(deg(Number(b)) - 24), t, stepT * 1.6, "sawtooth", 0.22, 600);
-      const ar = S2.arp[st]; if (ar !== ".") note(a, bus, midi(deg(Number(ar))), t, stepT * 0.9, S2.wave, 0.07, 2600);
-      if (st % 8 === 0) for (const d of [0, 2, 4]) note(a, bus, midi(deg(d) - 12), t, stepT * 7.5, "triangle", 0.045, 1200);   // soft chord pad
-      const m = MUS.melody[st]; if (m !== null && m !== undefined && st % 2 === 0) note(a, bus, midi(deg(m) + 12), t, stepT * 1.8, S2.wave === "sine" ? "sine" : "square", 0.05, 3200);
-      MUS.step++; MUS.next += stepT;
-    }
-  }
-  function stopSynth() { clearInterval(MUS.timer); MUS.timer = 0; MUS.song = -1; }
-  function stopCustom() { if (MUS.audioEl) { MUS.audioEl.pause(); MUS.audioEl = null; } }
-  function playSong(i) {
-    if (VOL[settings.music || "low"] === 0) { stopSynth(); stopCustom(); return; }
-    const list = SONGS.length + MUS.custom.length;
-    i = ((i % list) + list) % list;
-    if (i < SONGS.length) {
-      stopCustom();
-      if (MUS.song === i && MUS.timer) return;
-      const a = audio(); if (!a || !musicBus()) return;
-      stopSynth(); MUS.song = i; MUS.step = 0; MUS.bar = -1; MUS.next = a.currentTime + 0.1;
-      MUS.timer = setInterval(scheduleMusic, 40);
-      nowPlaying(SONGS[i].title, "Scribble GP originals");
-    } else {
-      const cst = MUS.custom[i - SONGS.length];
-      if (MUS.audioEl && MUS.audioEl.dataset.file === cst.file) return;
-      stopSynth(); stopCustom();
-      const el2 = new Audio(cst.file); el2.dataset.file = cst.file; el2.loop = false; el2.volume = Math.min(1, 0.6 * VOL[settings.music || "low"]);
-      el2.addEventListener("ended", () => { MUS.audioEl = null; pickMusic(true); });
-      el2.play().catch(() => {}); MUS.audioEl = el2; MUS.song = -1;
-      nowPlaying(cst.title, cst.artist + (cst.license ? ` (${cst.license})` : ""));
-    }
-  }
-  function nowPlaying(title, by) { if (S.screen !== "race") popup(`♪ ${title} · ${by}`); }
-  // which song fits right now
+  // which song fits right now (menu / race / results), never the same one twice in a row
   function pickMusic(force) {
-    if (!actx && !MUS.started) return;
-    const want = settings.track || "auto";
-    if (want !== "auto" && want !== "shuffle") return playSong(Number(want));
-    const mood = S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
-    const pool = [...SONGS.map((x, i) => [i, x.mood]), ...MUS.custom.map((x, i) => [SONGS.length + i, x.mood])].filter(([, m]) => want === "shuffle" || m === mood || m === "any");
-    const cur = MUS.song >= 0 ? MUS.song : MUS.audioEl ? SONGS.length + MUS.custom.findIndex((x) => x.file === MUS.audioEl.dataset.file) : -1;
-    if (!force && pool.some(([i]) => i === cur)) return;
-    const choice = pool.filter(([i]) => i !== cur); const pk = (choice.length ? choice : pool)[Math.floor(Math.random() * (choice.length || pool.length))];
-    if (pk) playSong(pk[0]);
+    if (!MUS.started) return;
+    if (musicVol() <= 0) { stopMusic(); return; }
+    const mood = settings.track === "race" ? "race" : S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
+    const pool = MUS.list.filter((x) => settings.track === "shuffle" || x.mood === mood || x.mood === "any");
+    if (!force && MUS.cur && pool.includes(MUS.cur) && MUS.el && !MUS.el.paused) return;
+    const fresh = pool.filter((x) => !MUS.recent.includes(x.url));
+    const from = fresh.length ? fresh : pool;
+    if (from.length) playTrack(from[Math.floor(Math.random() * from.length)]);
   }
   // browsers only allow sound after you click or press something
   const startMusic = () => { if (MUS.started) return; MUS.started = true; audio(); pickMusic(true); };
-  window.addEventListener("pointerdown", startMusic, { once: false, capture: true });
+  window.addEventListener("pointerdown", startMusic, { capture: true });
   window.addEventListener("keydown", startMusic, { capture: true });
   function tone(freq, dur, type = "square", vol = 0.2, slide = 0, delay = 0) {
-    const v = VOL[settings.sound] * vol; if (!v) return;
+    const v = fxVol() * vol; if (!v) return;
     const a = audio(); if (!a) return;
     const t0 = a.currentTime + delay;
     const o = a.createOscillator(), g = a.createGain();
@@ -1487,7 +1472,7 @@
     else if (name === "card") tone(700, 0.12, "triangle", 0.18, 300);
   }
   function engineSound(speed, on) {
-    const want = on && settings.engine === "on" && VOL[settings.sound] > 0;
+    const want = on && settings.engine === "on" && fxVol() > 0;
     const a = want ? audio() : actx;
     if (!a) return;
     if (!engine && want) {
@@ -1499,7 +1484,7 @@
     if (!engine) return;
     const t = a.currentTime;
     engine.o.frequency.setTargetAtTime(55 + Math.max(0, speed) * 0.22, t, 0.08);
-    engine.g.gain.setTargetAtTime(want ? 0.035 * VOL[settings.sound] : 0, t, 0.15);
+    engine.g.gain.setTargetAtTime(want ? 0.035 * fxVol() : 0, t, 0.15);
   }
   window.addEventListener("pointerdown", () => audio(), { once: true });
 
@@ -2206,6 +2191,8 @@
     S.lapRef = null; $("lapDelta").classList.add("hidden");
     $("pauseBtn").classList.toggle("hidden", !S.host);
     S.race.quali = r.quali || 0;
+    document.body.classList.toggle("spectating", !S.myCar);
+    if (!S.myCar) { $("specName").textContent = "the leader"; }
     show("race");
     const L = $("lights"); L.classList.add("hidden");
     L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
@@ -2215,6 +2202,7 @@
   });
   let tpTimer = null;
   socket.on("tirePick", (p) => {
+    if (!S.myCar) return;          // spectators don't pick tires
     const box = $("tirePick"); box.classList.toggle("hidden", !S.myCar);
     const row = $("tpRow"); row.textContent = "";
     S.startPick = p.raining ? "wet" : "inter";
@@ -2557,6 +2545,11 @@
     $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     document.querySelector(".dock").classList.toggle("hidden", !S.host || l.phase !== "lobby");
     $("gridRandomBtn").classList.toggle("hidden", !S.host || l.phase !== "lobby");
+    const meP = l.players.find((x) => x.id === S.me);
+    S.spectating = !!meP?.spectator;
+    $("spectateBtn").textContent = S.spectating ? "🏎️ Race instead of watching" : "👀 Spectate the next race";
+    $("spectateBtn").setAttribute("aria-pressed", String(S.spectating)); $("spectateBtn").classList.toggle("on", S.spectating);
+    $("spectateBtn").disabled = l.phase !== "lobby";
     $("lastSeasonBtn").classList.toggle("hidden", !l.hasLastSeason && !S.lastSeason?.history?.length);
     updateEditUi();
     const cb = $("champBody"); cb.textContent = "";
@@ -2675,29 +2668,56 @@
   // redraw whenever the board changes size (phones rotating, the lobby laying itself out, etc.)
   if (window.ResizeObserver) new ResizeObserver(() => { if (S.screen === "lobby") sizeBoard(); }).observe(board);
   // ======================= Drawing board =======================
+  function paintBoardBg(th, T, G) {
+    const cv = document.createElement("canvas"); cv.width = board.width; cv.height = board.height;
+    const c = cv.getContext("2d"), dpr = B.dpr || 1;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
+    // drop shadow under the map
+    c.save(); c.shadowColor = "rgba(0,0,0,0.55)"; c.shadowBlur = 24 / B.s; c.shadowOffsetY = 6 / B.s; c.fillStyle = th.ground; c.fillRect(0, 0, B.bw, B.bh); c.restore();
+    // the same ground texture as the race (1 board unit = 3 world px)
+    const pat = c.createPattern(tex("ground", th), "repeat");
+    if (pat.setTransform) pat.setTransform(new DOMMatrix().scale(1 / 3));
+    c.fillStyle = pat; c.fillRect(0, 0, B.bw, B.bh);
+    c.save(); c.beginPath(); c.rect(0, 0, B.bw, B.bh); c.clip();
+    if (T && G) {
+      c.save(); c.translate(T.minX, T.minY); c.scale(1 / T.scale, 1 / T.scale); c.translate(-T.pad, -T.pad);
+      if (settings.scenery !== "off") drawDecor(c, T, G, th, {});
+      drawStatic(c, T, G, th, { board: true, noGround: true });
+      c.restore();
+    }
+    // faint drawing grid + a soft vignette so the middle of the board pops
+    c.strokeStyle = th.night ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.09)"; c.lineWidth = 1 / B.s; c.beginPath();
+    for (let x = 0; x <= B.bw; x += 100) { c.moveTo(x, 0); c.lineTo(x, B.bh); }
+    for (let y = 0; y <= B.bh; y += 100) { c.moveTo(0, y); c.lineTo(B.bw, y); }
+    c.stroke();
+    const vg = c.createRadialGradient(B.bw / 2, B.bh / 2, Math.min(B.bw, B.bh) * 0.35, B.bw / 2, B.bh / 2, Math.hypot(B.bw, B.bh) * 0.6);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, th.night ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)");
+    c.fillStyle = vg; c.fillRect(0, 0, B.bw, B.bh);
+    c.restore();
+    c.strokeStyle = "rgba(255,255,255,0.18)"; c.lineWidth = 2 / B.s; c.strokeRect(0, 0, B.bw, B.bh);
+    return cv;
+  }
   function drawBoard() {
     if (!B.w) return;
     boardDims();
     const c = bctx, dpr = B.dpr || 1;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h);
-    c.save(); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
     const themeKey = S.lobby?.settings.theme || "grass", th = THEMES[themeKey]; th.key = themeKey;
-    c.fillStyle = th.ground; c.fillRect(0, 0, B.bw, B.bh);
-    c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1 / B.s;
-    c.beginPath();
-    for (let x = 0; x <= B.bw; x += 100) { c.moveTo(x, 0); c.lineTo(x, B.bh); }
-    for (let y = 0; y <= B.bh; y += 100) { c.moveTo(0, y); c.lineTo(B.bw, y); }
-    c.stroke();
     const T = S.track;
     // everyone else watches the host's drawing appear live
     const watching = !S.host && S.hostDraft && S.hostDraft.length > 1;
-    if (T && !S.draft && !watching) {
-      // the real track, drawn exactly like in the race (widths, kerbs, bridges, pit lane)
-      if (!S.geo) S.geo = buildGeo(T);
+    const showTrack = T && !S.draft && !watching;
+    if (showTrack && !S.geo) S.geo = buildGeo(T);
+    // The board background (textured ground, scenery, the finished track) is painted once into a
+    // cached picture and just copied every frame, so it can look like the race and still be fast.
+    const bgKey = [board.width, board.height, B.ox, B.oy, B.s, themeKey, showTrack ? S.geo.id : "-", settings.scenery, showTrack ? gridCount() : 0, settings.raceline].join("|");
+    if (B.bgKey !== bgKey) { B.bgKey = bgKey; B.bg = paintBoardBg(th, showTrack ? T : null, showTrack ? S.geo : null); }
+    c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(B.bg, 0, 0); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.save(); c.translate(B.ox, B.oy); c.scale(B.s, B.s);
+    if (showTrack) {
       const G = S.geo;
       c.save(); c.translate(T.minX, T.minY); c.scale(1 / T.scale, 1 / T.scale); c.translate(-T.pad, -T.pad);
-      drawStatic(c, T, G, th, { board: true, noGround: true });
       const arrows = (up) => {
         c.fillStyle = "rgba(255,255,255,0.85)";
         const step = Math.max(8, Math.floor(T.N / 18));
@@ -2839,6 +2859,11 @@
     const d = S.draft;
     if (!d || d.pts.length < 3 || draftLen() < 150) { boardHint("Draw a bit more first!", true); return; }
     let pts = d.pts.map((q) => q.slice());
+    if (d.cut && d.keep) {   // after a redraw: put the direction and the start line back where they were
+      P.steps = [];
+      if (d.keep.reverse) P.steps.push(() => socket.emit("reverse"));
+      if (d.keep.start) P.steps.push(() => socket.emit("setStart", { x: d.keep.start[0], y: d.keep.start[1] }));
+    }
     // remember the drawing, so Undo after finishing brings it back without the join
     // (the auto-filled bit, or the stroke you closed it with)
     const gapPx = Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) * B.s;
@@ -3028,6 +3053,17 @@
     box.classList.remove("hidden"); box.classList.toggle("up", d < -0.005); box.classList.toggle("down", d > 0.005);
     $("lapDeltaVal").textContent = (d > 0 ? "+" : d < 0 ? "−" : "±") + Math.abs(d).toFixed(2) + "s";
   }
+  // ---- spectating: pick who the camera follows ----
+  function specMove(d) {
+    const ids = S.standings; if (!ids.length) return;
+    if (d === 0) S.camTarget = null;
+    else { const cur = Math.max(0, ids.indexOf(S.camTarget ?? ids[0])); S.camTarget = ids[(cur + d + ids.length) % ids.length]; }
+    const c = S.cars.get(S.camTarget ?? ids[0]);
+    $("specName").textContent = S.camTarget ? `P${ids.indexOf(S.camTarget) + 1} ${c?.name || ""}` : "the leader";
+  }
+  $("specPrev").addEventListener("click", () => specMove(-1));
+  $("specNext").addEventListener("click", () => specMove(1));
+  $("specLead").addEventListener("click", () => specMove(0));
   // ---- pause (host) ----
   function setPausedUi(on, by) {
     S.paused = on;
@@ -3069,6 +3105,7 @@
     if (mine === 0) { banner("POLE POSITION!", "#ffcc1f"); sfx("win"); }
   });
   const fmt3 = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(3).padStart(6, "0")}`; };
+  $("spectateBtn").addEventListener("click", () => { socket.emit("spectate", !S.spectating); sfx("tick"); });
   $("gridRandomBtn").addEventListener("click", () => { socket.emit("gridRandomAll"); sfx("tick"); });
   $("editTrackBtn").addEventListener("click", () => setEditing(true));
   $("doneEditBtn").addEventListener("click", () => setEditing(false));
@@ -3115,8 +3152,12 @@
     if (n - len < 4) { boardHint("That's almost the whole track. Use Clear to start over.", true); return; }
     const pts = [];
     for (let k = 0; k <= n - len; k++) { const q = st[(from + len + k) % n]; pts.push([q[0], q[1], q[2]]); }
-    S.keepReverse = !!S.track?.reverse;
-    S.draft = { pts, corners: [], pieces: [], cut: true }; S.lastDraft = null;
+    // keep the start line where it was (unless it was on the part you deleted) and keep the direction
+    const T = S.track, p0 = T.pts[0], sx = T.minX + (p0.x - T.pad) / T.scale, sy = T.minY + (p0.y - T.pad) / T.scale;
+    let si = 0, sd = Infinity; st.forEach((q, i) => { const dd = (q[0] - sx) ** 2 + (q[1] - sy) ** 2; if (dd < sd) { sd = dd; si = i; } });
+    const inCut = ((si - from + n) % n) <= len;
+    S.keepReverse = false;
+    S.draft = { pts, corners: [], pieces: [], cut: true, keep: { reverse: !!T.reverse, start: inCut ? null : [sx, sy] } }; S.lastDraft = null;
     endCut(); updateDraftUi();
     boardHint(isTouch() ? "Draw the new part from the yellow dot back to the green dot (or tap Finish loop to just join it)." : "Draw the new part from the yellow dot back to the green dot (or Finish loop to just join it). Undo brings the old part back.", false);
     drawBoard();
@@ -3950,7 +3991,7 @@
     c.restore();
   }
   // grid boxes, same maths as gridSlot() on the server: staggered, pole really in front
-  function gridCount() { return S.screen === "race" && S.race?.info ? S.race.info.size : S.lobby ? S.lobby.players.length + (S.lobby.settings.ai || 0) : 0; }
+  function gridCount() { return S.screen === "race" && S.race?.info ? S.race.info.size : S.lobby ? S.lobby.players.filter((p) => !p.spectator).length + (S.lobby.settings.ai || 0) : 0; }
   function gridSlotC(t, g, total) {
     const spacing = t.length / t.N, gap = clamp((t.length * 0.85 - 70) / Math.max(1, total), 34, 60);
     const idx = (t.N - Math.round((70 + g * gap) / spacing) + t.N * 4) % t.N;

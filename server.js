@@ -28,7 +28,7 @@ const BRAKE_PLAN = 936;                // how hard drivers plan to brake before 
 const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahead: +30% top speed
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
-const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1;
+const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 // Heavy rain: from 60% wet the wets are the tire to be on. Anything else is a lot slower
 // (top speed and grip) and slips out a couple of times a lap, but it can still race.
 const SLIP_WET = 0.6;
@@ -93,6 +93,7 @@ const UPGRADES = {
   pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
   refill:  { kind: "Car",    name: "Nitro Refill",   desc: "+5% boost back every lap",               max: 3, fx: (n) => `${pct(NITRO_LAP_REFILL + 0.05 * n)}% boost back per lap` },
   pitlane: { kind: "Car",    name: "Pit Lane Rocket", desc: "Drives 25% faster down the pit lane",   max: 3, fx: (n) => `+${25 * n}% pit lane speed` },
+  saver:   { kind: "Car",    name: "Nitro Saver",    desc: "Boost drains 3% slower per level",       max: 4, fx: (n) => `${3 * n}% slower boost drain` },
   enhance: { kind: "Car",    name: "Enhancer",       desc: "+3% to EVERY stat (the ones you have and any you get later)", max: 4, fx: (n) => `+${3 * n}% to everything` },
 };
 // AI difficulty (Race tab): how good the AI drivers are, how quickly they upgrade, how often they slip up
@@ -778,7 +779,7 @@ class Room {
   lobbyMsg() {
     return {
       code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid })),
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
       roster: this.roster.slice(0, this.settings.ai),
@@ -808,7 +809,11 @@ class Room {
     this.sendLobby();
     if (this.track) socket.emit("track", this.trackMsg());
     if (this.draft) socket.emit("draft", this.draft);
-    if (this.phase !== "lobby") socket.emit("toast", "A race is on! You'll be on the grid for the next one.");
+    if (this.phase !== "lobby") {
+      // a race is on: watch it live, you'll be on the grid for the next one
+      if (this.cars && this.lastRaceMsg && ["race", "lights", "tires"].includes(this.phase)) socket.emit("race", this.lastRaceMsg);
+      socket.emit("toast", "A race is on! Watching it now, you'll be on the grid for the next one.");
+    }
   }
   removePlayer(id) {
     const p = this.players.get(id);
@@ -901,7 +906,7 @@ class Room {
     const grid = this.qualiGrid; this.qualiGrid = null;
     this.qualifying = s.quali > 0 && !grid;
     this.paused = false;
-    const humans = [...this.players.values()];
+    const humans = [...this.players.values()].filter((p) => !p.spectator);   // spectators just watch
     for (const h of humans) {
       h.level = 1; h.xp = 0; h.up = blankUp(); h.pendingPicks = 0; h.offer = null; h.nitroHeld = false;
       io.to(h.id).emit("offerCleared");
@@ -997,7 +1002,7 @@ class Room {
     }
     this.phase = "tires";
     this.tiresUntil = Date.now() + TIRE_PICK_TIME;
-    this.emit("race", { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0 });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0 });
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS, perLap: this.perLapAll() });
@@ -1056,7 +1061,7 @@ class Room {
       gripMul: 1 + 0.15 * u.grip,
       planBrake: BRAKE * (1 + 0.3 * u.brakes) * (0.72 + 0.055 * u.late),   // drivers plan to use 72% of the brakes (Late Braker: up to 94%)
       slipTime: SLIP_TIME + 0.1 * u.craft,
-      nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN, nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
+      nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN * (1 - 0.03 * (u.saver || 0)), nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
       pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane),
       mistakes: Math.pow(0.6, u.focus),
     };
@@ -1197,7 +1202,8 @@ class Room {
       p.lastPos = pos;
     }
     if (this.qualifying) { if (this.time >= this.qualiEnd) this.endQuali(); return; }
-    const humansLeft = this.cars.some((c) => c.owner && !c.finished);
+    // (with only spectators in the room, the race runs until the AI have all finished)
+    const humansLeft = this.cars.some((c) => c.owner) ? this.cars.some((c) => c.owner && !c.finished) : !this.cars.every((c) => c.finished);
     if (!humansLeft || this.time > this.finishDeadline) this.endRace();
   }
   // ---- weather: a hidden rain strength that drifts around, with the odd shower or cloudburst ----
@@ -1564,7 +1570,7 @@ class Room {
     if (c.nitroOn) {
       maxSp *= 1 + st.nitroPow; accel *= 1.15 + st.nitroPow;
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
-    }
+    } else if (c.nitro < 1 && this.phase === "race") c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
     else if (c.surface === 2) maxSp *= 0.55;
@@ -1771,7 +1777,7 @@ class Room {
   }
 
   aiUpgrade(c) {
-    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, enhance: 1.5 };
+    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, enhance: 1.5, saver: 1 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
     if (!opts.length) return;
     let r = Math.random() * opts.reduce((a, k) => a + (W[k] || 1), 0);
@@ -2086,6 +2092,7 @@ io.on("connection", (socket) => {
     r.emit("emote", { e, name: p.name, pid: p.id, car: c ? c.id : null });
     if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "emotes"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
   });
+  socket.on("spectate", (on) => { const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return; p.spectator = !!on; r.sendLobby(); });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
   socket.on("gridRandomAll", () => {

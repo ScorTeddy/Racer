@@ -23,22 +23,22 @@ Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
 ## Music
-Six original songs are built in (made with code by the game's synth, no files): Grid Walk, Full Throttle,
-Neon Overdrive, Pit Wall Funk, Victory Lap, Rain Tyres. Settings > Music volume / Soundtrack (Auto picks one
-for the menu, race and results; Shuffle plays anything).
+The soundtrack is 15 real songs by **Kevin MacLeod (incompetech.com)**, licensed under
+**Creative Commons: By Attribution 3.0** (http://creativecommons.org/licenses/by/3.0/). That license lets
+anyone use them in a game for free as long as he's credited, which the game does (Settings > Soundtrack,
+and the "now playing" pop-up). They stream from the Internet Archive's copy of his library
+(archive.org/details/Incompetech), so there's nothing to upload.
+- Race: Aces High, Basic Implosion, Bit Shift, Blip Stream, Black Vortex, Big Rock, Action, Back on Track, Blown Away
+- Menus: Backed Vibes (Clean), Big Mojo, Bass Walker, Airport Lounge
+- Results: Beachfront Celebration, At Launch
+Change the list in `BUILTIN` (index.html). Settings: Master / Music / Sound effects sliders, Soundtrack
+(Auto, Shuffle all, Race songs only) and a Next song button.
 
-**Adding real songs by other artists:** only use music the artist lets you use in a game, and credit them.
-Good free sources: Pixabay Music (free for games, no credit needed), incompetech.com by Kevin MacLeod
-(CC BY: credit "Kevin MacLeod (incompetech.com)"), FreePD.com (public domain).
-1. Download the MP3s and put them in `public/music/`.
-2. List them in `public/music/music.json`, for example:
+**Your own songs:** put MP3s in `public/music/` and list them in `public/music/music.json`:
 ```json
-[
-  { "file": "my-race-song.mp3", "title": "Song Name", "artist": "Artist Name", "license": "CC BY 4.0", "mood": "race" },
-  { "file": "chill.mp3", "title": "Chill Tune", "artist": "Someone", "license": "Pixabay", "mood": "menu" }
-]
+[ { "file": "my-song.mp3", "title": "Song Name", "artist": "Artist Name", "license": "CC BY 4.0", "mood": "race" } ]
 ```
-`mood` is `menu`, `race`, `results` or `any`. The title and artist pop up when a song starts.
+`mood` is `menu`, `race`, `results` or `any`. Only use songs the artist allows in games, and credit them.
 
 ## Accounts and saved tracks survive updates
 - **Accounts:** after every change the server gives each player's browser a signed copy of their account.
@@ -290,6 +290,13 @@ are single-race feats. 38 "insane" ones pay 1,000-5,000 coins. `recheck` runs on
 already qualify for unlocks right away. New stats: poles, emotes, winsHard/winsExtreme, win streaks, last places,
 coinsEarned, bestStreak, themes/themesWon. **Chest spin:** starts from a laid-out 0 before animating, and isn't
 switched off by Reduce motion (it's just shorter).
+
+**Spectators:** `spectate true|false` in the lobby (👀 button in the Drivers tab): no car, a camera bar to
+follow any car. Someone joining mid-race now watches it live. A race with only spectators runs until the AI finish.
+**Boost:** +2% every second when you're not boosting (`NITRO_REGEN`). **Nitro Saver** upgrade: drains 3/6/9/12% slower.
+**Redraw part:** the start line and direction stay where they were (unless the start was on the bit you deleted).
+**Drawing board:** painted once into a cached picture (`paintBoardBg`) with the race's ground texture, the
+theme's scenery and a vignette, then copied every frame.
 
 **Other features:** weather (sunny / rainy / dynamic), teams on/off (off = everyone for
 themselves, no team points), team colors, custom points table, renameable AI, kick, hand over
