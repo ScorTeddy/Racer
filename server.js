@@ -4,6 +4,7 @@
 // the server drives.
 
 const fs = require("fs");
+const crypto = require("crypto");
 const accounts = require("./accounts");   // Google sign-in, stats, achievements, store
 const path = require("path");
 const http = require("http");
@@ -170,6 +171,8 @@ app.post("/auth/logout", (req, res) => {
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
 app.get("/", (req, res) => res.sendFile(indexFile));
+// password strength meter for the sign-up form (same zxcvbn the server uses)
+app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.sendFile(path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js")); });
 app.use((req, res) => res.status(404).send("Not found"));
 // no stack traces or debug details to visitors, ever
 app.use((err, req, res, next) => { console.error("HTTP error:", err.message); res.status(500).send("Something went wrong"); });
@@ -2035,8 +2038,37 @@ setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menu
 
 // ======================= Connections =======================
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
+const EVENT_COST = { "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
+// ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
+// max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
+const ipAuth = new Map();     // ip -> { fails, next, pow: {salt, bits, exp}, signups: [times] }
+const ipRec = (ip) => { let r = ipAuth.get(ip); if (!r) { r = { fails: 0, next: 0, pow: null, signups: [] }; ipAuth.set(ip, r); if (ipAuth.size > 20000) ipAuth.clear(); } return r; };
+const maskIp = (ip) => String(ip).replace(/(\d+)\.(\d+)$/, "x.x").replace(/:[0-9a-f]*:[0-9a-f]*$/i, ":x:x");
+function powOk(rec, pow) {
+  if (!rec.pow || !pow || pow.salt !== rec.pow.salt || Date.now() > rec.pow.exp) return false;
+  const h = crypto.createHash("sha256").update(rec.pow.salt + ":" + String(pow.nonce)).digest();
+  let zeros = 0; for (const byte of h) { if (byte === 0) { zeros += 8; continue; } zeros += Math.clz32(byte) - 24; break; }
+  return zeros >= rec.pow.bits;
+}
+// null = go ahead; otherwise { error, captcha? }
+function authGate(ip, d) {
+  const rec = ipRec(ip), now = Date.now();
+  if (now < rec.next) return { error: `Too many failed tries. Wait ${Math.ceil((rec.next - now) / 1000)}s and try again.` };
+  if (rec.fails >= 3) {
+    if (powOk(rec, d?.pow)) { rec.pow = null; return null; }
+    rec.pow = { salt: crypto.randomBytes(12).toString("hex"), bits: Math.min(20, 15 + Math.floor((rec.fails - 3) / 2)), exp: now + 5 * 60e3 };
+    return { error: "Quick security check...", captcha: { salt: rec.pow.salt, bits: rec.pow.bits } };
+  }
+  return null;
+}
+function authFailed(ip, kind, user) {
+  const rec = ipRec(ip); rec.fails++;
+  if (rec.fails >= 3) rec.next = Date.now() + Math.min(300, 2 ** (rec.fails - 3)) * 1000;   // 1s, 2s, 4s ... up to 5 minutes
+  console.warn(`[auth] failed ${kind} user="${String(user || "").slice(0, 20)}" ip=${maskIp(ip)} fails=${rec.fails}`);
+}
+function authOk(ip) { const rec = ipRec(ip); rec.fails = 0; rec.next = 0; rec.pow = null; }
+const tickets2fa = new Map();  // short-lived "password was right, now the 2FA code" tickets
 const loginFails = new Map();                 // username -> { n, until }: 10 wrong passwords = locked for 10 minutes
 function loginLocked(name) { const f = loginFails.get(String(name || "").toLowerCase()); return f && f.until > Date.now(); }
 function loginFailed(name) {
@@ -2133,23 +2165,92 @@ io.on("connection", (socket) => {
     const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
     const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {
+    // 2FA on? the password (or Google) was right, but no session until the 6-digit code is in
+    if (res.u.totp?.on && !res.passed2fa) {
+      accounts.dropSession(res.u, res.token);
+      const ticket = crypto.randomBytes(24).toString("hex");
+      tickets2fa.set(ticket, { uid: res.u.id, exp: Date.now() + 5 * 60e3, tries: 0 });
+      if (tickets2fa.size > 5000) tickets2fa.clear();
+      return socket.emit("need2fa", { ticket });
+    }
     socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u);
     socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
     const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
   };
   const authFail = (e) => socket.emit("authError", e.message || "Sign-in failed");
+  const gated = (d) => { const g = authGate(ip, d); if (!g) return false; if (g.captcha) socket.emit("authCaptcha", g.captcha); else authFail(new Error(g.error)); return true; };
   socket.on("auth:google", (d) => { accounts.signInGoogle(String(d?.credential || ""), d?.backup).then(signedIn, authFail); });
   // username + password: max 8 tries a minute per connection, so nobody can guess passwords fast
   let authTries = [];
-  const authLimited = () => { const now = Date.now(); authTries = authTries.filter((t) => now - t < 60000); authTries.push(now); return authTries.length > 8; };
+  const authLimited = () => {
+    const now = Date.now(); authTries = authTries.filter((t) => now - t < 60000); authTries.push(now);
+    if (authTries.length > 10) { socket.emit("authError", "Too many tries. Wait a minute and try again."); return true; }
+    return false;
+  };
+  let secTries = [];     // account-settings actions (2FA setup, change password) have their own, looser limit
+  const secLimited = () => { const now = Date.now(); secTries = secTries.filter((t) => now - t < 60000); secTries.push(now); if (secTries.length > 20) { socket.emit("secMsg", { error: "Slow down a little and try again in a minute." }); return true; } return false; };
   socket.on("auth:signup", (d) => {
-    if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
-    accounts.signUp(d?.username, d?.password, d?.backup).then(signedIn, authFail);
+    if (authLimited()) return;
+    if (gated(d)) return;
+    const rec = ipRec(ip); rec.signups = rec.signups.filter((t) => Date.now() - t < 3600e3);
+    if (rec.signups.length >= 5) return authFail(new Error("Too many new accounts from here. Try again in an hour."));
+    accounts.signUp(d?.username, d?.password, d?.backup).then((res) => { rec.signups.push(Date.now()); authOk(ip); signedIn(res); }, authFail);
   });
   socket.on("auth:login", (d) => {
-    if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
+    if (authLimited()) return;
     if (loginLocked(d?.username)) return authFail(new Error("Too many wrong passwords for that account. Try again in 10 minutes."));
-    accounts.logIn(d?.username, d?.password, d?.backup).then(signedIn, (e) => { loginFailed(d?.username); authFail(e); });
+    if (gated(d)) return;
+    accounts.logIn(d?.username, d?.password, d?.backup).then((res) => { authOk(ip); signedIn(res); }, (e) => { loginFailed(d?.username); authFailed(ip, "login", d?.username); authFail(e); });
+  });
+  // step 2 of a 2FA sign-in: the 6-digit code (or a backup code)
+  socket.on("auth:2fa", async (d) => {
+    if (authLimited() || gated(d)) return;
+    const t = tickets2fa.get(String(d?.ticket || ""));
+    if (!t || Date.now() > t.exp) return authFail(new Error("That took too long, log in again"));
+    const u = await accounts.getUser(t.uid); if (!u) return authFail(new Error("Log in again"));
+    if (!accounts.verify2fa(u, d?.code)) {
+      authFailed(ip, "2fa", u.name);
+      if (++t.tries >= 5) tickets2fa.delete(String(d.ticket));
+      return authFail(new Error(t.tries >= 5 ? "Too many wrong codes, log in again" : "Wrong code"));
+    }
+    tickets2fa.delete(String(d.ticket)); authOk(ip);
+    const token = await accounts.addSession(u);
+    signedIn({ u, token, passed2fa: true });
+  });
+  // forgot password (needs 2FA: an authenticator or backup code proves it's you)
+  socket.on("auth:reset", async (d) => {
+    if (authLimited() || gated(d)) return;
+    try {
+      const u = await accounts.resetPassword(d?.username, d?.code, d?.password);
+      authOk(ip); const token = await accounts.addSession(u); signedIn({ u, token, passed2fa: true });
+      socket.emit("toast", "Password changed. Every other device was signed out.");
+    } catch (e) { authFailed(ip, "reset", d?.username); authFail(e); }
+  });
+  // account security settings (signed in)
+  const myAcct = async () => (socket.data.uid ? accounts.getUser(socket.data.uid) : null);
+  const secReply = (u, msg) => { socket.emit("account", accounts.publicUser(u)); if (msg) socket.emit("secMsg", msg); };
+  socket.on("auth:changePassword", async (d) => {
+    const u = await myAcct(); if (!u || secLimited() || gated(d)) return;
+    try { const r = await accounts.changePassword(u, d?.old, d?.password); if (r.error) { authFailed(ip, "changePassword", u.name); return socket.emit("secMsg", { error: r.error }); } authOk(ip); secReply(u, { ok: "Password changed!" }); }
+    catch (e) { socket.emit("secMsg", { error: e.message }); }
+  });
+  socket.on("2fa:setup", async () => { const u = await myAcct(); if (!u || u.totp?.on || secLimited()) return; socket.emit("2faSetup", await accounts.setup2fa(u)); });
+  socket.on("2fa:enable", async (d) => {
+    const u = await myAcct(); if (!u || secLimited()) return;
+    const r = accounts.enable2fa(u, d?.code);
+    if (r.error) return socket.emit("secMsg", { error: r.error });
+    secReply(u); socket.emit("2faCodes", r.codes);
+  });
+  socket.on("2fa:disable", async (d) => {
+    const u = await myAcct(); if (!u || secLimited() || gated(d)) return;
+    const r = accounts.disable2fa(u, d?.password, d?.code);
+    if (r.error) { authFailed(ip, "2fa-off", u.name); return socket.emit("secMsg", { error: r.error }); }
+    authOk(ip); secReply(u, { ok: "Two-factor sign-in is off." });
+  });
+  socket.on("2fa:newCodes", async (d) => {
+    const u = await myAcct(); if (!u || !u.totp?.on || secLimited()) return;
+    if (!accounts.verify2fa(u, d?.code)) { authFailed(ip, "2fa-codes", u.name); return socket.emit("secMsg", { error: "Wrong code" }); }
+    socket.emit("2faCodes", accounts.newBackupCodes(u)); secReply(u);
   });
   socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
   const cookieTok = parseCookies(socket.request.headers.cookie)[COOKIE] || "";

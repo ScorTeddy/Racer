@@ -779,6 +779,21 @@
   .auth-card label.f { display: flex; flex-direction: column; gap: 0.3rem; }
   .auth-card input { width: 100%; }
   .auth-card .err { margin: 0; min-height: 1.2em; }
+  .sec-box { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.8rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); margin-bottom: 0.7rem; }
+  .sec-box.warn { border-color: rgba(255,204,31,0.6); }
+  .sec-box label.f { display: flex; flex-direction: column; gap: 0.25rem; max-width: 24rem; }
+  .sec-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .sec-state.on { margin: 0; color: #3ecf6a; font-weight: 700; }
+  .sec-msg { margin: 0; font-weight: 700; min-height: 1.2em; } .sec-msg.bad { color: #ff6b61; } .sec-msg.good { color: #3ecf6a; }
+  .qr { width: 200px; height: 200px; background: #fff; border-radius: 0.6rem; padding: 6px; image-rendering: pixelated; }
+  .key, .codes { font-family: ui-monospace, Menlo, Consolas, monospace; background: rgba(0,0,0,0.3); padding: 0.4rem 0.6rem; border-radius: 0.5rem; user-select: all; }
+  .codes { margin: 0; font-size: 1rem; line-height: 1.6; columns: 2; }
+  .pw-meter { display: flex; flex-direction: column; gap: 0.25rem; margin-top: -0.3rem; }
+  .pw-bar { height: 0.45rem; border-radius: 99px; background: rgba(255,255,255,0.1); overflow: hidden; }
+  .pw-bar i { display: block; height: 100%; width: 0; transition: width 200ms ease, background 200ms ease; }
+  .pw-meter span { font-size: 0.78rem; color: var(--soft); font-weight: 600; }
+  .err.ok { color: #3ecf6a; }
+  .linkish { background: none; border: 0; color: var(--soft); text-decoration: underline; cursor: pointer; font-size: 0.85rem; align-self: center; }
   .auth-note { margin: 0; color: var(--soft); font-size: 0.8rem; }
   #hub { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .hub-card { width: min(56rem, 100%); max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; padding: 1rem 1.2rem; gap: 0.7rem; animation: rise 400ms cubic-bezier(.2,.9,.25,1.15) both; }
@@ -1198,16 +1213,19 @@
 <div id="authBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
   <form class="auth-card panel" id="authForm" novalidate>
     <header class="hub-head"><h2 id="authTitle">Make an account</h2><button type="button" class="x" id="authClose" aria-label="Close">✕</button></header>
-    <nav class="hub-tabs" role="tablist">
+    <nav class="hub-tabs" role="tablist" id="authTabs">
       <button type="button" role="tab" data-am="signup" aria-selected="true">Make an account</button>
       <button type="button" role="tab" data-am="login" aria-selected="false">Log in</button>
     </nav>
-    <label class="f">Username <input type="text" id="authUser" maxlength="16" autocomplete="username" spellcheck="false" placeholder="3-16 letters, numbers or _"></label>
-    <label class="f">Password <input type="password" id="authPass" maxlength="100" autocomplete="new-password" placeholder="At least 8 characters"></label>
-    <label class="f" id="authPass2Row">Password again <input type="password" id="authPass2" maxlength="100" autocomplete="new-password"></label>
+    <label class="f" id="authUserRow">Username <input type="text" id="authUser" maxlength="16" autocomplete="username" spellcheck="false" placeholder="3-16 letters, numbers or _"></label>
+    <label class="f" id="authPassRow"><span id="authPassLabel">Password </span><input type="password" id="authPass" maxlength="128" autocomplete="new-password"></label>
+    <div class="pw-meter hidden" id="authMeter" aria-live="polite"><div class="pw-bar"><i></i></div><span></span></div>
+    <label class="f" id="authPass2Row">Password again <input type="password" id="authPass2" maxlength="128" autocomplete="new-password"></label>
+    <label class="f hidden" id="authCodeRow"><span id="authCodeLabel">Code </span><input type="text" id="authCode" maxlength="12" autocomplete="one-time-code" inputmode="text" spellcheck="false" placeholder="123456 or ABCD-EFGH"></label>
     <p class="err" id="authErr" role="alert"></p>
     <button type="submit" class="btn go" id="authGo">Make my account</button>
-    <p class="auth-note" id="authNote">No email needed. Write your password down somewhere: there's no "forgot password" yet.</p>
+    <button type="button" class="linkish hidden" id="authForgot">Forgot password?</button>
+    <p class="auth-note" id="authNote"></p>
   </form>
 </div>
 
@@ -1223,11 +1241,13 @@
       <button type="button" role="tab" data-ht="stats" aria-selected="true">📊 Stats</button>
       <button type="button" role="tab" data-ht="ach" aria-selected="false">🏅 Achievements <span class="hub-count" id="achCount"></span></button>
       <button type="button" role="tab" data-ht="store" aria-selected="false">🛒 Store</button>
+      <button type="button" role="tab" data-ht="sec" aria-selected="false">🔒 Security</button>
     </nav>
     <p class="hub-guest hidden" id="hubGuest">You're playing as a guest, so nothing is saved. Sign in on the main menu to keep your stats, earn coins from achievements and spend them in the store.</p>
     <div class="hub-body" id="hubStats"></div>
     <div class="hub-body hidden" id="hubAch"></div>
     <div class="hub-body hidden" id="hubStore"></div>
+    <div class="hub-body hidden" id="hubSec"></div>
   </div>
 </div>
 
@@ -1882,42 +1902,82 @@
     if (!$("hub").classList.contains("hidden")) renderHub();
   });
   socket.on("signedOut", () => { A.user = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
-  socket.on("authError", (m) => {
-    if (!$("authBox").classList.contains("hidden")) { $("authErr").textContent = m; $("authGo").disabled = false; }
-    else popup(m, true);
+  // ======================= Sign up / log in / 2FA / forgot password =======================
+  // modes: signup, login, code (2FA step), reset (forgot password)
+  let authMode = "signup", lastAuth = null, ticket2fa = null;
+  function authMsg(m, ok) { const e = $("authErr"); e.textContent = m || ""; e.classList.toggle("ok", !!ok); $("authGo").disabled = false; }
+  socket.on("authError", (m) => { if (!$("authBox").classList.contains("hidden")) authMsg(m); else popup(m, true); });
+  socket.on("need2fa", (d) => { ticket2fa = d.ticket; openAuth("code"); });
+  // "CAPTCHA": after a few failed tries the server asks this browser to do a small proof-of-work puzzle
+  // (about a second of number crunching: nothing for a person, expensive for a bot doing thousands of tries)
+  socket.on("authCaptcha", async (c) => {
+    if (!lastAuth) return;
+    authMsg("Checking you're not a robot..."); $("authGo").disabled = true;
+    const enc = new TextEncoder();
+    for (let n = 0; n < 5e6; n++) {
+      const h = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(c.salt + ":" + n)));
+      let z = 0; for (const b of h) { if (b === 0) { z += 8; continue; } z += Math.clz32(b) - 24; break; }
+      if (z >= c.bits) { authMsg("Checked ✓", true); socket.emit(lastAuth.ev, { ...lastAuth.data, pow: { salt: c.salt, nonce: n } }); return; }
+    }
   });
-  // ---- make an account / log in ----
-  let authMode = "signup";
   function openAuth(mode) {
-    authMode = mode; $("authErr").textContent = ""; $("authGo").disabled = false;
-    const up = mode === "signup";
-    $("authTitle").textContent = up ? "Make an account" : "Log in";
+    authMode = mode; authMsg("");
+    const T = { signup: ["Make an account", "Make my account"], login: ["Log in", "Log in"], code: ["Two-factor code", "Confirm"], reset: ["Forgot password", "Set new password"] }[mode];
+    $("authTitle").textContent = T[0]; $("authGo").textContent = T[1];
     document.querySelectorAll("[data-am]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.am === mode)));
-    $("authPass2Row").classList.toggle("hidden", !up);
-    $("authPass").autocomplete = up ? "new-password" : "current-password";
-    $("authPass").placeholder = up ? "At least 8 characters" : "";
-    $("authGo").textContent = up ? "Make my account" : "Log in";
-    $("authNote").classList.toggle("hidden", !up);
+    $("authTabs").classList.toggle("hidden", mode === "code");
+    $("authUserRow").classList.toggle("hidden", mode === "code");
+    $("authPassRow").classList.toggle("hidden", mode === "code");
+    $("authPass2Row").classList.toggle("hidden", mode !== "signup" && mode !== "reset");
+    $("authCodeRow").classList.toggle("hidden", mode !== "code" && mode !== "reset");
+    $("authMeter").classList.toggle("hidden", mode !== "signup" && mode !== "reset");
+    $("authForgot").classList.toggle("hidden", mode !== "login");
+    $("authPassLabel").firstChild.textContent = mode === "reset" ? "New password " : "Password ";
+    $("authCodeLabel").firstChild.textContent = mode === "reset" ? "Authenticator code or a backup code " : "6-digit code from your authenticator app (or a backup code) ";
+    $("authPass").autocomplete = mode === "login" ? "current-password" : "new-password";
+    $("authPass").placeholder = mode === "login" ? "" : "12+ characters, mix it up";
+    $("authNote").textContent = mode === "signup" ? "No email needed. Use a password you don't use anywhere else. After signing up you can turn on two-factor sign-in (Profile > Security)."
+      : mode === "reset" ? "Only works if you turned on two-factor sign-in. Without it there's no way to prove it's you (there's no email)." : mode === "code" ? "Open your authenticator app and type the code shown for Scribble GP." : "";
     $("authBox").classList.remove("hidden");
-    setTimeout(() => $("authUser").focus(), 50);
+    if (mode === "signup" || mode === "reset") loadMeter();
+    setTimeout(() => (mode === "code" ? $("authCode") : $("authUser")).focus(), 50);
   }
-  function closeAuth() { $("authBox").classList.add("hidden"); $("authPass").value = ""; $("authPass2").value = ""; }
+  function closeAuth() { $("authBox").classList.add("hidden"); $("authPass").value = ""; $("authPass2").value = ""; $("authCode").value = ""; }
+  // password strength meter (zxcvbn, the same checker the server uses)
+  function loadMeter() {
+    if (window.zxcvbn || document.getElementById("zxcvbnJs")) return;
+    const sc = document.createElement("script"); sc.id = "zxcvbnJs"; sc.src = "/vendor/zxcvbn.js"; sc.onload = () => meter(); document.head.appendChild(sc);
+  }
+  function meter() {
+    const pw = $("authPass").value, box = $("authMeter"), bar = box.querySelector("i"), txt = box.querySelector("span");
+    if (!pw) { bar.style.width = "0"; txt.textContent = "12+ characters, with 3 of: lowercase, UPPERCASE, numbers, symbols"; return; }
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(pw)).length;
+    const z = window.zxcvbn ? window.zxcvbn(pw, [$("authUser").value, "scribble", "racing"]) : { score: Math.min(4, Math.floor(pw.length / 4)), feedback: {} };
+    let score = z.score; if (pw.length < 12 || (kinds < 3 && pw.length < 20)) score = Math.min(score, 1);
+    const L = [["Very weak", "#ff4b3e"], ["Weak", "#ff8a3d"], ["OK-ish", "#ffcc1f"], ["Strong", "#7bd66b"], ["Very strong", "#3ecf6a"]][score];
+    bar.style.width = (score + 1) * 20 + "%"; bar.style.background = L[1];
+    txt.textContent = L[0] + (pw.length < 12 ? ` · ${12 - pw.length} more characters` : kinds < 3 && pw.length < 20 ? " · add UPPERCASE, numbers or symbols" : z.feedback?.warning ? " · " + z.feedback.warning : "");
+  }
+  $("authPass").addEventListener("input", () => { meter(); if (!$("authGo").disabled) $("authErr").textContent = ""; });
   $("signUpBtn").addEventListener("click", () => openAuth("signup"));
   $("logInBtn").addEventListener("click", () => openAuth("login"));
+  $("authForgot").addEventListener("click", () => openAuth("reset"));
   document.querySelectorAll("[data-am]").forEach((b) => b.addEventListener("click", () => openAuth(b.dataset.am)));
   $("authClose").addEventListener("click", closeAuth);
   $("authBox").addEventListener("click", (e) => { if (e.target.id === "authBox") closeAuth(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("authBox").classList.contains("hidden")) closeAuth(); });
   $("authForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    const username = $("authUser").value.trim(), password = $("authPass").value;
-    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) { $("authErr").textContent = "Username: 3-16 letters, numbers or _"; return; }
-    if (authMode === "signup") {
-      if (password.length < 8) { $("authErr").textContent = "Password needs at least 8 characters"; return; }
-      if (password !== $("authPass2").value) { $("authErr").textContent = "The two passwords don't match"; return; }
-    } else if (!password) { $("authErr").textContent = "Type your password"; return; }
-    $("authErr").textContent = ""; $("authGo").disabled = true;
-    socket.emit(authMode === "signup" ? "auth:signup" : "auth:login", { username, password, backup: backupFor("u_" + username.toLowerCase()) });
+    const username = $("authUser").value.trim(), password = $("authPass").value, code = $("authCode").value.trim();
+    const send = (ev, data) => { lastAuth = { ev, data }; authMsg(""); $("authGo").disabled = true; socket.emit(ev, data); };
+    if (authMode === "code") { if (!code) return authMsg("Type the code"); return send("auth:2fa", { ticket: ticket2fa, code }); }
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) return authMsg("Username: 3-16 letters, numbers or _");
+    if (authMode === "signup" || authMode === "reset") {
+      if (password.length < 12) return authMsg("Password needs at least 12 characters");
+      if (password !== $("authPass2").value) return authMsg("The two passwords don't match");
+    } else if (!password) return authMsg("Type your password");
+    if (authMode === "reset") { if (!code) return authMsg("Type an authenticator code or a backup code"); return send("auth:reset", { username, code, password }); }
+    send(authMode === "signup" ? "auth:signup" : "auth:login", { username, password, backup: backupFor("u_" + username.toLowerCase()) });
   });
   socket.on("achievement", (a) => {
     const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
@@ -1962,11 +2022,11 @@
   function renderHub() {
     const u = A.user;
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
-    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? Object.keys(u.ach).length : 0}/${A.catalog.ach.length}` : "";
-    if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else renderStore(u);
+    if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u); else renderStore(u);
   }
   function renderStats(u) {
     const box = $("hubStats"); box.textContent = "";
@@ -2084,6 +2144,66 @@
       if (r.rarity === "mythic") { banner("MYTHIC!", "#ff3b8a"); sfx("win"); }
     }, reducedMotion ? 1600 : 3400);
   });
+  // ---- Security tab: password, two-factor sign-in, backup codes, sign out everywhere ----
+  const SEC = { setup: null, codes: null };
+  socket.on("2faSetup", (d) => { SEC.setup = d; SEC.codes = null; if (A.tab === "sec") renderHub(); });
+  socket.on("2faCodes", (codes) => { SEC.codes = codes; SEC.setup = null; if (A.tab === "sec") renderHub(); });
+  socket.on("secMsg", (m) => { const e = document.getElementById("secMsg"); if (e) { e.textContent = m.error || m.ok || ""; e.className = "sec-msg " + (m.error ? "bad" : "good"); } });
+  function renderSec(u) {
+    const box = $("hubSec"); box.textContent = "";
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to change your password or turn on two-factor sign-in.")); return; }
+    const msg = el("p", "sec-msg"); msg.id = "secMsg"; msg.setAttribute("role", "status");
+    const field = (label, type, ac) => { const l = el("label", "f", label + " "); const i = document.createElement("input"); i.type = type; i.autocomplete = ac; i.maxLength = 128; l.appendChild(i); return [l, i]; };
+    // backup codes just made: show them ONCE
+    if (SEC.codes) {
+      const sec = el("section", "sec-box warn");
+      sec.append(el("h3", "hub-h", "🧾 Your backup codes (save these now!)"), el("p", "preset-note", "Each one works once, if you lose your phone or forget your password. Write them down or save them somewhere safe. You won't see them again."));
+      const pre = el("pre", "codes", SEC.codes.join("\n")); sec.appendChild(pre);
+      const row = el("div", "sec-row");
+      const cp = el("button", "btn", "📋 Copy"); cp.type = "button"; cp.addEventListener("click", () => { navigator.clipboard?.writeText(SEC.codes.join("\n")).then(() => { cp.textContent = "Copied ✓"; }); });
+      const ok = el("button", "btn go", "I saved them"); ok.type = "button"; ok.addEventListener("click", () => { SEC.codes = null; renderHub(); });
+      row.append(cp, ok); sec.appendChild(row); box.appendChild(sec);
+      return;
+    }
+    // two-factor
+    const tf = el("section", "sec-box"); tf.appendChild(el("h3", "hub-h", "📱 Two-factor sign-in"));
+    if (u.twoFA) {
+      tf.appendChild(el("p", "sec-state on", `✅ On. Backup codes left: ${u.backupLeft}`));
+      const [lc, ic] = field("Code from your app", "text", "one-time-code");
+      const [lp, ip2] = field("Password (to turn it off)", "password", "current-password");
+      const row = el("div", "sec-row");
+      const nb = el("button", "btn", "New backup codes"); nb.type = "button"; nb.addEventListener("click", () => socket.emit("2fa:newCodes", { code: ic.value }));
+      const off = el("button", "btn ghost", "Turn off"); off.type = "button"; off.addEventListener("click", () => socket.emit("2fa:disable", { code: ic.value, password: ip2.value }));
+      row.append(nb, off); tf.append(lc, u.hasPassword ? lp : el("span"), row);
+    } else if (SEC.setup) {
+      tf.appendChild(el("p", "preset-note", "1. Open an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password...) and scan this code:"));
+      const img = document.createElement("img"); img.src = SEC.setup.qr; img.alt = "QR code to add Scribble GP to your authenticator app"; img.className = "qr"; tf.appendChild(img);
+      tf.append(el("p", "preset-note", "Can't scan? Type this key into the app instead:"), el("code", "key", SEC.setup.secret));
+      tf.appendChild(el("p", "preset-note", "2. Type the 6-digit code the app shows:"));
+      const [lc, ic] = field("Code", "text", "one-time-code"); ic.inputMode = "numeric"; ic.maxLength = 6;
+      const go = el("button", "btn go", "Turn on"); go.type = "button"; go.addEventListener("click", () => socket.emit("2fa:enable", { code: ic.value }));
+      const cancel = el("button", "btn ghost", "Cancel"); cancel.type = "button"; cancel.addEventListener("click", () => { SEC.setup = null; renderHub(); });
+      const row = el("div", "sec-row"); row.append(go, cancel); tf.append(lc, row);
+    } else {
+      tf.appendChild(el("p", "preset-note", "Off. With it on, signing in needs your password AND a code from your phone, so a stolen password isn't enough. It also lets you reset a forgotten password."));
+      const on = el("button", "btn go", "Turn on two-factor sign-in"); on.type = "button"; on.addEventListener("click", () => socket.emit("2fa:setup")); tf.appendChild(on);
+    }
+    box.appendChild(tf);
+    // password
+    if (u.hasPassword) {
+      const pw = el("section", "sec-box"); pw.appendChild(el("h3", "hub-h", "🔑 Change password"));
+      const [l1, i1] = field("Current password", "password", "current-password");
+      const [l2, i2] = field("New password (12+ characters)", "password", "new-password");
+      const [l3, i3] = field("New password again", "password", "new-password");
+      const go = el("button", "btn", "Change password"); go.type = "button";
+      go.addEventListener("click", () => { if (i2.value !== i3.value) return socket.listeners("secMsg")[0]({ error: "The new passwords don't match" }); socket.emit("auth:changePassword", { old: i1.value, password: i2.value }); });
+      pw.append(l1, l2, l3, go); box.appendChild(pw);
+    }
+    const so = el("section", "sec-box"); so.appendChild(el("h3", "hub-h", "🚪 Sessions"));
+    const all = el("button", "btn ghost", "🔒 Sign out on every device"); all.type = "button"; all.addEventListener("click", () => $("signOutAllBtn").click());
+    so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
+    box.appendChild(msg);
+  }
   const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail" };
   function renderStore(u) {
     const box = $("hubStore"); box.textContent = "";

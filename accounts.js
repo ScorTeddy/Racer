@@ -31,13 +31,26 @@ const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 // built-in key is used: fine for testing, but anyone who reads your GitHub code could forge copies).
 const SECRET = process.env.ACCOUNT_SECRET || "scribble-gp-built-in-key-set-ACCOUNT_SECRET-on-render";
 const b64 = (str) => Buffer.from(str, "utf8").toString("base64url");
+// Backups are ENCRYPTED (AES-256-GCM) as well as tamper-proof, so the copy in a browser doesn't reveal the
+// password hash or the 2FA secret to anything that can read that browser's storage.
+const ENC_KEY = crypto.createHash("sha256").update("backup-key:" + SECRET).digest();
+const noProto = (k, v) => (k === "__proto__" || k === "constructor" || k === "prototype" ? undefined : v);
 function makeBackup(u) {
-  const { sessions, sessAt, presets, ...keep } = u;
-  const body = b64(JSON.stringify(keep));
-  return body + "." + crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
+  const { sessions, sessAt, presets, pending2fa, ...keep } = u;
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", ENC_KEY, iv);
+  const data = Buffer.concat([c.update(JSON.stringify(keep), "utf8"), c.final()]);
+  return "v2." + Buffer.concat([iv, c.getAuthTag(), data]).toString("base64url");
 }
 function readBackup(blob) {
   if (typeof blob !== "string" || blob.length > 400000) return null;
+  if (blob.startsWith("v2.")) {
+    try {
+      const raw = Buffer.from(blob.slice(3), "base64url"), d = crypto.createDecipheriv("aes-256-gcm", ENC_KEY, raw.subarray(0, 12));
+      d.setAuthTag(raw.subarray(12, 28));
+      const u = JSON.parse(Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString("utf8"), noProto);
+      return u && typeof u.id === "string" && ID_RE.test(u.id) ? u : null;
+    } catch (e) { return null; }
+  }
   const [body, sig] = blob.split(".");
   if (!body || !sig) return null;
   const want = crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
@@ -208,12 +221,35 @@ function passOk(u, pw) {
   const a = Buffer.from(hashPass(pw, u.pass.salt).hash, "hex"), b = Buffer.from(u.pass.hash, "hex");
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+// ======================= Password rules =======================
+// 12+ characters, at least 3 of: lowercase, UPPERCASE, digits, symbols (or a long 20+ passphrase),
+// zxcvbn strength 3+ ("hard to guess"), not your username, and not in a known data breach
+// (checked with the Have I Been Pwned range API: only the first 5 characters of the SHA-1 hash leave the server).
+const zxcvbn = require("zxcvbn");
+async function pwned(password) {
+  try {
+    const h = crypto.createHash("sha1").update(password).digest("hex").toUpperCase();
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch("https://api.pwnedpasswords.com/range/" + h.slice(0, 5), { signal: ctl.signal, headers: { "Add-Padding": "true" } });
+    clearTimeout(t); if (!r.ok) return 0;
+    const line = (await r.text()).split("\n").find((l) => l.startsWith(h.slice(5)));
+    return line ? Number(line.split(":")[1]) || 0 : 0;
+  } catch (e) { return 0; }            // service down: don't block sign-ups, the other rules still apply
+}
+async function checkPassword(password, username) {
+  if (typeof password !== "string" || password.length < 12) throw new Error("Password needs at least 12 characters");
+  if (password.length > 128) throw new Error("That password is too long");
+  const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length;
+  if (kinds < 3 && password.length < 20) throw new Error("Use at least 3 of: lowercase, UPPERCASE, numbers, symbols (or a 20+ character passphrase)");
+  if (COMMON_PW.has(password.toLowerCase()) || password.toLowerCase().includes(String(username || "").toLowerCase()) && username) throw new Error("That password is too easy to guess (don't use your username)");
+  const z = zxcvbn(password, [username, "scribble", "racing", "team boss"].filter(Boolean));
+  if (z.score < 3) throw new Error("That password is too easy to guess" + (z.feedback.warning ? ": " + z.feedback.warning : ", try a longer or more random one"));
+  const n = await pwned(password);
+  if (n > 0) throw new Error(`That password has shown up in ${n.toLocaleString()} data breaches. Pick a different one.`);
+}
 async function signUp(username, password, backup) {
   username = String(username || "").trim(); password = String(password || "");
   if (!USER_RE.test(username)) throw new Error("Username: 3-16 letters, numbers or _");
-  if (password.length < 8) throw new Error("Password needs at least 8 characters");
-  if (COMMON_PW.has(password.toLowerCase()) || password.toLowerCase() === username.toLowerCase() || /^(.)\1+$/.test(password)) throw new Error("That password is too easy to guess, pick another one");
-  if (password.length > 100) throw new Error("That password is too long");
   const id = "u_" + username.toLowerCase();
   if (!(await getUser(id)) && backup) {
     // this browser has a saved copy of that account: bring it back instead of starting over
@@ -221,6 +257,7 @@ async function signUp(username, password, backup) {
     if (r && passOk(r, password)) { const token = await addSession(r); return { u: r, token }; }
   }
   if (await getUser(id)) throw new Error("That username is taken, try another one (or Log in if it's yours)");
+  await checkPassword(password, username);
   const u = fix({ id, name: username, picture: "", created: Date.now(), pass: hashPass(password) });
   cache.set(id, u); saveSoon(u);
   const token = await addSession(u);
@@ -636,6 +673,76 @@ function recordRace(u, r) {
   return got;
 }
 
+// ======================= Two-factor authentication (TOTP, RFC 6238) =======================
+// Works with Google Authenticator, Microsoft Authenticator, Authy, 1Password... 6 digits, 30-second steps.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function b32enc(buf) { let bits = 0, val = 0, out = ""; for (const x of buf) { val = (val << 8) | x; bits += 8; while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } } if (bits) out += B32[(val << (5 - bits)) & 31]; return out; }
+function b32dec(str) { let bits = 0, val = 0; const out = []; for (const ch of String(str).replace(/=+$/, "").toUpperCase()) { const i = B32.indexOf(ch); if (i < 0) continue; val = (val << 5) | i; bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } } return Buffer.from(out); }
+function totpAt(secret, step) {
+  const msg = Buffer.alloc(8); msg.writeUInt32BE(Math.floor(step / 2 ** 32), 0); msg.writeUInt32BE(step >>> 0, 4);
+  const h = crypto.createHmac("sha1", b32dec(secret)).update(msg).digest(), o = h[19] & 15;
+  return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, "0");
+}
+// accepts the code for now or one step either side (clock drift), and never the same step twice (replays)
+function totpCheck(u, code) {
+  code = String(code || "").replace(/\s/g, "");
+  if (!/^\d{6}$/.test(code) || !u.totp?.secret) return false;
+  const now = Math.floor(Date.now() / 30000);
+  for (const st of [now - 1, now, now + 1]) {
+    const want = totpAt(u.totp.secret, st);
+    if (crypto.timingSafeEqual(Buffer.from(want), Buffer.from(code)) && st > (u.totp.lastStep || 0)) { u.totp.lastStep = st; saveSoon(u); return true; }
+  }
+  return false;
+}
+const QR = require("qrcode");
+async function setup2fa(u) {
+  const secret = b32enc(crypto.randomBytes(20));
+  u.pending2fa = { secret, at: Date.now() };
+  const uri = `otpauth://totp/${encodeURIComponent("Scribble GP:" + u.name)}?secret=${secret}&issuer=${encodeURIComponent("Scribble GP")}&digits=6&period=30`;
+  return { secret: secret.replace(/(.{4})/g, "$1 ").trim(), uri, qr: await QR.toDataURL(uri, { margin: 1, width: 220 }) };
+}
+// backup codes: 10 one-use codes like "7K2F-9QXM", only their hashes are kept
+function newBackupCodes(u) {
+  const codes = Array.from({ length: 10 }, () => { const r = b32enc(crypto.randomBytes(5)).slice(0, 8); return r.slice(0, 4) + "-" + r.slice(4); });
+  u.totp.backup = codes.map((c) => sha("bc:" + u.id + ":" + c.replace("-", "")));
+  return codes;
+}
+function useBackupCode(u, code) {
+  const c = String(code || "").toUpperCase().replace(/[^A-Z2-7]/g, "");
+  if (c.length !== 8 || !u.totp?.backup) return false;
+  const h = sha("bc:" + u.id + ":" + c), i = u.totp.backup.indexOf(h);
+  if (i < 0) return false;
+  u.totp.backup.splice(i, 1); saveSoon(u); return true;
+}
+function enable2fa(u, code) {
+  if (!u.pending2fa || Date.now() - u.pending2fa.at > 15 * 60e3) return { error: "Setup timed out, start again" };
+  u.totp = { secret: u.pending2fa.secret, on: true, lastStep: 0, since: Date.now() };
+  if (!totpCheck(u, code)) { delete u.totp; return { error: "That code didn't match. Check the time on your phone and try again." }; }
+  delete u.pending2fa;
+  const codes = newBackupCodes(u); saveSoon(u);
+  return { ok: true, codes };
+}
+function disable2fa(u, password, code) {
+  if (u.pass && !passOk(u, password)) return { error: "Wrong password" };
+  if (!totpCheck(u, code) && !useBackupCode(u, code)) return { error: "Wrong code" };
+  delete u.totp; saveSoon(u); return { ok: true };
+}
+function verify2fa(u, code) { return totpCheck(u, code) || useBackupCode(u, code); }
+async function changePassword(u, oldPw, newPw) {
+  if (!u.pass || !passOk(u, oldPw)) return { error: "Your current password is wrong" };
+  await checkPassword(newPw, u.name);
+  u.pass = hashPass(newPw); saveSoon(u);
+  return { ok: true };
+}
+// forgot password: only possible with 2FA (a backup code or an authenticator code) since there's no email
+async function resetPassword(username, code, newPw) {
+  const u = USER_RE.test(String(username || "")) ? await getUser("u_" + String(username).toLowerCase()) : null;
+  if (!u || !u.totp?.on || !verify2fa(u, code)) throw new Error("That username and code don't match");
+  await checkPassword(newPw, u.name);
+  u.pass = hashPass(newPw);
+  dropAllSessions(u);
+  return u;
+}
 function recheck(u) { const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); if (got.length) saveSoon(u); return got; }
 function bump(u, key, n = 1) { u.stats[key] = (u.stats[key] || 0) + n; const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); saveSoon(u); return got; }
 // daily login reward: 50 coins, +10 for every day in a row (up to 150)
@@ -653,7 +760,7 @@ function dailyReward(u) {
 }
 function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, picture: u.picture, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -676,6 +783,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

@@ -38,8 +38,22 @@ What's in place (server.js "security" section, and the top of `io.on("connection
 8. **HTTPS:** http is redirected to https, plus HSTS.
 9. **Security headers:** CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, COOP.
 10. **No debug info:** `x-powered-by` off, 404/500 pages without stack traces, dotfiles never served.
-11. **Auth:** passwords 8+ characters, common/easy ones refused, stored only as salted scrypt hashes; sessions
-    are random 256-bit tokens (only their sha256 is stored) that expire after 90 days; "Sign out everywhere".
+11. **Auth:** salted scrypt password hashes; sessions are random 256-bit tokens (only the sha256 is stored),
+    expire after 90 days; "Sign out everywhere". **Password rules** (server, `checkPassword`): 12+ characters,
+    3 of lower/UPPER/digits/symbols (or a 20+ passphrase), zxcvbn score 3+, not your username, and not in a data
+    breach (Have I Been Pwned range API: only 5 characters of the SHA-1 hash are sent). A live strength meter
+    (same zxcvbn, served from `/vendor/zxcvbn.js`) shows on sign-up / reset / change password.
+    **2FA (TOTP):** Profile > Security: scan a QR code with any authenticator app, confirm a code, get 10
+    one-use backup codes (only hashes stored). Sign-in then needs password + code (`need2fa` ticket, 5 minutes,
+    5 tries). Codes can't be reused (replay protection), ±30s clock drift allowed. **Forgot password** works with
+    an authenticator or backup code (there's no email) and signs out every other device. No email OTP: that
+    needs an email service (e.g. Resend/SendGrid) - TOTP + backup codes cover the same need. No "admin" accounts
+    exist (a room host is just a player), so there's nothing to force 2FA on.
+    **Login protection** (`authGate`): per IP, after 3 failures a proof-of-work check (the browser must do ~1s of
+    hashing: free for a person, expensive for a bot) plus exponential backoff (1s, 2s, 4s... max 5 min);
+    10 wrong passwords lock the username for 10 minutes; 10 auth tries a minute per connection; 5 new accounts
+    per IP per hour; every failure is logged as `[auth] failed ...` (IP masked, never the password).
+    **Backups** are AES-256-GCM encrypted now (older signed ones still load).
 12. **Secure cookies:** the session lives in an `HttpOnly; Secure; SameSite=Strict` cookie (`tb_session`), so page
     scripts can't read it. localStorage is only a fallback if the cookie can't be set.
 13. **CSRF:** the only cookie-using endpoints (`POST /auth/cookie`, `/auth/logout`) need our custom `X-Scribble`
