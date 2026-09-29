@@ -22,6 +22,26 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
 
+## Security
+What's in place (server.js "security" section, and the top of `io.on("connection")`):
+1. **Secrets stay secret:** no keys in the code or git (scanned); `ACCOUNT_SECRET`, `UPSTASH_*`, `GOOGLE_CLIENT_ID`
+   live in Render > Environment. The browser only ever gets the public Google client ID.
+2. **Env check at startup:** on Render it warns if `ACCOUNT_SECRET` is missing/short. `DEV_LOGIN` is ignored in production.
+3. **Host-only actions** (settings, track, start, kick, make host, pause, AI edits...) are checked on the server.
+4. **Input checks:** every socket handler runs inside try/catch (a broken or malicious message can't crash the
+   server), messages are capped at 400 KB, names/teams/colors/tracks/presets are validated and clamped.
+5. **XSS:** anything a player types is shown with `textContent` (never as HTML), plus a strict Content-Security-Policy.
+6. **Rate limiting:** a token bucket per connection (heavy things like Random track cost more), flooders get
+   disconnected, max 12 connections per IP, max 300 rooms, 8 sign-in tries a minute per connection and 10 wrong
+   passwords locks that username for 10 minutes.
+7. **CORS:** only pages from this same site can connect to the game server (`ALLOWED_ORIGINS` to add more).
+8. **HTTPS:** http is redirected to https, plus HSTS.
+9. **Security headers:** CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, COOP.
+10. **No debug info:** `x-powered-by` off, 404/500 pages without stack traces, dotfiles never served.
+Not needed here: SQL injection (no SQL database), CSRF and secure cookies (no cookies: sign-in is a token the
+game sends itself), file uploads (none). **Spend cap:** Upstash's free plan can't bill you; if you ever upgrade,
+set a budget limit in its dashboard.
+
 ## Music
 The soundtrack is 15 real songs by **Kevin MacLeod (incompetech.com)**, licensed under
 **Creative Commons: By Attribution 3.0** (http://creativecommons.org/licenses/by/3.0/). That license lets

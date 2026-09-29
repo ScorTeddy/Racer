@@ -108,14 +108,68 @@ const blankUp = () => Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0]
 const xpForLevel = (lvl) => 100 + (lvl - 1) * 50;
 
 // ======================= Web server =======================
+// ---- security (see SECURITY in the README) ----
+const PROD = process.env.NODE_ENV === "production" || !!process.env.RENDER;
+const MAX_ROOMS = 300, MAX_SOCKETS_PER_IP = 12;
+// secrets never go to the browser and are never printed; just warn if something important is missing
+if (PROD) {
+  if (!process.env.ACCOUNT_SECRET || process.env.ACCOUNT_SECRET.length < 16) console.warn("SECURITY: set ACCOUNT_SECRET (16+ random characters) on Render, or account backups can be forged.");
+  if (process.env.DEV_LOGIN === "1") console.warn("SECURITY: DEV_LOGIN is ignored in production (it would let anyone log in without a password).");
+}
 const app = express();
-app.use(express.static(path.join(__dirname, "public")));
+app.disable("x-powered-by");                  // don't advertise what the server runs
+app.set("trust proxy", 1);                    // Render sits in front of us and tells us the real protocol/IP
+app.use((req, res, next) => {
+  // HTTPS only: send plain http visitors to https (Render gives every site a certificate)
+  if (PROD && req.headers["x-forwarded-proto"] === "http") return res.redirect(301, "https://" + req.headers.host + req.originalUrl);
+  // security headers
+  if (PROD) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");     // (Google sign-in uses a popup)
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://accounts.google.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com",
+    "media-src 'self' blob: https://archive.org https://*.archive.org",
+    "connect-src 'self' ws: wss: https://accounts.google.com",
+    "frame-src https://accounts.google.com",
+    "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
+  ].join("; "));
+  next();
+});
+app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny", index: false }));
 app.get("/auth/config", (req, res) => res.json(accounts.config()));
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
 app.get("/", (req, res) => res.sendFile(indexFile));
+app.use((req, res) => res.status(404).send("Not found"));
+// no stack traces or debug details to visitors, ever
+app.use((err, req, res, next) => { console.error("HTTP error:", err.message); res.status(500).send("Something went wrong"); });
 const server = http.createServer(app);
-const io = new Server(server, { perMessageDeflate: false });
+const ipOf = (req) => (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?");
+const socketsPerIp = new Map();
+const io = new Server(server, {
+  perMessageDeflate: false,
+  maxHttpBufferSize: 400e3,                   // biggest real message is a drawn track (~150 KB)
+  // CORS: only pages from this same site may connect (or ALLOWED_ORIGINS, comma separated, if you set it)
+  allowRequest: (req, cb) => {
+    const origin = req.headers.origin;
+    if (!origin) return cb(null, true);
+    let ok = false;
+    try { const o = new URL(origin); ok = o.host === req.headers.host || (process.env.ALLOWED_ORIGINS || "").split(",").map((x) => x.trim()).includes(origin); } catch (e) {}
+    if (!ok) return cb("origin not allowed", false);
+    if ((socketsPerIp.get(ipOf(req)) || 0) >= MAX_SOCKETS_PER_IP) return cb("too many connections", false);
+    cb(null, true);
+  },
+});
+// a bad message from one player must never crash the server for everyone
+process.on("uncaughtException", (e) => console.error("Uncaught:", e && e.stack || e));
+process.on("unhandledRejection", (e) => console.error("Unhandled promise:", e && e.message || e));
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -851,7 +905,7 @@ class Room {
     if (shape.error) return shape.error;
     this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.trackId = null;
     // a short fingerprint of the drawing, so personal bests are kept per track (same track = same key)
-    { let h = 2166136261; for (let i = 0; i < stroke.length; i += 3) { h = Math.imul(h ^ Math.round(stroke[i][0]), 16777619); h = Math.imul(h ^ Math.round(stroke[i][1]), 16777619); } this.trackKey = "d" + (h >>> 0).toString(36) + "_" + map; }
+    { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } this.trackKey = "d" + (h >>> 0).toString(36) + "_" + map; }
     this.trackBy = kind === "drawn" ? this.players.get(this.hostId)?.uid || null : null;   // for the "Architect" achievement
     // random and real tracks put the start line on their best straight; drawn ones start where you started drawing
     this.track = finalizeTrack(shape, kind === "drawn" ? 0 : bestStart(shape), false, this.allTeams());
@@ -1957,7 +2011,37 @@ function menuInfo() {
 setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menuInfo", menuInfo()); } }, 1500);
 
 // ======================= Connections =======================
+// ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
+const EVENT_COST = { randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
+const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
+const loginFails = new Map();                 // username -> { n, until }: 10 wrong passwords = locked for 10 minutes
+function loginLocked(name) { const f = loginFails.get(String(name || "").toLowerCase()); return f && f.until > Date.now(); }
+function loginFailed(name) {
+  const k = String(name || "").toLowerCase(), f = loginFails.get(k) || { n: 0, until: 0 };
+  f.n++; if (f.n >= 10) { f.until = Date.now() + 10 * 60e3; f.n = 0; }
+  loginFails.set(k, f); if (loginFails.size > 5000) loginFails.clear();
+}
 io.on("connection", (socket) => {
+  const ip = ipOf(socket.request);
+  socketsPerIp.set(ip, (socketsPerIp.get(ip) || 0) + 1);
+  socket.on("disconnect", () => { const n = (socketsPerIp.get(ip) || 1) - 1; if (n <= 0) socketsPerIp.delete(ip); else socketsPerIp.set(ip, n); });
+  let tokens = BUCKET_MAX, last = Date.now(), strikes = 0;
+  socket.use(([ev], next) => {
+    const now = Date.now(); tokens = Math.min(BUCKET_MAX, tokens + ((now - last) / 1000) * BUCKET_REFILL); last = now;
+    const cost = EVENT_COST[ev] ?? 1;
+    if (tokens < cost) {                      // too fast: drop it, and kick anyone who keeps flooding
+      if (++strikes > 200) socket.disconnect(true);
+      return;
+    }
+    tokens -= cost; strikes = Math.max(0, strikes - 1);
+    next();
+  });
+  // every handler below runs inside try/catch: a broken or malicious message can't crash the game
+  const rawOn = socket.on.bind(socket);
+  socket.on = (ev, fn) => rawOn(ev, (...args) => {
+    try { const r = fn(...args); if (r && typeof r.catch === "function") r.catch((e) => console.error(`[${ev}]`, e?.message || e)); }
+    catch (e) { console.error(`[${ev}]`, e?.message || e); }
+  });
   socket.join("menu"); menuDirty = true;
   socket.emit("menuInfo", menuInfo());
   const room = () => rooms.get(socket.data.room);
@@ -1965,7 +2049,7 @@ io.on("connection", (socket) => {
   const isHost = () => { const r = room(); return r && r.hostId === socket.id; };
   const leave = () => { const r = room(); if (r) { socket.leave(r.code); r.removePlayer(socket.id); } socket.data.room = null; socket.join("menu"); menuDirty = true; };
 
-  socket.on("create", (profile, opts) => { leave(); const r = new Room(makeCode(), opts?.public === true); rooms.set(r.code, r); r.addPlayer(socket, profile); });
+  socket.on("create", (profile, opts) => { if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit"); leave(); const r = new Room(makeCode(), opts?.public === true); rooms.set(r.code, r); r.addPlayer(socket, profile); });
   socket.on("join", (d) => {
     const r = rooms.get(String(d?.code || "").toUpperCase().trim());
     if (!r) return socket.emit("joinError", "No room with that code");
@@ -2041,7 +2125,8 @@ io.on("connection", (socket) => {
   });
   socket.on("auth:login", (d) => {
     if (authLimited()) return authFail(new Error("Too many tries. Wait a minute and try again."));
-    accounts.logIn(d?.username, d?.password, d?.backup).then(signedIn, authFail);
+    if (loginLocked(d?.username)) return authFail(new Error("Too many wrong passwords for that account. Try again in 10 minutes."));
+    accounts.logIn(d?.username, d?.password, d?.backup).then(signedIn, (e) => { loginFailed(d?.username); authFail(e); });
   });
   socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
   socket.on("auth:resume", async (d) => {

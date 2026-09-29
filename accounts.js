@@ -14,7 +14,8 @@ const path = require("path");
 const crypto = require("crypto");
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
-const DEV_LOGIN = process.env.DEV_LOGIN === "1";
+// never in production: it lets anyone in without a password
+const DEV_LOGIN = process.env.DEV_LOGIN === "1" && process.env.NODE_ENV !== "production" && !process.env.RENDER;
 const UP_URL = process.env.UPSTASH_REDIS_REST_URL || "", UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const FILE = path.join(DATA_DIR, "accounts.json");
