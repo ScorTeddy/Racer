@@ -172,11 +172,24 @@ app.post("/auth/logout", (req, res) => {
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
 // the page is sent with version stamps on game.js / game.css, so after an update every browser loads the new code
-const fileHash = (f) => { try { return crypto.createHash("sha1").update(fs.readFileSync(path.join(__dirname, "public", f))).digest("hex").slice(0, 10); } catch (e) { return "0"; } };
+const fileHash = (f) => { for (const fp of [path.join(__dirname, "public", f), path.join(__dirname, f)]) { try { return crypto.createHash("sha1").update(fs.readFileSync(fp)).digest("hex").slice(0, 10); } catch (e) {} } return "0"; };
 let indexHtml = null;
 function buildIndex() {
   const html = fs.readFileSync(indexFile, "utf8");
   indexHtml = html.replace('src="/game.js"', `src="/game.js?v=${fileHash("game.js")}"`).replace('href="/game.css"', `href="/game.css?v=${fileHash("game.css")}"`);
+}
+// game.js / game.css: found in public/ OR next to server.js (in case they got uploaded to the wrong folder)
+for (const f of ["game.js", "game.css"]) {
+  const spots = [path.join(__dirname, "public", f), path.join(__dirname, f)];
+  const found = spots.find((x) => fs.existsSync(x));
+  if (!found) console.error(`MISSING FILE: ${f} (put it in the public folder). The game won't load without it.`);
+  else if (found === spots[1]) console.warn(`${f} is in the main folder, not public/. It works, but move it into public/ when you can.`);
+  app.get("/" + f, (req, res) => {
+    const fp = spots.find((x) => fs.existsSync(x));
+    if (!fp) return res.status(404).type("text/plain").send(`${f} is missing: upload it into the public folder on GitHub.`);
+    res.setHeader("Cache-Control", req.query.v ? "public, max-age=31536000, immutable" : "no-cache");
+    res.sendFile(fp);
+  });
 }
 app.get("/", (req, res) => { if (!indexHtml || !PROD) buildIndex(); res.setHeader("Cache-Control", "no-cache"); res.type("html").send(indexHtml); });
 // password strength meter for the sign-up form (same zxcvbn the server uses)
