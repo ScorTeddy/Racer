@@ -38,9 +38,20 @@ What's in place (server.js "security" section, and the top of `io.on("connection
 8. **HTTPS:** http is redirected to https, plus HSTS.
 9. **Security headers:** CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, COOP.
 10. **No debug info:** `x-powered-by` off, 404/500 pages without stack traces, dotfiles never served.
-Not needed here: SQL injection (no SQL database), CSRF and secure cookies (no cookies: sign-in is a token the
-game sends itself), file uploads (none). **Spend cap:** Upstash's free plan can't bill you; if you ever upgrade,
-set a budget limit in its dashboard.
+11. **Auth:** passwords 8+ characters, common/easy ones refused, stored only as salted scrypt hashes; sessions
+    are random 256-bit tokens (only their sha256 is stored) that expire after 90 days; "Sign out everywhere".
+12. **Secure cookies:** the session lives in an `HttpOnly; Secure; SameSite=Strict` cookie (`tb_session`), so page
+    scripts can't read it. localStorage is only a fallback if the cookie can't be set.
+13. **CSRF:** the only cookie-using endpoints (`POST /auth/cookie`, `/auth/logout`) need our custom `X-Scribble`
+    header AND an Origin/Referer from this site; SameSite=Strict on top. Websockets check Origin (point 7).
+14. **"SQL injection" / DB rules:** there's no SQL. The database only ever sees keys the server made itself
+    (`ID_RE`: `u_`, `g_`, `dev_` + safe characters), each player can only touch their own account, the Upstash
+    token never leaves the server, the local accounts file is owner-only (0600), backups are signed and
+    stripped of `__proto__`-style keys, and a backup can only restore an account the server really lost.
+15. **Spend cap:** `UPSTASH_DAILY_CAP` (default 12,000 commands a day) - past it saves are bunched every 60s.
+    Also set a budget in the Upstash dashboard if you ever leave the free plan.
+16. **Uploads:** players can't upload files. The only player-made data (paint jobs, drawn tracks, saved tracks)
+    is checked for exact format and size on the server. `public/music/` is yours only.
 
 ## Music
 The soundtrack is 15 real songs by **Kevin MacLeod (incompetech.com)**, licensed under

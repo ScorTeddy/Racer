@@ -32,7 +32,7 @@ const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const SECRET = process.env.ACCOUNT_SECRET || "scribble-gp-built-in-key-set-ACCOUNT_SECRET-on-render";
 const b64 = (str) => Buffer.from(str, "utf8").toString("base64url");
 function makeBackup(u) {
-  const { sessions, presets, ...keep } = u;
+  const { sessions, sessAt, presets, ...keep } = u;
   const body = b64(JSON.stringify(keep));
   return body + "." + crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
 }
@@ -43,7 +43,10 @@ function readBackup(blob) {
   const want = crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
   const a = Buffer.from(sig), b = Buffer.from(want);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try { const u = JSON.parse(Buffer.from(body, "base64url").toString("utf8")); return u && typeof u.id === "string" ? u : null; } catch (e) { return null; }
+  try {
+    const u = JSON.parse(Buffer.from(body, "base64url").toString("utf8"), (k, v) => (k === "__proto__" || k === "constructor" || k === "prototype" ? undefined : v));
+    return u && typeof u.id === "string" && ID_RE.test(u.id) ? u : null;
+  } catch (e) { return null; }
 }
 // bring an account back from a backup, but only if the server doesn't have (a newer copy of) it
 async function restore(blob, wantId) {
@@ -58,8 +61,11 @@ async function restore(blob, wantId) {
 async function resumeOrRestore(token, blob) {
   let u = await userBySession(token);
   if (u || !blob) return u;
+  // only when the server really lost this account; if it still has it, an old/stolen token + backup
+  // must NOT get back in (that would undo "sign out everywhere")
+  const b = readBackup(blob); if (!b || await getUser(b.id)) return null;
   u = await restore(blob);
-  if (u) { const h = sha(token); u.sessions = [...(u.sessions || []), h].slice(-8); sessIndex.set(h, u.id); if (UP_URL) redis(["SET", "tb:sess:" + h, u.id, "EX", 60 * 60 * 24 * 180]).catch(() => {}); saveSoon(u); }
+  if (u && typeof token === "string" && /^[0-9a-f]{64}$/.test(token)) { const h = sha(token); u.sessions = [...(u.sessions || []), h].slice(-8); u.sessAt = { ...(u.sessAt || {}), [h]: Date.now() }; sessIndex.set(h, u.id); if (UP_URL) redis(["SET", "tb:sess:" + h, u.id, "EX", 60 * 60 * 24 * SESSION_DAYS]).catch(() => {}); saveSoon(u); }
   return u;
 }
 
@@ -70,7 +76,16 @@ let fileDb = null, fileTimer = null;
 const dirty = new Set();          // user ids waiting to be saved (Upstash)
 let upTimer = null;
 
+// Spend cap: count database commands per day. Past UPSTASH_DAILY_CAP (default 12,000, well inside the
+// free plan) saves are bunched up much more, so a busy day (or an attacker) can't run up usage.
+const DAILY_CAP = Number(process.env.UPSTASH_DAILY_CAP) || 12000;
+let cmdDay = 0, cmdCount = 0;
+function overCap() { const d = Math.floor(Date.now() / 86400000); if (d !== cmdDay) { cmdDay = d; cmdCount = 0; } return cmdCount >= DAILY_CAP; }
+// DB rules: only ids we made ourselves are ever used as database keys (no user text goes in a key)
+const ID_RE = /^(u|g|dev)_[A-Za-z0-9_]{1,64}$/;
 async function redis(cmd) {
+  overCap(); cmdCount++;
+  if (cmdCount === DAILY_CAP) console.warn("Upstash daily command cap reached: saving less often until tomorrow");
   const r = await fetch(UP_URL, { method: "POST", headers: { Authorization: `Bearer ${UP_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(cmd) });
   if (!r.ok) throw new Error("Upstash " + r.status);
   return (await r.json()).result;
@@ -88,8 +103,8 @@ function saveSoon(u) {
     if (!upTimer) upTimer = setTimeout(async () => {
       upTimer = null;
       const ids = [...dirty]; dirty.clear();
-      for (const id of ids) { const x = cache.get(id); if (x) redis(["SET", "tb:user:" + id, JSON.stringify(x)]).catch((e) => console.log("save failed", e.message)); }
-    }, 1500);
+      for (const id of ids) { const x = cache.get(id); if (x && ID_RE.test(id)) redis(["SET", "tb:user:" + id, JSON.stringify(x)]).catch((e) => console.log("save failed", e.message)); }
+    }, overCap() ? 60000 : 1500);
     return;
   }
   loadFile(); fileDb.users[u.id] = u;
@@ -98,25 +113,42 @@ function saveSoon(u) {
     fileTimer = null;
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
-      const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(fileDb)); fs.renameSync(tmp, FILE);
+      const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(fileDb), { mode: 0o600 }); fs.renameSync(tmp, FILE);   // only the server can read it
     } catch (e) { console.log("Could not save accounts:", e.message); }
   }, 1500);
 }
 async function getUser(id) {
+  if (typeof id !== "string" || !ID_RE.test(id)) return null;
   if (cache.has(id)) return cache.get(id);
   if (UP_URL) { const v = await redis(["GET", "tb:user:" + id]); if (v) { const u = fix(JSON.parse(v)); cache.set(id, u); return u; } return null; }
   loadFile(); return cache.get(id) || null;
 }
+const SESSION_DAYS = 90;
 async function userBySession(token) {
+  if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) return null;
   const h = sha(token);
-  if (UP_URL) { const id = await redis(["GET", "tb:sess:" + h]); return id ? getUser(id) : null; }
-  loadFile(); const id = sessIndex.get(h); return id ? getUser(id) : null;
+  let u = null;
+  if (UP_URL) { const id = await redis(["GET", "tb:sess:" + h]); u = id ? await getUser(id) : null; }
+  else { loadFile(); const id = sessIndex.get(h); u = id ? await getUser(id) : null; }
+  if (!u || !(u.sessions || []).includes(h)) return null;
+  // sessions run out after 90 days: then you log in again
+  const born = (u.sessAt || {})[h];
+  if (born && Date.now() - born > SESSION_DAYS * 86400000) { dropHash(u, h); return null; }
+  return u;
 }
+function dropHash(u, h) {
+  u.sessions = (u.sessions || []).filter((x) => x !== h); if (u.sessAt) delete u.sessAt[h]; sessIndex.delete(h);
+  if (UP_URL) redis(["DEL", "tb:sess:" + h]).catch(() => {});
+  saveSoon(u);
+}
+// "sign out everywhere": every device has to log in again
+function dropAllSessions(u) { for (const h of [...(u.sessions || [])]) dropHash(u, h); u.sessions = []; u.sessAt = {}; saveSoon(u); }
 async function addSession(u) {
   const token = crypto.randomBytes(32).toString("hex"), h = sha(token);
   u.sessions = [...(u.sessions || []), h].slice(-8);
+  u.sessAt = Object.fromEntries(Object.entries({ ...(u.sessAt || {}), [h]: Date.now() }).filter(([k]) => u.sessions.includes(k)));
   sessIndex.set(h, u.id);
-  if (UP_URL) await redis(["SET", "tb:sess:" + h, u.id, "EX", 60 * 60 * 24 * 180]);
+  if (UP_URL) await redis(["SET", "tb:sess:" + h, u.id, "EX", 60 * 60 * 24 * SESSION_DAYS]);
   saveSoon(u);
   return token;
 }
@@ -167,6 +199,7 @@ async function signInDev(name) {
 // ======================= Username + password accounts =======================
 // Passwords are never stored: only a salted scrypt hash (Node's built-in crypto, no extra packages).
 const USER_RE = /^[A-Za-z0-9_]{3,16}$/;
+const COMMON_PW = new Set(["password", "password1", "12345678", "123456789", "1234567890", "qwertyuiop", "qwerty123", "iloveyou", "11111111", "00000000", "abcdefgh", "abc12345", "letmein1", "football", "baseball", "sunshine", "princess", "welcome1", "admin123", "passw0rd", "minecraft", "fortnite", "roblox123", "12341234", "87654321", "asdfghjk", "zxcvbnm1", "racecar1", "scribblegp"]);
 function hashPass(pw, salt = crypto.randomBytes(16).toString("hex")) {
   return { salt, hash: crypto.scryptSync(String(pw), salt, 64).toString("hex") };
 }
@@ -178,7 +211,8 @@ function passOk(u, pw) {
 async function signUp(username, password, backup) {
   username = String(username || "").trim(); password = String(password || "");
   if (!USER_RE.test(username)) throw new Error("Username: 3-16 letters, numbers or _");
-  if (password.length < 6) throw new Error("Password needs at least 6 characters");
+  if (password.length < 8) throw new Error("Password needs at least 8 characters");
+  if (COMMON_PW.has(password.toLowerCase()) || password.toLowerCase() === username.toLowerCase() || /^(.)\1+$/.test(password)) throw new Error("That password is too easy to guess, pick another one");
   if (password.length > 100) throw new Error("That password is too long");
   const id = "u_" + username.toLowerCase();
   if (!(await getUser(id)) && backup) {
@@ -642,6 +676,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, bump, recheck, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

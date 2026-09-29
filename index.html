@@ -902,6 +902,7 @@
         <button type="button" class="btn" data-hub="ach">🏅 Achievements</button>
         <button type="button" class="btn" data-hub="store">🛒 Store</button>
         <button type="button" class="btn ghost hidden" id="signOutBtn">Sign out</button>
+        <button type="button" class="btn ghost hidden" id="signOutAllBtn" title="Log out on every phone and computer (use it if someone else might know your password)">🔒 Sign out everywhere</button>
       </div>
     </div>
     <section class="menu-car" aria-labelledby="carHead">
@@ -1202,7 +1203,7 @@
       <button type="button" role="tab" data-am="login" aria-selected="false">Log in</button>
     </nav>
     <label class="f">Username <input type="text" id="authUser" maxlength="16" autocomplete="username" spellcheck="false" placeholder="3-16 letters, numbers or _"></label>
-    <label class="f">Password <input type="password" id="authPass" maxlength="100" autocomplete="new-password" placeholder="At least 6 characters"></label>
+    <label class="f">Password <input type="password" id="authPass" maxlength="100" autocomplete="new-password" placeholder="At least 8 characters"></label>
     <label class="f" id="authPass2Row">Password again <input type="password" id="authPass2" maxlength="100" autocomplete="new-password"></label>
     <p class="err" id="authErr" role="alert"></p>
     <button type="submit" class="btn go" id="authGo">Make my account</button>
@@ -1857,15 +1858,23 @@
     if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = ""; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
     $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
     $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
-    $("signOutBtn").classList.toggle("hidden", !u);
+    $("signOutBtn").classList.toggle("hidden", !u); $("signOutAllBtn").classList.toggle("hidden", !u);
     $("signUpBtn").classList.toggle("hidden", !!u); $("logInBtn").classList.toggle("hidden", !!u);
     $("gsiBtn").classList.toggle("hidden", !!u);
     $("devLoginBtn").classList.toggle("hidden", !!u || !A.cfg?.dev);
     A.extras = extrasFor(u);
   }
   socket.on("catalog", (c) => { A.catalog = c; renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  // The sign-in token goes into an HttpOnly cookie (page scripts, and so any injected script, can't read it).
+  // Only if that fails (very old browser) is it kept in localStorage as before.
+  function storeToken(token) {
+    fetch("/auth/cookie", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Scribble": "1" }, body: JSON.stringify({ token }) })
+      .then((r) => { if (r.ok) { try { localStorage.removeItem("tb-token"); } catch (e) {} } else throw 0; })
+      .catch(() => { try { localStorage.setItem("tb-token", token); } catch (e) {} });
+  }
+  socket.on("needBackup", () => socket.emit("auth:resume", { backup: backupFor(lastAcct()) }));
   socket.on("account", (u) => {
-    if (u.token) { try { localStorage.setItem("tb-token", u.token); } catch (e) {} delete u.token; }
+    if (u.token) { storeToken(u.token); delete u.token; }
     if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
     if (!A.user || A.user.id !== u.id) socket.emit("presets:get");
     A.user = u; renderAcct();
@@ -1886,7 +1895,7 @@
     document.querySelectorAll("[data-am]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.am === mode)));
     $("authPass2Row").classList.toggle("hidden", !up);
     $("authPass").autocomplete = up ? "new-password" : "current-password";
-    $("authPass").placeholder = up ? "At least 6 characters" : "";
+    $("authPass").placeholder = up ? "At least 8 characters" : "";
     $("authGo").textContent = up ? "Make my account" : "Log in";
     $("authNote").classList.toggle("hidden", !up);
     $("authBox").classList.remove("hidden");
@@ -1904,7 +1913,7 @@
     const username = $("authUser").value.trim(), password = $("authPass").value;
     if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) { $("authErr").textContent = "Username: 3-16 letters, numbers or _"; return; }
     if (authMode === "signup") {
-      if (password.length < 6) { $("authErr").textContent = "Password needs at least 6 characters"; return; }
+      if (password.length < 8) { $("authErr").textContent = "Password needs at least 8 characters"; return; }
       if (password !== $("authPass2").value) { $("authErr").textContent = "The two passwords don't match"; return; }
     } else if (!password) { $("authErr").textContent = "Type your password"; return; }
     $("authErr").textContent = ""; $("authGo").disabled = true;
@@ -1928,10 +1937,16 @@
     };
     document.head.appendChild(sc);
   }).catch(() => {});
+  $("signOutAllBtn").addEventListener("click", () => {
+    const b = $("signOutAllBtn");
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Sure? Click again"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "🔒 Sign out everywhere"; }, 3000); return; }
+    socket.emit("auth:signoutAll"); fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
+  });
   $("devLoginBtn").addEventListener("click", () => socket.emit("auth:dev", { name: nameIn.value || "Tester" }));
   $("signOutBtn").addEventListener("click", () => {
     let tok = null; try { tok = localStorage.getItem("tb-token"); } catch (e) {}
     socket.emit("auth:signout", { token: tok });
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
     try { window.google?.accounts.id.disableAutoSelect(); } catch (e) {}
   });
 

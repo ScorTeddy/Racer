@@ -143,7 +143,30 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.static(path.join(__dirname, "public"), { dotfiles: "deny", index: false }));
-app.get("/auth/config", (req, res) => res.json(accounts.config()));
+app.get("/auth/config", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.json(accounts.config()); });
+// ---- sign-in cookie: HttpOnly (page scripts can't read it), Secure (https only), SameSite=Strict ----
+const COOKIE = "tb_session";
+function parseCookies(h) { const o = {}; for (const part of String(h || "").split(";")) { const i = part.indexOf("="); if (i > 0) o[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } return o; }
+function cookieHeader(value, maxAge) { return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${PROD ? "; Secure" : ""}`; }
+// CSRF protection for the two POSTs: must come from this site (Origin/Referer) AND carry our custom header,
+// which other sites can't add (browsers would need CORS permission, and we don't give it)
+function sameSite(req) {
+  if (req.get("X-Scribble") !== "1") return false;
+  const src = req.get("Origin") || req.get("Referer");
+  try { return !!src && new URL(src).host === req.get("Host"); } catch (e) { return false; }
+}
+app.post("/auth/cookie", express.json({ limit: "2kb" }), async (req, res) => {
+  if (!sameSite(req)) return res.status(403).json({ ok: false });
+  const token = String(req.body?.token || "");
+  const u = await accounts.userBySessionOnly(token).catch(() => null);
+  if (!u) return res.status(401).json({ ok: false });
+  res.setHeader("Set-Cookie", cookieHeader(token, 90 * 86400)); res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true });
+});
+app.post("/auth/logout", (req, res) => {
+  if (!sameSite(req)) return res.status(403).json({ ok: false });
+  res.setHeader("Set-Cookie", cookieHeader("", 0)); res.json({ ok: true });
+});
 const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
   ? path.join(__dirname, "public", "index.html") : path.join(__dirname, "index.html");
 app.get("/", (req, res) => res.sendFile(indexFile));
@@ -2129,18 +2152,31 @@ io.on("connection", (socket) => {
     accounts.logIn(d?.username, d?.password, d?.backup).then(signedIn, (e) => { loginFailed(d?.username); authFail(e); });
   });
   socket.on("auth:dev", (d) => { accounts.signInDev(d?.name).then(signedIn, authFail); });
+  const cookieTok = parseCookies(socket.request.headers.cookie)[COOKIE] || "";
   socket.on("auth:resume", async (d) => {
     try {
-      const u = await accounts.resumeOrRestore(String(d?.token || ""), d?.backup);
+      const u = await accounts.resumeOrRestore(String(d?.token || cookieTok || ""), d?.backup);
       if (!u) return socket.emit("signedOut");
       socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
       socket.emit("account", accounts.publicUser(u)); daily(u);
       const p = me(); if (p) { p.uid = u.id; p.extras = socket.data.extras; room().sendLobby(); }
     } catch (e) { authFail(e); }
   });
+  // signed in with the cookie? log straight back in (if the server forgot you, ask the browser for its backup)
+  if (cookieTok) accounts.userBySessionOnly(cookieTok).then((u) => {
+    if (!u) return socket.emit("needBackup");
+    socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u);
+    socket.emit("account", accounts.publicUser(u)); daily(u);
+  }).catch(() => {});
+  socket.on("auth:signoutAll", async () => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
+    accounts.dropAllSessions(u); socket.data.uid = null; socket.data.extras = null;
+    const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
+    socket.emit("signedOut"); socket.emit("toast", "Signed out on every device");
+  });
   socket.on("auth:signout", async (d) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
-    if (u) accounts.dropSession(u, String(d?.token || ""));
+    if (u) accounts.dropSession(u, String(d?.token || cookieTok || ""));
     socket.data.uid = null; socket.data.extras = null;
     const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
     socket.emit("signedOut");
