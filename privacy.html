@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy policy · Scribble GP</title>
+<meta name="description" content="What Scribble GP stores about you (not much), why, how long, and how to delete your account.">
+<meta name="theme-color" content="#101218">
+<meta property="og:title" content="Privacy policy · Scribble GP"><meta property="og:description" content="What Scribble GP stores about you (not much), why, how long, and how to delete your account."><meta property="og:image" content="/og-image.png"><meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><a class="logo" href="/">Scribble <span>GP</span></a><a class="btn" href="/">🏁 Play now</a></header>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Game</a> › Privacy policy</nav>
+<main>
+  <h1>Privacy policy</h1>
+  <p class="muted">Last updated: September 2026. Written in plain words, because it's a game.</p>
+
+  <h2>The short version</h2>
+  <p>Scribble GP stores as little as it can. There are no ads, no trackers and nothing is sold. You can play without an account at all.</p>
+
+  <h2>If you play as a guest</h2>
+  <p>Nothing about you is saved on the server. Your driver name, car colours, settings and saved tracks stay in <b>your own browser</b> (localStorage) so they're there next time. The name you pick is shown to the other players in your room while you play.</p>
+
+  <h2>If you make an account</h2>
+  <div class="card">
+    <p><b>What's stored:</b> your username; your password <i>only as a scrambled hash</i> (nobody, not even the game's owner, can read it); your stats, achievements, coins, car parts and saved tracks; and, if you turn on two-factor sign-in, its secret key and one-use backup codes (also as hashes). If you sign in with Google instead: your Google account ID, first name and profile picture link (never your email or password).</p>
+    <p><b>Why:</b> to keep your progress and let you sign in.</p>
+    <p><b>Where:</b> on the game server and its database provider (Upstash, if the owner set it up). A locked, encrypted copy of your account is also kept in your browser so it can be restored if the server restarts.</p>
+  </div>
+
+  <h2>Cookies and browser storage</h2>
+  <p>One cookie, <code>tb_session</code>, keeps you signed in. It's needed for sign-in to work, can't be read by page scripts, and expires after 90 days (or when you sign out). No advertising or tracking cookies. The game also uses your browser's localStorage for settings, your car design, saved tracks and the account backup.</p>
+
+  <h2>Security logs</h2>
+  <p>To stop people guessing passwords, failed sign-ins are logged with the username tried and a partly hidden IP address (for example 203.0.x.x). Passwords are never logged. The server's logs aren't kept long.</p>
+
+  <h2>Other services the game uses</h2>
+  <ul>
+    <li><b>Google Fonts</b> (the lettering): your browser downloads fonts from Google.</li>
+    <li><b>Google Sign-In</b>: only if you choose "Sign in with Google".</li>
+    <li><b>Internet Archive</b> (archive.org): the music streams from there.</li>
+    <li><b>Have I Been Pwned</b>: when you pick a password, the server sends the first 5 characters of its hash (never the password) to check it hasn't leaked in a data breach.</li>
+    <li><b>Render</b> hosts the game; <b>Upstash</b> may store accounts.</li>
+  </ul>
+
+  <h2>Kids</h2>
+  <p>Anyone can play. No email, real name or age is asked for, so please don't use your real full name as your username. If you're under 13, ask a parent before making an account.</p>
+
+  <h2>Deleting your data</h2>
+  <p>Signed in? Go to <b>Profile › Security › Delete my account</b>. It deletes your account and everything in it straight away. To remove guest data, clear this site's data in your browser settings.</p>
+
+  <h2>Changes and questions</h2>
+  <p>If this policy changes, the date at the top changes too. Questions? Ask the game's owner (Emmett).</p>
+</main>
+<footer><a href="/">🏁 Play</a><a href="/faq">FAQ</a><a href="/privacy">Privacy policy</a><span>Scribble GP · made by Emmett</span></footer>
+</body></html>

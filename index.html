@@ -3,7 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Scribble GP: Team Boss</title>
+<title>Scribble GP: Team Boss · Draw a track, race your friends</title>
+<meta name="description" content="Free online racing game: draw any track (or pick a real-world one), be the boss of a team, call pit stops, fire your boost and race up to 5 friends and 60 AI drivers. Works on phones.">
+<meta name="theme-color" content="#14161b">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Scribble GP">
+<meta property="og:title" content="Scribble GP: Team Boss · Draw a track, race your friends">
+<meta property="og:description" content="Draw a track, run the team, race your friends online. Free, in your browser, on phones too.">
+<meta property="og:image" content="/og-image.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A cartoon racing car on a drawn track with the Scribble GP Team Boss logo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Scribble GP: Team Boss">
+<meta name="twitter:description" content="Draw a track, run the team, race your friends online.">
+<meta name="twitter:image" content="/og-image.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"Scribble GP: Team Boss","description":"Multiplayer racing team manager: draw a track, pick tires, call pit stops and race friends and AI drivers.","genre":["Racing","Strategy"],"gamePlatform":"Web browser","playMode":["SinglePlayer","MultiPlayer"],"applicationCategory":"Game","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Emmett"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
@@ -595,6 +611,12 @@
   /* main menu: header on top, "Your car" and "Play" side by side on big screens */
   .menu-head { display: flex; flex-direction: column; gap: 0.35rem; padding-right: 3rem; }
   .menu-head .online { margin-top: 0.15rem; }
+  /* phones: the Play buttons come first, so "Race solo" is visible without scrolling */
+  @media (max-width: 899px) { .menu-card > .menu-head { order: -3; } .menu-card > .menu-play { order: -2; } .menu-card > .acct-bar { order: 5; } .menu-foot { order: 6; } }
+  .menu-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; justify-content: center; padding-top: 0.6rem; border-top: 1.5px solid var(--edge); font-size: 0.82rem; color: var(--soft); }
+  .menu-foot a { color: var(--soft); font-weight: 700; } .menu-foot a:hover { color: var(--ink); }
+  .site-links { position: fixed; left: 0.8rem; bottom: 0.5rem; display: flex; gap: 0.8rem; font-size: 0.75rem; z-index: 2; }
+  .site-links a { color: var(--soft); opacity: 0.8; } #menu:not(.hidden) ~ .site-links { display: none; }
   .menu-car, .menu-play { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
   div.f { font-size: 0.8rem; font-weight: 600; color: var(--soft); }
   .menu-h { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--soft); }
@@ -780,6 +802,7 @@
   .auth-card input { width: 100%; }
   .auth-card .err { margin: 0; min-height: 1.2em; }
   .sec-box { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.8rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); margin-bottom: 0.7rem; }
+  .sec-box.danger-box { border-color: rgba(229,57,53,0.5); }
   .sec-box.warn { border-color: rgba(255,204,31,0.6); }
   .sec-box label.f { display: flex; flex-direction: column; gap: 0.25rem; max-width: 24rem; }
   .sec-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -892,6 +915,7 @@
 <body>
 <canvas id="view" aria-label="Race view"></canvas>
 <div class="credit">(made by Emmett)</div>
+<nav class="site-links" aria-label="More about the game"><a href="/faq">FAQ</a><a href="/privacy">Privacy</a></nav>
 
 <!-- ============ Menu / garage ============ -->
 <div class="screen" id="menu">
@@ -955,6 +979,7 @@
     <div class="lobbies" id="lobbyList"><div class="lob-empty">Looking for lobbies...</div></div>
     <p class="err" id="menuErr" role="alert"></p>
     </section>
+    <footer class="menu-foot"><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
   </form>
 </div>
 
@@ -1097,7 +1122,7 @@
   <div class="flash" id="flash"></div>
   <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div></div>
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
-  <canvas id="minimap" class="panel"></canvas>
+  <canvas id="minimap" class="panel" role="img" aria-label="Mini map of the track with every car's position"></canvas>
   <div class="lap-delta panel hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best lap</small><b id="lapDeltaVal">--</b></div>
   <div class="feed" id="feed" aria-live="polite"></div>
   <div class="weather panel hidden" id="weatherPill"></div>
@@ -1187,7 +1212,7 @@
           <button type="button" role="tab" id="finTeams" aria-selected="true">Teams</button>
           <button type="button" role="tab" id="finDrivers" aria-selected="false">Drivers</button>
         </div>
-        <canvas id="finChart"></canvas>
+        <canvas id="finChart" role="img" aria-label="Chart of every team's championship position after each race (the same numbers are in the list next to it)"></canvas>
         <p class="fin-note">Championship position after each race. Hover a name to follow its line.</p>
       </section>
       <ol class="fin-table" id="finTable"></ol>
@@ -1875,7 +1900,7 @@
     $("acctSub").textContent = u ? `${u.stats.races} races · ${u.stats.wins} wins · ${Object.keys(u.ach).length}/${A.catalog?.ach.length || "?"} achievements`
       : "Make an account to save your stats, earn coins and unlock car parts.";
     const av = $("acctAv"); av.textContent = "";
-    if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = ""; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
+    if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = `${u.name}'s profile picture`; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
     $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
     $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
     $("signOutBtn").classList.toggle("hidden", !u); $("signOutAllBtn").classList.toggle("hidden", !u);
@@ -2085,7 +2110,7 @@
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
   const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"] };
   function itemPreview(it, w = 200, h = 110) {
-    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Preview of your car with the ${it.name}`);
     drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
     return cv;
   }
@@ -2146,6 +2171,12 @@
   });
   // ---- Security tab: password, two-factor sign-in, backup codes, sign out everywhere ----
   const SEC = { setup: null, codes: null };
+  socket.on("accountDeleted", (d) => {
+    // forget it in this browser too: its backup, the sign-in cookie and saved tracks copy on the account
+    try { const b = backups(); delete b[d.id]; localStorage.setItem("tb-backups", JSON.stringify(b)); if (localStorage.getItem("tb-last") === d.id) localStorage.removeItem("tb-last"); localStorage.removeItem("tb-token"); } catch (e) {}
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Scribble": "1" } }).catch(() => {});
+    $("hub").classList.add("hidden"); popup("Your account was deleted.", true);
+  });
   socket.on("2faSetup", (d) => { SEC.setup = d; SEC.codes = null; if (A.tab === "sec") renderHub(); });
   socket.on("2faCodes", (codes) => { SEC.codes = codes; SEC.setup = null; if (A.tab === "sec") renderHub(); });
   socket.on("secMsg", (m) => { const e = document.getElementById("secMsg"); if (e) { e.textContent = m.error || m.ok || ""; e.className = "sec-msg " + (m.error ? "bad" : "good"); } });
@@ -2199,6 +2230,17 @@
       go.addEventListener("click", () => { if (i2.value !== i3.value) return socket.listeners("secMsg")[0]({ error: "The new passwords don't match" }); socket.emit("auth:changePassword", { old: i1.value, password: i2.value }); });
       pw.append(l1, l2, l3, go); box.appendChild(pw);
     }
+    const del = el("section", "sec-box danger-box"); del.appendChild(el("h3", "hub-h", "🗑️ Delete my account"));
+    del.appendChild(el("p", "preset-note", "Deletes your account, stats, coins, items and saved tracks from the server for good. This can't be undone."));
+    const [dl1, di1] = field("Password", "password", "current-password");
+    const [dl2, di2] = field("Code from your authenticator app", "text", "one-time-code");
+    const db = el("button", "btn danger-fill", "Delete my account forever"); db.type = "button";
+    db.addEventListener("click", () => {
+      if (db.dataset.sure !== "1") { db.dataset.sure = "1"; db.textContent = "Really? Click again to delete"; setTimeout(() => { db.dataset.sure = ""; db.textContent = "Delete my account forever"; }, 4000); return; }
+      socket.emit("auth:delete", { password: di1.value, code: di2.value });
+    });
+    if (u.hasPassword) del.appendChild(dl1); if (u.twoFA) del.appendChild(dl2); del.appendChild(db);
+    box.appendChild(del);
     const so = el("section", "sec-box"); so.appendChild(el("h3", "hub-h", "🚪 Sessions"));
     const all = el("button", "btn ghost", "🔒 Sign out on every device"); all.type = "button"; all.addEventListener("click", () => $("signOutAllBtn").click());
     so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
@@ -2270,8 +2312,16 @@
   codeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("joinBtn").click(); } });
   $("menuForm").addEventListener("submit", (e) => e.preventDefault());
 
+  // a clear tab title for every screen (handy with lots of tabs, and for bookmarks)
+  function setTitle() {
+    const T = "Scribble GP";
+    document.title = S.screen === "menu" ? "Scribble GP: Team Boss · Draw a track, race your friends"
+      : S.screen === "lobby" ? `Room ${S.lobby?.code || ""} · ${T}`
+      : S.screen === "race" ? (S.titleRace || `Racing · ${T}`)
+      : S.screen === "results" ? `Results · ${T}` : T;
+  }
   function show(screen) {
-    S.screen = screen;
+    S.screen = screen; setTimeout(setTitle, 0);
     $("menu").classList.toggle("hidden", screen !== "menu");
     $("lobby").classList.toggle("hidden", screen !== "lobby");
     document.body.classList.toggle("in-lobby", screen === "lobby");
@@ -3105,7 +3155,7 @@
     if (!P.list.length) { g.appendChild(el("p", "preset-note", "No saved tracks yet. Make one you love, give it a name and hit Save.")); return; }
     for (const pr of P.list) {
       const card = el("div", "preset");
-      const cv = document.createElement("canvas"); cv.width = 240; cv.height = 140;
+      const cv = document.createElement("canvas"); cv.width = 240; cv.height = 140; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Outline of the saved track ${pr.name}`);
       const c = cv.getContext("2d"), xs = pr.stroke.map((q) => q[0]), ys = pr.stroke.map((q) => q[1]);
       const mnx = Math.min(...xs), mxx = Math.max(...xs), mny = Math.min(...ys), mxy = Math.max(...ys), sc = Math.min(220 / (mxx - mnx || 1), 120 / (mxy - mny || 1));
       c.lineJoin = c.lineCap = "round"; c.strokeStyle = "#ffcc1f"; c.lineWidth = 5; c.beginPath();
@@ -4579,6 +4629,7 @@
     const pos = S.standings.indexOf(me.id) + 1, laps = S.race?.laps || 5;
     $("posText").innerHTML = ""; $("posText").append("P" + pos);
     const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm);
+    { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
     $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);

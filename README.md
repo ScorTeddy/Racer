@@ -12,6 +12,9 @@ accounts.js        Google sign-in, saved stats, achievements, coins and the stor
 f1-tracks.json     42 real-world layouts under made-up names (e.g. "Old Airfield Circuit", "Eifel Northern Loop"), keep it next to server.js
 package.json       dependencies (express, socket.io)
 public/index.html  the entire client (menu, room screen, race view, HUD, settings) in one file
+public/faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
+public/og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
+                                                     (robots.txt and sitemap.xml are made by server.js)
 ```
 
 ## Put it online (Render, free)
@@ -21,6 +24,14 @@ public/index.html  the entire client (menu, room screen, race view, HUD, setting
 
 Run locally: `npm install`, then `npm start`, then open http://localhost:3000
 (To try accounts locally without Google: `DEV_LOGIN=1 npm start` adds a "Test login" button.)
+
+## Launch checklist bits
+Custom 404 page, "Race solo" above the fold on phones, footer links (FAQ / Privacy) on the menu and every page,
+breadcrumbs on the pages, 5 FAQs (with FAQPage schema), robots.txt + sitemap.xml (use your real address
+automatically), a unique title for every page and every game screen (the race tab shows "P2 · Lap 3/5"),
+meta descriptions, Open Graph / Twitter share image, VideoGame schema, alt text / labels on every image and
+canvas, and a privacy policy with a real "Delete my account" (Profile > Security). Deleted accounts can't be
+brought back by an old browser backup.
 
 ## Security
 What's in place (server.js "security" section, and the top of `io.on("connection")`):

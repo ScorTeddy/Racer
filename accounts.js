@@ -64,6 +64,7 @@ function readBackup(blob) {
 // bring an account back from a backup, but only if the server doesn't have (a newer copy of) it
 async function restore(blob, wantId) {
   const b = readBackup(blob); if (!b || (wantId && b.id !== wantId)) return null;
+  if (deleted.has(b.id) || (UP_URL && await redis(["GET", "tb:deleted:" + b.id]).catch(() => null))) return null;
   const have = await getUser(b.id);
   if (have) return have;
   const u = fix({ ...b, sessions: [] });
@@ -86,7 +87,9 @@ async function resumeOrRestore(token, blob) {
 const cache = new Map();          // user id -> user object (everyone who signed in since the server started)
 const sessIndex = new Map();      // session hash -> user id (file store keeps all of these in memory)
 let fileDb = null, fileTimer = null;
-const dirty = new Set();          // user ids waiting to be saved (Upstash)
+const dirty = new Set();
+const deleted = new Set();        // ids of deleted accounts (so an old backup can't resurrect them)
+function saveFileNow() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(fileDb), { mode: 0o600 }); fs.renameSync(tmp, FILE); } catch (e) { console.log("Could not save accounts:", e.message); } }          // user ids waiting to be saved (Upstash)
 let upTimer = null;
 
 // Spend cap: count database commands per day. Past UPSTASH_DAILY_CAP (default 12,000, well inside the
@@ -107,6 +110,7 @@ function loadFile() {
   if (fileDb) return fileDb;
   try { fileDb = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (e) { fileDb = { users: {} }; }
   for (const u of Object.values(fileDb.users)) { cache.set(u.id, u); for (const h of u.sessions || []) sessIndex.set(h, u.id); }
+  for (const id of fileDb.deleted || []) deleted.add(id);
   return fileDb;
 }
 function saveSoon(u) {
@@ -258,6 +262,7 @@ async function signUp(username, password, backup) {
   }
   if (await getUser(id)) throw new Error("That username is taken, try another one (or Log in if it's yours)");
   await checkPassword(password, username);
+  deleted.delete(id); if (UP_URL) redis(["DEL", "tb:deleted:" + id]).catch(() => {}); else if (fileDb?.deleted) fileDb.deleted = fileDb.deleted.filter((x) => x !== id);
   const u = fix({ id, name: username, picture: "", created: Date.now(), pass: hashPass(password) });
   cache.set(id, u); saveSoon(u);
   const token = await addSession(u);
@@ -743,6 +748,20 @@ async function resetPassword(username, code, newPw) {
   dropAllSessions(u);
   return u;
 }
+async function deleteAccount(u, password, code) {
+  if (u.pass && !passOk(u, password)) return { error: "Wrong password" };
+  if (u.totp?.on && !verify2fa(u, code)) return { error: "Type a code from your authenticator app (or a backup code)" };
+  const id = u.id;
+  for (const h of [...(u.sessions || [])]) { sessIndex.delete(h); if (UP_URL) redis(["DEL", "tb:sess:" + h]).catch(() => {}); }
+  cache.delete(id); dirty.delete(id);
+  if (UP_URL) await redis(["DEL", "tb:user:" + id]).catch(() => {});
+  else { loadFile(); delete fileDb.users[id]; u.rev = 0; saveFileNow(); }
+  // a backup of a deleted account must never bring it back
+  deleted.add(id); if (UP_URL) redis(["SET", "tb:deleted:" + id, "1", "EX", 60 * 60 * 24 * 365]).catch(() => {});
+  else { fileDb.deleted = [...new Set([...(fileDb.deleted || []), id])]; saveFileNow(); }
+  console.log("Account deleted:", id.replace(/_(.{2}).*/, "_$1***"));
+  return { ok: true, id };
+}
 function recheck(u) { const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); if (got.length) saveSoon(u); return got; }
 function bump(u, key, n = 1) { u.stats[key] = (u.stats[key] || 0) + n; const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); saveSoon(u); return got; }
 // daily login reward: 50 coins, +10 for every day in a row (up to 150)
@@ -783,6 +802,6 @@ function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.n
 
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE,
 };

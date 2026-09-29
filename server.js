@@ -173,7 +173,19 @@ const indexFile = fs.existsSync(path.join(__dirname, "public", "index.html"))
 app.get("/", (req, res) => res.sendFile(indexFile));
 // password strength meter for the sign-up form (same zxcvbn the server uses)
 app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.sendFile(path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js")); });
-app.use((req, res) => res.status(404).send("Not found"));
+// ---- small pages + search engine files ----
+const pub = (f) => path.join(__dirname, "public", f);
+app.get("/faq", (req, res) => res.sendFile(pub("faq.html")));
+app.get("/privacy", (req, res) => res.sendFile(pub("privacy.html")));
+const siteUrl = (req) => (PROD ? "https://" : req.protocol + "://") + req.get("host");
+app.get("/robots.txt", (req, res) => res.type("text/plain").send(`User-agent: *\nAllow: /\nDisallow: /auth/\nDisallow: /socket.io/\nDisallow: /vendor/\n\nSitemap: ${siteUrl(req)}/sitemap.xml\n`));
+app.get("/sitemap.xml", (req, res) => {
+  const base = siteUrl(req), day = new Date().toISOString().slice(0, 10);
+  const urls = [["/", "1.0"], ["/faq", "0.6"], ["/privacy", "0.3"]].map(([u, pr]) => `  <url><loc>${base}${u}</loc><lastmod>${day}</lastmod><priority>${pr}</priority></url>`).join("\n");
+  res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+});
+// custom 404 page (in the game's style, with a way back to the game)
+app.use((req, res) => { if (fs.existsSync(pub("404.html"))) res.status(404).sendFile(pub("404.html")); else res.status(404).send("Not found"); });
 // no stack traces or debug details to visitors, ever
 app.use((err, req, res, next) => { console.error("HTTP error:", err.message); res.status(500).send("Something went wrong"); });
 const server = http.createServer(app);
@@ -2038,7 +2050,7 @@ setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menu
 
 // ======================= Connections =======================
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
+const EVENT_COST = { "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 30, f1Track: 10, track: 10, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2246,6 +2258,15 @@ io.on("connection", (socket) => {
     const r = accounts.disable2fa(u, d?.password, d?.code);
     if (r.error) { authFailed(ip, "2fa-off", u.name); return socket.emit("secMsg", { error: r.error }); }
     authOk(ip); secReply(u, { ok: "Two-factor sign-in is off." });
+  });
+  // delete my account (privacy policy promise): password + 2FA code if it's on
+  socket.on("auth:delete", async (d) => {
+    const u = await myAcct(); if (!u || secLimited() || gated(d)) return;
+    const r = await accounts.deleteAccount(u, d?.password, d?.code);
+    if (r.error) { authFailed(ip, "delete", u.name); return socket.emit("secMsg", { error: r.error }); }
+    authOk(ip); socket.data.uid = null; socket.data.extras = null;
+    const p = me(); if (p) { p.uid = null; p.extras = null; room().sendLobby(); }
+    socket.emit("accountDeleted", { id: r.id }); socket.emit("signedOut");
   });
   socket.on("2fa:newCodes", async (d) => {
     const u = await myAcct(); if (!u || !u.totp?.on || secLimited()) return;

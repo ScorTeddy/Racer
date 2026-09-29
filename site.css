@@ -1,0 +1,27 @@
+/* Shared look for the small pages (FAQ, privacy, 404). Same colours and fonts as the game. */
+:root { --bg: #101218; --panel: #1a1d25; --edge: rgba(255,255,255,0.1); --ink: #eef0f4; --soft: #a9b0bd; --yellow: #ffcc1f; }
+* { box-sizing: border-box; }
+html { background: var(--bg); color: var(--ink); font: 500 17px/1.6 "Chakra Petch", system-ui, sans-serif; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 6px), var(--bg); }
+a { color: var(--yellow); }
+a:focus-visible, .btn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; flex-wrap: wrap; }
+.logo { font-family: "Russo One", sans-serif; font-size: 1.5rem; color: var(--ink); text-decoration: none; }
+.logo span { color: var(--yellow); }
+.btn { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--yellow); color: #1b1b1b; font-weight: 700; text-decoration: none; padding: 0.6rem 1.2rem; border-radius: 0.8rem; box-shadow: 0 4px 0 #b88f00; }
+.btn:hover { filter: brightness(1.08); }
+.crumbs { max-width: 46rem; width: 100%; margin: 0 auto; padding: 0 1.5rem; font-size: 0.85rem; color: var(--soft); }
+.crumbs a { color: var(--soft); }
+main { flex: 1; max-width: 46rem; width: 100%; margin: 0 auto; padding: 1rem 1.5rem 3rem; }
+h1 { font-family: "Russo One", sans-serif; font-weight: 400; font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.1; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.4rem; }
+.card { background: var(--panel); border: 1.5px solid var(--edge); border-radius: 1rem; padding: 1rem 1.2rem; margin: 0.8rem 0; }
+details.card summary { cursor: pointer; font-weight: 700; font-size: 1.05rem; list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+details.card summary::after { content: "+"; color: var(--yellow); font-size: 1.3rem; line-height: 1; }
+details.card[open] summary::after { content: "−"; }
+details.card p { margin: 0.6rem 0 0; color: #d7dbe3; }
+.muted { color: var(--soft); }
+footer { border-top: 1.5px solid var(--edge); padding: 1.2rem 1.5rem; display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center; font-size: 0.9rem; color: var(--soft); }
+footer a { color: var(--soft); }
+.big404 { font-family: "Russo One", sans-serif; font-size: clamp(5rem, 22vw, 10rem); line-height: 1; color: var(--yellow); margin: 1rem 0 0; }
