@@ -2266,7 +2266,7 @@
     lobby: ["👋 Welcome to Scribble GP!", "This is your room. Normally you draw a track here (or roll a random one) - we made one for you. You're the <b>team boss</b>: your AI driver steers, you make the calls. Press <b>Start race</b>!"],
     tires: ["🛞 Pick your starting tires", "<b>Fast</b> is quickest but wears out fast. <b>Durable</b> lasts longest but is slow. <b>Wets</b> are for rain. For your first race, <b>Intermediate</b> is a safe pick."],
     lights: ["🚦 Get a rocket start", "Watch the 5 red lights. Press <b>Space</b> (or tap the screen) the moment they go <b>out</b>. Too early = jump start!"],
-    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake."],
+    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake. Run it dry and it's locked for 5 seconds, unless you overtake or cross the line."],
     upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick one of the cards (keys <b>1 / 2 / 3</b>) to upgrade your car or driver. They stack up during the race."],
     pit: ["🔧 Tires wearing out", "See the tire bar at the bottom? When it gets low the car slows down and can get a puncture. Press <b>B</b> (Box this lap) to pit for fresh tires - you choose which set on the way in."],
     afterPit: ["✅ Nice stop!", "Fresh tires! In longer races, timing your stops (and the weather) is how races are won. <b>Tab</b> watches other cars, <b>O</b> opens settings."],
@@ -3713,9 +3713,10 @@
     const me = S.cars.get(S.myCar);
     $("boostPanel").classList.toggle("hidden", !me);
     if (!me) return;
-    const pct = Math.round(me.nitro ?? 100), key = pct + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0);
+    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0);
     if (key === boostShown) return; boostShown = key;
-    $("boostPct").textContent = pct + "%"; $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
+    $("boostPct").textContent = lock > 0 ? `⏳${lock}s` : pct + "%";
+    boostBtn.classList.toggle("locked", lock > 0); $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
     boostBtn.classList.toggle("empty", pct < 3);
     $("slipTag").classList.toggle("hidden", !me.slip || !!me.fin);
     $("slipTag").textContent = window.innerWidth <= 860 ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%";
