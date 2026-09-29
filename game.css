@@ -408,6 +408,7 @@
   #boostBtn.on { border-color: #9be0ff; box-shadow: 0 0 18px rgba(94,200,255,0.65); }
   #boostBtn.on .bfill { opacity: 0.9; }
   #boostBtn.empty .blabel { color: #ff8a80; }
+  #boostBtn.locked { filter: grayscale(0.7); opacity: 0.75; }
   .slip-tag { position: absolute; left: 50%; top: -1.9rem; transform: translateX(-50%); font-family: "Russo One", sans-serif; font-size: 0.9rem; color: #9be0ff; text-shadow: 0 2px 0 rgba(0,0,0,0.6); white-space: nowrap; animation: pop 260ms cubic-bezier(.2,.9,.3,1.5) both; }
   .card .fx { font-size: 0.78rem; font-weight: 700; color: var(--ink); margin-top: 0.15rem; }
   .card .fx span { color: var(--green); }

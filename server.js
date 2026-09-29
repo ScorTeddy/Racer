@@ -31,6 +31,8 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
+// Run the tank dry and it's locked for 5s (no boosting, no regen) unless an overtake or the line refills it.
+const NITRO_LOCKOUT = 5;
 // Heavy rain: from 60% wet the wets are the tire to be on. Anything else is a lot slower
 // (top speed and grip) and slips out a couple of times a lap, but it can still race.
 const SLIP_WET = 0.6;
@@ -1024,7 +1026,7 @@ class Room {
     this.paused = false;
     const humans = [...this.players.values()].filter((p) => !p.spectator);   // spectators just watch
     for (const h of humans) {
-      h.level = 1; h.xp = 0; h.up = blankUp(); h.pendingPicks = 0; h.offer = null; h.nitroHeld = false;
+      h.level = 1; h.xp = 0; h.up = blankUp(); h.pendingPicks = 0; h.offer = null; h.offered = null; h.nitroHeld = false;
       io.to(h.id).emit("offerCleared");
     }
     const aiCount = clamp(s.ai, 0, MAX_AI);
@@ -1067,7 +1069,7 @@ class Room {
         passOff: 0, passT: 0, gridLane: lat, lineJit: (Math.random() - 0.5) * 12, pitAt: 0.22 + Math.random() * 0.12, aiMode: "race", stuck: 0, reverseT: 0,
         cleanLap: true, launchAt: 0, boostUntil: 0, slide: 0, speed: 0, surface: 0, punct: false, compound: "inter", laneKey: 0,
         rs: { overtakes: 0, crashes: 0, cleanLaps: 0, slips: 0, boostSec: 0, maxWet: 0, usedWets: false, grid: g + 1 },
-        nitro: 1, nitroOn: false, regenT: 0, aiNitro: false, slip: false, yawMax: STEER_LOCK, gripF: 1, chase: false, attack: false,
+        nitro: 1, nitroOn: false, nitroLock: 0, regenT: 0, aiNitro: false, slip: false, yawMax: STEER_LOCK, gripF: 1, chase: false, attack: false,
         aggr: 0.8 + Math.random() * 0.5, nitroMin: 0.25 + Math.random() * 0.25, power: 1,
       };
       if (slot.human) {
@@ -1293,7 +1295,7 @@ class Room {
     // AI drivers get the overtake boost too
     for (let i = 0; i < order.length; i++) {
       const c = order[i]; if (c.owner || c.finished || this.qualifying) { c.lastPos = i + 1; continue; }
-      if (c.lastPos && i + 1 < c.lastPos && !order.slice(i + 1, c.lastPos).some((r) => r.pitting || r.inPit) && this.time > 5) c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST * (c.lastPos - i - 1));
+      if (c.lastPos && i + 1 < c.lastPos && !order.slice(i + 1, c.lastPos).some((r) => r.pitting || r.inPit) && this.time > 5) { c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST * (c.lastPos - i - 1)); c.nitroLock = 0; }
       c.lastPos = i + 1;
     }
     for (const p of this.players.values()) {
@@ -1304,7 +1306,7 @@ class Room {
           const rival = order[i];
           if (this.time > 4 && this.time - (p.passCd.get(rival.id) || -99) > 8) {       // (not the grid shuffle at the start)
             p.passCd.set(rival.id, this.time);
-            c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST);          // every overtake: +10% boost
+            c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST); c.nitroLock = 0;   // every overtake: +10% boost (and ends an empty-tank lockout)
             if (c.rs) c.rs.overtakes++;
             this.addXp(p, 55, `${c.name} passed ${rival.name}! +55 XP ⚡+10%`);
           }
@@ -1682,11 +1684,13 @@ class Room {
     // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
     const p = c.owner && this.players.get(c.owner);
     const wantN = p ? p.nitroHeld : c.aiNitro;
-    c.nitroOn = !!wantN && c.nitro > 0 && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
+    if (c.nitroLock > 0) c.nitroLock = Math.max(0, c.nitroLock - dt);
+    c.nitroOn = !!wantN && c.nitro > 0 && !(c.nitroLock > 0) && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
       maxSp *= 1 + st.nitroPow; accel *= 1.15 + st.nitroPow;
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
-    } else if (c.nitro < 1 && this.phase === "race") c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
+      if (c.nitro <= 0) { c.nitroLock = NITRO_LOCKOUT; if (p) io.to(p.id).emit("xp", { label: `⚡ Boost empty! ${NITRO_LOCKOUT}s to recharge` }); }
+    } else if (c.nitro < 1 && this.phase === "race" && !(c.nitroLock > 0)) c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
     else if (c.surface === 2) maxSp *= 0.55;
@@ -1794,11 +1798,11 @@ class Room {
     }
     c.lapStart = this.time; c.cleanLap = true;
     // qualifying: a full tank every lap, so every lap is a fair shot at pole
-    if (this.qualifying && c.lapsDone >= 1) { if (p && c.nitro < 0.995) io.to(p.id).emit("xp", { label: "⚡ Boost full!" }); c.nitro = 1; }
+    if (this.qualifying && c.lapsDone >= 1) { if (p && c.nitro < 0.995) io.to(p.id).emit("xp", { label: "⚡ Boost full!" }); c.nitro = 1; c.nitroLock = 0; }
     // boost: half a tank back every time you cross the line (more with Nitro Refill)
     else if (c.lapsDone >= 1 && c.lapsDone < this.settings.laps && c.st) {
       const before = c.nitro;
-      c.nitro = Math.min(1, c.nitro + c.st.nitroRefill);
+      c.nitro = Math.min(1, c.nitro + c.st.nitroRefill); c.nitroLock = 0;
       if (p && c.nitro > before + 0.005) io.to(p.id).emit("xp", { label: `⚡ Boost +${Math.round((c.nitro - before) * 100)}%` });
     }
     if (c.tireAtLap !== undefined && c.tire < c.tireAtLap && c.pitting <= 0) { const w = c.tireAtLap - c.tire; c.lapWearMeas = c.lapWearMeas ? c.lapWearMeas * 0.5 + w * 0.5 : w; }
@@ -1911,18 +1915,12 @@ class Room {
     return { pending: p.pendingPicks, cards: p.offer.map((k) => { const u = UPGRADES[k]; return { key: k, kind: u.kind, name: u.name, desc: u.desc, max: u.max, level: p.up[k], now: u.fx(p.up[k]), next: u.fx(p.up[k] + 1) }; }) };
   }
   makeOffer(p) {
-    // a shuffled "bag": every upgrade you can still take comes up once before anything repeats
-    const ok = (k) => p.up[k] < UPGRADES[k].max;
-    const pick = [];
-    for (let guard = 0; pick.length < 3 && guard < 3; guard++) {
-      p.bag = (p.bag || []).filter((k) => ok(k) && !pick.includes(k));
-      if (!p.bag.length) {
-        p.bag = Object.keys(UPGRADES).filter((k) => ok(k) && !pick.includes(k));
-        for (let i = p.bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p.bag[i], p.bag[j]] = [p.bag[j], p.bag[i]]; }
-        if (!p.bag.length) break;
-      }
-      while (pick.length < 3 && p.bag.length) pick.push(p.bag.shift());
-    }
+    // deal the upgrades offered least this race first (random among ties), so every one comes up
+    // before anything repeats and nothing can be starved out
+    const seen = p.offered = p.offered || {};
+    const opts = Object.keys(UPGRADES).filter((k) => p.up[k] < UPGRADES[k].max).map((k) => [k, (seen[k] || 0) + Math.random() * 0.5]);
+    const pick = opts.sort((a, b) => a[1] - b[1]).slice(0, 3).map(([k]) => k);
+    for (const k of pick) seen[k] = (seen[k] || 0) + 1;
     p.offer = pick;
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", this.offerMsg(p));
@@ -2051,7 +2049,7 @@ class Room {
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
-      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), slip: c.slip, xpRate: this.settings.xpRate,
+      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, xpRate: this.settings.xpRate,
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
   }
