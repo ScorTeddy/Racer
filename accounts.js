@@ -36,7 +36,7 @@ const b64 = (str) => Buffer.from(str, "utf8").toString("base64url");
 const ENC_KEY = crypto.createHash("sha256").update("backup-key:" + SECRET).digest();
 const noProto = (k, v) => (k === "__proto__" || k === "constructor" || k === "prototype" ? undefined : v);
 function makeBackup(u) {
-  const { sessions, sessAt, presets, pending2fa, ...keep } = u;
+  const { sessions, sessAt, presets, setPresets, pending2fa, ...keep } = u;
   const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", ENC_KEY, iv);
   const data = Buffer.concat([c.update(JSON.stringify(keep), "utf8"), c.final()]);
   return "v2." + Buffer.concat([iv, c.getAuthTag(), data]).toString("base64url");
@@ -516,8 +516,50 @@ const STORE = [
   { id: "decal_teeth", slot: "decal", name: "Shark teeth", look: "teeth", price: 90 },
   { id: "decal_crown", slot: "decal", name: "Crown decal", look: "crown", price: 150 },
 ];
+// the third wave: something at every rarity
+STORE.push(
+  // common
+  { id: "helmet_teal", slot: "helmet", name: "Teal helmet", look: "#14b8a6", price: 30 },
+  { id: "helmet_navy", slot: "helmet", name: "Navy helmet", look: "#1e3a8a", price: 30 },
+  { id: "rims_red", slot: "rims", name: "Red rims", look: "#e53935", price: 45 },
+  { id: "rims_white", slot: "rims", name: "White rims", look: "#f5f5f5", price: 45 },
+  { id: "flame_orange", slot: "flame", name: "Orange boost flame", look: "#ff8a1f", price: 55 },
+  { id: "flame_pink", slot: "flame", name: "Pink boost flame", look: "#ff4fd8", price: 55 },
+  { id: "num_blue", slot: "num", name: "Blue number plate", look: "blue", price: 45 },
+  { id: "decal_heart", slot: "decal", name: "Heart decal", look: "heart", price: 50 },
+  { id: "decal_flag", slot: "decal", name: "Checkered flag decal", look: "flag", price: 60 },
+  // rare
+  { id: "glow_orange", slot: "glow", name: "Orange underglow", look: "#ff8a1f", price: 90 },
+  { id: "glow_blue", slot: "glow", name: "Electric blue underglow", look: "#3b82f6", price: 90 },
+  { id: "rims_purple", slot: "rims", name: "Purple rims", look: "#a855f7", price: 80 },
+  { id: "wing_carbon", slot: "wing", name: "Carbon fibre wing", look: "carbon", price: 110 },
+  { id: "trail_snow", slot: "trail", name: "Snowflake trail", look: "snow", price: 110 },
+  { id: "trail_coins", slot: "trail", name: "Coin trail", look: "coins", price: 120 },
+  { id: "decal_paw", slot: "decal", name: "Paw print decal", look: "paw", price: 90 },
+  { id: "decal_rocket", slot: "decal", name: "Rocket decal", look: "rocket", price: 100 },
+  { id: "num_chrome", slot: "num", name: "Chrome number plate", look: "chrome", price: 100 },
+  // epic
+  { id: "glow_crimson", slot: "glow", name: "Crimson underglow", look: "#ff1744", price: 150 },
+  { id: "flame_plasma", slot: "flame", name: "Plasma boost flame (animated)", look: "plasma", price: 180 },
+  { id: "helmet_rainbow", slot: "helmet", name: "Rainbow helmet (animated)", look: "rainbow", price: 170 },
+  { id: "trail_petals", slot: "trail", name: "Flower petal trail", look: "petals", price: 170 },
+  { id: "trail_pixels", slot: "trail", name: "Pixel trail", look: "pixels", price: 180 },
+  { id: "decal_flame", slot: "decal", name: "Hood flames decal", look: "hoodflame", price: 160 },
+  // legendary
+  { id: "glow_galaxy", slot: "glow", name: "Galaxy underglow (animated)", look: "galaxy", price: 400 },
+  { id: "trail_comet", slot: "trail", name: "Comet trail", look: "comet", price: 450 },
+  { id: "wing_gold", slot: "wing", name: "Solid gold wing", look: "gold", price: 300 },
+  { id: "num_holo", slot: "num", name: "Hologram number plate (animated)", look: "holo", price: 300 },
+);
 // loot-box-only items: the "trash" commons, plus special liveries (all original designs)
 STORE.push(
+  { id: "decal_smiley", slot: "decal", name: "Smiley sticker", look: "smiley", loot: true },
+  { id: "trail_leaves", slot: "trail", name: "Autumn leaf trail", look: "leaves", loot: true, rarity: "rare" },
+  { id: "trail_ghost", slot: "trail", name: "Little ghost trail", look: "ghost", loot: true, rarity: "epic" },
+  { id: "glow_aurora", slot: "glow", name: "Aurora underglow (animated)", look: "aurora", loot: true, rarity: "legendary" },
+  // mythic: only in the Legendary chest
+  { id: "trail_warp", slot: "trail", name: "Warp Drive trail", look: "warp", loot: true, rarity: "mythic", box: "legend" },
+  { id: "glow_void", slot: "glow", name: "Black Hole underglow (animated)", look: "void", loot: true, rarity: "mythic", box: "legend" },
   { id: "junk_rims", slot: "rims", name: "Rusty rims", look: "#8a5a3a", loot: true },
   { id: "junk_helmet", slot: "helmet", name: "Plain grey helmet", look: "#7b7f86", loot: true },
   { id: "junk_glow", slot: "glow", name: "Muddy underglow", look: "#6b4a2f", loot: true },
@@ -976,6 +1018,29 @@ function savePreset(u, p) {
   if (u.presets.length >= 30) return { error: "You have 30 saved tracks already. Delete one first." };
   u.presets.push(c); saveSoon(u); return { ok: true };
 }
+// saved race settings ("setting presets"): same idea as saved tracks. Values are checked again
+// when they're loaded (the settings handler only accepts valid ones), here they're just kept tidy.
+const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map"];
+function cleanSetPreset(p) {
+  if (!p || typeof p !== "object" || !p.settings || typeof p.settings !== "object") return null;
+  const name = String(p.name || "").trim().slice(0, 30); if (!name) return null;
+  const s = {};
+  for (const k of SET_KEYS) {
+    const v = p.settings[k];
+    if (k === "points") { if (Array.isArray(v)) s.points = v.slice(0, 80).map((x) => Math.max(0, Math.min(999, Math.round(Number(x) || 0)))); }
+    else if (typeof v === "number" && Number.isFinite(v)) s[k] = v;
+    else if (typeof v === "boolean") s[k] = v;
+    else if (typeof v === "string") s[k] = v.slice(0, 12);
+  }
+  return { name, settings: s, saved: Number(p.saved) || Date.now() };
+}
+function saveSetPreset(u, p) {
+  const c = cleanSetPreset(p); if (!c) return { error: "Those settings couldn't be saved" };
+  u.setPresets = (u.setPresets || []).filter((x) => x.name.toLowerCase() !== c.name.toLowerCase());
+  if (u.setPresets.length >= 30) return { error: "You have 30 saved setting presets already. Delete one first." };
+  u.setPresets.push(c); saveSoon(u); return { ok: true };
+}
+function deleteSetPreset(u, name) { u.setPresets = (u.setPresets || []).filter((x) => x.name !== name); saveSoon(u); return { ok: true }; }
 function deletePreset(u, name) { u.presets = (u.presets || []).filter((x) => x.name !== name); saveSoon(u); return { ok: true }; }
 
 // Small short-lived values (a room saved while the server restarts for an update): in Upstash when
@@ -993,5 +1058,5 @@ async function unstash(key) {     // read it once (and forget it)
 module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
-  ACH: ACH_PUBLIC, STORE, stash, unstash,
+  ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
 };

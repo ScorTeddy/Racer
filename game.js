@@ -280,8 +280,15 @@
       for (let k = 0; k < n; k++) { const a = t * (myth ? 3 : 2) + (k / n) * Math.PI * 2; c.fillStyle = col(k); c.shadowColor = col(k); c.beginPath(); c.arc(Math.cos(a) * (L * 0.72 + 3), Math.sin(a) * (Wd * 0.95 + 3), myth ? 2.6 : 2, 0, Math.PI * 2); c.fill(); }
       c.restore();
     }
-    if (X.glow) {                            // store: underglow
-      const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow;
+    if (X.glow === "void") {                // MYTHIC: a black hole under the car, with light spiralling in
+      const t = performance.now() / 1000;
+      c.save(); c.globalAlpha = 0.9; c.shadowColor = "#8b5cf6"; c.shadowBlur = 22 + 6 * Math.sin(t * 3); c.fillStyle = "#07030f";
+      rrect(c, -L / 2 - 3, -Wd / 2 - 4, L + 6, Wd + 8, 10); c.fill();
+      for (let k = 0; k < 8; k++) { const a = -t * 2.4 + k * 0.785, rr = 1 - ((t * 0.6 + k / 8) % 1); c.globalAlpha = 0.9 * rr; c.fillStyle = k % 2 ? "#c4b5fd" : "#7c3aed"; c.beginPath(); c.arc(Math.cos(a) * (L * 0.62) * rr, Math.sin(a) * (Wd * 0.85) * rr, 1.8, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    } else if (X.glow) {                     // store: underglow
+      const t = performance.now() / 1000;
+      const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow === "galaxy" ? `hsl(${250 + 40 * Math.sin(t * 1.5)},95%,62%)` : X.glow === "aurora" ? `hsl(${150 + 60 * Math.sin(t)},95%,58%)` : X.glow;
       c.save(); c.globalAlpha = 0.55; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
       rrect(c, -L / 2 - 2, -Wd / 2 - 3, L + 4, Wd + 6, 9); c.fill(); c.restore();
     }
@@ -289,7 +296,7 @@
     if (opts.trailPreview && X.trail) { for (let k = 0; k < 4; k++) trailShape(c, X.trail, -L / 2 - 10 - k * 11, (k % 2 ? 4 : -4), 4.5 - k * 0.6, 1 - k * 0.2, k); }
     if (opts.nitro || opts.flamePreview) {   // nitro boost: a long flame (blue, or the store colour)
       const fl = opts.flamePreview ? 30 : 22 + Math.random() * 16;
-      c.fillStyle = X.flame === "rainbow" ? `hsl(${hueNow},100%,58%)` : X.flame || "#3aa0ff";
+      c.fillStyle = X.flame === "rainbow" ? `hsl(${hueNow},100%,58%)` : X.flame === "plasma" ? `hsl(${Math.random() < 0.5 ? 285 : 190},100%,62%)` : X.flame || "#3aa0ff";
       c.beginPath(); c.moveTo(-L / 2, -7); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 7); c.fill();
       c.fillStyle = "#d8f3ff"; c.beginPath(); c.moveTo(-L / 2, -3.5); c.lineTo(-L / 2 - fl * 0.55, 0); c.lineTo(-L / 2, 3.5); c.fill();
     }
@@ -337,11 +344,16 @@
       c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(6, -Wd / 2 + 5, 3, Wd - 10);
     }
     bodyExtras(c, B, car, X, L, Wd);
-    if (X.helmet || open) { const hc = X.helmet || "#f5f5f5"; c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
+    if (X.helmet || open) { const hc = X.helmet === "rainbow" ? `hsl(${hueNow},90%,60%)` : X.helmet || "#f5f5f5"; c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
     if (X.wing && !open) {                    // store: rear wing
       const wc = darken(car.color, 0.45);
       if (X.wing === "card") { c.save(); c.rotate(0.12); c.fillStyle = "#b08850"; c.fillRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.strokeStyle = "#7c5c32"; c.lineWidth = 0.8; c.strokeRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.restore(); }
       else if (X.wing === "swan") { c.fillStyle = "#15161a"; c.fillRect(-L / 2 + 1, -5, 2, 2); c.fillRect(-L / 2 + 1, 3, 2, 2); c.fillStyle = wc; c.fillRect(-L / 2 - 6, -Wd / 2 - 3, 4, Wd + 6); c.fillStyle = "rgba(255,255,255,0.35)"; c.fillRect(-L / 2 - 5.5, -Wd / 2 - 2.5, 1, Wd + 5); }
+      else if (X.wing === "carbon" || X.wing === "gold") {
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5);
+        if (X.wing === "gold") { const gg = c.createLinearGradient(0, -Wd / 2 - 3, 0, Wd / 2 + 3); gg.addColorStop(0, "#8a6212"); gg.addColorStop(0.5, "#fff1b8"); gg.addColorStop(1, "#b8860b"); c.fillStyle = gg; c.fillRect(-L / 2 - 3, -Wd / 2 - 3, 4.5, Wd + 6); }
+        else { for (let j = 0; j < Wd + 6; j += 1.5) { c.fillStyle = Math.floor(j / 1.5) % 2 ? "#26292e" : "#131417"; c.fillRect(-L / 2 - 3, -Wd / 2 - 3 + j, 4.5, 1.5); } c.fillStyle = "#e11d48"; c.fillRect(-L / 2 - 3, -1, 4.5, 2); }
+      }
       else if (X.wing === "duck") { c.fillStyle = wc; rrect(c, -L / 2 - 1, -Wd / 2 + 2, 4, Wd - 4, 2); c.fill(); }
       else {
         const decks = X.wing === "twin" ? [-L / 2 - 3, -L / 2 + 2] : [-L / 2 - 2];
@@ -350,7 +362,7 @@
       }
     }
     // number
-    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"] }[X.num] || ["#fff", "#111"];
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"] }[X.num] || ["#fff", "#111"];
     const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
     c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
     if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
@@ -432,6 +444,12 @@
       case "teeth": c.fillStyle = "#fff"; c.strokeStyle = "#8a1c1c"; c.lineWidth = 0.6; c.beginPath(); c.moveTo(8, -Wd / 2 + 2); for (let i = 0; i <= 8; i++) c.lineTo(i % 2 ? 3 : 8, -Wd / 2 + 2 + (i / 8) * (Wd - 4)); c.fill(); c.stroke(); break;
       case "crown": c.fillStyle = "#ffcc1f"; c.beginPath(); c.moveTo(-3, -5); c.lineTo(3, -5); c.lineTo(5, -2.5); c.lineTo(3, -1); c.lineTo(5, 1); c.lineTo(3, 2.5); c.lineTo(5, 5); c.lineTo(-3, 5); c.closePath(); c.fill(); break;
       case "tape": c.fillStyle = "rgba(170,172,176,0.9)"; c.rotate(0.6); c.fillRect(-7, -1.6, 14, 3.2); c.rotate(-1.2); c.fillRect(-7, -1.6, 14, 3.2); break;
+      case "heart": c.fillStyle = "#ff3b6b"; c.beginPath(); c.moveTo(-4, 0); c.bezierCurveTo(1, -7, 6, -3, 3, 0); c.bezierCurveTo(6, 3, 1, 7, -4, 0); c.fill(); break;
+      case "flag": for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#fff"; c.fillRect(-4 + i * 2.2, -4.4 + j * 2.2, 2.2, 2.2); } break;
+      case "paw": c.fillStyle = "#2b2118"; c.beginPath(); c.ellipse(-1, 0, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill(); for (const [px, py] of [[2.6, -3.6], [3.6, -1.2], [3.6, 1.2], [2.6, 3.6]]) { c.beginPath(); c.arc(px, py, 1.2, 0, Math.PI * 2); c.fill(); } break;
+      case "rocket": c.fillStyle = "#f5f5f5"; c.strokeStyle = "#1b1f26"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(6, 0); c.quadraticCurveTo(2, -3, -4, -2); c.lineTo(-4, 2); c.quadraticCurveTo(2, 3, 6, 0); c.fill(); c.stroke(); c.fillStyle = "#e53935"; c.beginPath(); c.moveTo(-3, -2); c.lineTo(-6, -4); c.lineTo(-5, -1.5); c.fill(); c.beginPath(); c.moveTo(-3, 2); c.lineTo(-6, 4); c.lineTo(-5, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.beginPath(); c.arc(1.5, 0, 1.2, 0, Math.PI * 2); c.fill(); c.fillStyle = "#ffb020"; c.beginPath(); c.moveTo(-4, -1.2); c.lineTo(-7.5, 0); c.lineTo(-4, 1.2); c.fill(); break;
+      case "hoodflame": for (const [col, s2] of [["#ff5722", 1], ["#ffca28", 0.6]]) { c.fillStyle = col; c.beginPath(); c.moveTo(7, -6 * s2); for (let k = 0; k <= 6; k++) c.lineTo(7 - (k % 2 ? 12 : 5) * s2, -6 * s2 + (k / 6) * 12 * s2); c.lineTo(7, 6 * s2); c.closePath(); c.fill(); } break;
+      case "smiley": c.fillStyle = "#ffd21f"; c.beginPath(); c.arc(0, 0, 4.8, 0, Math.PI * 2); c.fill(); c.fillStyle = "#111"; c.beginPath(); c.arc(1.6, -1.7, 0.8, 0, Math.PI * 2); c.arc(1.6, 1.7, 0.8, 0, Math.PI * 2); c.fill(); c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); c.arc(0, 0, 3, -1.1, 1.1); c.stroke(); break;
       case "wings": c.fillStyle = "rgba(255,255,255,0.92)"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(0, sg * 1); c.quadraticCurveTo(-7, sg * 9, -12, sg * 10); c.quadraticCurveTo(-7, sg * 5, -4, sg * 1); c.fill(); } break;
     }
     c.restore();
@@ -501,6 +519,17 @@
     else if (kind === "notes") { c.fillStyle = ["#ff4fd8", "#22e6ff", "#ffe066"][k % 3]; c.font = `700 ${Math.round(r * 2.2)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(k % 2 ? "♪" : "♫", 0, 0); }
     else if (kind === "bolts") { c.fillStyle = "#ffe066"; c.rotate(k); c.beginPath(); c.moveTo(r * 0.5, -r); c.lineTo(-r * 0.2, 0); c.lineTo(r * 0.2, 0); c.lineTo(-r * 0.5, r); c.lineTo(0, -r * 0.1); c.lineTo(-r * 0.3, -r * 0.1); c.closePath(); c.fill(); }
     else if (kind === "fire") { const g = c.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, "#fff3a0"); g.addColorStop(0.45, "#ff8a1f"); g.addColorStop(1, "rgba(220,40,10,0)"); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r * 1.2, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "snow") { c.strokeStyle = "rgba(235,248,255,0.95)"; c.lineWidth = 1.3; c.rotate(k * 0.5); for (let a = 0; a < 3; a++) { c.beginPath(); c.moveTo(-r * Math.cos(a * 1.047), -r * Math.sin(a * 1.047)); c.lineTo(r * Math.cos(a * 1.047), r * Math.sin(a * 1.047)); c.stroke(); } }
+    else if (kind === "coins") { c.fillStyle = "#f5c518"; c.strokeStyle = "#a07800"; c.lineWidth = 1; c.beginPath(); c.ellipse(0, 0, r * 0.7 * Math.abs(Math.cos(k + performance.now() / 150)) + 0.6, r * 0.7, 0, 0, Math.PI * 2); c.fill(); c.stroke(); }
+    else if (kind === "petals") { c.fillStyle = ["#ff9ecf", "#ffc3e1", "#ff6fb5"][k % 3]; c.rotate(k * 1.3); c.beginPath(); c.ellipse(0, 0, r * 0.8, r * 0.4, 0, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "pixels") { c.fillStyle = ["#ff2bd6", "#22e6ff", "#ffe066", "#39ff88"][k % 4]; c.fillRect(-r * 0.45, -r * 0.45, r * 0.9, r * 0.9); }
+    else if (kind === "leaves") { c.fillStyle = ["#e0672a", "#f2a33a", "#b5452a"][k % 3]; c.rotate(k * 1.1); c.beginPath(); c.moveTo(r, 0); c.quadraticCurveTo(0, -r * 0.7, -r, 0); c.quadraticCurveTo(0, r * 0.7, r, 0); c.fill(); }
+    else if (kind === "ghost") { c.fillStyle = "rgba(245,245,255,0.9)"; c.beginPath(); c.arc(0, -r * 0.2, r * 0.6, Math.PI, 0); c.lineTo(r * 0.6, r * 0.6); for (let w = 0; w < 3; w++) c.lineTo(r * 0.6 - (w + 0.5) * r * 0.4, r * (w % 2 ? 0.6 : 0.35)); c.lineTo(-r * 0.6, r * 0.6); c.fill(); c.fillStyle = "#222"; c.fillRect(-r * 0.3, -r * 0.35, r * 0.15, r * 0.25); c.fillRect(r * 0.12, -r * 0.35, r * 0.15, r * 0.25); }
+    else if (kind === "comet") { const g2 = c.createRadialGradient(0, 0, 0, 0, 0, r * 1.6); g2.addColorStop(0, "#ffffff"); g2.addColorStop(0.3, "#9be7ff"); g2.addColorStop(1, "rgba(60,120,255,0)"); c.fillStyle = g2; c.beginPath(); c.arc(0, 0, r * 1.6, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "warp") {   // MYTHIC: rainbow light streaks
+      const hue = (performance.now() / 4 + k * 90) % 360; c.strokeStyle = `hsl(${hue},100%,65%)`; c.lineWidth = 2.2; c.shadowColor = c.strokeStyle; c.shadowBlur = 8; c.rotate(k * 0.4);
+      c.beginPath(); c.moveTo(-r * 2, 0); c.lineTo(r * 2, 0); c.stroke(); c.fillStyle = "#fff"; c.beginPath(); c.arc(r * 2, 0, 1.4, 0, Math.PI * 2); c.fill();
+    }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
     c.restore();
@@ -667,7 +696,7 @@
   socket.on("account", (u) => {
     if (u.token) { storeToken(u.token); delete u.token; }
     if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
-    if (!A.user || A.user.id !== u.id) socket.emit("presets:get");
+    if (!A.user || A.user.id !== u.id) { socket.emit("presets:get"); socket.emit("setPresets:get"); }
     A.user = u; renderAcct();
     if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
     if (!$("hub").classList.contains("hidden")) renderHub();
@@ -1163,7 +1192,7 @@
     if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
     if (screen === "menu") socket.emit("menuInfo");
-    if (screen !== "race") setNitro(false);
+    if (screen !== "race") { setNitro(false); if (typeof hideCards === "function") hideCards(); }
     if (screen === "race" || screen === "menu") closeFinale();
     if (MUS && MUS.started) setTimeout(() => pickMusic(false), 50);
     if (screen !== "lobby") setEditing(false);
@@ -1538,7 +1567,11 @@
     });
   }
   $("aiBox").addEventListener("toggle", () => S.lobby && renderRoster(S.lobby));
-  $("startBtn").addEventListener("click", () => socket.emit("start"));
+  const raceRunning = () => ["tires", "lights", "race"].includes(S.lobby?.phase) && !!S.race;
+  $("startBtn").addEventListener("click", () => {
+    if (raceRunning()) { document.body.classList.toggle("spectating", !S.myCar); show("race"); return; }    // left the race: go back and watch it
+    socket.emit("start");
+  });
   $("leaveBtn").addEventListener("click", () => { try { sessionStorage.removeItem("tb-rejoin"); } catch (e) {} socket.emit("leave"); S.code = null; S.track = null; hideCards(); show("menu"); });
   $("garageBtn").addEventListener("click", () => { $("menu").classList.remove("hidden"); $("soloBtn").classList.add("hidden"); $("createBtn").parentElement.classList.add("hidden"); document.querySelector(".sep-or").classList.add("hidden"); addDoneBtn(); });
   function addDoneBtn() {
@@ -1662,9 +1695,12 @@
     $("teamList").textContent = "";
     for (const t of teams) { const o = document.createElement("option"); o.value = t; $("teamList").appendChild(o); }
     $("sMap").disabled = !S.host || l.phase !== "lobby";
-    $("startBtn").classList.toggle("hidden", !S.host);
-    $("startBtn").disabled = !S.track || l.phase !== "lobby";
-    $("hostNote").textContent = l.phase === "race" || l.phase === "lights" ? "A race is running. You'll be on the grid for the next one." :
+    const running = raceRunning();
+    $("startBtn").classList.toggle("hidden", !S.host && !running);
+    $("startBtn").disabled = running ? false : !S.track || l.phase !== "lobby";
+    $("startBtn").textContent = running ? "👀 Watch the race" : "🏁 Start race";
+    if (running) boardHint("A race is running. You'll be on the grid for the next one.", false);
+    $("hostNote").textContent = running || l.phase === "race" || l.phase === "lights" ? "A race is running. You'll be on the grid for the next one." :
       S.host ? (S.track ? "" : "Draw a track on the board to start.") : "The host draws the track and starts the race. Customize your car with My car.";
     $("boardTools").classList.toggle("hidden", !S.host);
     $("drawMode").classList.toggle("hidden", !S.host || l.phase !== "lobby");
@@ -2237,6 +2273,54 @@
     P.list = merged; storeLocal(merged);
     if (!$("presetBox").classList.contains("hidden")) renderPresets();
   });
+  // ---- setting presets: every race setting in one go (saved like tracks: this browser + your account) ----
+  const SP = { list: (() => { try { return JSON.parse(localStorage.getItem("tb-setpresets") || "[]"); } catch (e) { return []; } })() };
+  const storeSP = (list) => { try { localStorage.setItem("tb-setpresets", JSON.stringify(list)); } catch (e) {} };
+  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map"];
+  socket.on("setPresets", (list) => {
+    if (!list) return;
+    const merged = mergePresets(SP.list, list);
+    for (const x of merged) if (!list.some((y) => y.name.toLowerCase() === x.name.toLowerCase() && (y.saved || 0) >= (x.saved || 0))) socket.emit("setPresets:save", x);
+    SP.list = merged; storeSP(merged);
+    if (!$("setPresetBox").classList.contains("hidden")) renderSetPresets();
+  });
+  const WEATHER_TXT = { sunny: "☀ Sunny", rain: "🌧 Rain", dynamic: "⛅ Dynamic" };
+  const spSummary = (s) => [`${s.laps ?? "?"} laps`, `${s.ai ?? 0} AI (${s.aiLevel || "medium"})`, s.quali ? `${s.quali} min quali` : null, WEATHER_TXT[s.weather], s.speed > 1 ? `${s.speed}x speed` : null, s.season ? `${s.season}-race season` : null, s.teams === false ? "no teams" : null, s.theme].filter(Boolean).join(" · ");
+  function renderSetPresets() {
+    const canEdit = S.host && S.lobby?.phase === "lobby";
+    $("setPresetSaveBtn").disabled = !S.lobby; $("setPresetName").disabled = !S.lobby;
+    $("setPresetNote").textContent = (!S.host ? "Only the host can load settings, but you can save the ones this room uses. " : "") + (A.user ? "Saved to your account and this browser." : "Saved in this browser. Make an account to have them on other devices too.");
+    const g = $("setPresetGrid"); g.textContent = "";
+    if (!SP.list.length) { g.appendChild(el("p", "preset-note", "No saved settings yet. Set up the Race tab the way you like it, name it and hit Save.")); return; }
+    for (const pr of SP.list) {
+      const row = el("div", "set-preset"), info = el("div", "info");
+      info.append(el("b", "", pr.name), el("small", "", spSummary(pr.settings)));
+      const ld = el("button", "btn go", "Load"); ld.type = "button"; ld.disabled = !canEdit;
+      ld.addEventListener("click", () => { socket.emit("settings", pr.settings); $("setPresetBox").classList.add("hidden"); popup(`Loaded "${pr.name}"`); sfx("tick"); });
+      const del = el("button", "btn ghost", "Delete"); del.type = "button";
+      del.addEventListener("click", () => {
+        if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Sure?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Delete"; }, 2500); return; }
+        SP.list = SP.list.filter((x) => x !== pr); storeSP(SP.list); if (A.user) socket.emit("setPresets:delete", pr.name); renderSetPresets();
+      });
+      row.append(info, ld, del); g.appendChild(row);
+    }
+  }
+  $("setPresetBtn").addEventListener("click", () => { $("setPresetBox").classList.remove("hidden"); renderSetPresets(); setTimeout(() => $("setPresetName").focus(), 50); });
+  $("setPresetClose").addEventListener("click", () => $("setPresetBox").classList.add("hidden"));
+  $("setPresetBox").addEventListener("click", (e) => { if (e.target.id === "setPresetBox") $("setPresetBox").classList.add("hidden"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("setPresetBox").classList.contains("hidden")) $("setPresetBox").classList.add("hidden"); });
+  $("setPresetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("setPresetName").value.trim().slice(0, 30);
+    if (!name) { $("setPresetName").focus(); return; }
+    if (!S.lobby) return;
+    const st = S.lobby.settings, settings = {};
+    for (const k of SET_KEYS) if (st[k] !== undefined) settings[k] = st[k];
+    const pr = { name, settings, saved: Date.now() };
+    SP.list = mergePresets(SP.list.filter((x) => x.name.toLowerCase() !== name.toLowerCase()), [pr]); storeSP(SP.list);
+    if (A.user) socket.emit("setPresets:save", pr);
+    $("setPresetName").value = ""; popup(`Saved "${name}"!`); sfx("level"); renderSetPresets();
+  });
   function openPresets() {
     $("presetBox").classList.remove("hidden");
     $("presetName").value = S.track?.name || "";
@@ -2785,6 +2869,7 @@
   $("leaveRaceBtn").addEventListener("click", leaveRace);
   socket.on("retired", () => {
     setNitro(false); S.myCar = null; engineSound(0, false);
+    S.cardsLater = false; hideCards();
     show("lobby"); renderLobby();
     popup("You left the race. Back in the room.");
   });

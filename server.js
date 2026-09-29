@@ -2050,7 +2050,8 @@ class Room {
     c.owner = null; c.retiredBy = p.id; c.name = c.name + " (AI)";
     c.aiReaction = 0.3; p.nitroHeld = false;
     if (this.phase === "race" && this.time < c.launchAt) c.launchAt = this.time + 0.3;
-    p.boxCall = false;
+    p.boxCall = false; p.offer = null; p.pendingPicks = 0; p.must = null;      // no car any more: no upgrade cards or pit calls
+    io.to(p.id).emit("offerCleared");
     this.emit("feed", { t: "retire", name: p.name });
     io.to(p.id).emit("retired");
   }
@@ -2296,7 +2297,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2591,6 +2592,13 @@ io.on("connection", (socket) => {
     const r = accounts.savePreset(u, p); if (r.error) return socket.emit("toast", r.error);
     socket.emit("presets", u.presets);
   });
+  socket.on("setPresets:get", async () => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); socket.emit("setPresets", u ? u.setPresets || [] : null); });
+  socket.on("setPresets:save", async (p) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
+    const r = accounts.saveSetPreset(u, p); if (r.error) return socket.emit("toast", r.error);
+    socket.emit("setPresets", u.setPresets);
+  });
+  socket.on("setPresets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deleteSetPreset(u, String(name)); socket.emit("setPresets", u.setPresets); });
   socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
   socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
   const storeAction = async (fn) => {

@@ -138,6 +138,7 @@
       </section>
       <section class="rc-pane" data-pane="race" hidden>
         <div class="settings-grid">
+          <button type="button" class="btn wide" id="setPresetBtn">💾 Setting presets: save or load all of these</button>
           <label class="f">Laps (1-99) <input type="number" id="sLaps" min="1" max="99" step="1" value="5" inputmode="numeric"></label>
           <label class="f">AI difficulty <select id="sAiLevel"><option value="easy">😌 Easy</option><option value="medium">🙂 Medium</option><option value="hard">😤 Hard</option><option value="extreme">💀 EXTREME</option></select></label>
           <label class="f">Qualifying <select id="sQuali"><option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option><option value="3">3 min</option><option value="5">5 min</option></select></label>
@@ -401,6 +402,18 @@
     </form>
     <p class="preset-note" id="presetNote"></p>
     <div class="preset-grid" id="presetGrid"></div>
+  </div>
+</div>
+
+<div id="setPresetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="setPresetTitle">
+  <div class="preset-card panel">
+    <header class="hub-head"><h2 id="setPresetTitle">💾 Setting presets</h2><button type="button" class="x" id="setPresetClose" aria-label="Close">✕</button></header>
+    <form class="preset-save" id="setPresetForm">
+      <input type="text" id="setPresetName" maxlength="30" placeholder="Name these settings (e.g. Quick sprint)" aria-label="Preset name">
+      <button type="submit" class="btn go" id="setPresetSaveBtn">Save current settings</button>
+    </form>
+    <p class="preset-note" id="setPresetNote"></p>
+    <div class="set-preset-list" id="setPresetGrid"></div>
   </div>
 </div>
 

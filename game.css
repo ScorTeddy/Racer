@@ -788,7 +788,7 @@
   .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
-  #presetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  #presetBox, #setPresetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .preset-card { width: min(46rem, 100%); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; gap: 0.7rem; padding: 1rem 1.2rem; }
   .preset-save { display: flex; gap: 0.5rem; } .preset-save input { flex: 1; min-width: 0; }
   .preset-note { margin: 0; color: var(--soft); font-size: 0.82rem; }
@@ -969,3 +969,12 @@ body.spectating .chat-btn { display: grid; }
 .garage.aura-epic .g-aura { background: none; color: #c77dff; } .garage.aura-legendary .g-aura { background: none; color: #ffc21f; }
 .garage[class*="aura-"] .pips i.on { background: var(--aura, #ff3b8a); box-shadow: 0 0 6px var(--aura, #ff3b8a); }
 body.rm .card.rare, body.rm .garage[class*="aura-"] { animation: none; }
+
+/* ---- setting presets ---- */
+.set-preset-list { display: flex; flex-direction: column; gap: 0.45rem; overflow-y: auto; min-height: 5rem; }
+.set-preset { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
+.set-preset .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.set-preset .info b { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-preset .info small { color: var(--soft); font-size: 0.74rem; }
+.set-preset .btn { min-height: 2.1rem; font-size: 0.82rem; padding: 0.3rem 0.7rem; }
+#setPresetBtn { grid-column: 1 / -1; }
