@@ -135,3 +135,28 @@ test("secret achievements: never listed, and worth 100,000 coins", async () => {
   assert.ok(user.coins - before >= 100000, "paid 100,000 coins");
   assert.ok(accounts.publicUser(user).secrets.some((a) => a.id === "secret_chosen"), "you can see the ones you found");
 });
+
+test("rivals from race 3, and a Driver of the Day in the results", { timeout: 150000 }, async () => {
+  const s = io(base, { transports: ["websocket"], forceNew: true });
+  const got = (ev) => new Promise((ok) => s.once(ev, ok));
+  await got("connect");
+  s.emit("create", { name: "Rivalry" }, {});
+  const j = await got("joined");
+  s.emit("settings", { ai: 3, laps: 1, speed: 3, map: "small", quali: 0, safetyCar: "on" });
+  s.emit("randomTrack", { map: "small" });
+  await got("trackResult");
+  const r = game.rooms.get(j.code);
+  assert.equal(r.settings.safetyCar, true, "safety car setting saved");
+  // pretend two races are done: Rivalry has 20 pts, the AI have 5 / 18 / 40
+  r.history = [{}, {}];
+  r.champ = { Rivalry: 20, [r.roster[0].name]: 5, [r.roster[1].name]: 18, [r.roster[2].name]: 40 };
+  s.on("tirePick", () => s.emit("compound", "fast"));
+  s.on("lightsOut", () => s.emit("react", 250));
+  const rival = got("rival");
+  s.emit("start");
+  const rv = await rival;
+  assert.equal(rv.name, r.roster[1].name, "rival = closest in the championship");
+  const res = await got("results");
+  assert.ok("dotd" in res, "results say who was Driver of the Day");
+  s.close();
+});

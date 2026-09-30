@@ -31,6 +31,7 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
+const RIVAL_COINS = 100, DOTD_COINS = 150;   // bonuses for beating your rival / being Driver of the Day
 // Run the tank dry and it's locked for 5s (no boosting, no regen) unless an overtake or the line refills it.
 const NITRO_LOCKOUT = 5;
 // Heavy rain: from 60% wet the wets are the tire to be on. Anything else is a lot slower
@@ -962,7 +963,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium" };
+    this.settings = { laps: 5, ai: 5, map: "normal", theme: "grass", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -1190,7 +1191,7 @@ class Room {
         else Object.assign(c, paint[c.team]);
       }
     }
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null;
+    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99;
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -1209,11 +1210,32 @@ class Room {
     }
     this.phase = "tires";
     this.tiresUntil = Date.now() + TIRE_PICK_TIME;
+    this.pickRivals();
     this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0 });
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS, perLap: this.perLapAll() });
     this.sendLobby();
+  }
+  // Rivals: from the 3rd race of a season on, every player gets the driver closest to them in the
+  // championship (ahead or behind) as their rival for this race. Beat them for a bonus.
+  pickRivals() {
+    for (const p of this.players.values()) { p.rival = null; p.beatRival = false; }
+    if (this.qualifying || this.history.length < 2) return;
+    const pts = (n) => this.champ[n] || 0;
+    for (const c of this.cars) {
+      const p = c.owner && this.players.get(c.owner); if (!p) continue;
+      const mine = pts(c.name);
+      let best = null;
+      for (const o of this.cars) {
+        if (o === c) continue;
+        const d = Math.abs(pts(o.name) - mine);
+        if (!best || d < best.d || (d === best.d && pts(o.name) > pts(best.o.name))) best = { o, d };
+      }
+      if (!best) continue;
+      p.rival = best.o.name;
+      io.to(p.id).emit("rival", { name: best.o.name, pts: pts(best.o.name), mine });
+    }
   }
   avgLevel() { const ps = [...this.players.values()]; return ps.length ? ps.reduce((a, p) => a + p.level - 1, 0) / ps.length : 0; }
   carOf(id) { return this.cars && this.cars.find((c) => c.owner === id); }
@@ -1384,6 +1406,7 @@ class Room {
     this.collide();
     const order = this.standings();
     for (let i = 0; i < order.length; i++) order[i].ahead = i ? order[i - 1] : null;
+    this.stepSafetyCar();
     // AI drivers get the overtake boost too
     for (let i = 0; i < order.length; i++) {
       const c = order[i]; if (c.owner || c.finished || this.qualifying) { c.lastPos = i + 1; continue; }
@@ -1783,12 +1806,12 @@ class Room {
         if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45) { c.slip = true; break; }
       }
     }
-    if (c.slip) maxSp *= 1 + SLIP_BONUS;
+    if (c.slip && !this.sc) maxSp *= 1 + SLIP_BONUS;
     c.boosting = this.time < c.boostUntil;           // launch boost off the line
     if (c.boosting) { accel *= 1.8; maxSp *= 1.08; }
     // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
     const p = c.owner && this.players.get(c.owner);
-    const wantN = p ? p.nitroHeld : c.aiNitro;
+    const wantN = (p ? p.nitroHeld : c.aiNitro) && !this.sc;
     if (c.nitroLock > 0) c.nitroLock = Math.max(0, c.nitroLock - dt);
     c.nitroOn = !!wantN && c.nitro > 0 && !(c.nitroLock > 0) && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
@@ -1796,6 +1819,7 @@ class Room {
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
       if (c.nitro <= 0) { c.nitroLock = NITRO_LOCKOUT; if (p) io.to(p.id).emit("xp", { label: `⚡ Boost empty! ${NITRO_LOCKOUT}s to recharge` }); }
     } else if (c.nitro < 1 && this.phase === "race" && !(c.nitroLock > 0)) c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
+    if (this.sc) maxSp = Math.min(maxSp, this.scLimit(c));
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
     else if (c.surface === 2) maxSp *= 0.55;
@@ -1995,6 +2019,36 @@ class Room {
       if (p) io.to(p.id).emit("crash", { with: (c === a ? b : a).name, damage: Math.round(c.damage * 100) });
     }
     this.emit("feed", { t: "crash", name: a.name, other: b.name, x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), big: k > 0.5 });
+    if (k > 0.35) this.deploySafetyCar();
+  }
+  // ---- safety car (host setting): a big crash bunches the whole field up behind it ----
+  deploySafetyCar() {
+    if (!this.settings.safetyCar || this.sc || this.qualifying || this.phase !== "race" || this.time < 8 || this.time - this.scDoneAt < 30) return;
+    const leader = this.standings().find((c) => !c.finished);
+    if (!leader || leader.lapsDone >= this.settings.laps - 1) return;       // never on the final lap
+    this.sc = { since: this.time };
+    this.emit("feed", { t: "scOut" });
+  }
+  stepSafetyCar() {
+    if (!this.sc) return;
+    const sp = this.track.spacing, racing = (c) => !c.finished && !c.inPit && c.pitting <= 0 && c.aiMode !== "pitLane" && c.aiMode !== "pitOut";
+    const order = this.standings().filter(racing);
+    const bunched = order.every((c, i) => !i || !order[i - 1] || (order[i - 1].progress - c.progress) * sp < 125);
+    const leader = order[0];
+    if ((this.time - this.sc.since > 12 && bunched) || this.time - this.sc.since > 35 || !leader || leader.lapsDone >= this.settings.laps - 1) {
+      this.sc = null; this.scDoneAt = this.time; this.emit("feed", { t: "scIn" }); return;
+    }
+    // where the safety car itself is: a little way up the road from the leader
+    const N = this.track.N, i = (leader.idx + Math.round(110 / sp)) % N, P = this.track.pts[i], T = this.track.tan[i];
+    this.sc.x = P.x; this.sc.y = P.y; this.sc.h = Math.atan2(T.y, T.x);
+  }
+  // under the safety car: the leader drives at its pace, everyone else closes up to a tight gap, no boost
+  scLimit(c) {
+    if (!this.sc || c.finished || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut") return Infinity;
+    const SC = MAX_SPEED * 0.44, ah = c.ahead;
+    if (!ah || ah.finished) return SC;
+    const gap = (ah.progress - c.progress) * this.track.spacing;
+    return gap > 200 ? SC * 1.5 : gap > 90 ? SC * 1.15 : SC * 0.9;
   }
 
   standings() {
@@ -2098,7 +2152,19 @@ class Room {
       history: this.history, colors: this.seasonColors,
       mine: { drivers: rows.filter((r) => r.owner).map((r) => r.name), teams: [...new Set(players.map((p) => p.team).filter(Boolean))] },
     } : null;
-    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season });
+    // Driver of the Day: whoever gained the most places from where they started
+    let dotd = null;
+    order.forEach((c, i) => { const gained = (c.rs?.grid || i + 1) - (i + 1); if (gained > 0 && (!dotd || gained > dotd.gained)) dotd = { name: c.name, gained, grid: c.rs.grid, pos: i + 1, car: c }; });
+    // rivals: did you finish ahead?
+    for (const p of this.players.values()) {
+      if (!p.rival) continue;
+      const mi = order.findIndex((c) => c.owner === p.id), ri = order.findIndex((c) => c.name === p.rival);
+      if (mi < 0 || ri < 0) continue;
+      p.beatRival = mi < ri;
+      io.to(p.id).emit("rivalResult", { name: p.rival, beat: p.beatRival, coins: p.beatRival && p.uid ? RIVAL_COINS : 0 });
+    }
+    this.dotd = dotd && dotd.car;
+    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
     this.sendLobby();
     setTimeout(() => {
@@ -2129,7 +2195,7 @@ class Room {
         upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
         humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
         kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
-        rare: p.rare || null,
+        rare: p.rare || null, beatRival: !!(p.rival && p.beatRival), dotd: this.dotd === c,
         raceSec: this.time || 0, aiLevel: this.settings.aiLevel || "medium", theme: this.settings.theme, body: p.extras?.body || null,
         margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
@@ -2171,7 +2237,7 @@ class Room {
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.settings.weather === "dynamic" };
-    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, paused: !!this.paused, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
+    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, paused: !!this.paused, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
@@ -2415,6 +2481,7 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (["sunny", "rain", "dynamic"].includes(s?.weather)) S.weather = s.weather;
+    if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"].includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
     if ([1, 2, 3].includes(Number(s?.speed))) S.speed = Number(s.speed);
     if (WEAR_LEVELS[s?.wear]) S.wear = s.wear;

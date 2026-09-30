@@ -91,6 +91,7 @@
     </div>
     <div class="lob-head"><div class="sect">Public lobbies</div><button type="button" class="btn" id="pubBtn">Make public lobby</button></div>
     <div class="lobbies" id="lobbyList"><div class="lob-empty">Looking for lobbies...</div></div>
+    <div class="hidden" id="menuFriends"><div class="lob-head"><div class="sect">Friends online</div></div><div class="lobbies" id="friendsList"></div></div>
     <p class="err" id="menuErr" role="alert"></p>
     </section>
     <footer class="menu-foot"><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
@@ -152,6 +153,7 @@
           <label class="f wide">Teams <select id="sTeams"><option value="on">On: team up, teams score points</option><option value="off">Off: everyone for themselves</option></select></label>
           <label class="f wide">Championship length <select id="sSeason"><option value="0">Endless (never ends)</option><option value="3">3 races</option><option value="5">5 races</option><option value="8">8 races</option><option value="10">10 races</option></select></label>
           <label class="f wide">XP per second <span class="range-row"><input type="range" id="sXp" min="10" max="50" step="5" value="10" aria-label="XP per second"><output id="sXpOut" for="sXp">10 XP/s</output></span></label>
+          <label class="f wide">Safety car <select id="sSafety"><option value="off">Off</option><option value="on">On: a big crash brings out the safety car and bunches everyone up</option></select></label>
           <label class="f wide">Team colors <select id="sTeamColors"><option value="off">Off: everyone keeps their paint</option><option value="on">On: teammates share paint</option></select></label>
         </div>
       </section>
@@ -340,6 +342,7 @@
   <div class="res-card panel">
     <h2 id="resTitle">Race 1 results</h2>
     <canvas id="podium" aria-hidden="true"></canvas>
+    <p class="dotd hidden" id="dotdLine"></p>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
     <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>

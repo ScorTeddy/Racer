@@ -454,6 +454,10 @@ ACH.push(
   cnt("daily_7", "📆", "Week Streak", "Log in 7 days in a row", 150, "bestStreak", 7),
   cnt("daily_30", "🗓️", "Month Streak", "Log in 30 days in a row", 1000, "bestStreak", 30),
   cnt("daily_100", "🏆", "100-Day Legend", "Log in 100 days in a row", 5000, "bestStreak", 100),
+  cnt("rival_10", "🎯", "Nemesis", "Beat your rival 10 times", 400, "rivalWins", 10),
+  cnt("rival_50", "🗡️", "Rival Crusher", "Beat your rival 50 times", 2000, "rivalWins", 50),
+  one("dotd_1", "🏆", "Driver of the Day", "Gain the most places in a race", 100, (s) => (s.dotd || 0) >= 1),
+  cnt("dotd_25", "🌟", "Crowd Favourite", "Be Driver of the Day 25 times", 1500, "dotd", 25),
   cnt("ach_50", "🎯", "Achievement Hunter", "Unlock 50 achievements", 500, (s, u) => Object.keys(u.ach).length, 50),
   cnt("ach_100", "🏵️", "Completionist", "Unlock 100 achievements", 3000, (s, u) => Object.keys(u.ach).length, 100),
 );
@@ -747,6 +751,11 @@ function recordRace(u, r) {
   s.races++; s.raceSec += r.raceSec || 0;
   if (r.pos === 1) s.wins++;
   if (r.pos <= 3) s.podiums++;
+  // bonuses: beat your rival, Driver of the Day (most places gained)
+  const bonus = (r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0);
+  if (r.beatRival) s.rivalWins = (s.rivalWins || 0) + 1;
+  if (r.dotd) s.dotd = (s.dotd || 0) + 1;
+  if (bonus) { u.coins += bonus; s.coinsEarned = (s.coinsEarned || 0) + bonus; }
   if (r.pos <= 5) s.top5++;
   if (!s.bestFinish || r.pos < s.bestFinish) s.bestFinish = r.pos;
   s.points += r.pts || 0; s.laps += r.lapsDone || 0; s.km = Math.round((s.km + (r.km || 0)) * 100) / 100;
@@ -1069,7 +1078,7 @@ function savePreset(u, p) {
 }
 // saved race settings ("setting presets"): same idea as saved tracks. Values are checked again
 // when they're loaded (the settings handler only accepts valid ones), here they're just kept tidy.
-const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map"];
+const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar"];
 function cleanSetPreset(p) {
   if (!p || typeof p !== "object" || !p.settings || typeof p.settings !== "object") return null;
   const name = String(p.name || "").trim().slice(0, 30); if (!name) return null;

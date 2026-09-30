@@ -711,12 +711,12 @@
   socket.on("account", (u) => {
     if (u.token) { storeToken(u.token); delete u.token; }
     if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
-    if (!A.user || A.user.id !== u.id) { socket.emit("presets:get"); socket.emit("setPresets:get"); }
+    if (!A.user || A.user.id !== u.id) { socket.emit("presets:get"); socket.emit("setPresets:get"); socket.emit("friends:get"); }
     A.user = u; renderAcct();
     if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
     if (!$("hub").classList.contains("hidden")) renderHub();
   });
-  socket.on("signedOut", () => { A.user = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  socket.on("signedOut", () => { A.user = null; A.friends = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); renderMenuFriends(); if (!$("hub").classList.contains("hidden")) renderHub(); });
   // ======================= Sign up / log in / 2FA / forgot password =======================
   // modes: signup, login, code (2FA step), reset (forgot password)
   let authMode = "signup", lastAuth = null, ticket2fa = null;
@@ -989,7 +989,28 @@
     }, reducedMotion ? 1600 : 3400);
   });
   // ---- Friends tab ----
-  socket.on("friends", (f) => { A.friends = f; if (A.tab === "friends") renderFriends(A.user); });
+  socket.on("friends", (f) => { A.friends = f; if (A.tab === "friends") renderFriends(A.user); renderMenuFriends(); });
+  // main menu: which friends are online right now, and a one-click Join if they're in a room
+  function renderMenuFriends() {
+    const wrap = $("menuFriends"), box = $("friendsList");
+    wrap.classList.toggle("hidden", !A.user); if (!A.user) return;
+    box.textContent = "";
+    const F2 = A.friends; if (!F2) { box.appendChild(el("div", "lob-empty", "Loading friends...")); return; }
+    const on = F2.friends.filter((f) => f.online);
+    if (!on.length) { box.appendChild(el("div", "lob-empty", F2.friends.length ? `None of your ${F2.friends.length} friend${F2.friends.length === 1 ? " is" : "s are"} online right now.` : "No friends yet. Add some in Profile › Friends.")); return; }
+    for (const f of on) {
+      const row = el("div", "lob"), who = el("div", "who");
+      who.append(el("b", "", `🟢 ${f.name}`), el("small", "", f.where === "racing" ? "🏁 Racing right now" : f.where === "in a room" ? "In a room" : "On the menu"));
+      row.appendChild(who);
+      if (f.room && f.room !== S.code) {
+        const j = el("button", "join-btn", f.where === "racing" ? "Watch & join" : "Join"); j.type = "button";
+        j.addEventListener("click", () => { saveProfile(); S.solo = false; socket.emit("join", { code: f.room, profile: prof }); });
+        row.appendChild(j);
+      }
+      box.appendChild(row);
+    }
+  }
+  setInterval(() => { if (A.user && S.screen === "menu" && !document.hidden) socket.emit("friends:get"); }, 10000);
   socket.on("friendMsg", (m) => { const e = document.getElementById("friendMsg"); if (e) { e.textContent = m.error || m.ok; e.className = "sec-msg " + (m.error ? "bad" : "good"); } if (m.ok) socket.emit("friends:get"); });
   function renderFriends(u) {
     const box = $("hubFriends"); box.textContent = "";
@@ -1217,7 +1238,7 @@
     $("results").classList.toggle("hidden", screen !== "results");
     if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
-    if (screen === "menu") socket.emit("menuInfo");
+    if (screen === "menu") { socket.emit("menuInfo"); if (A.user) socket.emit("friends:get"); }
     if (screen !== "race") { setNitro(false); if (typeof hideCards === "function") hideCards(); }
     if (screen === "race" || screen === "menu") closeFinale();
     if (MUS && MUS.started) setTimeout(() => pickMusic(false), 50);
@@ -1316,6 +1337,8 @@
   socket.on("race", (r) => {
     S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])) };
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
+    S.ghost = null; if (r.quali) setTimeout(() => { S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
+    if (!r.quali) { S.rival = S.pendingRival?.name || null; const rv = S.pendingRival; S.pendingRival = null; if (rv) setTimeout(() => { banner(`🎯 RIVAL: ${rv.name}`, "#ff6b61"); popup(`Your rival: ${rv.name} (${rv.pts} pts, you have ${rv.mine}). Beat them for +100 coins!`); }, 1500); }
     snaps.length = 0; rt = 0; S.geo = S.track ? buildGeo(S.track) : null; resetTiles();
     S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
     S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99;
@@ -1439,7 +1462,7 @@
     show(S.lobby?.phase === "lobby" ? "lobby" : "results");
   }
   function onState(st) {
-    S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.standings = st.standings; S.gaps = st.gaps || [];
+    S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.sc = st.sc || null; S.standings = st.standings; S.gaps = st.gaps || [];
     S.ql = st.ql ?? -1;
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
@@ -1474,12 +1497,14 @@
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
+    if (f.t === "scIn") { banner("🟢 GREEN FLAG!", "#3ecf6a"); sfx("level"); }
     if (f.t === "photo") setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600);
     if (f.t === "crash" && S.track) {           // flying debris where it happened
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -1494,6 +1519,11 @@
   socket.on("offerCleared", () => { S.offer = null; S.cardsLater = false; hideCards(); renderPill(); S.up = null; $("garage").textContent = ""; });
   socket.on("picked", ({ key, up, now, name, rare }) => { S.up = up; S.justPicked = key; if (rare) S.myRare = rare; renderGarage(); popup(`${name || S.upInfo[key]?.name}: ${key.startsWith("__") ? now : "now " + now}!`); });
   // someone got a super rare card: everyone hears about it, and their car glows for the rest of the race
+  // your rival for this race (arrives just before the race starts)
+  socket.on("rival", (r) => { S.pendingRival = r; });
+  socket.on("rivalResult", (r) => {
+    setTimeout(() => popup(r.beat ? `🎯 You beat your rival ${r.name}!${r.coins ? ` +${r.coins} coins` : ""}` : `🎯 ${r.name} beat you this time. Get them next race!`, !r.beat), 1200);
+  });
   socket.on("rareCard", (r) => {
     const T = RARE_TIER[r.tier] || RARE_TIER.epic;
     if (r.car !== null && r.car !== undefined) (S.rareCars ||= new Map()).set(r.car, r.aura || r.tier);
@@ -1517,7 +1547,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -1696,7 +1726,7 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" ? (s[key] ? "on" : "off") : String(s[key]);
+      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" ? (s[key] ? "on" : "off") : String(s[key]);
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
@@ -2302,7 +2332,7 @@
   // ---- setting presets: every race setting in one go (saved like tracks: this browser + your account) ----
   const SP = { list: (() => { try { return JSON.parse(localStorage.getItem("tb-setpresets") || "[]"); } catch (e) { return []; } })() };
   const storeSP = (list) => { try { localStorage.setItem("tb-setpresets", JSON.stringify(list)); } catch (e) {} };
-  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map"];
+  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar"];
   socket.on("setPresets", (list) => {
     if (!list) return;
     const merged = mergePresets(SP.list, list);
@@ -2425,6 +2455,31 @@
   socket.on("daily", (d) => { banner(`DAILY BONUS +${d.coins} 🪙`, "#ffcc1f"); popup(d.streak > 1 ? `🔥 ${d.streak}-day streak! Come back tomorrow for more.` : "Come back tomorrow for a bigger bonus!"); sfx("level"); });
   socket.on("teamRenamed", (nu) => { prof.team = nu; teamIn.value = nu; try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {} });
   socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
+  // ---- qualifying ghost: a see-through copy of your best lap on this track (kept in this browser) ----
+  const ghostKey = () => { const T = S.track; return T ? `${T.N}_${Math.round(T.length)}_${T.reverse ? 1 : 0}_${Math.round(T.pts[0].x)}_${Math.round(T.pts[0].y)}` : null; };
+  function loadGhost() { try { const all = JSON.parse(localStorage.getItem("tb-ghosts") || "{}"); return all[ghostKey()] || null; } catch (e) { return null; } }
+  function saveGhost(t, path) {
+    if (S.ghost && S.ghost.t <= t) return;
+    S.ghost = { t, path };
+    try {
+      const all = JSON.parse(localStorage.getItem("tb-ghosts") || "{}"); all[ghostKey()] = { t, path, at: Date.now() };
+      const keys = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0)); for (const k of keys.slice(15)) delete all[k];   // keep the 15 newest tracks
+      localStorage.setItem("tb-ghosts", JSON.stringify(all));
+    } catch (e) {}
+    popup(`👻 New best lap: ${fmt(t)}. Your ghost will race it with you.`);
+  }
+  function drawGhost(ctx) {
+    const G = S.ghost, L = S.lapRef, me = S.cars.get(S.myCar);
+    if (!S.race?.quali || !G || !L || L.start === null || !me || me.fin) return;
+    const tt = S.t - L.start, P = G.path; if (tt > G.t + 1) return;
+    let lo = 0, hi = P.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= tt) lo = m; else hi = m; }
+    const a = P[lo], b = P[hi], f = b[0] > a[0] ? Math.min(1, Math.max(0, (tt - a[0]) / (b[0] - a[0]))) : 0;
+    const x = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f, h = a[3] + wrapAng(b[3] - a[3]) * f;
+    ctx.save(); ctx.globalAlpha = 0.38;
+    drawCar(ctx, { color: "#9ad0ff", livery: me.livery || "plain", number: me.number, extras: null }, x, y, h, 1, {});
+    ctx.globalAlpha = 0.75; ctx.font = "700 12px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "#cfe6ff"; ctx.fillText(`👻 best ${fmt(G.t)}`, x, y - 22);
+    ctx.restore();
+  }
   // ---- live delta to your best lap: time at each point of this lap vs. the same point on your best lap ----
   function lapDelta() {
     if (S.replaying) return;
@@ -2435,9 +2490,12 @@
       if (L.start !== null && me.laps === L.lap + 1) {
         const lapT = S.t - L.start;
         if (!L.best || lapT < L.bestT) { L.best = L.cur; L.bestT = lapT; }
+        if (S.race?.quali && L.path?.length > 20) saveGhost(lapT, L.path);
       }
-      L.cur = []; L.start = me.laps >= 0 ? S.t : null; L.lap = me.laps;
+      L.cur = []; L.path = []; L.start = me.laps >= 0 ? S.t : null; L.lap = me.laps;
     }
+    // qualifying: remember the line you drove, for the ghost of your best lap
+    if (S.race?.quali && L.start !== null) { const tt = S.t - L.start, pth = L.path || (L.path = []); if (!pth.length || tt - pth[pth.length - 1][0] > 0.04) pth.push([Math.round(tt * 1000) / 1000, Math.round(me.x), Math.round(me.y), Math.round(me.h * 100) / 100]); }
     if (L.start !== null && L.cur[bk] === undefined) L.cur[bk] = S.t - L.start;
     const box = $("lapDelta");
     if (!L.best || L.cur[bk] === undefined || L.best[bk] === undefined) { if (!L.best) box.classList.add("hidden"); return; }
@@ -3038,10 +3096,14 @@
     r.rows.forEach((x, i) => {
       const tr = document.createElement("tr"); if (x.owner === S.me) tr.className = "me"; tr.style.animationDelay = (0.4 + i * 0.06) + "s";
       const td = (t, cls) => { const d = document.createElement("td"); d.textContent = t; if (cls) d.className = cls; return d; };
-      const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}`);
+      const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}${r.dotd?.name === x.name ? " 🏆" : ""}${S.rival === x.name ? " 🎯" : ""}`);
       tr.append(td(i + 1), nm, td(x.team || ""), td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
       body.appendChild(tr);
     });
+    // Driver of the Day (most places gained)
+    const dd = $("dotdLine");
+    if (dd) { dd.textContent = r.dotd ? `🏆 Driver of the Day: ${r.dotd.name}, up ${r.dotd.gained} place${r.dotd.gained === 1 ? "" : "s"} (P${r.dotd.grid} → P${r.dotd.pos})${r.dotd.coins ? ` · +${r.dotd.coins} coins` : ""}` : ""; dd.classList.toggle("hidden", !r.dotd); }
+    if (r.dotd && r.rows.find((x) => x.name === r.dotd.name)?.owner === S.me) setTimeout(() => banner("🏆 DRIVER OF THE DAY!", "#ffcc1f"), 2200);
     S.podium = r.rows.slice(0, 3); S.podiumAt = performance.now();
     confetti = [];
     if (!reducedMotion) for (let i = 0; i < 120; i++) confetti.push({ x: Math.random(), y: -Math.random() * 0.6, vx: (Math.random() - 0.5) * 0.15, vy: 0.2 + Math.random() * 0.3, r: Math.random() * 6, c: ["#ffcc1f", "#e53935", "#3b82f6", "#3ecf6a", "#fff"][i % 5], s: 4 + Math.random() * 5 });
@@ -3862,6 +3924,17 @@
       const ix = c.trackIdx ?? c.drawIdx ?? c.idx, k = ix !== undefined ? G.segOf[ix] : -1;
       (k >= 0 ? layers[k] : ground).push(c);
     }
+    // the safety car, gliding along in front of the leader with its lights flashing
+    if (S.sc) {
+      const d = S.scDraw || (S.scDraw = { x: S.sc[0], y: S.sc[1], h: S.sc[2] });
+      const k = Math.min(1, dt * 6); d.x += (S.sc[0] - d.x) * k; d.y += (S.sc[1] - d.y) * k; d.h += wrapAng(S.sc[2] - d.h) * k;
+      drawCar(ctx, { color: "#f2f2f2", livery: "split", number: "SC", extras: null }, d.x, d.y, d.h, 1.05, {});
+      const on = Math.floor(performance.now() / 250) % 2;
+      ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.h);
+      for (const [yy, col] of [[-5, on ? "#ffb020" : "#5a3a00"], [5, on ? "#5a3a00" : "#ffb020"]]) { ctx.fillStyle = col; ctx.shadowColor = "#ffb020"; ctx.shadowBlur = col === "#ffb020" ? 14 : 0; ctx.fillRect(-4, yy - 2.5, 6, 5); }
+      ctx.restore();
+    } else S.scDraw = null;
+    drawGhost(ctx);
     const mineLast = (a, b) => (a.id === S.myCar) - (b.id === S.myCar);
     const drawOne = (c) => {
       if (!visible(c)) return;
@@ -3892,7 +3965,8 @@
       }
       const showName = settings.names === "all" || (settings.names === "mine" && c.id === S.myCar);
       if (showName) {
-        const label = (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name);
+        const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
+        const label = (pos ? `P${pos} ` : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
         ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
         ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
@@ -3957,6 +4031,7 @@
     if (s === "stardust") return Math.random() < 0.5 ? "rgba(255,226,120,0.85)" : Math.random() < 0.5 ? "rgba(255,255,255,0.9)" : "rgba(190,140,255,0.8)";
     return s + "aa";
   }
+  const wrapAng = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
   function puff(c, color) {
     if (S.particles.length > 300) return;
     S.particles.push({ x: c.x - Math.cos(c.h) * 20, y: c.y - Math.sin(c.h) * 20, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, life: 0.6, age: 0, r: 6 + Math.random() * 6, color });
@@ -4084,7 +4159,7 @@
         const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
         const p = document.createElement("span"); p.className = "p"; p.textContent = i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
-        const n = document.createElement("span"); n.className = "n"; n.textContent = c.name;
+        const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + c.name;
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
         g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);
