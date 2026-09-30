@@ -31,6 +31,7 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
+const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 const RIVAL_COINS = 100, DOTD_COINS = 150;   // bonuses for beating your rival / being Driver of the Day
 // Run the tank dry and it's locked for 5s (no boosting, no regen) unless an overtake or the line refills it.
 const NITRO_LOCKOUT = 5;
@@ -2113,6 +2114,9 @@ class Room {
   }
   // ----- XP + upgrade cards -----
   addXp(p, amount, label) {
+    // firing your boost earns 1.5x upgrade XP while it's on
+    const c = this.phase === "race" && this.carOf && this.carOf(p.id);
+    if (c && c.nitroOn && amount > 0) { amount = Math.round(amount * BOOST_XP_MULT); if (label) label += ` (⚡x${BOOST_XP_MULT} boost)`; }
     p.xp += amount;
     if (label) io.to(p.id).emit("xp", { label });
     while (p.xp >= xpForLevel(p.level)) { p.xp -= xpForLevel(p.level); p.level++; p.pendingPicks++; io.to(p.id).emit("levelUp", { level: p.level }); }

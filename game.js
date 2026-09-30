@@ -2543,7 +2543,7 @@
     lobby: ["👋 Welcome to Scribble GP!", "This is your room. Normally you draw a track here (or roll a random one) - we made one for you. You're the <b>team boss</b>: your AI driver steers, you make the calls. Press <b>Start race</b>!"],
     tires: ["🛞 Pick your starting tires", "<b>Fast</b> is quickest but wears out fast. <b>Durable</b> lasts longest but is slow. <b>Wets</b> are for rain. For your first race, <b>Intermediate</b> is a safe pick."],
     lights: ["🚦 Get a rocket start", "Watch the 5 red lights. Press <b>Space</b> (or tap the screen) the moment they go <b>out</b>. Too early = jump start!"],
-    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake. Run it dry and it's locked for 5 seconds, unless you overtake or cross the line."],
+    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake. Run it dry and it's locked for 5 seconds, unless you overtake or cross the line. While it's on, you earn <b>1.5x upgrade XP</b>."],
     upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick one of the cards (keys <b>1 / 2 / 3</b>) to upgrade your car or driver. They stack up during the race."],
     pit: ["🔧 Tires wearing out", "See the tire bar at the bottom? When it gets low the car slows down and can get a puncture. Press <b>B</b> (Box this lap) to pit for fresh tires - you choose which set on the way in."],
     afterPit: ["✅ Nice stop!", "Fresh tires! In longer races, timing your stops (and the weather) is how races are won. <b>Tab</b> watches other cars, <b>O</b> opens settings."],

@@ -1027,9 +1027,9 @@ function dailyPublic(u) {
 
 // ======================= Season pass =======================
 // One a month (UTC), each with its own theme, items and themed crate. Race to earn pass XP, and every
-// tier pays out on the FREE track. The PREMIUM track costs 200 coins and adds the themed items and
+// tier pays out on the FREE track. The PREMIUM track costs 2,000 coins and adds the themed items and
 // crates (bought late? you get everything you already reached straight away).
-const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 200;
+const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 2000;
 const PASS_XP = { daily: 150, weekly: 300 };
 const RIVAL_PASS_XP = 100;   // bonus season pass XP for beating your rival (on top of the 100 coins)
 const monthKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
