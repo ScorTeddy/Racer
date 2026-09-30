@@ -53,6 +53,7 @@
         <button type="button" class="btn" data-hub="stats">📊 Stats</button>
         <button type="button" class="btn" data-hub="ach">🏅 Achievements</button>
         <button type="button" class="btn" data-hub="store">🛒 Store</button>
+        <button type="button" class="btn" data-hub="ranked">🏆 Rank</button>
         <button type="button" class="btn ghost hidden" id="signOutBtn">Sign out</button>
         <button type="button" class="btn ghost hidden" id="signOutAllBtn" title="Log out on every phone and computer (use it if someone else might know your password)">🔒 Sign out everywhere</button>
       </div>
@@ -83,6 +84,13 @@
     <h2 class="menu-h" id="playHead">Play</h2>
     <button type="button" class="btn go" id="quickBtn" title="Jump straight into a public room with other players">⚡ Quick Play</button>
     <div class="menu-row2"><button type="button" class="btn" id="soloBtn">🏁 Race solo</button><button type="button" class="btn" id="tutBtn" title="A short guided race that shows you how everything works">🎓 Tutorial</button></div>
+    <button type="button" class="btn ranked-btn" id="rankedBtn" title="Race for your skill rating: Iron up to Overdrive Elite"><span class="rk-ic" id="rankedIc" aria-hidden="true">🏆</span><span class="rk-tx"><b>Ranked</b><small id="rankedSub">Sign in to get a rank</small></span></button>
+    <div class="totw-card" id="totwCard">
+      <canvas id="totwCv" width="120" height="76" aria-hidden="true"></canvas>
+      <div class="totw-tx"><small>🌟 Track of the week</small><b id="totwName">Loading...</b><span id="totwSub"></span></div>
+      <div class="totw-btns"><button type="button" class="btn go" id="totwRace">Race it</button><button type="button" class="btn" id="totwBoard">🏆 Times</button></div>
+    </div>
+    <div class="menu-row2"><button type="button" class="btn" id="replaysBtn" title="Replays you saved, or load one from a code">🎬 Replays</button><button type="button" class="btn" data-hub="pass" title="This month's season pass">🎟️ Season pass</button></div>
     <div class="sep-or">or play with friends</div>
     <div class="row">
       <button type="button" class="btn" id="createBtn">Make a room</button>
@@ -146,10 +154,10 @@
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
           <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
-          <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">Night</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
+          <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">🌙 Night (headlights on)</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
           <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
           <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
-          <label class="f wide">Weather <select id="sWeather"><option value="sunny">☀ Always sunny</option><option value="rain">🌧 Always rainy</option><option value="dynamic">⛅ Dynamic (changes mid-race)</option></select></label>
+          <label class="f wide">Weather <select id="sWeather"><option value="sunny">☀ Always sunny</option><option value="rain">🌧 Always rainy</option><option value="dynamic">⛅ Dynamic (changes mid-race)</option><option value="fog">🌫 Fog (you can't see far)</option></select></label>
           <label class="f wide">Teams <select id="sTeams"><option value="on">On: team up, teams score points</option><option value="off">Off: everyone for themselves</option></select></label>
           <label class="f wide">Championship length <select id="sSeason"><option value="0">Endless (never ends)</option><option value="3">3 races</option><option value="5">5 races</option><option value="8">8 races</option><option value="10">10 races</option></select></label>
           <label class="f wide">XP per second <span class="range-row"><input type="range" id="sXp" min="10" max="50" step="5" value="10" aria-label="XP per second"><output id="sXpOut" for="sXp">10 XP/s</output></span></label>
@@ -258,6 +266,9 @@
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
         <button type="button" class="tool" id="f1Btn" title="Race a real circuit (F1 tracks, the Nordschleife, ovals)"><span>🏆</span>Real tracks</button>
         <button type="button" class="tool" id="presetBtn" title="Save this track, or load one you saved"><span>💾</span>My tracks</button>
+        <button type="button" class="tool" id="totwBtn" title="Load this week's featured track (it has its own leaderboard)"><span>🌟</span>Track of the week</button>
+        <button type="button" class="tool" id="shareTrackBtn" title="Get a short code anyone can use to load this track"><span>🔗</span>Share code</button>
+        <button type="button" class="tool" id="loadCodeBtn" title="Load a track someone shared with you"><span>📥</span>Load code</button>
         <button type="button" class="tool" id="cutBtn" title="Pick a part of the track, delete it and draw it again"><span>✂️</span>Redraw part</button>
         <button type="button" class="tool" id="smoothBtn" aria-pressed="false" title="Straightens the straights and smooths the curves"><span>〰️</span>Smooth</button>
         <button type="button" class="tool danger" id="clearBtn"><span>🗑️</span>Clear</button>
@@ -294,7 +305,15 @@
   <div class="banner" id="banner"></div>
   <div class="pitring panel hidden" id="pitRing"><div class="meter-label"><span>Pit stop</span><span id="pitPct">0%</span></div><div class="meter"><div id="pitFill"></div></div></div>
   <div class="popups" id="popups"></div>
-  <div class="replay-bar panel hidden" id="replayBar"><b>🎬 Replay: the last 25 seconds</b><button type="button" class="btn" id="replayCam">Follow: winner</button><button type="button" class="btn go" id="replayExit">Exit replay</button></div>
+  <div class="replay-bar panel hidden" id="replayBar"><b id="replayTitle">🎬 Replay: the last 30 seconds</b><button type="button" class="btn" id="replayCam">Follow: winner</button><button type="button" class="btn" id="replayPhoto">📷 Photo</button><button type="button" class="btn" id="replaySave">💾 Save</button><button type="button" class="btn" id="replayShare">🔗 Share</button><button type="button" class="btn go" id="replayExit">Exit replay</button></div>
+  <div class="photo-bar panel hidden" id="photoBar" role="group" aria-label="Photo mode">
+    <b>📷 Photo mode</b><span class="photo-tip">Drag to move · scroll or pinch to zoom</span>
+    <button type="button" class="btn" id="photoOut" aria-label="Zoom out">➖</button><button type="button" class="btn" id="photoIn" aria-label="Zoom in">➕</button>
+    <button type="button" class="btn" id="photoRot" title="Tilt the picture">⟳ Tilt</button>
+    <button type="button" class="btn" id="photoHud" aria-pressed="false">Names</button>
+    <button type="button" class="btn go" id="photoSnap">📸 Take photo</button>
+    <button type="button" class="btn ghost" id="photoExit">Exit</button>
+  </div>
   <div class="spec-bar panel" id="specBar"><b>👀 Spectating</b><span>Watching <b id="specName">the leader</b></span><button type="button" class="btn" id="specPrev" aria-label="Watch the car ahead">◀</button><button type="button" class="btn" id="specNext" aria-label="Watch the car behind">▶</button><button type="button" class="btn" id="specLead">Leader</button></div>
   <div class="pause-veil hidden" id="pauseVeil" role="status"><div class="panel"><b>⏸ Race paused</b><span id="pauseBy">The host paused the race.</span><button type="button" class="btn go hidden" id="resumeBtn">▶ Resume (P)</button></div></div>
   <div class="must-pit hidden" id="mustPit" role="alert">
@@ -319,6 +338,7 @@
     <div class="next-tires" id="nextTires"><span>Next tires:</span></div>
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
     <div class="emote-row" aria-label="Quick emotes"><button type="button" class="emo" data-emote="👍" aria-label="Emote 👍">👍</button><button type="button" class="emo" data-emote="😂" aria-label="Emote 😂">😂</button><button type="button" class="emo" data-emote="😮" aria-label="Emote 😮">😮</button><button type="button" class="emo" data-emote="😡" aria-label="Emote 😡">😡</button><button type="button" class="emo" data-emote="🔥" aria-label="Emote 🔥">🔥</button><button type="button" class="emo" data-emote="GG" aria-label="Emote GG">GG</button><button type="button" class="emo" data-emote="🏁" aria-label="Emote 🏁">🏁</button><button type="button" class="emo" data-emote="😭" aria-label="Emote 😭">😭</button></div>
+    <button type="button" class="rbtn" id="photoBtn" title="Photo mode: freeze the view, move the camera, take a picture (K)"><kbd>K</kbd> 📷 Photo mode</button>
     <button type="button" class="rbtn hidden" id="pauseBtn" title="Host only: freeze the race for everyone (P)"><kbd>P</kbd> Pause race</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
   </div>
@@ -347,7 +367,8 @@
     <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>
     <div id="seasonBox"></div>
-    <button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button>
+    <div class="ranked-res hidden" id="rankedRes" role="status"></div>
+    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button></div>
     <div class="back" id="backText">Back to the garage in 12s</div>
   </div>
 </div>
@@ -452,6 +473,8 @@
       <button type="button" role="tab" data-ht="stats" aria-selected="true">📊 Stats</button>
       <button type="button" role="tab" data-ht="ach" aria-selected="false">🏅 Achievements <span class="hub-count" id="achCount"></span></button>
       <button type="button" role="tab" data-ht="store" aria-selected="false">🛒 Store</button>
+      <button type="button" role="tab" data-ht="pass" aria-selected="false">🎟️ Season pass</button>
+      <button type="button" role="tab" data-ht="ranked" aria-selected="false">🏆 Ranked</button>
       <button type="button" role="tab" data-ht="friends" aria-selected="false">👥 Friends</button>
       <button type="button" role="tab" data-ht="lb" aria-selected="false">🏆 Leaderboards</button>
       <button type="button" role="tab" data-ht="sec" aria-selected="false">🔒 Security</button>
@@ -463,6 +486,8 @@
     <div class="hub-body hidden" id="hubSec"></div>
     <div class="hub-body hidden" id="hubFriends"></div>
     <div class="hub-body hidden" id="hubLb"></div>
+    <div class="hub-body hidden" id="hubPass"></div>
+    <div class="hub-body hidden" id="hubRanked"></div>
   </div>
 </div>
 
@@ -481,6 +506,44 @@
     <div class="f1-grid" id="f1Grid"></div>
   </div>
 </div>
+<!-- ============ Replays ============ -->
+<div id="replayBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="replayBoxTitle">
+  <div class="preset-card panel">
+    <header class="hub-head"><h2 id="replayBoxTitle">🎬 Replays</h2><button type="button" class="x" id="replayBoxClose" aria-label="Close">✕</button></header>
+    <form class="preset-save" id="replayCodeForm">
+      <input type="text" id="replayCodeIn" maxlength="8" placeholder="Replay code, e.g. K7PQ2M" aria-label="Replay code" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn go">Watch</button>
+    </form>
+    <p class="preset-note" id="replayNote">Save the end of a race from the results screen (💾), or watch one a friend shared with you.</p>
+    <div class="replay-list" id="replayList"></div>
+  </div>
+</div>
+
+<!-- ============ Share code / load code ============ -->
+<div id="codeBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="codeTitle">
+  <div class="code-card panel">
+    <header class="hub-head"><h2 id="codeTitle">🔗 Share code</h2><button type="button" class="x" id="codeClose" aria-label="Close">✕</button></header>
+    <p class="preset-note" id="codeLead"></p>
+    <div class="big-code" id="codeShow"></div>
+    <form class="preset-save hidden" id="codeForm"><input type="text" id="codeInput" maxlength="8" placeholder="6-letter code" aria-label="Track code" autocomplete="off" spellcheck="false"><button type="submit" class="btn go">Load track</button></form>
+    <div class="sec-row" id="codeBtns"><button type="button" class="btn go" id="codeCopy">📋 Copy code</button></div>
+    <p class="sec-msg" id="codeMsg" role="status"></p>
+  </div>
+</div>
+
+<!-- ============ A friend: chat, gifts and trades ============ -->
+<div id="friendBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="friendTitle">
+  <div class="friend-card panel">
+    <header class="hub-head"><h2 id="friendTitle">Friend</h2><button type="button" class="x" id="friendClose" aria-label="Close">✕</button></header>
+    <nav class="hub-tabs" role="tablist">
+      <button type="button" role="tab" data-ft="chat" aria-selected="true">💬 Chat</button>
+      <button type="button" role="tab" data-ft="gift" aria-selected="false">🎁 Gift</button>
+      <button type="button" role="tab" data-ft="trade" aria-selected="false">🤝 Trade</button>
+    </nav>
+    <div class="friend-body" id="friendBody"></div>
+  </div>
+</div>
+
 <datalist id="teamList"></datalist>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/game.js"></script>

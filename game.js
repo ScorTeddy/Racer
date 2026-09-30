@@ -698,6 +698,9 @@
     $("gsiBtn").classList.toggle("hidden", !!u);
     $("devLoginBtn").classList.toggle("hidden", !!u || !A.cfg?.dev);
     A.extras = extrasFor(u);
+    renderRankedBtn();
+    if (u) A.giftUntil = Date.now() + (u.giftCd || 0) * 1000;
+    if (!$("friendBox").classList.contains("hidden") && FR.who) renderFriend();
   }
   socket.on("catalog", (c) => { A.catalog = c; renderAcct(); if (!$("hub").classList.contains("hidden")) renderHub(); });
   // The sign-in token goes into an HttpOnly cookie (page scripts, and so any injected script, can't read it).
@@ -838,11 +841,12 @@
   function renderHub() {
     const u = A.user;
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
-    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
+    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u);
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
@@ -878,20 +882,10 @@
     const prog = u?.achProg || {};
     const pctOf = (a) => (got[a.id] ? 1 : a.goal ? Math.min(1, (prog[a.id] || 0) / a.goal) : 0);
     const f = A.achFilter || "todo";
-    // this week's challenges
-    if (u?.weekly) {
-      const wk = el("section", "weekly"); const days = Math.max(0, Math.ceil((u.weekly.ends - Date.now()) / 86400000));
-      wk.appendChild(el("h3", "hub-h", `📅 This week's challenges · new ones in ${days} day${days === 1 ? "" : "s"}`));
-      const wg = el("div", "ach-grid");
-      for (const c of u.weekly.list) {
-        const d = el("div", "ach" + (c.done ? " got" : ""));
-        const tx = el("div"); tx.append(el("b", "", c.name), el("small", "", c.desc));
-        if (!c.done) { const pb = el("div", "ach-prog"); const fi = el("i"); fi.style.width = (c.prog / c.goal) * 100 + "%"; pb.appendChild(fi); tx.append(pb, el("small", "ach-num", `${c.prog} / ${c.goal}`)); }
-        d.append(el("span", "ic", c.done ? "✅" : "📅"), tx, el("span", "rw", c.done ? "✓ +" + c.coins : "🪙 " + c.coins));
-        wg.appendChild(d);
-      }
-      wk.appendChild(wg); box.appendChild(wk);
-    } else if (!u) box.appendChild(el("p", "preset-note", "Sign in to get 3 new weekly challenges every Monday (they pay coins)."));
+    // today's and this week's challenges
+    if (u?.daily) { const hrs = Math.max(1, Math.ceil((u.daily.ends - Date.now()) / 3600000)); box.appendChild(challengeBlock(`☀️ Today's challenges · new ones in ${hrs} hour${hrs === 1 ? "" : "s"} · +150 pass XP each`, u.daily, "☀️")); }
+    if (u?.weekly) { const days = Math.max(0, Math.ceil((u.weekly.ends - Date.now()) / 86400000)); box.appendChild(challengeBlock(`📅 This week's challenges (harder) · new ones in ${days} day${days === 1 ? "" : "s"} · +300 pass XP each`, u.weekly, "📅")); }
+    else if (!u) box.appendChild(el("p", "preset-note", "Sign in to get 3 daily challenges every day and 3 weekly ones every Monday (they pay coins and season pass XP)."));
     const fbar = el("div", "ach-filters");
     for (const [k, label] of [["todo", "To do"], ["done", "Unlocked"], ["hard", "🔥 Insane"], ["all", "All"]]) {
       const b = el("button", "chip" + (f === k ? " on" : ""), label); b.type = "button";
@@ -952,7 +946,7 @@
   // opening a chest: a strip of items spins past and stops on what you got
   socket.on("boxResult", (r) => {
     const wrap = el("div", "reel-veil"), panel = el("div", "reel-panel panel"), strip = el("div", "reel-strip"), win = el("div", "reel-win");
-    const pool = A.catalog.store, N = 38, stopAt = 32;
+    const pool = r.box?.startsWith("crate_") ? A.catalog.store.filter((x) => x.pass === r.box.slice(6)) : A.catalog.store.filter((x) => !x.pass), N = 38, stopAt = 32;
     for (let i = 0; i < N; i++) {
       const it = i === stopAt ? r.item : pool[Math.floor(Math.random() * pool.length)];
       const cell = el("div", "reel-cell"); cell.style.setProperty("--rc", RARITY[it.rarity][1]);
@@ -1025,6 +1019,7 @@
     go.addEventListener("click", send); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
     row.append(inp, go); top.appendChild(row); const fm = el("p", "sec-msg"); fm.id = "friendMsg"; fm.setAttribute("role", "status"); top.appendChild(fm);
     box.appendChild(top);
+    const tb = tradesBlock(u); if (tb) box.appendChild(tb);
     if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     const person = (f, buttons) => {
       const d = el("div", "friend");
@@ -1043,6 +1038,7 @@
       const b = [];
       if (S.code && S.screen === "lobby") b.push(["Invite", "go", () => socket.emit("friends:invite", f.id)]);
       if (f.online && f.room && f.room !== S.code) b.push(["Join them", "", () => { closeHub(); saveProfile(); S.solo = false; socket.emit("join", { code: f.room, profile: prof }); }]);
+      b.push(["💬", "", () => openFriend(f, "chat")], ["🎁", "", () => openFriend(f, "gift")], ["🤝", "", () => openFriend(f, "trade")]);
       b.push(["Remove", "ghost", () => socket.emit("friends:remove", f.id)]);
       box.appendChild(person(f, b));
     }
@@ -1052,7 +1048,7 @@
   socket.on("lb", (d) => { A.lb = d; if (d.tracks) A.lbTracks = d.tracks; if (A.tab === "lb") renderLb(); });
   function renderLb() {
     const box = $("hubLb"); box.textContent = "";
-    const kinds = [["wins", "🏆 Most wins"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
+    const kinds = [["wins", "🏆 Most wins"], ["ranked", "⚡ Ranked"], ["totw", "🌟 Track of the week"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
     const bar = el("div", "ach-filters");
     for (const [k, label] of kinds) { const b = el("button", "chip" + ((A.lbKind || "wins") === k ? " on" : ""), label); b.type = "button"; b.addEventListener("click", () => { A.lbKind = k; A.lb = null; socket.emit("lb:get", { kind: k, track: A.lbTrack || "" }); renderLb(); }); bar.appendChild(b); }
     box.appendChild(bar);
@@ -1066,12 +1062,18 @@
       box.appendChild(sel); box.appendChild(el("p", "preset-note", "Fastest laps on real tracks by signed-in players (● = has times)."));
     }
     const L = A.lb;
+    if ((A.lbKind || "wins") === "totw") {
+      const T = L?.info || S.totw;
+      box.appendChild(el("p", "preset-note", T ? `🌟 ${T.name}: fastest laps this week (resets every Monday). Race it from the main menu, or 🌟 on the track tools.` : "This week's featured track."));
+      const go = el("button", "btn go", "Race it now"); go.type = "button"; go.addEventListener("click", () => { closeHub(); $("totwRace").click(); }); if (!S.code) box.appendChild(go);
+    }
+    if ((A.lbKind || "wins") === "ranked") box.appendChild(el("p", "preset-note", "The top ranked players by skill rating (SR)."));
     if (!L) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     if (!L.list.length) { box.appendChild(el("p", "preset-note", "No times yet. Be the first!")); return; }
     const ol = el("ol", "lb-list");
     L.list.forEach((x, i) => {
       const li = el("li", x.id === A.user?.id ? "mine" : "");
-      li.append(el("span", "lp", i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1)), el("span", "ln", x.name), el("span", "lv", L.kind === "laps" ? fmt3(x.v) : L.kind === "km" ? `${x.v.toLocaleString()} km` : x.v.toLocaleString()));
+      li.append(el("span", "lp", i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1)), el("span", "ln", x.name), el("span", "lv", L.kind === "laps" || L.kind === "totw" ? fmt3(x.v) : L.kind === "ranked" ? `${x.rank} · ${x.v} SR` : L.kind === "km" ? `${x.v.toLocaleString()} km` : x.v.toLocaleString()));
       ol.appendChild(li);
     });
     box.appendChild(ol);
@@ -1160,11 +1162,11 @@
     box.appendChild(el("p", "hub-h", u ? `You have 🪙 ${u.coins}. Earn more by unlocking achievements. Items show up on your car in every race.` : "Earn coins from achievements and spend them here. Items show up on your car in every race."));
     renderBoxes(box, u);
     const order = ["body", "livery"], rank = (x) => (order.indexOf(x) === -1 ? 99 : order.indexOf(x));
-    const slots = [...new Set(A.catalog.store.map((x) => x.slot))].sort((a, b) => rank(a) - rank(b));
+    const slots = [...new Set(A.catalog.store.filter((x) => !x.pass).map((x) => x.slot))].sort((a, b) => rank(a) - rank(b));
     for (const slot of slots) {
       const sec = el("section", "store-slot"); sec.appendChild(el("h3", "hub-h", SLOT_NAMES[slot] || slot));
       const g = el("div", "store-grid");
-      for (const it of A.catalog.store.filter((x) => x.slot === slot)) {
+      for (const it of A.catalog.store.filter((x) => x.slot === slot && (!x.pass || u?.owned.includes(x.id)))) {
         const owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
         const card = el("div", "item" + (on ? " on" : ""));
         const cv = itemPreview(it);
@@ -1236,7 +1238,8 @@
     if (typeof renderChat === "function") renderChat();
     $("hud").classList.toggle("hidden", screen !== "race");
     $("results").classList.toggle("hidden", screen !== "results");
-    if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); }
+    if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); if (S.photoOn) photoMode(false); }
+    if (screen === "menu") socket.emit("totw:info");
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
     if (screen === "menu") { socket.emit("menuInfo"); if (A.user) socket.emit("friends:get"); }
     if (screen !== "race") { setNitro(false); if (typeof hideCards === "function") hideCards(); }
@@ -1309,7 +1312,7 @@
     S.restarting = false;
   });
   socket.on("lobby", (l) => {
-    S.lobby = l; S.host = l.hostId === S.me;
+    S.lobby = l; S.host = l.hostId === S.me && !l.ranked;
     if (l.phase === "lobby" && (S.screen === "results" && !S.resultsHold)) show("lobby");
     renderLobby();
   });
@@ -1335,7 +1338,10 @@
   socket.on("toast", (t) => popup(t, true));
 
   socket.on("race", (r) => {
-    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])) };
+    if (S.replaying) stopReplay();
+    if (S.photoOn) photoMode(false);
+    RP.buf = []; S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked };
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
     S.ghost = null; if (r.quali) setTimeout(() => { S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
     if (!r.quali) { S.rival = S.pendingRival?.name || null; const rv = S.pendingRival; S.pendingRival = null; if (rv) setTimeout(() => { banner(`🎯 RIVAL: ${rv.name}`, "#ff6b61"); popup(`Your rival: ${rv.name} (${rv.pts} pts, you have ${rv.mine}). Beat them for +100 coins!`); }, 1500); }
@@ -1378,7 +1384,7 @@
       row.appendChild(b);
     }
     markPick();
-    $("tpHint").textContent = p.raining ? "🌧 It's raining! Anything but Wets will slide all over the place." : p.weather === "dynamic" ? "⛅ The weather could change mid-race." : "☀ Dry track today.";
+    $("tpHint").textContent = p.raining ? "🌧 It's raining! Anything but Wets will slide all over the place." : p.weather === "dynamic" ? "⛅ The weather could change mid-race." : p.weather === "fog" ? "🌫 Thick fog today: dry, but you can't see far ahead." : "☀ Dry track today.";
     const end = performance.now() + p.until;
     clearInterval(tpTimer);
     tpTimer = setInterval(() => {
@@ -1441,24 +1447,42 @@
   // ---- replay: the last 25 seconds of every race are kept, so you can watch the finish again ----
   const RP = { buf: [], timers: [] };
   socket.on("state", (st) => {
-    if (st.phase === "race") { const now = performance.now(); RP.buf.push({ at: now, st }); while (RP.buf.length && now - RP.buf[0].at > 25000) RP.buf.shift(); }
+    if (st.phase === "race") { const now = performance.now(); RP.buf.push({ at: now, st }); while (RP.buf.length && now - RP.buf[0].at > 30000) RP.buf.shift(); }
     if (!S.replaying) onState(st);
   });
   function startReplay() {
     if (RP.buf.length < 30 || !S.race) return;
-    const clip = RP.buf.slice(), t0 = clip[0].at;
-    S.replaying = true; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.lapRef = null;
+    const t0 = RP.buf[0].at;
+    S.replayRec = null;
+    runClip(RP.buf.map((m) => ({ at: m.at - t0, st: m.st })), S.lastResults?.rows?.[0]?.name, null);
+  }
+  // plays a list of {at: ms from the start, st: state} through the normal race view
+  function runClip(clip, winnerName, savedTitle) {
+    S.replaying = savedTitle ? "saved" : "live"; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.lapRef = null;
     document.body.classList.add("replaying", "spectating"); $("specBar").classList.add("hidden");
     show("race"); $("replayBar").classList.remove("hidden");
-    const winner = S.lastResults?.rows?.[0]; const w = winner && [...S.race.info.values()].find((c) => c.name === winner.name);
-    S.camTarget = w ? w.id : null;
-    RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at - t0));
-    RP.timers.push(setTimeout(stopReplay, clip[clip.length - 1].at - t0 + 1500));
+    $("replayTitle").textContent = savedTitle ? `🎬 ${savedTitle}` : "🎬 Replay: the last 30 seconds";
+    $("replaySave").classList.toggle("hidden", !!savedTitle);
+    const w = winnerName && [...S.race.info.values()].find((c) => c.name === winnerName);
+    S.camTarget = w ? w.id : null; $("replayCam").textContent = `Follow: ${w ? w.name : "leader"}`;
+    RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at));
+    RP.timers.push(setTimeout(stopReplay, clip[clip.length - 1].at + 1500));
   }
   function stopReplay() {
     if (!S.replaying) return;
+    const saved = S.replaying === "saved";
+    if (S.photoOn) photoMode(false);
     RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false; S.camTarget = null;
-    document.body.classList.remove("replaying"); document.body.classList.toggle("spectating", !S.myCar); $("replayBar").classList.add("hidden");
+    document.body.classList.remove("replaying"); $("replayBar").classList.add("hidden");
+    if (saved && S.replayPrev) {
+      const P = S.replayPrev; S.replayPrev = null;
+      S.track = P.track; S.race = P.race; S.geo = P.geo; S.myCar = P.myCar; resetTiles(); S.cars = new Map(); snaps.length = 0;
+      document.body.classList.toggle("spectating", !S.myCar);
+      show(!S.code ? "menu" : S.lobby?.phase === "lobby" ? "lobby" : P.screen === "results" ? "results" : "lobby");
+      if (S.code && S.screen === "lobby") drawBoard();
+      return;
+    }
+    document.body.classList.toggle("spectating", !S.myCar);
     show(S.lobby?.phase === "lobby" ? "lobby" : "results");
   }
   function onState(st) {
@@ -2340,7 +2364,7 @@
     SP.list = merged; storeSP(merged);
     if (!$("setPresetBox").classList.contains("hidden")) renderSetPresets();
   });
-  const WEATHER_TXT = { sunny: "☀ Sunny", rain: "🌧 Rain", dynamic: "⛅ Dynamic" };
+  const WEATHER_TXT = { sunny: "☀ Sunny", rain: "🌧 Rain", dynamic: "⛅ Dynamic", fog: "🌫 Fog" };
   const spSummary = (s) => [`${s.laps ?? "?"} laps`, `${s.ai ?? 0} AI (${s.aiLevel || "medium"})`, s.quali ? `${s.quali} min quali` : null, WEATHER_TXT[s.weather], s.speed > 1 ? `${s.speed}x speed` : null, s.season ? `${s.season}-race season` : null, s.teams === false ? "no teams" : null, s.theme].filter(Boolean).join(" · ");
   function renderSetPresets() {
     const canEdit = S.host && S.lobby?.phase === "lobby";
@@ -3062,6 +3086,8 @@
   });
   function showResults(r) {
     S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
+    $("replaySaveRes").classList.toggle("hidden", RP.buf.length < 30); $("replayShareRes").classList.toggle("hidden", RP.buf.length < 30 || !A.user);
+    renderRankedRes();
     renderTeamResults(r);
     $("resTeamsBox").classList.toggle("hidden", r.teams === false);
     const sb = $("seasonBox"); sb.textContent = ""; S.resultsLen = r.season ? 40 : 12;
@@ -3846,7 +3872,7 @@
     const { w, h, dpr } = scr, t = S.track;
     if (!t) return;
     const th = THEMES[t.theme] || THEMES.grass; th.key = t.theme;
-    interpCars(dt);
+    if (!PH.on) interpCars(dt);
     if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; }
     let target = S.camTarget && S.cars.get(S.camTarget);
     if (!target) target = settings.cam === "leader" || !S.myCar ? S.cars.get(S.standings[0]) : S.cars.get(S.myCar);
@@ -3855,20 +3881,26 @@
     const sp = Math.max(0, target.speed || 0);
     const zoomBase = { close: 1.25, normal: 1, far: 0.72 }[settings.zoom] || 1;
     const tz = Math.min(w, h) / 760 * zoomBase * (1.05 - 0.22 * clamp(sp / 860, 0, 1));
-    cam.z += (tz - cam.z) * Math.min(1, dt * 3);
-    const lx = Math.cos(target.h) * sp * 0.28, ly = Math.sin(target.h) * sp * 0.28;
-    if (!cam.x) { cam.x = target.x; cam.y = target.y; }
-    cam.x += (target.x + lx - cam.x) * Math.min(1, dt * 5); cam.y += (target.y + ly - cam.y) * Math.min(1, dt * 5);
+    if (PH.on) { cam.x = PH.x; cam.y = PH.y; cam.z = PH.z; S.shake = 0; }         // photo mode: the camera is yours
+    else {
+      cam.z += (tz - cam.z) * Math.min(1, dt * 3);
+      const lx = Math.cos(target.h) * sp * 0.28, ly = Math.sin(target.h) * sp * 0.28;
+      if (!cam.x) { cam.x = target.x; cam.y = target.y; }
+      cam.x += (target.x + lx - cam.x) * Math.min(1, dt * 5); cam.y += (target.y + ly - cam.y) * Math.min(1, dt * 5);
+    }
     S.shake *= Math.exp(-dt * 8);
     const shx = S.shake ? (Math.random() - 0.5) * S.shake : 0, shy = S.shake ? (Math.random() - 0.5) * S.shake : 0;
-    const z = cam.z;
+    const z = cam.z, rot = PH.on ? PH.rot : 0;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = th.ground; ctx.fillRect(0, 0, w, h);
-    ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 - cam.x * z + shx), dpr * (h / 2 - cam.y * z + shy));
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 + shx), dpr * (h / 2 + shy));
+    if (rot) ctx.rotate(rot);
+    ctx.translate(-cam.x, -cam.y);
     if (!S.geo) S.geo = buildGeo(t);
     const G = S.geo;
     // what part of the world is on screen
-    const vx0 = cam.x - w / 2 / z - 60, vy0 = cam.y - h / 2 / z - 60, vx1 = cam.x + w / 2 / z + 60, vy1 = cam.y + h / 2 / z + 60;
+    const spanX = rot ? Math.hypot(w, h) / 2 / z : w / 2 / z, spanY = rot ? Math.hypot(w, h) / 2 / z : h / 2 / z;
+    const vx0 = cam.x - spanX - 60, vy0 = cam.y - spanY - 60, vx1 = cam.x + spanX + 60, vy1 = cam.y + spanY + 60;
     // static layer from the tile cache
     const sig = `${G.id}|${t.theme}|${settings.raceline}|${settings.scenery}|${gridCount()}`;
     if (sig !== tileSig) { tileSig = sig; resetTiles(); }
@@ -3885,7 +3917,7 @@
     }
     const visible = (c, m = 80) => c.x > vx0 - m && c.x < vx1 + m && c.y > vy0 - m && c.y < vy1 + m;
     // skid marks (painted into the tiles)
-    if (settings.skids === "on" && S.phase === "race") {
+    if (settings.skids === "on" && S.phase === "race" && !PH.on) {
       for (const c of S.cars.values()) if (c.slide && c.lvl < 0.05 && !c.ghost) {
         const fx = Math.cos(c.h), fy = Math.sin(c.h);
         for (const s of [-1, 1]) addSkid(c.x - fx * 15 - fy * s * 10, c.y - fy * 15 + fx * s * 10);
@@ -3893,7 +3925,7 @@
     }
     // dust + smoke
     const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" ? 0.35 : 1;
-    if (S.phase === "race" && fxLevel) for (const c of S.cars.values()) {
+    if (S.phase === "race" && fxLevel && !PH.on) for (const c of S.cars.values()) {
       if (!visible(c, 200)) continue;
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
@@ -3909,7 +3941,7 @@
       if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
       if (c.dmg > 0.05 && Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
     }
-    S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape) q.r += 20 * dt; return q.age < q.life; });
+    if (!PH.on) S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape) q.r += 20 * dt; return q.age < q.life; });
     for (const q of S.particles) {
       if (q.shape) { trailShape(ctx, q.shape, q.x, q.y, 7 * (1 - 0.4 * q.age / q.life), 1 - q.age / q.life, q.k); continue; }
       ctx.globalAlpha = 1 - q.age / q.life; ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
@@ -3963,7 +3995,7 @@
         ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(c.x, c.y, 34, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = "#ffcc1f"; ctx.beginPath(); ctx.arc(c.x, c.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c.pit); ctx.stroke();
       }
-      const showName = settings.names === "all" || (settings.names === "mine" && c.id === S.myCar);
+      const showName = (settings.names === "all" || (settings.names === "mine" && c.id === S.myCar)) && (!PH.on || PH.names);
       if (showName) {
         const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
         const label = (pos ? `P${pos} ` : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
@@ -4005,9 +4037,12 @@
       }
     }
     if (th.night) {
-      if (!S.vignette || S.vignette.w !== w || S.vignette.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); S.vignette = { g, w, h }; }
-      ctx.fillStyle = S.vignette.g; ctx.fillRect(0, 0, w, h);
+      if (settings.fx === "off") {       // cheap version: just darker round the edges
+        if (!S.vignette || S.vignette.w !== w || S.vignette.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); S.vignette = { g, w, h }; }
+        ctx.fillStyle = S.vignette.g; ctx.fillRect(0, 0, w, h);
+      } else drawNight(w, h, dpr, z, shx, shy, th);
     }
+    if (S.race?.fog) drawFog(w, h, !!th.night, now, PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z);
     if (settings.lines === "on" && !reducedMotion && sp > 640) {
       const a = clamp((sp - 640) / 240, 0, 1) * 0.35;
       ctx.strokeStyle = target.nitroOn ? `rgba(120,200,255,${a + 0.15})` : `rgba(255,255,255,${a})`; ctx.lineWidth = 2;
@@ -4109,7 +4144,7 @@
     const W = S.weather;
     if (W) {
       const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
-      pill.textContent = W.raining ? `🌧 Raining, track ${Math.round(W.wet * 100)}% wet` : W.wet > 0.05 ? `⛅ Drying, track ${Math.round(W.wet * 100)}% wet` : "☀ Dry";
+      pill.textContent = W.raining ? `🌧 Raining, track ${Math.round(W.wet * 100)}% wet` : W.wet > 0.05 ? `⛅ Drying, track ${Math.round(W.wet * 100)}% wet` : S.race?.fog ? "🌫 Fog: you can't see far" : "☀ Dry";
       // forecast: a blurry hint of where the weather is heading (never exact, it's a guess)
       const fc = $("forecast"); fc.classList.toggle("hidden", !W.dyn);
       if (W.dyn) $("fcDot").style.left = (50 + clamp(W.trend || 0, -3, 3) * 15) + "%";
@@ -4201,7 +4236,523 @@
   });
   window.addEventListener("keyup", (e) => { if (e.code === "Space" || e.code === "KeyN") setNitro(false); });
   // tapping anywhere on the race view also counts as your start reaction (phones)
-  view.addEventListener("pointerdown", () => { if (S.screen === "race" && !$("lights").classList.contains("hidden")) react(); });
+  view.addEventListener("pointerdown", () => { if (S.screen === "race" && !S.photoOn && !$("lights").classList.contains("hidden")) react(); });
+
+  // ======================= Ranked =======================
+  function renderRankedBtn() {
+    const R = A.user?.ranked;
+    $("rankedSub").textContent = R ? `${R.rank.label} · ${R.sr} SR` : "Sign in to get a rank";
+    $("rankedIc").textContent = R ? R.rank.icon : "🏆";
+    $("rankedBtn").style.setProperty("--rk", R ? R.rank.color : "#ffcc1f");
+  }
+  function playRanked() {
+    if (!A.user) { closeHub(); show("menu"); menuErr.textContent = "Make an account (or log in) to play ranked: your rank is saved on it."; return; }
+    saveProfile(); S.solo = false; S.tutorial = false; S.rankedRes = null; closeHub(); socket.emit("ranked:play", prof);
+  }
+  $("rankedBtn").addEventListener("click", playRanked);
+  const AI_WORD = { hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE" };
+  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI"], ["Bronze", "🥉", 300, "3 Hard AI"], ["Silver", "🥈", 600, "5 EXTREME AI"], ["Gold", "🥇", 900, "5 EXTREME AI"],
+    ["Platinum", "💠", 1200, "5 OVERDRIVE AI (ranked only)"], ["Diamond", "💎", 1500, "5 OVERDRIVE AI"], ["Master", "🔮", 1800, "5 OVERDRIVE AI"], ["Overdrive Elite", "⚡", 2100, "5 OVERDRIVE AI"]];
+  function rankBadge(rank, big) {
+    const b = el("div", "rank-badge" + (big ? " big" : "")); b.style.setProperty("--rk", rank.color);
+    b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
+    return b;
+  }
+  function renderRanked(u) {
+    const box = $("hubRanked"); box.textContent = "";
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to play ranked. Your skill rating goes up when you finish near the front and down when you don't.")); return; }
+    const R = u.ranked;
+    const top = el("section", "rank-top"); top.style.setProperty("--rk", R.rank.color);
+    top.appendChild(rankBadge(R.rank, true));
+    const tx = el("div", "rank-tx");
+    tx.append(el("b", "", `${R.sr} SR`), el("small", "", R.rank.i === 7 ? "Overdrive Elite: the very top. Keep climbing the leaderboard!" : `${R.rank.into} / 100 to the next division`));
+    if (R.rank.i < 7) { const bar = el("div", "ach-bar"); const f = el("i"); f.style.width = R.rank.into + "%"; bar.appendChild(f); tx.appendChild(bar); }
+    tx.appendChild(el("small", "", `Peak ${R.peakRank.label} · ${R.games} ranked races · ${R.wins} wins`));
+    tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, 3 laps, a random track`));
+    const go = el("button", "btn go", "🏁 Play ranked"); go.type = "button"; go.addEventListener("click", playRanked);
+    top.append(tx, go); box.appendChild(top);
+    if (R.hist?.length) {
+      box.appendChild(el("h3", "hub-h", "Last races"));
+      const row = el("div", "rank-hist");
+      for (const h of R.hist.slice().reverse()) { const d = el("span", "rh " + (h.d >= 0 ? "up" : "down"), `P${h.pos}/${h.of} ${h.d >= 0 ? "+" : ""}${h.d}`); row.appendChild(d); }
+      box.appendChild(row);
+    }
+    box.appendChild(el("h3", "hub-h", "Tiers"));
+    const lad = el("ol", "rank-ladder");
+    TIER_LADDER.forEach(([name, ic, sr, ai], i) => {
+      const li = el("li", R.rank.i === i ? "mine" : R.rank.i > i ? "done" : "");
+      li.append(el("span", "", ic), el("b", "", name + (i < 7 ? " III · II · I" : "")), el("small", "", `${sr}+ SR · ${ai}`));
+      lad.appendChild(li);
+    });
+    box.appendChild(lad);
+    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Ranked races are you against the AI on a random track, 3 laps, random weather (fog and night included)."));
+    const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
+    box.appendChild(lb);
+  }
+  socket.on("rankedResult", (r) => {
+    S.rankedRes = r; renderRankedRes();
+    if (r.up) setTimeout(() => { banner(`RANK UP! ${r.after.icon} ${r.after.label}`, r.after.color); sfx("win"); }, 2400);
+    else if (r.down) setTimeout(() => popup(`Down to ${r.after.label}. You'll get it back!`, true), 2400);
+  });
+  function renderRankedRes() {
+    const box = $("rankedRes"), r = S.rankedRes;
+    box.classList.toggle("hidden", !r); if (!r) return;
+    box.textContent = ""; box.style.setProperty("--rk", r.after.color);
+    const d = el("div", "rr-main");
+    d.append(rankBadge(r.after), el("b", "rr-delta " + (r.delta >= 0 ? "up" : "down"), `${r.delta >= 0 ? "+" : ""}${r.delta} SR`), el("small", "", r.dnf ? "You left the race: that counts as last." : `P${r.pos} of ${r.of} · now ${r.sr} SR`));
+    const row = el("div", "sec-row");
+    const again = el("button", "btn go", "🏁 Race ranked again"); again.type = "button"; again.addEventListener("click", playRanked);
+    const menu = el("button", "btn", "Menu"); menu.type = "button"; menu.addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; S.rankedRaced = false; show("menu"); });
+    row.append(again, menu); box.append(d, row);
+  }
+  // a ranked room runs itself: back to the menu once the podium is done
+  socket.on("lobby", (l) => {
+    document.body.classList.toggle("ranked-room", !!l.ranked);
+    if (l.ranked) { S.host = false; $("hostNote").textContent = `🏆 Ranked (${l.ranked.tier || ""}): the race starts by itself.`; }
+    if (l.ranked && l.phase === "lobby" && S.rankedRaced) { S.rankedRaced = false; socket.emit("leave"); S.code = null; S.track = null; show("menu"); openHub("ranked"); }
+  });
+
+  // ======================= Track of the Week =======================
+  socket.on("totwInfo", (t) => { S.totw = t; renderTotw(); });
+  socket.on("connect", () => socket.emit("totw:info"));
+  const THEME_NAME = { grass: "Grass", desert: "Desert", snow: "Snow", night: "Night", autumn: "Autumn", beach: "Beach", city: "City", volcano: "Volcano", neon: "Neon night" };
+  function renderTotw() {
+    const t = S.totw; if (!t) return;
+    const days = Math.max(1, Math.ceil((t.ends - Date.now()) / 86400000));
+    $("totwName").textContent = t.name;
+    $("totwSub").textContent = `${THEME_NAME[t.theme] || t.theme} · ${WONK_NAME[t.wonk] || ""} · new in ${days}d`;
+    const cv = $("totwCv"), c = cv.getContext("2d"), P = t.stroke || [];
+    c.clearRect(0, 0, cv.width, cv.height);
+    if (P.length < 3) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of P) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const k = Math.min((cv.width - 12) / (x1 - x0 || 1), (cv.height - 12) / (y1 - y0 || 1)), ox = (cv.width - (x1 - x0) * k) / 2, oy = (cv.height - (y1 - y0) * k) / 2;
+    c.lineJoin = c.lineCap = "round";
+    for (const [lw, col] of [[7, "rgba(0,0,0,0.35)"], [4, "#ffcc1f"]]) {
+      c.lineWidth = lw; c.strokeStyle = col; c.beginPath();
+      P.forEach(([x, y], i) => { const px = ox + (x - x0) * k, py = oy + (y - y0) * k; i ? c.lineTo(px, py) : c.moveTo(px, py); });
+      c.closePath(); c.stroke();
+    }
+  }
+  $("totwRace").addEventListener("click", () => { saveProfile(); S.solo = true; S.tutorial = false; S.wantTotw = true; socket.emit("create", prof); });
+  $("totwBoard").addEventListener("click", () => { A.lbKind = "totw"; A.lb = null; socket.emit("lb:get", { kind: "totw" }); openHub("lb"); });
+  $("totwBtn").addEventListener("click", () => { if (!S.host) return boardHint("Only the host can change the track.", true); socket.emit("totw:load"); });
+  socket.on("lobby", (l) => {
+    if (!S.wantTotw || l.hostId !== S.me || l.phase !== "lobby") return;
+    S.wantTotw = false;
+    socket.emit("settings", { laps: 3, ai: 5, quali: 0, season: 0 });
+    setTimeout(() => socket.emit("totw:load"), 250);
+  });
+
+  // ======================= Share codes (tracks) =======================
+  function openCode(mode, d) {
+    const box = $("codeBox"); box.classList.remove("hidden"); box.dataset.mode = mode;
+    $("codeMsg").textContent = "";
+    const load = mode === "load";
+    $("codeTitle").textContent = load ? "📥 Load a shared track" : d.kind === "replay" ? "🔗 Replay code" : "🔗 Track code";
+    $("codeLead").textContent = load ? "Type the 6-letter code a friend gave you. The track (and its start line, direction and theme) loads into this room."
+      : d.kind === "replay" ? "Anyone can watch this replay for 30 days: main menu › 🎬 Replays, then type this code." : "Anyone can race this track: in a room, press 📥 Load code on the track tools and type this code.";
+    $("codeShow").textContent = load ? "" : d.code; $("codeShow").classList.toggle("hidden", load);
+    $("codeForm").classList.toggle("hidden", !load); $("codeBtns").classList.toggle("hidden", load);
+    if (load) { $("codeInput").value = ""; setTimeout(() => $("codeInput").focus(), 50); }
+  }
+  $("codeClose").addEventListener("click", () => $("codeBox").classList.add("hidden"));
+  $("codeBox").addEventListener("click", (e) => { if (e.target.id === "codeBox") $("codeBox").classList.add("hidden"); });
+  $("codeCopy").addEventListener("click", () => { navigator.clipboard?.writeText($("codeShow").textContent).then(() => { $("codeMsg").textContent = "Copied ✓"; }).catch(() => { $("codeMsg").textContent = "Couldn't copy: write it down!"; }); });
+  $("codeForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("codeInput").value.trim().toUpperCase(); if (v.length < 6) { $("codeMsg").textContent = "Codes are 6 letters/numbers"; return; } $("codeMsg").textContent = "Loading..."; socket.emit("track:load", v); });
+  $("shareTrackBtn").addEventListener("click", () => { if (!S.track) return boardHint("Draw or load a track first, then share it.", true); socket.emit("track:share"); });
+  $("loadCodeBtn").addEventListener("click", () => { if (!S.host) return boardHint("Only the host can change the track.", true); openCode("load"); });
+  socket.on("shareCode", (d) => { if (d.error) return popup(d.error, true); openCode("show", d); });
+  socket.on("trackResult", (r) => {
+    if ($("codeBox").dataset.mode === "load" && !$("codeBox").classList.contains("hidden")) { if (r.error) $("codeMsg").textContent = r.error; else $("codeBox").classList.add("hidden"); }
+    if (!r.error && r.shared) boardHint(`Loaded track ${r.shared}${r.sharedName ? ` ("${r.sharedName}")` : ""}!`, false);
+    if (!r.error && r.totw) boardHint(`🌟 Track of the week: ${r.totw}! Your best lap here goes on this week's leaderboard.`, false);
+  });
+
+  // ======================= Season pass + daily challenges =======================
+  function rewardText(rw) {
+    if (rw.coins) return `🪙 ${rw.coins}`;
+    if (rw.crate) return "🎁 Themed crate";
+    if (rw.item) return A.catalog?.store.find((x) => x.id === rw.item)?.name || "Item";
+    return "";
+  }
+  function rewardCell(rw, locked, got) {
+    const d = el("div", "pr" + (locked ? " locked" : "") + (got ? " got" : "") + (rw.item ? " item" : rw.crate ? " crate" : ""));
+    const it = rw.item && A.catalog?.store.find((x) => x.id === rw.item);
+    if (it) { d.appendChild(itemPreview(it, 96, 54)); d.style.setProperty("--rc", RARITY[it.rarity]?.[1]); }
+    else d.appendChild(el("span", "pr-ic", rw.crate ? "🎁" : "🪙"));
+    d.appendChild(el("small", "", rewardText(rw)));
+    if (locked) d.appendChild(el("span", "pr-lock", "🔒"));
+    else if (got) d.appendChild(el("span", "pr-lock", "✓"));
+    return d;
+  }
+  function renderPass(u) {
+    const box = $("hubPass"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to get the season pass. There's a new one every month with its own theme, items and crates. Race to go up its tiers.")); return; }
+    const P = u.pass, T = P.theme, days = Math.max(1, Math.ceil((P.ends - Date.now()) / 86400000));
+    const head = el("section", "pass-head"); head.style.setProperty("--p1", T.c[0]); head.style.setProperty("--p2", T.c[1]);
+    const ht = el("div"); ht.append(el("small", "", `Season pass · ${new Date(P.month + "-01T00:00:00Z").toLocaleString(undefined, { month: "long", year: "numeric", timeZone: "UTC" })} · ends in ${days} day${days === 1 ? "" : "s"}`), el("h3", "", `${T.icon} ${T.name}`));
+    const tier = el("div", "pass-tier");
+    const inTier = P.tier >= P.tiers ? P.perTier : P.xp - P.tier * P.perTier;
+    tier.append(el("b", "", `Tier ${P.tier} / ${P.tiers}`));
+    const bar = el("div", "ach-bar"); const f = el("i"); f.style.width = (P.tier >= P.tiers ? 100 : (inTier / P.perTier) * 100) + "%"; bar.appendChild(f);
+    tier.append(bar, el("small", "", P.tier >= P.tiers ? "Maxed out! 🎉" : `${inTier} / ${P.perTier} XP to tier ${P.tier + 1}`));
+    ht.appendChild(tier);
+    head.appendChild(ht);
+    if (P.prem) head.appendChild(el("span", "pass-prem on", "⭐ PREMIUM"));
+    else { const b = el("button", "btn go", `⭐ Unlock premium · 🪙 ${P.price}`); b.type = "button"; b.disabled = u.coins < P.price; b.title = u.coins < P.price ? `You need ${P.price - u.coins} more coins` : ""; b.addEventListener("click", () => { if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = `Spend 🪙 ${P.price}? Click again`; setTimeout(() => { b.dataset.sure = ""; b.textContent = `⭐ Unlock premium · 🪙 ${P.price}`; }, 3000); return; } socket.emit("pass:buy"); }); head.appendChild(b); }
+    box.appendChild(head);
+    box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). The free track pays coins, a themed item and a crate. Premium adds this month's items and themed crates, which you can't get anywhere else."));
+    // crates you own
+    const crates = Object.entries(u.crates || {}).filter(([, n]) => n > 0);
+    if (crates.length) {
+      const cs = el("section", "store-slot"); cs.appendChild(el("h3", "hub-h", "🎁 Your themed crates"));
+      const g = el("div", "box-grid");
+      for (const [key, n] of crates) {
+        const th = A.catalog.passThemes?.find((x) => x.key === key) || { name: key, icon: "🎁", c: ["#555", "#999"] };
+        const card = el("div", "chest"); card.style.setProperty("--c1", th.c[0]); card.style.setProperty("--c2", th.c[1]);
+        card.append(el("div", "chest-ic", th.icon), el("b", "", `${th.name} crate ×${n}`), el("small", "", "One of that month's pass items (a duplicate pays 250 coins)"));
+        const b = el("button", "btn go", "Open"); b.type = "button"; b.addEventListener("click", () => { b.disabled = true; socket.emit("crate:open", key); });
+        card.appendChild(b); g.appendChild(card);
+      }
+      cs.appendChild(g); box.appendChild(cs);
+    }
+    // the reward track
+    const wrap = el("div", "pass-track"); wrap.setAttribute("role", "list"); wrap.setAttribute("aria-label", "Season pass tiers");
+    const labels = el("div", "pass-col labels"); labels.append(el("span", "pt-n", "Tier"), el("span", "pt-lab", "Free"), el("span", "pt-lab prem", "⭐ Premium"));
+    wrap.appendChild(labels);
+    for (let t = 1; t <= P.tiers; t++) {
+      const col = el("div", "pass-col" + (t <= P.tier ? " reached" : "") + (t === P.tier + 1 ? " next" : "")); col.setAttribute("role", "listitem");
+      col.append(el("span", "pt-n", String(t)), rewardCell(P.rewards.free[t - 1], false, t <= P.tier), rewardCell(P.rewards.prem[t - 1], !P.prem, P.prem && t <= P.tier));
+      wrap.appendChild(col);
+    }
+    box.appendChild(wrap);
+    requestAnimationFrame(() => { const nx = wrap.querySelector(".next") || wrap.querySelector(".reached:last-of-type"); if (nx) wrap.scrollLeft = Math.max(0, nx.offsetLeft - 120); });
+  }
+  function challengeBlock(title, C, icon) {
+    const wk = el("section", "weekly");
+    wk.appendChild(el("h3", "hub-h", title));
+    const wg = el("div", "ach-grid");
+    for (const c of C.list) {
+      const d = el("div", "ach" + (c.done ? " got" : ""));
+      const tx = el("div"); tx.append(el("b", "", c.name), el("small", "", c.desc));
+      if (!c.done) { const pb = el("div", "ach-prog"); const fi = el("i"); fi.style.width = (c.prog / c.goal) * 100 + "%"; pb.appendChild(fi); tx.append(pb, el("small", "ach-num", `${c.prog} / ${c.goal}`)); }
+      d.append(el("span", "ic", c.done ? "✅" : icon), tx, el("span", "rw", c.done ? "✓ +" + c.coins : "🪙 " + c.coins));
+      wg.appendChild(d);
+    }
+    wk.appendChild(wg); return wk;
+  }
+
+  // ======================= Friends: chat, gifts, trades =======================
+  const FR = { who: null, tab: "chat", items: {} };
+  A.dms = {};
+  function openFriend(f, tab) {
+    FR.who = f; FR.tab = tab || "chat";
+    $("friendBox").classList.remove("hidden"); $("friendTitle").textContent = f.name;
+    socket.emit("dm:get", f.id); socket.emit("friends:items", f.id);
+    renderFriend();
+  }
+  $("friendClose").addEventListener("click", () => { $("friendBox").classList.add("hidden"); FR.who = null; });
+  $("friendBox").addEventListener("click", (e) => { if (e.target.id === "friendBox") { $("friendBox").classList.add("hidden"); FR.who = null; } });
+  document.querySelectorAll("[data-ft]").forEach((b) => b.addEventListener("click", () => { FR.tab = b.dataset.ft; renderFriend(); }));
+  socket.on("dmThread", (d) => { A.dms[d.with] = d.list || []; if (FR.who?.id === d.with && FR.tab === "chat") renderFriend(); });
+  socket.on("friendItems", (d) => { FR.items[d.id] = d.owned || []; if (FR.who?.id === d.id && FR.tab === "trade") renderFriend(); });
+  socket.on("dm", (d) => {
+    if (FR.who?.id === d.from && !$("friendBox").classList.contains("hidden")) return;
+    popup(d.gift ? `🎁 ${d.name} sent you ${d.gift}!` : d.trade ? `🤝 ${d.name} sent you a trade offer (Profile › Friends)` : d.tradeDone !== undefined ? `🤝 ${d.name} ${d.tradeDone ? "accepted" : "answered"} your trade` : `💬 ${d.name}: ${d.text}`);
+    sfx("tick");
+  });
+  const itemName = (id) => A.catalog?.store.find((x) => x.id === id)?.name || id;
+  function itemSelect(ids, label, none) {
+    const sel = document.createElement("select"); sel.setAttribute("aria-label", label);
+    const o0 = document.createElement("option"); o0.value = ""; o0.textContent = none; sel.appendChild(o0);
+    for (const id of [...ids].sort((a, b) => itemName(a).localeCompare(itemName(b)))) { const o = document.createElement("option"); o.value = id; o.textContent = itemName(id); sel.appendChild(o); }
+    return sel;
+  }
+  function coinInput(label) { const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.step = "10"; i.placeholder = "0"; i.inputMode = "numeric"; i.setAttribute("aria-label", label); return i; }
+  function renderFriend() {
+    const f = FR.who, u = A.user, box = $("friendBody"); if (!f || !u) return;
+    document.querySelectorAll("[data-ft]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ft === FR.tab)));
+    box.textContent = "";
+    if (FR.tab === "chat") {
+      const list = el("div", "dm-list");
+      const th = A.dms[f.id] || [];
+      if (!th.length) list.appendChild(el("p", "preset-note", `No messages yet. Say hi to ${f.name}!`));
+      for (const m of th) {
+        const mine = m.from === u.id, d = el("div", "dm" + (mine ? " mine" : "") + (m.gift || m.trade ? " sys" : ""));
+        d.textContent = m.gift ? `🎁 ${mine ? "You sent" : f.name + " sent you"} ${m.gift}${m.text ? `: "${m.text}"` : ""}` : m.trade ? `🤝 ${mine ? "You" : f.name} ${m.trade}` : m.text;
+        list.appendChild(d);
+      }
+      const form = el("form", "chat-foot"); const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 140; inp.placeholder = `Message ${f.name}...`; inp.setAttribute("aria-label", "Message");
+      const send = el("button", "btn go", "Send"); send.type = "submit";
+      form.append(inp, send);
+      form.addEventListener("submit", (e) => { e.preventDefault(); const t = inp.value.trim(); if (t) { socket.emit("dm:send", { to: f.id, text: t }); inp.value = ""; } });
+      inp.addEventListener("keydown", (e) => e.stopPropagation());
+      box.append(list, form);
+      requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; inp.focus(); });
+      return;
+    }
+    const cd = Math.max(0, Math.ceil(((A.giftUntil || 0) - Date.now()) / 1000));
+    // the send button counts the cooldown down by itself
+    const tickCd = (btn, label) => { const left = Math.ceil(((A.giftUntil || 0) - Date.now()) / 1000); if (!btn.isConnected) return; if (left > 0) { btn.textContent = `Cooldown ${left}s`; btn.disabled = true; setTimeout(() => tickCd(btn, label), 1000); } else { btn.textContent = label; btn.disabled = false; } };
+    const mine = u.owned.slice();
+    if (FR.tab === "gift") {
+      box.appendChild(el("p", "preset-note", `Send ${f.name} coins or one of your items. You have 🪙 ${u.coins}. Max 5,000 coins a day, one gift or trade a minute. Items you send leave your garage.`));
+      const c = coinInput("Coins to send"), it = itemSelect(mine, "Item to send", "No item"), note = document.createElement("input");
+      note.type = "text"; note.maxLength = 80; note.placeholder = "Add a note (optional)"; note.setAttribute("aria-label", "Note");
+      const l1 = el("label", "f", "Coins "); l1.appendChild(c); const l2 = el("label", "f", "Item "); l2.appendChild(it); const l3 = el("label", "f", "Note "); l3.appendChild(note);
+      const go = el("button", "btn go", cd ? `Cooldown ${cd}s` : "🎁 Send gift"); go.type = "button"; go.disabled = !!cd;
+      go.addEventListener("click", () => {
+        const coins = Math.max(0, Math.floor(Number(c.value) || 0)); if (!coins && !it.value) return popup("Pick some coins or an item", true);
+        if (go.dataset.sure !== "1") { go.dataset.sure = "1"; go.textContent = `Send ${[coins ? "🪙 " + coins : "", it.value ? itemName(it.value) : ""].filter(Boolean).join(" + ")}? Click again`; return; }
+        socket.emit("gift:send", { to: f.id, coins, item: it.value || null, note: note.value }); FR.tab = "chat"; renderFriend();
+      });
+      box.append(l1, l2, l3, go); if (cd) tickCd(go, "🎁 Send gift");
+      return;
+    }
+    // trade
+    const theirs = FR.items[f.id];
+    box.appendChild(el("p", "preset-note", `Offer something, ask for something back. ${f.name} gets the offer in their Friends tab and can accept or decline. Everything is checked again when they accept.`));
+    const g = el("div", "trade-grid");
+    const colA = el("div", "trade-side"), colB = el("div", "trade-side");
+    const gc = coinInput("Coins you give"), gi = itemSelect(mine, "Item you give", "No item");
+    const wc = coinInput("Coins you want"), wi = itemSelect((theirs || []).filter((id) => !u.owned.includes(id)), "Item you want", theirs ? "No item" : "Loading their items...");
+    const lab = (t, x) => { const l = el("label", "f", t + " "); l.appendChild(x); return l; };
+    colA.append(el("b", "", "You give"), lab("Coins", gc), lab("Item", gi));
+    colB.append(el("b", "", `${f.name} gives`), lab("Coins", wc), lab("Item", wi));
+    g.append(colA, el("span", "trade-x", "⇄"), colB);
+    const go = el("button", "btn go", cd ? `Cooldown ${cd}s` : "🤝 Send offer"); go.type = "button"; go.disabled = !!cd;
+    go.addEventListener("click", () => socket.emit("trade:offer", { to: f.id, give: { coins: gc.value, item: gi.value || null }, want: { coins: wc.value, item: wi.value || null } }));
+    box.append(g, go); if (cd) tickCd(go, "🤝 Send offer");
+  }
+  function tradesBlock(u) {
+    if (!u?.trades?.length) return null;
+    const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", `🤝 Trade offers (${u.trades.length})`));
+    const nm = (x) => [x.coins ? `🪙 ${x.coins}` : "", x.item ? itemName(x.item) : ""].filter(Boolean).join(" + ") || "nothing";
+    for (const t of u.trades) {
+      const d = el("div", "friend");
+      const tx = el("div"); tx.append(el("b", "", t.fromName), el("small", "", `gives you ${nm(t.give)} · wants ${nm(t.want)}`));
+      const bs = el("div", "sec-row");
+      const yes = el("button", "btn go", "Accept"); yes.type = "button"; yes.addEventListener("click", () => socket.emit("trade:answer", { id: t.id, yes: true }));
+      const no = el("button", "btn ghost", "Decline"); no.type = "button"; no.addEventListener("click", () => socket.emit("trade:answer", { id: t.id, yes: false }));
+      bs.append(yes, no); d.append(el("span", "fdot on"), tx, bs); sec.appendChild(d);
+    }
+    return sec;
+  }
+
+  // ======================= Replays: save, share, load =======================
+  const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name"];
+  function buildReplay() {
+    if (RP.buf.length < 30 || !S.track || !S.race) return null;
+    const track = {}; for (const k of TRACK_KEYS) track[k] = S.track[k];
+    const winner = S.lastResults?.rows?.[0]?.name || "";
+    const cars = [...S.race.info.values()].map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, design: c.design || null, extras: c.extras || null }));
+    return { v: 1, title: `${S.track.name || "Scribble track"}${winner ? ` · ${winner} won` : ""}`, speed: S.race.speed || 1, fog: !!S.race.fog, winner, track, cars,
+      frames: RP.buf.map((m) => ({ t: m.st.t, s: m.st.standings, c: m.st.cars, w: Math.round((m.st.weather?.wet || 0) * 100) / 100, r: m.st.weather?.raining ? 1 : 0 })) };
+  }
+  // make it smaller: fewer frames per second, and only the cars at the front (plus yours)
+  function slimReplay(rec, step, maxCars) {
+    let keep = null;
+    if (rec.cars.length > maxCars) {
+      const last = rec.frames[rec.frames.length - 1].s || [];
+      keep = new Set(last.slice(0, maxCars - 1)); if (S.myCar) keep.add(S.myCar);
+      for (const c of rec.cars) if (keep.size < maxCars) keep.add(c.id);
+    }
+    const frames = rec.frames.filter((_, i) => i % step === 0 || i === rec.frames.length - 1).map((f) => (keep ? { ...f, s: f.s.filter((id) => keep.has(id)), c: f.c.filter((a) => keep.has(a[0])) } : f));
+    return { ...rec, cars: keep ? rec.cars.filter((c) => keep.has(c.id)) : rec.cars, frames };
+  }
+  async function gzip(str) {
+    if (!window.CompressionStream) throw new Error("This browser can't pack replays");
+    const s = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+  async function gunzip(bytes) {
+    if (!window.DecompressionStream) throw new Error("This browser can't open replays");
+    const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(s).text();
+  }
+  const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const unb64 = (s) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+  async function packReplay(rec, limit) {
+    for (const [step, max] of [[1, 99], [2, 99], [3, 30], [3, 20], [4, 14], [6, 10], [8, 8]]) {
+      const bytes = await gzip(JSON.stringify(slimReplay(rec, step, max)));
+      if (bytes.length <= limit) return bytes;
+    }
+    throw new Error("That replay is too big");
+  }
+  const savedReplays = () => { try { return JSON.parse(localStorage.getItem("tb-replays") || "[]"); } catch (e) { return []; } };
+  async function saveReplay(rec) {
+    if (!rec) return popup("Nothing to save yet", true);
+    try {
+      const bytes = await packReplay(rec, 600e3);
+      let list = savedReplays();
+      list.unshift({ id: Date.now().toString(36), title: rec.title, at: Date.now(), size: bytes.length, cars: rec.cars.length, data: b64(bytes) });
+      list = list.slice(0, 8);
+      for (;;) {
+        try { localStorage.setItem("tb-replays", JSON.stringify(list)); break; }
+        catch (e) { if (list.length <= 1) throw new Error("Your browser is out of space for replays"); list.pop(); }
+      }
+      popup("💾 Replay saved! Find it in 🎬 Replays on the main menu.");
+    } catch (e) { popup(e.message || "Couldn't save that replay", true); }
+  }
+  async function shareReplay(rec) {
+    if (!rec) return popup("Nothing to share yet", true);
+    if (!A.user) return popup("Sign in to share replays", true);
+    try { popup("Packing the replay..."); socket.emit("replay:share", await packReplay(rec, 360e3)); }
+    catch (e) { popup(e.message || "Couldn't share that replay", true); }
+  }
+  async function openSavedBytes(bytes) {
+    try { playReplay(JSON.parse(await gunzip(bytes))); } catch (e) { popup("That replay couldn't be opened", true); }
+  }
+  socket.on("replayData", (d) => {
+    if (d.error) { $("replayNote").textContent = d.error; return popup(d.error, true); }
+    $("replayBox").classList.add("hidden");
+    openSavedBytes(new Uint8Array(d.data));
+  });
+  function renderReplayList() {
+    const box = $("replayList"); box.textContent = "";
+    const list = savedReplays();
+    if (!list.length) { box.appendChild(el("p", "preset-note", "No saved replays yet.")); return; }
+    for (const r of list) {
+      const row = el("div", "friend");
+      const tx = el("div"); tx.append(el("b", "", r.title || "Replay"), el("small", "", `${new Date(r.at).toLocaleString()} · ${r.cars} cars · ${Math.round(r.size / 1024)} KB`));
+      const bs = el("div", "sec-row");
+      const w = el("button", "btn go", "Watch"); w.type = "button"; w.addEventListener("click", () => { $("replayBox").classList.add("hidden"); openSavedBytes(unb64(r.data)); });
+      const sh = el("button", "btn", "🔗 Share"); sh.type = "button"; sh.addEventListener("click", async () => { try { shareReplay(JSON.parse(await gunzip(unb64(r.data)))); } catch (e) { popup("Couldn't open it", true); } });
+      const del = el("button", "btn ghost", "🗑️"); del.type = "button"; del.setAttribute("aria-label", "Delete this replay");
+      del.addEventListener("click", () => { try { localStorage.setItem("tb-replays", JSON.stringify(savedReplays().filter((x) => x.id !== r.id))); } catch (e) {} renderReplayList(); });
+      bs.append(w, sh, del); row.append(el("span", "fdot on"), tx, bs); box.appendChild(row);
+    }
+  }
+  $("replaysBtn").addEventListener("click", () => { $("replayBox").classList.remove("hidden"); $("replayNote").textContent = "Save the end of a race from the results screen (💾), or watch one a friend shared with you."; renderReplayList(); });
+  $("replayBoxClose").addEventListener("click", () => $("replayBox").classList.add("hidden"));
+  $("replayBox").addEventListener("click", (e) => { if (e.target.id === "replayBox") $("replayBox").classList.add("hidden"); });
+  $("replayCodeForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("replayCodeIn").value.trim().toUpperCase(); if (v.length < 6) return; $("replayNote").textContent = "Loading..."; socket.emit("replay:get", v); });
+  $("replaySave").addEventListener("click", () => saveReplay(S.replayRec || buildReplay()));
+  $("replayShare").addEventListener("click", () => shareReplay(S.replayRec || buildReplay()));
+  $("replaySaveRes").addEventListener("click", () => saveReplay(buildReplay()));
+  $("replayShareRes").addEventListener("click", () => shareReplay(buildReplay()));
+  // play a saved/shared replay: swap its track and cars in, put everything back afterwards
+  function playReplay(rec) {
+    if (!rec || !rec.track || !Array.isArray(rec.frames) || rec.frames.length < 2) return popup("That replay couldn't be opened", true);
+    if (S.replaying) stopReplay();
+    S.replayPrev = { track: S.track, race: S.race, geo: S.geo, screen: S.screen, myCar: S.myCar };
+    S.replayRec = rec;
+    S.track = rec.track; S.geo = buildGeo(rec.track); resetTiles();
+    S.race = { laps: 0, raceNo: 0, speed: rec.speed || 1, info: new Map(rec.cars.map((c) => [c.id, c])), fog: !!rec.fog, saved: true };
+    S.myCar = null;
+    const t0 = rec.frames[0].t, sp = rec.speed || 1;
+    const clip = rec.frames.map((f) => ({ at: ((f.t - t0) / sp) * 1000, st: { t: f.t, phase: "race", cars: f.c, standings: f.s, gaps: [], fastest: 0, sc: 0, ql: -1, paused: false, weather: { raining: !!f.r, wet: f.w || 0, trend: 0, dyn: false } } }));
+    runClip(clip, rec.winner, rec.title || "Replay");
+  }
+
+  // ======================= Photo mode =======================
+  const PH = { on: false, x: 0, y: 0, z: 1, rot: 0, names: false, ptrs: new Map(), paused: false };
+  function photoMode(on) {
+    if (!!on === PH.on) return;
+    if (on) {
+      if (S.screen !== "race") return;
+      PH.on = true; S.photoOn = true; PH.x = cam.x; PH.y = cam.y; PH.z = cam.z; PH.rot = 0;
+      document.body.classList.add("photo-mode"); $("photoBar").classList.remove("hidden");
+      // on your own in a normal room? then the race really pauses while you take pictures
+      if (S.host && S.lobby?.players?.length === 1 && !S.replaying && S.phase === "race" && !S.paused) { PH.paused = true; socket.emit("pause", true); }
+      else if (!S.replaying) popup("📷 The race keeps going while you take pictures", false);
+    } else {
+      PH.on = false; S.photoOn = false; PH.ptrs.clear();
+      document.body.classList.remove("photo-mode"); $("photoBar").classList.add("hidden");
+      if (PH.paused) { PH.paused = false; socket.emit("pause", false); }
+    }
+  }
+  const zoomPhoto = (k) => { PH.z = clamp(PH.z * k, 0.15, 4); };
+  $("photoBtn").addEventListener("click", () => photoMode(true));
+  $("replayPhoto").addEventListener("click", () => photoMode(true));
+  $("photoExit").addEventListener("click", () => photoMode(false));
+  $("photoIn").addEventListener("click", () => zoomPhoto(1.25));
+  $("photoOut").addEventListener("click", () => zoomPhoto(0.8));
+  $("photoRot").addEventListener("click", () => { PH.rot = (PH.rot + Math.PI / 12) % (Math.PI * 2); });
+  $("photoHud").addEventListener("click", () => { PH.names = !PH.names; $("photoHud").setAttribute("aria-pressed", String(PH.names)); });
+  $("photoSnap").addEventListener("click", () => {
+    const out = document.createElement("canvas"); out.width = view.width; out.height = view.height;
+    const c = out.getContext("2d"); c.drawImage(view, 0, 0);
+    const k = scr.dpr || 1; c.font = `${Math.round(18 * k)}px 'Russo One', sans-serif`; c.textAlign = "right"; c.textBaseline = "bottom";
+    c.fillStyle = "rgba(0,0,0,0.45)"; c.fillText("Scribble GP", out.width - 14 * k + 1, out.height - 12 * k + 1); c.fillStyle = "rgba(255,255,255,0.85)"; c.fillText("Scribble GP", out.width - 14 * k, out.height - 12 * k);
+    out.toBlob((b) => {
+      if (!b) return popup("Couldn't take the picture", true);
+      const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `scribble-gp-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      const fl = $("flash"); fl.classList.remove("snap"); void fl.offsetWidth; fl.classList.add("snap"); sfx("tick");
+      popup("📸 Saved to your downloads!");
+    }, "image/png");
+  });
+  view.addEventListener("pointerdown", (e) => { if (!PH.on) return; PH.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); view.setPointerCapture?.(e.pointerId); });
+  view.addEventListener("pointermove", (e) => {
+    if (!PH.on || !PH.ptrs.has(e.pointerId)) return;
+    const p = PH.ptrs.get(e.pointerId), dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (PH.ptrs.size >= 2) {
+      const [a, b] = [...PH.ptrs.values()], d0 = Math.hypot(a.x - b.x, a.y - b.y);
+      p.x = e.clientX; p.y = e.clientY;
+      const [a2, b2] = [...PH.ptrs.values()], d1 = Math.hypot(a2.x - b2.x, a2.y - b2.y);
+      if (d0 > 10) zoomPhoto(d1 / d0);
+      return;
+    }
+    p.x = e.clientX; p.y = e.clientY;
+    const cs = Math.cos(-PH.rot), sn = Math.sin(-PH.rot);
+    PH.x -= (dx * cs - dy * sn) / PH.z; PH.y -= (dx * sn + dy * cs) / PH.z;
+  });
+  const dropPtr = (e) => PH.ptrs.delete(e.pointerId);
+  view.addEventListener("pointerup", dropPtr); view.addEventListener("pointercancel", dropPtr);
+  view.addEventListener("wheel", (e) => { if (!PH.on) return; e.preventDefault(); zoomPhoto(e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
+  window.addEventListener("keydown", (e) => {
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+    if ((e.key === "k" || e.key === "K") && !e.repeat && S.screen === "race") { e.preventDefault(); photoMode(!PH.on); }
+    else if (e.key === "Escape" && PH.on) photoMode(false);
+  });
+
+  // ======================= Night and fog =======================
+  // Night: the whole screen goes dark except where headlights (and a little glow round each car) reach.
+  let nightCv = null;
+  function drawNight(w, h, dpr, z, shx, shy, th) {
+    if (!nightCv) nightCv = document.createElement("canvas");
+    if (nightCv.width !== Math.round(w * dpr) || nightCv.height !== Math.round(h * dpr)) { nightCv.width = Math.round(w * dpr); nightCv.height = Math.round(h * dpr); }
+    const n = nightCv.getContext("2d");
+    n.setTransform(1, 0, 0, 1, 0, 0); n.globalCompositeOperation = "source-over"; n.clearRect(0, 0, nightCv.width, nightCv.height);
+    n.fillStyle = th.key === "neon" ? "rgba(8,4,26,0.5)" : "rgba(3,5,16,0.7)"; n.fillRect(0, 0, nightCv.width, nightCv.height);
+    n.globalCompositeOperation = "destination-out";
+    const rot = PH.on ? PH.rot : 0;
+    n.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 + shx), dpr * (h / 2 + shy));
+    if (rot) n.rotate(rot);
+    n.translate(-cam.x, -cam.y);
+    const reach = Math.hypot(w, h) / 2 / z + 380;          // headlights reach ~330px: skip cars too far away to show
+    for (const c of S.cars.values()) {
+      if (c.x === undefined || Math.abs(c.x - cam.x) > reach || Math.abs(c.y - cam.y) > reach) continue;
+      n.save(); n.translate(c.x, c.y); n.rotate(c.h);
+      const g = n.createRadialGradient(20, 0, 10, 20, 0, 330);
+      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.55, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      n.fillStyle = g; n.beginPath(); n.moveTo(16, -9); n.lineTo(330, -125); n.quadraticCurveTo(372, 0, 330, 125); n.lineTo(16, 9); n.closePath(); n.fill();
+      const r = n.createRadialGradient(0, 0, 8, 0, 0, 58); r.addColorStop(0, "rgba(0,0,0,0.9)"); r.addColorStop(1, "rgba(0,0,0,0)");
+      n.fillStyle = r; n.beginPath(); n.arc(0, 0, 58, 0, Math.PI * 2); n.fill();
+      n.restore();
+    }
+    // the start/finish straight is floodlit
+    const t = S.track;
+    if (t?.pts?.length) { const p = t.pts[0], g = n.createRadialGradient(p.x, p.y, 40, p.x, p.y, 520); g.addColorStop(0, "rgba(0,0,0,0.8)"); g.addColorStop(1, "rgba(0,0,0,0)"); n.fillStyle = g; n.beginPath(); n.arc(p.x, p.y, 520, 0, Math.PI * 2); n.fill(); }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(nightCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  // Fog: you can see the road around your car, then it fades into grey (darker at night). A few banks drift past.
+  function drawFog(w, h, night, now, fx, fy) {
+    const R = Math.min(w, h), g = ctx.createRadialGradient(fx, fy, R * 0.12, fx, fy, R * 0.62);
+    const col = night ? "46,50,62" : "196,202,208";
+    g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.55, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0.94)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    if (reducedMotion) return;
+    const t = now / 1000;
+    for (let i = 0; i < 6; i++) {
+      const x = ((i * 0.37 + t * (0.012 + i * 0.004)) % 1.4 - 0.2) * w, y = (0.15 + ((i * 0.53) % 1) * 0.7) * h + Math.sin(t * 0.3 + i) * 30, r = R * (0.25 + (i % 3) * 0.08);
+      const b = ctx.createRadialGradient(x, y, 0, x, y, r); b.addColorStop(0, `rgba(${col},0.22)`); b.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = b; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+  }
 
   // ======================= Main loop =======================
   let last = performance.now();

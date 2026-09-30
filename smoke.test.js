@@ -160,3 +160,124 @@ test("rivals from race 3, and a Driver of the Day in the results", { timeout: 15
   assert.ok("dotd" in res, "results say who was Driver of the Day");
   s.close();
 });
+
+test("ranked tiers, rating maths and who you race", () => {
+  assert.equal(accounts.rankOf(0).label, "Iron III");
+  assert.equal(accounts.rankOf(299).label, "Iron I");
+  assert.equal(accounts.rankOf(750).label, "Silver II");
+  assert.equal(accounts.rankOf(2100).key, "oe");
+  assert.deepEqual(accounts.rankedField(100), { ai: 3, aiLevel: "hard" });
+  assert.deepEqual(accounts.rankedField(700), { ai: 5, aiLevel: "extreme" });
+  assert.deepEqual(accounts.rankedField(1300), { ai: 5, aiLevel: "overdrive" });
+  assert.ok(game.AI_LEVELS.overdrive.rankedOnly, "Overdrive AI is ranked only");
+  const u = { id: "u_x", ranked: { sr: 500, peak: 500, games: 0, wins: 0 }, stats: {}, owned: [], ach: {} };
+  accounts.rankedStart(u);
+  assert.equal(u.ranked.sr, 455, "leaving counts as a loss until the flag");
+  const won = accounts.rankedFinish(u, 1, 4, true);
+  assert.ok(won.delta > 30 && u.ranked.sr > 500, "a win goes up");
+  accounts.rankedStart(u);
+  const lost = accounts.rankedFinish(u, 4, 4, true);
+  assert.ok(lost.delta < 0, "last goes down");
+});
+
+test("season pass: XP, tiers, premium and themed crates", async () => {
+  const res = await accounts.signUp("PassTester", "Turbo-Fox-Lane-42");
+  const u = res.u;
+  accounts.passXp(u, 260);
+  let p = accounts.publicUser(u).pass;
+  assert.equal(p.tier, 1);
+  u.coins = 100;
+  assert.ok(accounts.buyPass(u).error, "can't buy without the coins");
+  u.coins = 5000;
+  assert.ok(accounts.buyPass(u).ok);
+  p = accounts.publicUser(u).pass;
+  assert.ok(p.prem);
+  assert.ok(u.owned.some((id) => id.startsWith("bp_") && id.endsWith("_helmet")), "premium tier 1 item handed out when bought late");
+  accounts.passXp(u, 250 * 3);
+  assert.ok((u.crates || {})[p.theme.key] >= 1, "premium tier 3 is a themed crate");
+  const o = accounts.openCrate(u, p.theme.key);
+  assert.ok(o.ok && o.item.pass === p.theme.key, "the crate gives this month's item");
+  assert.ok(!accounts.STORE.filter((x) => x.pass).some((x) => !x.loot), "pass items can't be bought");
+});
+
+test("daily challenges, and gifts and trades between friends", async () => {
+  const a = (await accounts.signUp("GiftA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("GiftB", "Turbo-Fox-Lane-42")).u;
+  assert.equal(accounts.publicUser(a).daily.list.length, 3);
+  assert.ok((await accounts.sendGift(a, b.id, { coins: 10 })).error, "strangers can't get gifts");
+  await accounts.friendAdd(a, "GiftB"); await accounts.friendAccept(b, a.id);
+  a.coins = 1000; b.coins = 0; a.owned.push("glow_cyan"); b.owned.push("rims_gold");
+  const g = await accounts.sendGift(a, b.id, { coins: 300 });
+  assert.ok(g.ok); assert.equal(b.coins, 300);
+  assert.match((await accounts.sendGift(a, b.id, { coins: 5 })).error, /cooldown/i);
+  a.giftAt = 0;
+  assert.ok((await accounts.offerTrade(a, b.id, { item: "glow_cyan" }, { item: "rims_gold" })).ok);
+  const t = b.tradesIn[0];
+  assert.ok((await accounts.answerTrade(b, t.id, true)).ok);
+  assert.ok(b.owned.includes("glow_cyan") && !b.owned.includes("rims_gold"));
+  assert.ok(a.owned.includes("rims_gold") && !a.owned.includes("glow_cyan"));
+  assert.ok(accounts.dmThread(a, b.id).length >= 2, "gifts and trades show in the chat");
+  assert.ok(accounts.sendDm(a, b, "gg").ok);
+});
+
+test("track of the week is the same all week, and share codes load tracks", { timeout: 60000 }, async () => {
+  const t1 = game.totw(3000), t2 = game.totw(3000);
+  assert.ok(t1 && t1.stroke.length > 10);
+  assert.equal(JSON.stringify(t1.stroke), JSON.stringify(t2.stroke));
+  const s = io(base, { transports: ["websocket"], forceNew: true });
+  const got = (ev) => new Promise((ok) => s.once(ev, ok));
+  await got("connect");
+  s.emit("create", { name: "Sharer" }, {});
+  await got("joined");
+  s.emit("totw:load");
+  const tr = await got("trackResult");
+  assert.ok(!tr.error && tr.totw, "track of the week loaded");
+  s.emit("track:share");
+  const sc = await got("shareCode");
+  assert.match(sc.code, /^[A-HJ-NP-Z2-9]{6}$/);
+  s.emit("randomTrack", { map: "small" }); await got("trackResult");
+  s.emit("track:load", sc.code);
+  const lr = await got("trackResult");
+  assert.ok(!lr.error && lr.shared === sc.code, "loaded from the code: " + lr.error);
+  await new Promise((ok) => setTimeout(ok, 1500));      // (the rate limiter would drop a burst this big)
+  s.emit("track:load", "ZZZZZZ");
+  assert.ok((await got("trackResult")).error);
+  s.close();
+});
+
+test("shared replays are checked and cleaned on the server", () => {
+  const N = 20, pts = Array.from({ length: N }, (_, i) => ({ x: i, y: i }));
+  const rep = game.cleanReplay({ v: 1, track: { N, pts, tan: pts, nor: pts, theme: "night", hw: [], gravel: [], pitLane: { entry: 1, len: 3, side: 1, boxes: { A: 2 } }, bridges: 0 },
+    cars: [{ id: 1, name: "sh1thead", color: "red", number: 7 }, { id: 2, name: "Ace", color: "#ff0000" }],
+    frames: Array.from({ length: 12 }, (_, i) => ({ t: i / 30, s: [1, 2], c: [[1, i, i, 0, 100, 1, 0, 0, -1, 0, 0, 0, 1, 0, i, 0, "F"], [2, i, i]] })) });
+  assert.ok(rep);
+  assert.equal(rep.cars[0].name, "Racer", "rude names are replaced");
+  assert.equal(rep.cars[0].color, "#888888");
+  assert.equal(rep.frames[0].c[0][16], "F", "tire letters survive");
+  assert.equal(game.cleanReplay({ v: 1, track: {}, cars: [], frames: [] }), null);
+});
+
+test("a whole ranked race: signed in, locked settings, rating changes at the flag", { timeout: 150000 }, async () => {
+  await accounts.signUp("RankRacer", "Turbo-Fox-Lane-42");
+  const s = io(base, { transports: ["websocket"], forceNew: true });
+  const got = (ev) => new Promise((ok) => s.once(ev, ok));
+  await got("connect");
+  s.emit("ranked:play", { name: "Guest" });
+  assert.match(await got("joinError"), /Sign in/, "guests can't play ranked");
+  s.emit("auth:login", { username: "RankRacer", password: "Turbo-Fox-Lane-42" });
+  const acct = await got("account");
+  assert.equal(acct.ranked.sr, 0);
+  s.emit("ranked:play", { name: "RankRacer" });
+  const j = await got("joined");
+  const r = game.rooms.get(j.code);
+  assert.ok(r.ranked && r.settings.aiLevel === "hard" && r.settings.ai === 3, "Iron: 3 hard AI");
+  r.settings.laps = 1; r.settings.speed = 3;                // (quick test race)
+  s.emit("settings", { ai: 20, aiLevel: "easy" });
+  s.on("tirePick", () => s.emit("compound", "fast"));
+  s.on("lightsOut", () => s.emit("react", 250));
+  const race = await got("race");
+  assert.equal(race.cars.length, 4, "the player can't change a ranked room's settings");
+  assert.ok(race.ranked);
+  const res = await got("rankedResult");
+  assert.ok(typeof res.delta === "number" && res.after && res.pos >= 1);
+  s.close();
+});
