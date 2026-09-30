@@ -1027,10 +1027,11 @@ function dailyPublic(u) {
 
 // ======================= Season pass =======================
 // One a month (UTC), each with its own theme, items and themed crate. Race to earn pass XP, and every
-// tier pays out on the FREE track. The PREMIUM track costs 2,000 coins and adds the themed items and
+// tier pays out on the FREE track. The PREMIUM track costs 200 coins and adds the themed items and
 // crates (bought late? you get everything you already reached straight away).
-const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 2000;
+const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 200;
 const PASS_XP = { daily: 150, weekly: 300 };
+const RIVAL_PASS_XP = 100;   // bonus season pass XP for beating your rival (on top of the 100 coins)
 const monthKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
 const monthTheme = (key = monthKey()) => PASS_THEMES[(Number(key.slice(5, 7)) - 1) % 12];
 const monthEnds = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); };
@@ -1071,7 +1072,7 @@ function passXp(u, n) {
   return got;
 }
 // pass XP from a race: finishing, places beaten, winning
-function raceXp(r) { return r.finished ? 60 + Math.min(80, 10 * Math.max(0, r.of - r.pos)) + (r.pos === 1 && r.of >= 3 ? 40 : 0) + (r.ranked ? 40 : 0) : 20; }
+function raceXp(r) { return (r.finished ? 60 + Math.min(80, 10 * Math.max(0, r.of - r.pos)) + (r.pos === 1 && r.of >= 3 ? 40 : 0) + (r.ranked ? 40 : 0) : 20) + (r.beatRival ? RIVAL_PASS_XP : 0); }
 function buyPass(u) {
   const P = passState(u);
   if (P.prem) return { error: "You already have this month's premium pass" };

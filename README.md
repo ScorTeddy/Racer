@@ -52,7 +52,7 @@ full race against the AI (about 30 seconds). If anything says `not ok`, don't up
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
   Festive), 30 tiers of 250 XP. Free track: coins, a themed item (tier 15) and a themed crate (tier 30). Premium
-  (2,000 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)
+  (200 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)
   and themed crates (`crate:open`) only come from the pass. XP: races, dailies (+150), weeklies (+300).
 - **Gifts, trades and chat with friends** (Profile › Friends › 💬 🎁 🤝): friends only, one gift/offer a minute,
   5,000 coins a day max, the receiver can't already own the item, trades are checked again when accepted. Messages

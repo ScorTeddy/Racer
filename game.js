@@ -1546,7 +1546,7 @@
   // your rival for this race (arrives just before the race starts)
   socket.on("rival", (r) => { S.pendingRival = r; });
   socket.on("rivalResult", (r) => {
-    setTimeout(() => popup(r.beat ? `🎯 You beat your rival ${r.name}!${r.coins ? ` +${r.coins} coins` : ""}` : `🎯 ${r.name} beat you this time. Get them next race!`, !r.beat), 1200);
+    setTimeout(() => popup(r.beat ? `🎯 You beat your rival ${r.name}!${r.coins ? ` +${r.coins} coins` : ""}${r.xp ? ` +${r.xp} pass XP` : ""}` : `🎯 ${r.name} beat you this time. Get them next race!`, !r.beat), 1200);
   });
   socket.on("rareCard", (r) => {
     const T = RARE_TIER[r.tier] || RARE_TIER.epic;
