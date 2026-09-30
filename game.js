@@ -502,6 +502,21 @@
         for (let k = 0; k < 7; k++) { const tw = Math.max(0, Math.sin(t * 3 + k * 2.1)); if (tw < 0.3) continue; const px = x0 + R() * L, py = y0 + R() * Wd, r = 1.6 * tw; c.fillStyle = `rgba(255,236,160,${tw})`; c.beginPath(); c.moveTo(px, py - r); c.lineTo(px + r * 0.3, py); c.lineTo(px, py + r); c.lineTo(px - r * 0.3, py); c.fill(); c.beginPath(); c.moveTo(px - r, py); c.lineTo(px, py + r * 0.3); c.lineTo(px + r, py); c.lineTo(px, py - r * 0.3); c.fill(); }
         break;
       }
+      // ---- fourth wave ----
+      case "ocean": { const t = performance.now() / 1000; c.fillStyle = lin(["#0369a1", "#0ea5e9"], true); c.fillRect(x0, y0, L, Wd); for (let row = 0; row < 3; row++) { c.strokeStyle = `rgba(255,255,255,${0.75 - row * 0.2})`; c.lineWidth = 1.3; c.beginPath(); for (let i = 0; i <= L; i += 2) { const yy = y0 + 5 + row * 6 + Math.sin(i / 4 + t * 2 + row) * 1.6; i ? c.lineTo(x0 + i, yy) : c.moveTo(x0 + i, yy); } c.stroke(); } break; }
+      case "bumblebee": c.fillStyle = "#ffcc00"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#141414"; for (let k = 0; k < 4; k++) c.fillRect(x0 + 6 + k * 10, y0, 4.5, Wd); c.fillRect(-x0 - 5, y0, 5, Wd); break;
+      case "marble": { c.fillStyle = "#f4f1ea"; c.fillRect(x0, y0, L, Wd); c.lineCap = "round"; for (let k = 0; k < 6; k++) { c.strokeStyle = k % 3 ? "rgba(90,90,100,0.45)" : "rgba(196,160,80,0.8)"; c.lineWidth = k % 3 ? 0.7 : 1.1; c.beginPath(); let x = x0 + R() * L, y = y0; c.moveTo(x, y); for (let q = 0; q < 5; q++) { x += (R() - 0.5) * 10; y += Wd / 5; c.lineTo(x, y); } c.stroke(); } break; }
+      case "tron": { const t = performance.now() / 1000; c.fillStyle = "#05070d"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(34,230,255,0.25)"; c.lineWidth = 0.5; for (let i = 0; i < L; i += 4) { c.beginPath(); c.moveTo(x0 + i, y0); c.lineTo(x0 + i, -y0); c.stroke(); } for (let j = 0; j < Wd; j += 4) { c.beginPath(); c.moveTo(x0, y0 + j); c.lineTo(-x0, y0 + j); c.stroke(); } const px = x0 + ((t * 40) % L); c.strokeStyle = "#22e6ff"; c.shadowColor = "#22e6ff"; c.shadowBlur = 6; c.lineWidth = 1.4; c.beginPath(); c.moveTo(x0, y0 + 3); c.lineTo(-x0, y0 + 3); c.moveTo(x0, -y0 - 3); c.lineTo(-x0, -y0 - 3); c.stroke(); c.fillStyle = "#fff"; c.fillRect(px - 2, y0 + 2.2, 4, 1.6); c.fillRect(-x0 - (px - x0) - 2, -y0 - 3.8, 4, 1.6); c.shadowBlur = 0; break; }
+      case "lavalamp": { const t = performance.now() / 1000; c.fillStyle = lin(["#3b0764", "#7e22ce"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "#ff8a3d"; for (let k = 0; k < 5; k++) { const cx = x0 + 5 + k * 9 + Math.sin(t * 0.7 + k) * 3, cy = Math.sin(t * (0.6 + k * 0.15) + k * 2) * (Wd * 0.3), r = 2.8 + 1.4 * Math.sin(t + k); c.beginPath(); c.ellipse(cx, cy, r * 1.2, r, 0, 0, Math.PI * 2); c.fill(); } break; }
+      case "celestial": {   // MYTHIC: day turns to night across the car, with a sun, a moon and twinkling stars
+        const t = performance.now() / 1000, ph = (Math.sin(t * 0.6) + 1) / 2;
+        const sky = c.createLinearGradient(x0, 0, -x0, 0); sky.addColorStop(0, `hsl(${30 + ph * 10},90%,${55 - ph * 10}%)`); sky.addColorStop(0.5, "#6d28d9"); sky.addColorStop(1, "#0b1030"); c.fillStyle = sky; c.fillRect(x0, y0, L, Wd);
+        const sg = c.createRadialGradient(x0 + 9, 0, 0, x0 + 9, 0, 9); sg.addColorStop(0, "#fff7c2"); sg.addColorStop(0.5, "#ffc93c"); sg.addColorStop(1, "rgba(255,150,40,0)"); c.fillStyle = sg; c.beginPath(); c.arc(x0 + 9, 0, 9, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#f1f5f9"; c.beginPath(); c.arc(-x0 - 8, -2, 4, 0, Math.PI * 2); c.fill(); c.fillStyle = "#0b1030"; c.beginPath(); c.arc(-x0 - 6.4, -3, 3.5, 0, Math.PI * 2); c.fill();
+        for (let k = 0; k < 12; k++) { const tw = Math.abs(Math.sin(t * 2.5 + k * 1.7)); c.fillStyle = `rgba(255,255,255,${tw})`; c.fillRect(x0 + L * 0.5 + R() * L * 0.5, y0 + R() * Wd, 1, 1); }
+        c.strokeStyle = "rgba(255,236,160,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
+        break;
+      }
       case "midnight": c.fillStyle = lin(["#0b1026", "#1e2a5a", "#0b1026"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "#e2e8f0"; c.beginPath(); c.moveTo(-x0, -1.5); c.lineTo(x0 + L * 0.3, -3.5); c.lineTo(x0 + L * 0.3, 3.5); c.lineTo(-x0, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.fillRect(x0 + L * 0.25, -1, L * 0.5, 2); break;
     }
   }
@@ -782,8 +797,9 @@
   socket.on("achievement", (a) => {
     const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
     const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = a.icon;
-    const tx = document.createElement("div"); const sm = document.createElement("small"); sm.textContent = `Achievement unlocked · +${a.coins} coins`;
+    const tx = document.createElement("div"); const sm = document.createElement("small"); sm.textContent = a.secret ? `🤫 SECRET ACHIEVEMENT · +${a.coins.toLocaleString()} coins` : `Achievement unlocked · +${a.coins} coins`;
     const b = document.createElement("b"); b.textContent = a.name; tx.append(sm, b); d.append(ic, tx);
+    if (a.secret) { d.classList.add("secret"); setTimeout(() => { banner(`🤫 SECRET: ${a.name}!`, "#ff3b8a"); sfx("win"); }, 200); }
     // queue them so several at once don't pile up
     const q = (A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("level"); setTimeout(() => { d.remove(); res(); }, 4300); })));
   });
@@ -825,7 +841,7 @@
     for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
-    $("achCount").textContent = A.catalog ? `${u ? Object.keys(u.ach).length : 0}/${A.catalog.ach.length}` : "";
+    $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
@@ -898,6 +914,13 @@
     }
     if (!shown.length) g.appendChild(el("p", "preset-note", f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
     box.appendChild(g);
+    // secret achievements: only the ones you've found ever show up (nobody else even knows they exist)
+    if (u?.secrets?.length) {
+      const sec = el("section", "secret-achs"); sec.appendChild(el("h3", "hub-h", `🤫 Secret achievements you found (${u.secrets.length})`));
+      const sg = el("div", "ach-grid");
+      for (const a of u.secrets) { const d = el("div", "ach got secret"); const tx = el("div"); tx.append(el("b", "", a.name), el("small", "", a.desc)); d.append(el("span", "ic", a.icon), tx, el("span", "rw", "✓ +" + a.coins.toLocaleString())); sg.appendChild(d); }
+      sec.appendChild(sg); box.appendChild(sec);
+    }
   }
   const RARE_TIER = { epic: { label: "EPIC", odds: "0.1%", color: "#c77dff", icon: "💎" }, legendary: { label: "LEGENDARY", odds: "0.01%", color: "#ffc21f", icon: "👑" }, mythic: { label: "MYTHIC", odds: "0.001%", color: "#ff3b8a", icon: "🌈" } };
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
@@ -905,6 +928,9 @@
   function itemPreview(it, w = 200, h = 110) {
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Preview of your car with the ${it.name}`);
     drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: it.onlyBody ? { body: it.onlyBody, [it.slot]: it.look } : { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
+    const c2 = cv.getContext("2d");
+    if (it.slot === "smoke") { for (let k = 0; k < 5; k++) { c2.globalAlpha = 0.85 - k * 0.12; c2.fillStyle = it.look === "rainbow" ? `hsl(${k * 70},95%,65%)` : it.look === "stardust" ? ["#ffe278", "#fff", "#be8cff"][k % 3] : it.look; c2.beginPath(); c2.arc(w * 0.26 - k * 9, h / 2 + (k % 2 ? 8 : -8), 8 + k * 2, 0, Math.PI * 2); c2.fill(); } c2.globalAlpha = 1; }
+    if (it.slot === "badge") { c2.font = `${Math.round(h * 0.3)}px sans-serif`; c2.textAlign = "center"; c2.textBaseline = "middle"; c2.fillText(it.look, w / 2, h * 0.16); }
     return cv;
   }
   function renderBoxes(box, u) {
@@ -1106,7 +1132,7 @@
     so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
     box.appendChild(msg);
   }
-  const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail" };
+  const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail", smoke: "Tyre smoke", badge: "Name badge (shows next to your name in races)" };
   function renderStore(u) {
     const box = $("hubStore"); box.textContent = "";
     if (!A.catalog) { box.textContent = "Loading..."; return; }
@@ -3817,7 +3843,7 @@
       if (c.punct && c.speed > 30 && Math.random() < 0.9 * fxLevel) {
         S.particles.push({ x: c.x - Math.cos(c.h) * 18, y: c.y - Math.sin(c.h) * 18, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, life: 0.25, age: 0, r: 2, color: Math.random() < 0.5 ? "#ffcc1f" : "#ff7043" });
       }
-      if (c.slide && Math.random() < 0.35 * fxLevel) puff(c, "rgba(230,230,230,0.5)");
+      if (c.slide && Math.random() < 0.35 * fxLevel) puff(c, smokeCol(c.extras?.smoke));
       if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
       if (c.dmg > 0.05 && Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
     }
@@ -3866,7 +3892,7 @@
       }
       const showName = settings.names === "all" || (settings.names === "mine" && c.id === S.myCar);
       if (showName) {
-        const label = c.id === S.myCar ? `${c.name} (you)` : c.name;
+        const label = (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name);
         ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
         ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
@@ -3923,6 +3949,13 @@
     updateBoost();
     const mine = S.cars.get(S.myCar);
     engineSound(mine ? mine.speed : 0, S.screen === "race" && S.phase === "race" && !!mine);
+  }
+  // store: tyre smoke colour (rainbow cycles, stardust sparkles gold and white)
+  function smokeCol(s) {
+    if (!s) return "rgba(230,230,230,0.5)";
+    if (s === "rainbow") return `hsla(${(performance.now() / 6) % 360},95%,65%,0.6)`;
+    if (s === "stardust") return Math.random() < 0.5 ? "rgba(255,226,120,0.85)" : Math.random() < 0.5 ? "rgba(255,255,255,0.9)" : "rgba(190,140,255,0.8)";
+    return s + "aa";
   }
   function puff(c, color) {
     if (S.particles.length > 300) return;

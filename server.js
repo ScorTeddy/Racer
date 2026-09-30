@@ -2129,6 +2129,7 @@ class Room {
         upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
         humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
         kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
+        rare: p.rare || null,
         raceSec: this.time || 0, aiLevel: this.settings.aiLevel || "medium", theme: this.settings.theme, body: p.extras?.body || null,
         margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),

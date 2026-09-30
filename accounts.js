@@ -457,11 +457,25 @@ ACH.push(
   cnt("ach_50", "🎯", "Achievement Hunter", "Unlock 50 achievements", 500, (s, u) => Object.keys(u.ach).length, 50),
   cnt("ach_100", "🏵️", "Completionist", "Unlock 100 achievements", 3000, (s, u) => Object.keys(u.ach).length, 100),
 );
+// ---- SECRET achievements: never listed, never hinted. 100,000 coins each. Only people who get one
+// ever find out they exist (then it shows up in their achievements, marked SECRET).
+const SECRET_COINS = 100000;
+const extreme = (r, ai) => r.aiLevel === "extreme" && r.of - r.humans >= ai;
+ACH.push(
+  { secret: true, id: "secret_chosen", icon: "🌈", name: "The Chosen One", desc: "Pulled a GOD MODE card (0.001%)", coins: SECRET_COINS, test: (s, r) => r.rare === "mythic" },
+  { secret: true, id: "secret_perfect", icon: "💯", name: "Perfection", desc: "Won a 10+ lap race against 15+ EXTREME AI with a perfect start, the fastest lap, and not one crash, slide or mistake", coins: SECRET_COINS, test: (s, r) => r.pos === 1 && r.finished && extreme(r, 15) && r.laps >= 10 && r.reaction > 0 && r.reaction < 200 && !r.jump && r.fastestLap && r.crashes === 0 && r.slips === 0 && r.cleanLaps >= r.laps },
+  { secret: true, id: "secret_last_to_legend", icon: "🚀", name: "Last to Legend", desc: "Started dead last of 40+ cars and won against EXTREME AI", coins: SECRET_COINS, test: (s, r) => r.pos === 1 && r.finished && r.of >= 40 && r.grid === r.of && extreme(r, 30) },
+  { secret: true, id: "secret_endurance", icon: "🗿", name: "Endurance God", desc: "Won a 99-lap race against 10+ EXTREME AI", coins: SECRET_COINS, test: (s, r) => r.pos === 1 && r.finished && r.laps >= 99 && extreme(r, 10) },
+  { secret: true, id: "secret_lapped", icon: "🌪️", name: "In Another Postcode", desc: "Won by more than a full minute against 10+ EXTREME AI", coins: SECRET_COINS, test: (s, r) => r.pos === 1 && r.finished && r.margin >= 60 && r.margin < 99 && extreme(r, 10) },
+  { secret: true, id: "secret_zen", icon: "🧘", name: "Inner Peace", desc: "Won a 15+ lap race against 20+ EXTREME AI without ever touching the boost", coins: SECRET_COINS, test: (s, r) => r.pos === 1 && r.finished && r.laps >= 15 && r.boostSec === 0 && extreme(r, 20) },
+  { secret: true, id: "secret_legend", icon: "👑", name: "Living Legend", desc: "1,000 race wins", coins: SECRET_COINS, test: (s) => s.wins >= 1000 },
+);
 // progress bars for the older count achievements too
 const OLD_PROG = { races_10: ["races", 10], races_50: ["races", 50], races_200: ["races", 200], wins_5: ["wins", 5], wins_25: ["wins", 25], podiums_20: ["podiums", 20], ot_100: ["overtakes", 100], ot_1000: ["overtakes", 1000], fastest_10: ["fastestLaps", 10], pits_100: ["pitStops", 100], km_100: ["km", 100], km_1000: ["km", 1000], world_tour: ["realTracks", 10], dice: ["randomRaces", 10], bragging: ["beatPlayers", 10], unboxer: ["boxes", 10] };
 for (const a of ACH) if (OLD_PROG[a.id] && !a.prog) { const [k, g] = OLD_PROG[a.id]; a.goal = g; a.prog = (s) => len(s[k]); }
-const ACH_PUBLIC = ACH.map(({ id, icon, name, desc, coins, goal }) => ({ id, icon, name, desc, coins, goal: goal || 0 }));
-function achProgress(u) { const o = {}; for (const a of ACH) if (a.prog && !u.ach[a.id]) { try { o[a.id] = Math.floor(a.prog(u.stats, u) * 10) / 10; } catch (e) {} } return o; }
+const ACH_PUBLIC = ACH.filter((a) => !a.secret).map(({ id, icon, name, desc, coins, goal }) => ({ id, icon, name, desc, coins, goal: goal || 0 }));
+const mySecrets = (u) => ACH.filter((a) => a.secret && u.ach[a.id]).map(({ id, icon, name, desc, coins }) => ({ id, icon, name, desc, coins }));
+function achProgress(u) { const o = {}; for (const a of ACH) if (a.prog && !a.secret && !u.ach[a.id]) { try { o[a.id] = Math.floor(a.prog(u.stats, u) * 10) / 10; } catch (e) {} } return o; }
 
 // ======================= Store =======================
 // slot -> one equipped item per slot. The client knows how to draw every "look".
@@ -551,13 +565,48 @@ STORE.push(
   { id: "wing_gold", slot: "wing", name: "Solid gold wing", look: "gold", price: 300 },
   { id: "num_holo", slot: "num", name: "Hologram number plate (animated)", look: "holo", price: 300 },
 );
+// the fourth wave: two new kinds of item (tyre smoke, and a badge next to your name in races)
+STORE.push(
+  { id: "smoke_pink", slot: "smoke", name: "Pink tyre smoke", look: "#ff7ac8", price: 40 },
+  { id: "smoke_blue", slot: "smoke", name: "Blue tyre smoke", look: "#6ab8ff", price: 40 },
+  { id: "smoke_green", slot: "smoke", name: "Green tyre smoke", look: "#7dff8a", price: 50 },
+  { id: "smoke_black", slot: "smoke", name: "Burnout black smoke", look: "#1d1d22", price: 90 },
+  { id: "smoke_gold", slot: "smoke", name: "Gold dust smoke", look: "#ffd24a", price: 180 },
+  { id: "smoke_rainbow", slot: "smoke", name: "Rainbow tyre smoke (animated)", look: "rainbow", price: 350 },
+  { id: "badge_star", slot: "badge", name: "Star badge", look: "⭐", price: 50 },
+  { id: "badge_checker", slot: "badge", name: "Chequered flag badge", look: "🏁", price: 60 },
+  { id: "badge_fire", slot: "badge", name: "Fire badge", look: "🔥", price: 100 },
+  { id: "badge_bolt", slot: "badge", name: "Lightning badge", look: "⚡", price: 100 },
+  { id: "badge_rocket", slot: "badge", name: "Rocket badge", look: "🚀", price: 120 },
+  { id: "badge_crown", slot: "badge", name: "Crown badge", look: "👑", price: 200 },
+  { id: "badge_diamond", slot: "badge", name: "Diamond badge", look: "💎", price: 400 },
+  { id: "helmet_mint", slot: "helmet", name: "Mint helmet", look: "#6ee7b7", price: 30 },
+  { id: "rims_teal", slot: "rims", name: "Teal rims", look: "#14b8a6", price: 55 },
+  { id: "glow_lime", slot: "glow", name: "Lime underglow", look: "#a3e635", price: 90 },
+  { id: "flame_white", slot: "flame", name: "White-hot boost flame", look: "#f8fafc", price: 110 },
+);
 // loot-box-only items: the "trash" commons, plus special liveries (all original designs)
 STORE.push(
   { id: "decal_smiley", slot: "decal", name: "Smiley sticker", look: "smiley", loot: true },
   { id: "trail_leaves", slot: "trail", name: "Autumn leaf trail", look: "leaves", loot: true, rarity: "rare" },
   { id: "trail_ghost", slot: "trail", name: "Little ghost trail", look: "ghost", loot: true, rarity: "epic" },
   { id: "glow_aurora", slot: "glow", name: "Aurora underglow (animated)", look: "aurora", loot: true, rarity: "legendary" },
+  // fourth wave, chest only
+  { id: "smoke_grey", slot: "smoke", name: "Exhaust-grey smoke", look: "#6b6f76", loot: true },
+  { id: "badge_snail", slot: "badge", name: "Snail badge", look: "🐌", loot: true },
+  { id: "smoke_purple", slot: "smoke", name: "Purple haze smoke", look: "#b06bff", loot: true, rarity: "rare" },
+  { id: "badge_ghost", slot: "badge", name: "Ghost badge", look: "👻", loot: true, rarity: "rare" },
+  { id: "liv_ocean", slot: "livery", name: "Ocean wave livery", look: "ocean", loot: true, rarity: "rare" },
+  { id: "liv_bumblebee", slot: "livery", name: "Bumblebee livery", look: "bumblebee", loot: true, rarity: "rare" },
+  { id: "badge_alien", slot: "badge", name: "Alien badge", look: "👽", loot: true, rarity: "epic" },
+  { id: "liv_marble", slot: "livery", name: "Marble livery", look: "marble", loot: true, rarity: "epic" },
+  { id: "badge_trophy", slot: "badge", name: "Trophy badge", look: "🏆", loot: true, rarity: "legendary" },
+  { id: "liv_tron", slot: "livery", name: "Neon Grid livery (animated)", look: "tron", loot: true, rarity: "legendary" },
+  { id: "liv_lavalamp", slot: "livery", name: "Lava Lamp livery (animated)", look: "lavalamp", loot: true, rarity: "legendary" },
   // mythic: only in the Legendary chest
+  { id: "liv_celestial", slot: "livery", name: "Celestial livery (animated)", look: "celestial", loot: true, rarity: "mythic", box: "legend" },
+  { id: "smoke_stardust", slot: "smoke", name: "Stardust smoke (animated)", look: "stardust", loot: true, rarity: "mythic", box: "legend" },
+  { id: "badge_goat", slot: "badge", name: "G.O.A.T. badge", look: "🐐", loot: true, rarity: "mythic", box: "legend" },
   { id: "trail_warp", slot: "trail", name: "Warp Drive trail", look: "warp", loot: true, rarity: "mythic", box: "legend" },
   { id: "glow_void", slot: "glow", name: "Black Hole underglow (animated)", look: "void", loot: true, rarity: "mythic", box: "legend" },
   { id: "junk_rims", slot: "rims", name: "Rusty rims", look: "#8a5a3a", loot: true },
@@ -685,7 +734,7 @@ function checkAch(u, r) {
   for (const a of ACH) {
     if (u.ach[a.id]) continue;
     let ok = false; try { ok = !!a.test(u.stats, r, u); } catch (e) {}
-    if (ok) { u.ach[a.id] = Date.now(); u.coins += a.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + a.coins; got.push({ id: a.id, icon: a.icon, name: a.name, coins: a.coins }); }
+    if (ok) { u.ach[a.id] = Date.now(); u.coins += a.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + a.coins; got.push({ id: a.id, icon: a.icon, name: a.name, coins: a.coins, secret: !!a.secret, desc: a.secret ? a.desc : undefined }); }
   }
   // unlocking some can unlock "unlock N achievements" ones, so check once more
   if (got.length && !r?.again) got.push(...checkAch(u, { ...(r || {}), again: true }));
@@ -999,7 +1048,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.

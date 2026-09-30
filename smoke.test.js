@@ -122,3 +122,16 @@ test("chat: room and team messages, filtered, global needs sign-in", { timeout: 
   assert.match(await note2, /Sign in/);
   a.close(); b.close();
 });
+
+test("secret achievements: never listed, and worth 100,000 coins", async () => {
+  assert.ok(!accounts.ACH.some((a) => a.id.startsWith("secret_")), "secrets are not in the public list");
+  const u = await accounts.signUp("SecretTester", "Turbo-Fox-Lane-42").catch(() => null) || null;
+  assert.ok(u && u.u, "made a test account");
+  const user = u.u;
+  const before = user.coins;
+  const got = accounts.recordRace(user, { pos: 3, of: 6, humans: 1, grid: 3, finished: true, laps: 3, lapsDone: 3, km: 1, overtakes: 0, crashes: 0, cleanLaps: 0, slips: 0, boostSec: 0, pits: 0, best: 20, reaction: 300, level: 5, upgrades: 20, aiLevel: "medium", rare: "mythic", raceSec: 60, margin: 0 });
+  const secret = got.find((a) => a.id === "secret_chosen");
+  assert.ok(secret && secret.secret, "GOD MODE unlocks The Chosen One");
+  assert.ok(user.coins - before >= 100000, "paid 100,000 coins");
+  assert.ok(accounts.publicUser(user).secrets.some((a) => a.id === "secret_chosen"), "you can see the ones you found");
+});
