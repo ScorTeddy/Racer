@@ -121,7 +121,17 @@ const AI_LEVELS = {
   medium:  { skill: [0.88, 0.95], power: 0.99, xp: 1.5, mistakes: 1, aggr: 1, react: [0.18, 0.48] },
   hard:    { skill: [0.95, 1.0], power: 1.01, xp: 2.1, mistakes: 0.6, aggr: 1.15, react: [0.12, 0.3] },
   extreme: { skill: [1.0, 1.05], power: 1.04, xp: 2.8, mistakes: 0.3, aggr: 1.3, react: [0.08, 0.18] },
+  // ranked only (Platinum and up): can't be picked in a normal room
+  overdrive: { skill: [1.05, 1.1], power: 1.075, xp: 3.5, mistakes: 0.15, aggr: 1.4, react: [0.05, 0.12], rankedOnly: true },
 };
+const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"];
+const WEATHERS = ["sunny", "rain", "dynamic", "fog"];
+// Math.random, but the same numbers every time for the same seed (Track of the Week is the same for everyone)
+function withSeed(seed, fn) {
+  const orig = Math.random; let a = seed >>> 0;
+  Math.random = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  try { return fn(); } finally { Math.random = orig; }
+}
 const upgradeInfo = () => Object.fromEntries(Object.entries(UPGRADES).map(([k, u]) => [k, { kind: u.kind, name: u.name, desc: u.desc, max: u.max, levels: Array.from({ length: u.max + 1 }, (_, n) => u.fx(n)) }]));
 const blankUp = () => Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0]));
 const xpForLevel = (lvl) => 100 + (lvl - 1) * 50;
@@ -979,7 +989,7 @@ class Room {
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
   lobbyMsg() {
     return {
-      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason,
+      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
       players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
@@ -1057,7 +1067,7 @@ class Room {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
-    this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.trackId = null;
+    this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.trackId = null; this.wonk = null; this.totwWeek = null;
     // a short fingerprint of the drawing, so personal bests are kept per track (same track = same key)
     { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } this.trackKey = "d" + (h >>> 0).toString(36) + "_" + map; }
     this.trackBy = kind === "drawn" ? this.players.get(this.hostId)?.uid || null : null;   // for the "Architect" achievement
@@ -1073,15 +1083,42 @@ class Room {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const r = makeRandomTrack(board, wonk);
     if (!r) return "Couldn't make a random track. Try again!";
+    const wk = WONK.includes(wonk) ? wonk : "regular";
     if (!this.settings.smooth) {
-      this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null;
+      this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null; this.wonk = wk; this.totwWeek = null; this.trackId = null;
       this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
       this.emit("track", this.trackMsg()); this.sendLobby();
       return null;
     }
-    return this.setTrack(r.stroke, map, "random");
+    const err = this.setTrack(r.stroke, map, "random");
+    if (!err) this.wonk = wk;
+    return err;
+  }
+  // Track of the Week: the same random track for everyone, all week (made from the week number)
+  setTotwTrack() {
+    const T = totw();
+    if (!T) return "Couldn't build this week's track";
+    this.shape = T.shape; this.trackKind = "totw"; this.trackName = T.name; this.draft = null; this.wonk = T.wonk; this.trackId = null;
+    this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
+    this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
+    this.settings.map = T.map; this.settings.theme = T.theme;
+    this.totwWeek = T.week; this.trackKey = "totw_" + T.week; this.trackBy = null;
+    this.emit("track", this.trackMsg()); this.sendLobby();
+    return null;
+  }
+  // a track loaded from a share code: its drawing, plus where the start was and which way round
+  setSharedTrack(d) {
+    const err = this.setTrack(d.stroke, d.map, "shared", d.name || null);
+    if (err) return err;
+    if (Array.isArray(d.start) && d.start.length === 2) this.setStart(Number(d.start[0]), Number(d.start[1]));
+    if (d.reverse) this.rebuildTrack(this.track.start, true);
+    return null;
+  }
+  shareData() {
+    const t = this.track, p = t.pts[0];
+    return { v: 1, stroke: this.stroke, map: this.settings.map, name: this.trackName || null, start: [Math.round(((p.x - t.pad) / SCALE + t.minX) * 10) / 10, Math.round(((p.y - t.pad) / SCALE + t.minY) * 10) / 10], reverse: !!t.reverse, theme: this.settings.theme };
   }
   // A real F1 circuit, sized by its real length (Monaco is short, Spa is long) on the
   // smallest map it fits.
@@ -1211,7 +1248,13 @@ class Room {
     this.phase = "tires";
     this.tiresUntil = Date.now() + TIRE_PICK_TIME;
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0 });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: s.weather === "fog", ranked: !!this.ranked });
+    // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
+    if (this.ranked && !this.qualifying) {
+      const c = this.cars.find((c) => c.owner); const p = c && this.players.get(c.owner);
+      this.rankedCar = c ? c.id : null; this.rankedUid = p?.uid || null; this.rankedPid = p?.id || null;
+      if (this.rankedUid) accounts.getUser(this.rankedUid).then((u) => { if (u) { accounts.rankedStart(u); if (p) io.to(p.id).emit("account", accounts.publicUser(u)); } }).catch(() => {});
+    }
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: s.weather, compounds: COMPOUNDS, perLap: this.perLapAll() });
@@ -2166,6 +2209,17 @@ class Room {
     this.dotd = dotd && dotd.car;
     this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
+    if (this.ranked && this.rankedUid) {
+      const i = order.findIndex((c) => c.id === this.rankedCar), c = order[i];
+      const done = !!(c && c.owner && c.finished);
+      const uid = this.rankedUid; this.rankedUid = null;
+      accounts.getUser(uid).then((u) => {
+        if (!u) return;
+        const res = accounts.rankedFinish(u, i + 1, order.length, done);
+        if (!res) return;
+        for (const sid of online.get(uid) || []) { io.to(sid).emit("rankedResult", { ...res, pos: i + 1, of: order.length, dnf: !done }); io.to(sid).emit("account", accounts.publicUser(u)); }
+      }).catch((e) => console.log("ranked error", e.message));
+    }
     this.sendLobby();
     setTimeout(() => {
       if (this.phase === "results") {
@@ -2197,6 +2251,8 @@ class Room {
         kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
         rare: p.rare || null, beatRival: !!(p.rival && p.beatRival), dotd: this.dotd === c,
         raceSec: this.time || 0, aiLevel: this.settings.aiLevel || "medium", theme: this.settings.theme, body: p.extras?.body || null,
+        wonk: this.trackKind === "random" || this.trackKind === "totw" ? this.wonk || null : null, night: !!THEME_NIGHT[this.settings.theme], fog: this.settings.weather === "fog", ranked: !!this.ranked,
+        totw: this.trackKind === "totw" && this.totwWeek === weekNow() && !this.track?.reverse ? this.totwWeek : 0,
         margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
       };
@@ -2245,6 +2301,78 @@ class Room {
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
   }
+}
+
+// ======================= Track of the Week =======================
+const THEME_NIGHT = { night: true, neon: true };
+const weekNow = () => Math.floor((Date.now() / 86400000 + 3) / 7);            // Mondays (UTC), same as the weekly challenges
+const TOTW_A = ["Twisting", "Midnight", "Golden", "Rusty", "Thunder", "Crooked", "Velvet", "Wild", "Silent", "Screaming", "Lucky", "Frozen", "Burning", "Hidden", "Dizzy", "Grand"];
+const TOTW_B = ["Serpent", "Hairpin", "Loop", "Ribbon", "Canyon", "Spiral", "Harbour", "Viper", "Orchard", "Pretzel", "Comet", "Lagoon", "Gauntlet", "Noodle", "Ridge", "Meadow"];
+let totwCache = null;
+function totw(week = weekNow()) {
+  if (totwCache && totwCache.week === week) return totwCache;
+  const built = withSeed(week * 7919 + 13, () => {
+    const wonk = ["little", "regular", "regular", "very"][Math.floor(Math.random() * 4)];
+    const map = Math.random() < 0.5 ? "normal" : "small";
+    const theme = THEME_KEYS[Math.floor(Math.random() * THEME_KEYS.length)];
+    const name = `${TOTW_A[Math.floor(Math.random() * TOTW_A.length)]} ${TOTW_B[Math.floor(Math.random() * TOTW_B.length)]}`;
+    const r = makeRandomTrack(MAP_SIZES[map], wonk);
+    return r ? { week, name, wonk, map, theme, shape: r.shape, stroke: r.stroke } : null;
+  });
+  if (built) totwCache = built;
+  return built;
+}
+const totwInfo = () => { const T = totw(); return T ? { week: T.week, name: T.name, theme: T.theme, wonk: T.wonk, map: T.map, ends: (T.week + 1) * 7 * 86400000 - 3 * 86400000, stroke: T.stroke.filter((_, i) => i % 4 === 0).map((q) => [Math.round(q[0]), Math.round(q[1])]) } : null; };
+
+// ======================= Ranked rooms =======================
+// A private room with one player, fixed settings, and AI picked by your tier. Starts by itself.
+const RANKED_THEMES = THEME_KEYS, RANKED_WEATHER = ["sunny", "sunny", "dynamic", "fog", "rain"];
+function makeRankedRoom(socket, profile, u) {
+  const r = new Room(makeCode(), false); rooms.set(r.code, r);
+  r.ranked = true;
+  const R = accounts.rankedPublic(u), F = R.field;
+  r.rankedTier = R.rank.label;
+  Object.assign(r.settings, { laps: 3, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15,
+    theme: RANKED_THEMES[Math.floor(Math.random() * RANKED_THEMES.length)], weather: RANKED_WEATHER[Math.floor(Math.random() * RANKED_WEATHER.length)] });
+  r.ensureRoster(F.ai);
+  r.addPlayer(socket, profile);
+  const wonk = ["little", "regular", "regular", "very"][Math.floor(Math.random() * 4)];
+  const err = r.setRandomTrack(Math.random() < 0.5 ? "small" : "normal", wonk);
+  if (err) { r.setRandomTrack("small", "regular"); }
+  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · starting soon`);
+  setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
+  return r;
+}
+
+// ======================= Shared replays: checked and rebuilt on the server =======================
+const zlib = require("zlib");
+const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+const numArr = (a, max) => (Array.isArray(a) ? a.slice(0, max).map((v) => Math.round(num(v) * 100) / 100) : []);
+function cleanReplay(o) {
+  if (!o || typeof o !== "object" || o.v !== 1 || !o.track || !Array.isArray(o.cars) || !Array.isArray(o.frames)) return null;
+  const T = o.track, N = Math.min(20000, Math.floor(num(T.N)));
+  if (!(N > 10) || !Array.isArray(T.pts) || T.pts.length !== N) return null;
+  const pt = (q) => ({ x: Math.round(num(q?.x) * 10) / 10, y: Math.round(num(q?.y) * 10) / 10 });
+  const track = {
+    pts: T.pts.map(pt), tan: (T.tan || []).slice(0, N).map(pt), nor: (T.nor || []).slice(0, N).map(pt), N, W: num(T.W), H: num(T.H), length: num(T.length), trackW: num(T.trackW, TRACK_W),
+    theme: THEME_KEYS.includes(T.theme) ? T.theme : "grass", hw: numArr(T.hw, N), line: numArr(T.line, N), elev: numArr(T.elev, N), vmax: numArr(T.vmax, N),
+    gravel: numArr(T.gravel, N).map(Math.round),
+    pitLane: T.pitLane && typeof T.pitLane === "object" ? { entry: Math.round(num(T.pitLane.entry)) % N, len: Math.round(num(T.pitLane.len)), side: num(T.pitLane.side) < 0 ? -1 : 1, gap: num(T.pitLane.gap, PIT_GAP),
+      boxes: Object.fromEntries(Object.entries(T.pitLane.boxes && typeof T.pitLane.boxes === "object" ? T.pitLane.boxes : {}).slice(0, 70).map(([k, v]) => [String(k).slice(0, 40), Math.round(num(v))])) } : null,
+    minX: num(T.minX), minY: num(T.minY), pad: num(T.pad), scale: num(T.scale, SCALE), reverse: !!T.reverse,
+    bridges: Math.round(num(T.bridges)),
+    maxLevel: Math.round(num(T.maxLevel)), name: typeof T.name === "string" ? cleanTeam(T.name).slice(0, 30) || null : null,
+  };
+  const cars = o.cars.slice(0, MAX_AI + MAX_PLAYERS).map((c) => ({
+    id: Math.round(num(c?.id)), name: (typeof c?.name === "string" && !nameFilter.isBad(c.name) ? c.name.replace(/\s+/g, " ").slice(0, 20) : "Racer"),
+    color: HEX.test(c?.color) ? c.color : "#888888", livery: LIVERIES.includes(c?.livery) ? c.livery : "plain", number: Math.round(num(c?.number)) % 100,
+    design: typeof c?.design === "string" && DESIGN.test(c.design) ? c.design : null,
+    extras: c?.extras && typeof c.extras === "object" ? Object.fromEntries(Object.entries(c.extras).slice(0, 14).filter(([k, v]) => /^[a-z]{2,8}$/.test(k) && typeof v === "string").map(([k, v]) => [k, v.slice(0, 16)])) : null,
+  }));
+  const carRow = (a) => (Array.isArray(a) ? a.slice(0, 30).map((v, i) => (i === 16 ? (["D", "I", "F", "W"].includes(v) ? v : "I") : Math.round(num(v) * 100) / 100)) : []);
+  const frames = o.frames.slice(0, 1500).map((f) => ({ t: Math.round(num(f?.t) * 1000) / 1000, s: numArr(f?.s, cars.length).map(Math.round), c: Array.isArray(f?.c) ? f.c.slice(0, cars.length).map(carRow) : [], w: Math.max(0, Math.min(1, num(f?.w))), r: f?.r ? 1 : 0 }));
+  if (frames.length < 10) return null;
+  return { v: 1, at: Date.now(), title: typeof o.title === "string" ? cleanTeam(o.title).slice(0, 40) : "", track, cars, frames, speed: [1, 2, 3].includes(o.speed) ? o.speed : 1, fog: !!o.fog, winner: typeof o.winner === "string" ? o.winner.slice(0, 20) : "" };
 }
 
 // ======================= Menu: players online + public lobbies =======================
@@ -2364,7 +2492,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2438,7 +2566,7 @@ io.on("connection", (socket) => {
   socket.emit("menuInfo", menuInfo());
   const room = () => rooms.get(socket.data.room);
   const me = () => { const r = room(); return r ? r.players.get(socket.id) : null; };
-  const isHost = () => { const r = room(); return r && r.hostId === socket.id; };
+  const isHost = () => { const r = room(); return r && r.hostId === socket.id && !r.ranked; };      // nobody runs a ranked room: it runs itself
   const leave = () => { const r = room(); if (r) { socket.leave(r.code); r.removePlayer(socket.id); } socket.data.room = null; socket.join("menu"); menuDirty = true; };
 
   socket.on("create", (profile, opts) => {
@@ -2460,6 +2588,7 @@ io.on("connection", (socket) => {
   socket.on("join", (d) => {
     const r = rooms.get(String(d?.code || "").toUpperCase().trim());
     if (!r) return socket.emit("joinError", "No room with that code");
+    if (r.ranked) return socket.emit("joinError", "That's a ranked race: it's one player only");
     if (hostBlocks(r, socket.data.uid)) return socket.emit("joinError", "You can't join that room");
     if (r.players.size >= MAX_PLAYERS) return socket.emit("joinError", "That room is full (6 players max)");
     leave(); r.addPlayer(socket, d.profile);
@@ -2472,7 +2601,7 @@ io.on("connection", (socket) => {
     const S = r.settings;
     if (s?.laps !== undefined && Number.isFinite(Number(s.laps))) S.laps = clamp(Math.round(Number(s.laps)), 1, 99);   // any number of laps
     if ([0, 1, 2, 3, 5].includes(Number(s?.quali))) S.quali = Number(s.quali);
-    if (AI_LEVELS[s?.aiLevel]) S.aiLevel = s.aiLevel;                                       // qualifying minutes (0 = off)
+    if (AI_LEVELS[s?.aiLevel] && !AI_LEVELS[s.aiLevel].rankedOnly) S.aiLevel = s.aiLevel;                                       // qualifying minutes (0 = off)
     if (s?.ai !== undefined && Number.isFinite(Number(s.ai))) { S.ai = clamp(Math.round(Number(s.ai)), 0, MAX_AI); r.ensureRoster(S.ai); }
     if (s?.points !== undefined) { const p = parsePoints(s.points); if (p.length) S.points = p; }
     if (s?.teamColors !== undefined) S.teamColors = s.teamColors === true || s.teamColors === "on";
@@ -2480,9 +2609,9 @@ io.on("connection", (socket) => {
     if (s?.season !== undefined && SEASONS.includes(Number(s.season))) S.season = Number(s.season);
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
-    if (["sunny", "rain", "dynamic"].includes(s?.weather)) S.weather = s.weather;
+    if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
-    if (["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"].includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
+    if (THEME_KEYS.includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
     if ([1, 2, 3].includes(Number(s?.speed))) S.speed = Number(s.speed);
     if (WEAR_LEVELS[s?.wear]) S.wear = s.wear;
     if (MAP_SIZES[s?.map] && !r.track) S.map = s.map;
@@ -2668,7 +2797,7 @@ io.on("connection", (socket) => {
   });
   socket.on("setPresets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deleteSetPreset(u, String(name)); socket.emit("setPresets", u.setPresets); });
   socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
-  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
+  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, passThemes: accounts.PASS_THEMES.map(({ key, name, icon, c }) => ({ key, name, icon, c })), tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
   const storeAction = async (fn) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("toast", "Sign in to use the store");
@@ -2695,7 +2824,105 @@ io.on("connection", (socket) => {
   socket.on("spectate", (on) => { const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return; p.spectator = !!on; r.sendLobby(); });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   // ---- leaderboards ----
-  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps"].includes(d?.kind) ? d.kind : "wins"; socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  // ---- ranked ----
+  socket.on("ranked:play", async (profile) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (!u) return socket.emit("joinError", "Sign in to play ranked (your rank is saved on your account)");
+    if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit");
+    leave(); makeRankedRoom(socket, profile, u);
+  });
+  // ---- Track of the Week ----
+  socket.on("totw:info", () => socket.emit("totwInfo", totwInfo()));
+  socket.on("totw:load", () => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    const err = r.setTotwTrack();
+    socket.emit("trackResult", { error: err, totw: r.trackName });
+  });
+  // ---- share codes: tracks ----
+  socket.on("track:share", async () => {
+    const r = room(); if (!r || !r.track || !r.stroke) return socket.emit("shareCode", { error: "There's no track to share yet" });
+    const data = JSON.stringify(r.shareData());
+    const code = accounts.shareCode("trk:" + data);
+    await accounts.putShared("trk", code, data, 365 * 86400);
+    socket.emit("shareCode", { kind: "track", code, name: r.trackName || null });
+  });
+  socket.on("track:load", async (code) => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return socket.emit("trackResult", { error: "Only the host can load a track" });
+    const raw = await accounts.getShared("trk", code);
+    if (!raw) return socket.emit("trackResult", { error: "No track with that code (codes are 6 letters/numbers)" });
+    let d = null; try { d = JSON.parse(raw); } catch (e) {}
+    if (!d || !Array.isArray(d.stroke)) return socket.emit("trackResult", { error: "That track couldn't be loaded" });
+    const err = r.setSharedTrack(d);
+    if (!err && THEME_KEYS.includes(d.theme)) { r.settings.theme = d.theme; r.emit("track", r.trackMsg()); r.sendLobby(); }
+    socket.emit("trackResult", { error: err, shared: String(code).toUpperCase(), sharedName: d.name || null });
+  });
+  // ---- share codes: replays (sent gzipped by the browser; checked, rebuilt and stored for 30 days) ----
+  socket.on("replay:share", async (buf) => {
+    if (!socket.data.uid) return socket.emit("shareCode", { error: "Sign in to share replays" });
+    if (!Buffer.isBuffer(buf) || buf.length > 380e3) return socket.emit("shareCode", { error: "That replay is too big to share" });
+    let o = null;
+    try { o = JSON.parse(zlib.gunzipSync(buf, { maxOutputLength: 8e6 }).toString("utf8")); } catch (e) {}
+    const clean = cleanReplay(o);
+    if (!clean) return socket.emit("shareCode", { error: "That replay couldn't be shared" });
+    const packed = zlib.gzipSync(JSON.stringify(clean)).toString("base64");
+    const code = accounts.shareCode("rpl:" + crypto.randomBytes(16).toString("hex"));
+    await accounts.putShared("rpl", code, packed, 30 * 86400);
+    socket.emit("shareCode", { kind: "replay", code });
+  });
+  socket.on("replay:get", async (code) => {
+    const raw = await accounts.getShared("rpl", code);
+    if (!raw) return socket.emit("replayData", { error: "No replay with that code (they last 30 days)" });
+    socket.emit("replayData", { code: String(code).toUpperCase(), data: Buffer.from(raw, "base64") });
+  });
+  // ---- season pass ----
+  const acctAction = async (fn) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (!u) return socket.emit("toast", "Sign in first");
+    const res = await fn(u);
+    if (res?.error) { socket.emit("toast", res.error); return res; }
+    socket.data.extras = accounts.extrasOf(u);
+    socket.emit("account", accounts.publicUser(u));
+    for (const a of res?.got || []) socket.emit("achievement", a);
+    return res;
+  };
+  socket.on("pass:buy", () => acctAction((u) => { const r = accounts.buyPass(u); if (r.ok) socket.emit("toast", r.msg); return r; }));
+  socket.on("crate:open", (key) => acctAction((u) => { const r = accounts.openCrate(u, String(key)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
+  // ---- gifts, trades and messages (friends only) ----
+  const tellOther = async (id, ev, data) => { const o = await accounts.getUser(id); if (!o) return; for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); } };
+  socket.on("gift:send", (d) => acctAction(async (u) => {
+    const r = await accounts.sendGift(u, String(d?.to || ""), { coins: d?.coins, item: d?.item, note: nameFilter.isBad(String(d?.note || "")) ? "" : d?.note });
+    if (r.ok) { socket.emit("toast", `🎁 Sent ${r.what} to ${r.name}!`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, gift: r.what }); }
+    return r;
+  }));
+  socket.on("trade:offer", (d) => acctAction(async (u) => {
+    const r = await accounts.offerTrade(u, String(d?.to || ""), d?.give, d?.want);
+    if (r.ok) { socket.emit("toast", `🤝 Trade offer sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, trade: true }); }
+    return r;
+  }));
+  socket.on("trade:answer", (d) => acctAction(async (u) => {
+    const r = await accounts.answerTrade(u, String(d?.id || ""), d?.yes === true);
+    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, tradeDone: d?.yes === true }); }
+    return r;
+  }));
+  let dmAt = 0;
+  socket.on("dm:send", async (d) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
+    const text = String(d?.text || "").replace(/\s+/g, " ").trim().slice(0, CHAT_MAX); if (!text) return;
+    if (Date.now() - dmAt < 700) return socket.emit("chatNote", "Slow down a little!");
+    if (nameFilter.isBad(text)) return socket.emit("chatNote", "Keep it friendly! That message wasn't sent.");
+    if (LINKY.test(text)) return socket.emit("chatNote", "No links in chat, sorry.");
+    dmAt = Date.now();
+    const o = await accounts.getUser(String(d?.to || ""));
+    const r = accounts.sendDm(u, o, text); if (r.error) return socket.emit("chatNote", r.error);
+    socket.emit("dmThread", { with: o.id, list: accounts.dmThread(u, o.id) });
+    if (r.m) for (const sid of online.get(o.id) || []) { io.to(sid).emit("dm", { from: u.id, name: u.name, text }); io.to(sid).emit("dmThread", { with: u.id, list: accounts.dmThread(o, u.id) }); }
+  });
+  socket.on("friends:items", async (id) => {       // what a friend owns (for trade offers)
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u || !accounts.isFriend(u, String(id))) return;
+    const o = await accounts.getUser(String(id)); if (o) socket.emit("friendItems", { id: o.id, owned: o.owned || [] });
+  });
+  socket.on("dm:get", async (id) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (u) socket.emit("dmThread", { with: String(id), list: accounts.dmThread(u, String(id)) }); });
   // ---- friends ----
   const pingUser = (id, ev, data) => { for (const sid of online.get(id) || []) io.to(sid).emit(ev, data); };
   const myUser = async () => (socket.data.uid ? accounts.getUser(socket.data.uid) : null);
@@ -2934,4 +3161,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };

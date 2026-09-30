@@ -443,7 +443,7 @@ ACH.push(
   cnt("boxes_250", "🏦", "Chest Tycoon", "Open 250 chests", 1500, "boxes", 250),
   cnt("items_25", "🧳", "Collector", "Own 25 items", 200, (s, u) => u.owned.length, 25),
   cnt("items_60", "🗄️", "Hoarder", "Own 60 items", 800, (s, u) => u.owned.length, 60),
-  cnt("items_all", "🏛️", "Museum Curator", "Own every single item", 5000, (s, u) => u.owned.length, STORE_COUNT),
+  cnt("items_all", "🏛️", "Museum Curator", "Own every single item", 5000, (s, u) => u.owned.filter((id) => !id.startsWith("bp_")).length, STORE_COUNT),
   one("mythic", "💠", "Holy Grail", "Own the open-wheel racer", 1000, (s, r, u) => u.owned.includes("body_f1")),
   cnt("bodies_all", "🚙", "Car Park", "Own every car body", 1500, (s, u) => u.owned.filter((id) => id.startsWith("body_")).length, 5),
   cnt("liveries_10", "🎨", "Paint Shop", "Own 10 chest liveries", 400, (s, u) => u.owned.filter((id) => id.startsWith("liv_")).length, 10),
@@ -669,10 +669,32 @@ STORE.push(
   { id: "body_lmp", slot: "body", name: "Endurance prototype body", look: "lmp", loot: true, rarity: "legendary", box: "legend" },
   { id: "body_f1", slot: "body", name: "Open-wheel racer (F1 style)", look: "f1", loot: true, rarity: "mythic", box: "legend" },
 );
+// Season pass items: every month has its own theme and its own items. They only come from the
+// season pass (its reward track and its themed crates), never from the store or the normal chests.
+const PASS_THEMES = [
+  { key: "frost", name: "Frostbite", icon: "❄️", c: ["#8fd8ff", "#e8f7ff"], glow: "#8fd8ff", flame: "#bfeaff", rims: "#dff4ff", helmet: "#a6d8ff", smoke: "#e8f7ff", badge: "❄️", trail: "snow" },
+  { key: "hearts", name: "Heartbreaker", icon: "💘", c: ["#ff4f8b", "#ffc2d6"], glow: "#ff4f8b", flame: "#ff7aa8", rims: "#ffc2d6", helmet: "#e0245e", smoke: "#ff9cc0", badge: "💘", trail: "hearts" },
+  { key: "clover", name: "Lucky Clover", icon: "🍀", c: ["#2ecc71", "#c8ffb0"], glow: "#3dff7a", flame: "#2ecc71", rims: "#ffd24a", helmet: "#1e9e50", smoke: "#9dffb0", badge: "🍀", trail: "coins" },
+  { key: "bloom", name: "Blossom", icon: "🌸", c: ["#ff9ad5", "#fff0f8"], glow: "#ffb3e0", flame: "#ff9ad5", rims: "#fff0f8", helmet: "#f7a1c4", smoke: "#ffd6ec", badge: "🌸", trail: "petals" },
+  { key: "jungle", name: "Jungle Rush", icon: "🐍", c: ["#3a7d2c", "#d4ff4a"], glow: "#b6ff3a", flame: "#8bd12e", rims: "#5b3a1e", helmet: "#3a7d2c", smoke: "#a8c96a", badge: "🐍", trail: "bubbles" },
+  { key: "solar", name: "Solar Flare", icon: "☀️", c: ["#ff9f1c", "#ffe066"], glow: "#ffb020", flame: "#ff6b1c", rims: "#ffe066", helmet: "#ff9f1c", smoke: "#ffd166", badge: "☀️", trail: "sparks" },
+  { key: "fireworks", name: "Fireworks", icon: "🎆", c: ["#ff3b3b", "#3b82f6"], glow: "#ff3b3b", flame: "#6aa8ff", rims: "#f5f5f5", helmet: "#3b82f6", smoke: "#ffcf5a", badge: "🎆", trail: "stars" },
+  { key: "deepsea", name: "Deep Sea", icon: "🐙", c: ["#0b6e99", "#4ff0ff"], glow: "#4ff0ff", flame: "#1ab3d6", rims: "#0b6e99", helmet: "#0a4f70", smoke: "#7fd8ff", badge: "🐙", trail: "bubbles" },
+  { key: "harvest", name: "Harvest Moon", icon: "🌾", c: ["#d98e04", "#ffe3a3"], glow: "#ffb347", flame: "#d98e04", rims: "#b5651d", helmet: "#c77c02", smoke: "#e8c07d", badge: "🌾", trail: "petals" },
+  { key: "haunted", name: "Haunted", icon: "🎃", c: ["#ff7a00", "#7b2cbf"], glow: "#9d4edd", flame: "#ff7a00", rims: "#1d1d22", helmet: "#ff7a00", smoke: "#7b2cbf", badge: "🎃", trail: "bolts" },
+  { key: "thunder", name: "Thunderstorm", icon: "⚡", c: ["#5b6cff", "#fff45b"], glow: "#fff45b", flame: "#8a96ff", rims: "#5b6cff", helmet: "#2d3a8c", smoke: "#9aa3ad", badge: "⚡", trail: "bolts" },
+  { key: "festive", name: "Festive", icon: "🎄", c: ["#1e9e50", "#e53935"], glow: "#e53935", flame: "#1e9e50", rims: "#ffd24a", helmet: "#e53935", smoke: "#f5f5f5", badge: "🎄", trail: "snow" },
+];
+const PASS_SLOTS = [
+  ["glow", "underglow", "epic"], ["flame", "boost flame", "epic"], ["rims", "rims", "rare"], ["helmet", "helmet", "rare"],
+  ["smoke", "tyre smoke", "epic"], ["badge", "badge", "legendary"], ["trail", "trail", "legendary"],
+];
+for (const T of PASS_THEMES) for (const [slot, word, rarity] of PASS_SLOTS)
+  STORE.push({ id: `bp_${T.key}_${slot}`, slot, name: `${T.name} ${word}`, look: T[slot], loot: true, rarity, box: "pass", pass: T.key });
 // rarity: set on the item, or from its store price
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
-STORE_COUNT = STORE.length;
+STORE_COUNT = STORE.filter((x) => !x.pass).length;
 for (const a of ACH) if (a.id === "items_all") a.goal = STORE_COUNT;
 for (const a of ACH_PUBLIC) if (a.id === "items_all") a.goal = STORE_COUNT;
 
@@ -792,8 +814,12 @@ function recordRace(u, r) {
   if (r.pos === r.of && r.of >= 4) s.lastPlaces = (s.lastPlaces || 0) + 1;
   if (r.champDriver) s.champDriver++;
   if (r.champTeam) s.champTeam++;
+  if (r.ranked) s.rankedRaces = (s.rankedRaces || 0) + 1;
+  if (r.night && r.finished) s.nightRaces = (s.nightRaces || 0) + 1;
   const got = checkAch(u, r);
   got.push(...weeklyRace(u, r));
+  got.push(...dailyRace(u, r));
+  got.push(...passXp(u, raceXp(r)));
   updateBoards(u, r);
   saveSoon(u);
   return got;
@@ -802,21 +828,23 @@ function recordRace(u, r) {
 // ======================= Weekly challenges =======================
 // 3 new challenges every Monday (the same for everyone), picked from this pool. Progress resets weekly.
 const WEEKLY_POOL = [
-  { id: "w_wins3", name: "Winning Week", desc: "Win 3 races", goal: 3, coins: 250, add: (r) => (r.pos === 1 && r.of >= 3 ? 1 : 0) },
-  { id: "w_podium5", name: "Podium Hunter", desc: "Finish on the podium 5 times", goal: 5, coins: 200, add: (r) => (r.pos <= 3 && r.of >= 4 ? 1 : 0) },
-  { id: "w_ot50", name: "Traffic Surgeon", desc: "Make 50 overtakes", goal: 50, coins: 200, add: (r) => r.overtakes || 0 },
-  { id: "w_rain", name: "Rain Check", desc: "Finish 2 races on a track at least 60% wet", goal: 2, coins: 200, add: (r) => (r.finished && r.maxWet >= 0.6 ? 1 : 0) },
-  { id: "w_rainwin", name: "Stormy Victory", desc: "Win a race in the rain", goal: 1, coins: 300, add: (r) => (r.pos === 1 && r.maxWet >= 0.6 && r.of >= 3 ? 1 : 0) },
-  { id: "w_random3", name: "Lucky Dip", desc: "Finish 3 races on random tracks", goal: 3, coins: 150, add: (r) => (r.finished && r.kind === "random" ? 1 : 0) },
-  { id: "w_real3", name: "Road Trip", desc: "Finish 3 races on real tracks", goal: 3, coins: 150, add: (r) => (r.finished && r.kind === "f1" ? 1 : 0) },
-  { id: "w_drawn2", name: "Home Made", desc: "Finish 2 races on tracks you drew", goal: 2, coins: 150, add: (r) => (r.finished && r.drewIt ? 1 : 0) },
-  { id: "w_hard", name: "Tough Crowd", desc: "Win on Hard or EXTREME AI", goal: 1, coins: 350, add: (r) => (r.pos === 1 && (r.aiLevel === "hard" || r.aiLevel === "extreme") && r.of >= 6 ? 1 : 0) },
-  { id: "w_laps40", name: "Lap Grinder", desc: "Drive 40 laps", goal: 40, coins: 150, add: (r) => r.lapsDone || 0 },
-  { id: "w_pb3", name: "Personal Bests", desc: "Set 3 personal-best laps", goal: 3, coins: 200, add: (r) => (r.newPb ? 1 : 0) },
-  { id: "w_clean", name: "Clean Sheet", desc: "Finish a race with every lap clean", goal: 1, coins: 200, add: (r) => (r.finished && r.cleanLaps >= r.laps && r.crashes === 0 ? 1 : 0) },
-  { id: "w_friends", name: "Better Together", desc: "Finish 3 races with another real player", goal: 3, coins: 250, add: (r) => (r.humans >= 2 ? 1 : 0) },
-  { id: "w_comeback", name: "Charge!", desc: "Gain 8 places in one race", goal: 1, coins: 250, add: (r) => (r.grid - r.pos >= 8 ? 1 : 0) },
-  { id: "w_nostop", name: "One Set", desc: "Finish top 3 without a pit stop", goal: 1, coins: 200, add: (r) => (r.pos <= 3 && r.pits === 0 && r.of >= 4 ? 1 : 0) },
+  { id: "w_wins6", name: "Winning Week", desc: "Win 6 races", goal: 6, coins: 450, add: (r) => (r.pos === 1 && r.of >= 4 ? 1 : 0) },
+  { id: "w_podium10", name: "Podium Hunter", desc: "Finish on the podium 10 times", goal: 10, coins: 400, add: (r) => (r.pos <= 3 && r.of >= 5 ? 1 : 0) },
+  { id: "w_ot150", name: "Traffic Surgeon", desc: "Make 150 overtakes", goal: 150, coins: 400, add: (r) => r.overtakes || 0 },
+  { id: "w_rain", name: "Rain Check", desc: "Finish 4 races on a track at least 60% wet", goal: 4, coins: 350, add: (r) => (r.finished && r.maxWet >= 0.6 ? 1 : 0) },
+  { id: "w_rainwin", name: "Stormy Victory", desc: "Win 2 races in the rain against 6+ cars", goal: 2, coins: 500, add: (r) => (r.pos === 1 && r.maxWet >= 0.6 && r.of >= 6 ? 1 : 0) },
+  { id: "w_wonky3", name: "Wonky Week", desc: "Win 3 races on VERY wonky random tracks", goal: 3, coins: 500, add: (r) => (r.pos === 1 && r.of >= 4 && r.wonk === "very" ? 1 : 0) },
+  { id: "w_real5", name: "Road Trip", desc: "Finish top 3 on 5 real tracks", goal: 5, coins: 350, add: (r) => (r.finished && r.pos <= 3 && r.of >= 4 && r.kind === "f1" ? 1 : 0) },
+  { id: "w_drawn4", name: "Home Made", desc: "Finish 4 races on tracks you drew", goal: 4, coins: 300, add: (r) => (r.finished && r.drewIt ? 1 : 0) },
+  { id: "w_extreme", name: "Tough Crowd", desc: "Win 2 races on EXTREME AI (8+ cars)", goal: 2, coins: 700, add: (r) => (r.pos === 1 && (r.aiLevel === "extreme" || r.aiLevel === "overdrive") && r.of >= 8 ? 1 : 0) },
+  { id: "w_laps100", name: "Lap Grinder", desc: "Drive 100 laps", goal: 100, coins: 350, add: (r) => r.lapsDone || 0 },
+  { id: "w_pb6", name: "Personal Bests", desc: "Set 6 personal-best laps", goal: 6, coins: 350, add: (r) => (r.newPb ? 1 : 0) },
+  { id: "w_clean3", name: "Clean Sheet", desc: "Finish 3 races of 5+ laps with every lap clean", goal: 3, coins: 450, add: (r) => (r.finished && r.laps >= 5 && r.cleanLaps >= r.laps && r.crashes === 0 ? 1 : 0) },
+  { id: "w_friends", name: "Better Together", desc: "Finish 6 races with another real player", goal: 6, coins: 450, add: (r) => (r.humans >= 2 ? 1 : 0) },
+  { id: "w_comeback", name: "Charge!", desc: "Gain 12 places in one race", goal: 1, coins: 450, add: (r) => (r.grid - r.pos >= 12 ? 1 : 0) },
+  { id: "w_nostop", name: "One Set", desc: "Win without a pit stop (6+ cars, 4+ laps)", goal: 1, coins: 400, add: (r) => (r.pos === 1 && r.pits === 0 && r.of >= 6 && r.laps >= 4 ? 1 : 0) },
+  { id: "w_ranked5", name: "Ladder Climber", desc: "Finish top 2 in 5 ranked races", goal: 5, coins: 600, add: (r) => (r.ranked && r.finished && r.pos <= 2 ? 1 : 0) },
+  { id: "w_night3", name: "Night Shift", desc: "Win 2 night races", goal: 2, coins: 400, add: (r) => (r.pos === 1 && r.of >= 4 && r.night ? 1 : 0) },
 ];
 const weekNo = () => Math.floor((Date.now() / 86400000 + 3) / 7);           // weeks start on Monday (UTC)
 const weekEnds = () => (weekNo() + 1) * 7 * 86400000 - 3 * 86400000;
@@ -839,6 +867,7 @@ function weeklyRace(u, r) {
       W.done.push(c.id); u.coins += c.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + c.coins;
       u.stats.weeklyDone = (u.stats.weeklyDone || 0) + 1;
       got.push({ id: c.id, icon: "📅", name: "Weekly: " + c.name, coins: c.coins });
+      got.push(...passXp(u, PASS_XP.weekly));
     }
   }
   return got;
@@ -858,6 +887,7 @@ async function boards() {
     else { loadFile(); BOARDS = fileDb.boards || null; }
   } catch (e) { BOARDS = null; }
   BOARDS = BOARDS || { wins: [], ach: [], km: [], laps: {} };
+  BOARDS.ranked = BOARDS.ranked || [];
   return BOARDS;
 }
 function saveBoards() {
@@ -883,14 +913,17 @@ async function updateBoards(u, r) {
     B.laps[key] = B.laps[key] || [];
     putBoard(B.laps[key], { id, name, v: Math.round(r.best * 1000) / 1000, at: Date.now() }, (a, b) => a.v < b.v, 10);
   }
+  if (r.best > 0 && r.totw) await putTotwLap(u, r.totw, r.best);
   saveBoards();
 }
 async function getBoard(kind, track) {
   const B = await boards();
+  if (kind === "ranked") return { kind, list: (B.ranked || []).map((x) => ({ ...x, rank: rankOf(x.v).label })) };
+  if (kind === "totw") return { kind, week: Number(track) || 0, list: B.totw && B.totw.week === Number(track) ? B.totw.list : [] };
   if (kind === "laps") return { kind, track, list: B.laps[String(track)] || [], tracks: Object.keys(B.laps) };
   return { kind, list: B[kind] || [] };
 }
-function dropFromBoards(id) { if (!BOARDS) return; for (const k of ["wins", "ach", "km"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
+function dropFromBoards(id) { if (!BOARDS) return; if (BOARDS.totw) BOARDS.totw.list = BOARDS.totw.list.filter((x) => x.id !== id); for (const k of ["wins", "ach", "km", "ranked"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
 
 // ======================= Friends =======================
 // Add by username or by friend code (for Google accounts). Requests must be accepted.
@@ -948,6 +981,300 @@ async function friendList(u, online) {
 }
 // block: they can't join rooms you host, can't friend you, and their emotes are hidden for you
 function setBlocked(u, id, on) { u.blocked = u.blocked || []; u.blocked = on ? [...new Set([...u.blocked, id])].slice(-500) : u.blocked.filter((x) => x !== id); if (on) { F(u); u.friends = u.friends.filter((x) => x !== id); } saveSoon(u); return { ok: true }; }
+
+// ======================= Daily challenges =======================
+// 3 new ones every day (the same for everyone). Smaller than the weekly ones, pay coins + season pass XP.
+const DAILY_POOL = [
+  { id: "d_wonky", name: "Wonky Winner", desc: "Win on a VERY wonky random track", goal: 1, coins: 200, add: (r) => (r.pos === 1 && r.of >= 3 && r.wonk === "very" ? 1 : 0) },
+  { id: "d_ot20", name: "Overtaker", desc: "Overtake 20 cars", goal: 20, coins: 150, add: (r) => r.overtakes || 0 },
+  { id: "d_race3", name: "Warm Up", desc: "Finish 3 races", goal: 3, coins: 100, add: (r) => (r.finished ? 1 : 0) },
+  { id: "d_podium", name: "Podium Day", desc: "Finish on the podium", goal: 1, coins: 120, add: (r) => (r.pos <= 3 && r.of >= 4 ? 1 : 0) },
+  { id: "d_night", name: "Night Owl", desc: "Finish a race at night", goal: 1, coins: 120, add: (r) => (r.finished && r.night ? 1 : 0) },
+  { id: "d_fog", name: "Pea Souper", desc: "Finish a race in the fog", goal: 1, coins: 150, add: (r) => (r.finished && r.fog ? 1 : 0) },
+  { id: "d_boost", name: "Full Send", desc: "Use 30 seconds of boost", goal: 30, coins: 100, add: (r) => Math.floor(r.boostSec || 0) },
+  { id: "d_clean", name: "Tidy", desc: "Drive 5 clean laps", goal: 5, coins: 100, add: (r) => r.cleanLaps || 0 },
+  { id: "d_ranked", name: "Climber", desc: "Play a ranked race", goal: 1, coins: 150, add: (r) => (r.ranked ? 1 : 0) },
+  { id: "d_totw", name: "Featured", desc: "Race the Track of the Week", goal: 1, coins: 120, add: (r) => (r.finished && r.totw ? 1 : 0) },
+  { id: "d_pits", name: "Box Box", desc: "Make 3 pit stops", goal: 3, coins: 100, add: (r) => r.pits || 0 },
+  { id: "d_gain5", name: "Charger", desc: "Gain 5 places in one race", goal: 1, coins: 150, add: (r) => (r.grid - r.pos >= 5 ? 1 : 0) },
+];
+const dayNo = () => Math.floor(Date.now() / 86400000);
+function seededPicks(pool, seed0, n) {
+  let seed = seed0 * 2654435761 >>> 0; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const p = pool.slice(); for (let i = p.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  return p.slice(0, n);
+}
+const dailyPicks = (d = dayNo()) => seededPicks(DAILY_POOL, d + 7777, 3);
+function dailyState(u) { const d = dayNo(); if (!u.dailyCh || u.dailyCh.day !== d) u.dailyCh = { day: d, prog: {}, done: [] }; return u.dailyCh; }
+function dailyRace(u, r) {
+  const D = dailyState(u), got = [];
+  for (const c of dailyPicks()) {
+    if (D.done.includes(c.id)) continue;
+    D.prog[c.id] = Math.min(c.goal, (D.prog[c.id] || 0) + (c.add(r) || 0));
+    if (D.prog[c.id] >= c.goal) {
+      D.done.push(c.id); u.coins += c.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + c.coins;
+      u.stats.dailyDone = (u.stats.dailyDone || 0) + 1;
+      got.push({ id: c.id, icon: "☀️", name: "Daily: " + c.name, coins: c.coins });
+      got.push(...passXp(u, PASS_XP.daily));
+    }
+  }
+  return got;
+}
+function dailyPublic(u) {
+  const D = dailyState(u);
+  return { ends: (dayNo() + 1) * 86400000, list: dailyPicks().map((c) => ({ id: c.id, name: c.name, desc: c.desc, goal: c.goal, coins: c.coins, prog: D.prog[c.id] || 0, done: D.done.includes(c.id) })) };
+}
+
+// ======================= Season pass =======================
+// One a month (UTC), each with its own theme, items and themed crate. Race to earn pass XP, and every
+// tier pays out on the FREE track. The PREMIUM track costs 2,000 coins and adds the themed items and
+// crates (bought late? you get everything you already reached straight away).
+const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 2000;
+const PASS_XP = { daily: 150, weekly: 300 };
+const monthKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
+const monthTheme = (key = monthKey()) => PASS_THEMES[(Number(key.slice(5, 7)) - 1) % 12];
+const monthEnds = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); };
+const passItem = (T, slot) => `bp_${T.key}_${slot}`;
+// what each tier gives, on each track
+function passRewards(T = monthTheme()) {
+  const free = [], prem = [];
+  for (let t = 1; t <= PASS_TIERS; t++) {
+    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 ? { crate: T.key } : t % 5 === 0 ? { coins: 250 } : { coins: 60 + t * 3 });
+    prem.push(t === 1 ? { item: passItem(T, "helmet") } : t === 5 ? { item: passItem(T, "glow") } : t === 10 ? { item: passItem(T, "smoke") }
+      : t === 20 ? { item: passItem(T, "flame") } : t === 25 ? { item: passItem(T, "trail") } : t === 30 ? { item: passItem(T, "badge") }
+      : t % 4 === 3 ? { crate: T.key } : { coins: 120 + t * 4 });
+  }
+  return { free, prem };
+}
+function passState(u) {
+  const m = monthKey();
+  if (!u.pass || u.pass.m !== m) u.pass = { m, xp: 0, prem: false, tier: 0 };
+  return u.pass;
+}
+function grant(u, rw, why) {
+  if (rw.coins) { u.coins += rw.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + rw.coins; return `+${rw.coins} coins`; }
+  if (rw.crate) { u.crates = u.crates || {}; u.crates[rw.crate] = (u.crates[rw.crate] || 0) + 1; return `a ${PASS_THEMES.find((x) => x.key === rw.crate)?.name || ""} crate`; }
+  if (rw.item) { const it = STORE_BY_ID.get(rw.item); if (!it) return ""; if (!u.owned.includes(it.id)) u.owned.push(it.id); else { u.coins += 150; return `+150 coins (you had the ${it.name})`; } return it.name; }
+  return "";
+}
+function passXp(u, n) {
+  const P = passState(u), R = passRewards(), got = [];
+  if (!(n > 0)) return got;
+  P.xp += Math.round(n);
+  const tier = Math.min(PASS_TIERS, Math.floor(P.xp / PASS_TIER_XP));
+  while (P.tier < tier) {
+    P.tier++;
+    const parts = [grant(u, R.free[P.tier - 1])];
+    if (P.prem) parts.push(grant(u, R.prem[P.tier - 1]));
+    got.push({ id: "pass_" + P.tier, icon: monthTheme().icon, name: `Season pass tier ${P.tier}: ${parts.filter(Boolean).join(" + ")}`, coins: 0, pass: true });
+  }
+  return got;
+}
+// pass XP from a race: finishing, places beaten, winning
+function raceXp(r) { return r.finished ? 60 + Math.min(80, 10 * Math.max(0, r.of - r.pos)) + (r.pos === 1 && r.of >= 3 ? 40 : 0) + (r.ranked ? 40 : 0) : 20; }
+function buyPass(u) {
+  const P = passState(u);
+  if (P.prem) return { error: "You already have this month's premium pass" };
+  if (u.coins < PASS_PRICE) return { error: `The premium pass costs ${PASS_PRICE} coins: you need ${PASS_PRICE - u.coins} more` };
+  u.coins -= PASS_PRICE; P.prem = true;
+  const R = passRewards(); for (let t = 1; t <= P.tier; t++) grant(u, R.prem[t - 1]);
+  saveSoon(u);
+  return { ok: true, msg: `🎟️ Premium pass unlocked!${P.tier ? ` You got the premium rewards for tiers 1-${P.tier} too.` : ""}` };
+}
+// themed crates: one of that month's items, favouring ones you don't have
+function openCrate(u, key) {
+  u.crates = u.crates || {};
+  if (!(u.crates[key] > 0)) return { error: "You don't have that crate" };
+  const pool = STORE.filter((x) => x.pass === key); if (!pool.length) return { error: "Unknown crate" };
+  u.crates[key]--; if (!u.crates[key]) delete u.crates[key];
+  const fresh = pool.filter((x) => !u.owned.includes(x.id));
+  const from = fresh.length ? fresh : pool, item = from[Math.floor(Math.random() * from.length)];
+  const dup = u.owned.includes(item.id), refund = dup ? 250 : 0;
+  if (dup) { u.coins += refund; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + refund; } else u.owned.push(item.id);
+  u.stats.boxes = (u.stats.boxes || 0) + 1;
+  const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
+  saveSoon(u);
+  return { ok: true, box: "crate_" + key, item, rarity: item.rarity, dup, refund, got };
+}
+function passPublic(u) {
+  const P = passState(u), T = monthTheme();
+  return { month: P.m, ends: monthEnds(), theme: { key: T.key, name: T.name, icon: T.icon, c: T.c }, xp: P.xp, tier: P.tier, prem: P.prem, tiers: PASS_TIERS, perTier: PASS_TIER_XP, price: PASS_PRICE, rewards: passRewards(T) };
+}
+
+// ======================= Ranked =======================
+// Skill rating (SR) from 0 up. 7 tiers with 3 divisions of 100 SR each, then Overdrive Elite (2100+).
+// Who you race depends on your tier: Iron-Bronze 3 Hard AI, Silver-Gold 5 EXTREME AI, Platinum and up
+// 5 "Overdrive" AI (a level only ranked has). Leaving a ranked race counts as last place.
+const TIERS = [
+  { key: "iron", name: "Iron", icon: "⚙️", color: "#8d8d8d" }, { key: "bronze", name: "Bronze", icon: "🥉", color: "#c8793a" },
+  { key: "silver", name: "Silver", icon: "🥈", color: "#c9d1d9" }, { key: "gold", name: "Gold", icon: "🥇", color: "#ffcc1f" },
+  { key: "plat", name: "Platinum", icon: "💠", color: "#4fe0d0" }, { key: "diamond", name: "Diamond", icon: "💎", color: "#6ab8ff" },
+  { key: "master", name: "Master", icon: "🔮", color: "#c77dff" }, { key: "oe", name: "Overdrive Elite", icon: "⚡", color: "#ff3b8a" },
+];
+const OE_SR = 2100;
+function rankOf(sr) {
+  sr = Math.max(0, Math.round(sr || 0));
+  if (sr >= OE_SR) return { ...TIERS[7], i: 7, div: "", sr, into: sr - OE_SR, need: 0, label: `${TIERS[7].name} (${sr})` };
+  const i = Math.floor(sr / 300), div = 3 - Math.floor((sr % 300) / 100), T = TIERS[i];
+  return { ...T, i, div: ["", "I", "II", "III"][div], sr, into: sr % 100, need: 100, label: `${T.name} ${["", "I", "II", "III"][div]}` };
+}
+function rankedField(sr) {
+  const i = rankOf(sr).i;
+  return i <= 1 ? { ai: 3, aiLevel: "hard" } : i <= 3 ? { ai: 5, aiLevel: "extreme" } : { ai: 5, aiLevel: "overdrive" };
+}
+const RANKED_DNF = 45;
+function rankedState(u) { u.ranked = u.ranked || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; return u.ranked; }
+// at the lights: charge the "left the race" loss up front, so quitting can't dodge it. The finish replaces it.
+function rankedStart(u) {
+  const R = rankedState(u);
+  R.live = { sr0: R.sr, at: Date.now() };
+  R.sr = Math.max(0, R.sr - RANKED_DNF);
+  saveSoon(u);
+}
+function rankedDelta(sr, pos, of) {
+  const k = of > 1 ? 1 - (2 * (pos - 1)) / (of - 1) : 1;      // +1 for a win, -1 for last
+  const i = rankOf(sr).i;
+  const gain = [1.25, 1.15, 1.05, 1, 0.9, 0.85, 0.8, 0.7][i], loss = [0.4, 0.55, 0.7, 0.85, 1, 1.05, 1.1, 1.2][i];
+  return Math.round(k >= 0 ? 40 * k * gain + (pos === 1 ? 8 : 0) : 40 * k * loss);
+}
+function rankedFinish(u, pos, of, finished) {
+  const R = rankedState(u);
+  if (!R.live) return null;
+  const sr0 = R.live.sr0; delete R.live;
+  const d = finished ? rankedDelta(sr0, pos, of) : -RANKED_DNF;
+  const before = rankOf(sr0);
+  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(R.peak || 0, R.sr); R.games++; if (pos === 1 && finished) R.wins++;
+  R.hist = [...(R.hist || []), { d, pos, of, at: Date.now() }].slice(-10);
+  const after = rankOf(R.sr);
+  putRankBoard(u);
+  saveSoon(u);
+  return { delta: R.sr - sr0, sr: R.sr, before, after, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
+}
+function rankedPublic(u) { const R = rankedState(u); return { sr: R.sr, peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
+async function putRankBoard(u) { const B = await boards(); B.ranked = B.ranked || []; putBoard(B.ranked, { id: u.id, name: u.name, v: u.ranked.sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
+
+// ======================= Track of the week =======================
+// Best laps on this week's featured track. The board starts empty every Monday.
+async function putTotwLap(u, week, t) {
+  const B = await boards();
+  if (!B.totw || B.totw.week !== week) B.totw = { week, list: [] };
+  putBoard(B.totw.list, { id: u.id, name: u.name, v: Math.round(t * 1000) / 1000, at: Date.now() }, (a, b) => a.v < b.v, 25);
+  saveBoards();
+}
+
+// ======================= Gifts, trades and messages between friends =======================
+// Friends only. Coins and items. A cooldown between gifts/trade offers, a daily coin limit, and the
+// receiver can't already own the item. Every gift/trade also shows up in your chat with that friend.
+const GIFT_COOLDOWN = 60e3, GIFT_DAILY_COINS = 5000, DM_KEEP = 40;
+const isFriend = (u, id) => (u.friends || []).includes(id);
+function dmPush(a, b, m) {
+  for (const [x, other] of [[a, b.id], [b, a.id]]) { x.dms = x.dms || {}; x.dms[other] = [...(x.dms[other] || []), m].slice(-DM_KEEP); const ks = Object.keys(x.dms); if (ks.length > 60) delete x.dms[ks[0]]; }
+}
+function giftCooldown(u) { const left = (u.giftAt || 0) + GIFT_COOLDOWN - Date.now(); return left > 0 ? Math.ceil(left / 1000) : 0; }
+function coinsGivenToday(u) { if (u.giftDay !== dayNo()) { u.giftDay = dayNo(); u.giftCoins = 0; } return u.giftCoins || 0; }
+function checkSide(u, side, who) {
+  const coins = Math.max(0, Math.floor(Number(side?.coins) || 0)), item = side?.item ? String(side.item) : null;
+  if (coins > 100000) return { error: "That's too many coins" };
+  if (u.coins < coins) return { error: `${who} ${who === "You" ? "don't" : "doesn't"} have ${coins} coins` };
+  if (item) { const it = STORE_BY_ID.get(item); if (!it || !u.owned.includes(item)) return { error: `${who} ${who === "You" ? "don't" : "doesn't"} own that item` }; }
+  return { coins, item };
+}
+function moveItem(from, to, id) {
+  from.owned = from.owned.filter((x) => x !== id);
+  for (const [slot, eq] of Object.entries(from.equipped || {})) if (eq === id) delete from.equipped[slot];
+  if (!to.owned.includes(id)) to.owned.push(id);
+}
+async function sendGift(u, toId, d) {
+  const o = await getUser(String(toId));
+  if (!o || !isFriend(u, o.id)) return { error: "You can only send gifts to friends" };
+  const cd = giftCooldown(u); if (cd) return { error: `Gift cooldown: wait ${cd}s` };
+  const side = checkSide(u, d, "You"); if (side.error) return side;
+  if (!side.coins && !side.item) return { error: "Pick some coins or an item to send" };
+  if (side.coins && coinsGivenToday(u) + side.coins > GIFT_DAILY_COINS) return { error: `You can send up to ${GIFT_DAILY_COINS} coins a day (${GIFT_DAILY_COINS - coinsGivenToday(u)} left today)` };
+  if (side.item && o.owned.includes(side.item)) return { error: `${o.name} already has that item` };
+  u.coins -= side.coins; o.coins += side.coins; u.giftCoins = coinsGivenToday(u) + side.coins;
+  if (side.item) moveItem(u, o, side.item);
+  u.giftAt = Date.now();
+  u.stats.gifts = (u.stats.gifts || 0) + 1;
+  const what = [side.coins ? `🪙 ${side.coins}` : "", side.item ? STORE_BY_ID.get(side.item).name : ""].filter(Boolean).join(" + ");
+  const note = String(d?.note || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  dmPush(u, o, { from: u.id, t: Date.now(), gift: what, text: note });
+  saveSoon(u); saveSoon(o);
+  return { ok: true, other: o.id, name: o.name, what };
+}
+async function offerTrade(u, toId, give, want) {
+  const o = await getUser(String(toId));
+  if (!o || !isFriend(u, o.id)) return { error: "You can only trade with friends" };
+  const cd = giftCooldown(u); if (cd) return { error: `Trade cooldown: wait ${cd}s` };
+  const g = checkSide(u, give, "You"); if (g.error) return g;
+  const w = checkSide(o, want, o.name); if (w.error) return w;
+  if (!g.coins && !g.item) return { error: "Offer something" };
+  if (!w.coins && !w.item) return { error: "Ask for something (or send it as a gift instead)" };
+  if (g.item && o.owned.includes(g.item)) return { error: `${o.name} already has the item you're offering` };
+  if (w.item && u.owned.includes(w.item)) return { error: "You already have the item you're asking for" };
+  o.tradesIn = (o.tradesIn || []).filter((t) => t.from !== u.id);
+  if (o.tradesIn.length >= 10) return { error: `${o.name} has too many trade offers waiting` };
+  const id = crypto.randomBytes(6).toString("hex");
+  const tr = { id, from: u.id, fromName: u.name, give: g, want: w, at: Date.now() };
+  o.tradesIn.push(tr);
+  u.giftAt = Date.now();
+  dmPush(u, o, { from: u.id, t: Date.now(), trade: tradeText(tr) });
+  saveSoon(u); saveSoon(o);
+  return { ok: true, other: o.id, name: o.name };
+}
+function tradeText(tr) {
+  const s = (x) => [x.coins ? `🪙 ${x.coins}` : "", x.item ? STORE_BY_ID.get(x.item)?.name : ""].filter(Boolean).join(" + ") || "nothing";
+  return `offers ${s(tr.give)} for ${s(tr.want)}`;
+}
+async function answerTrade(u, id, yes) {
+  const tr = (u.tradesIn || []).find((t) => t.id === id);
+  if (!tr) return { error: "That trade offer is gone" };
+  u.tradesIn = u.tradesIn.filter((t) => t.id !== id);
+  const o = await getUser(tr.from);
+  if (!yes || !o) { saveSoon(u); if (o) { dmPush(u, o, { from: u.id, t: Date.now(), trade: "declined the trade" }); saveSoon(o); } return { ok: true, other: tr.from, msg: "Trade declined" }; }
+  if (Date.now() - tr.at > 7 * 86400000) { saveSoon(u); return { error: "That offer is more than a week old" }; }
+  // check everything again: things could have changed since the offer
+  const g = checkSide(o, tr.give, o.name); if (g.error) { saveSoon(u); return g; }
+  const w = checkSide(u, tr.want, "You"); if (w.error) { saveSoon(u); return w; }
+  if (g.item && u.owned.includes(g.item)) { saveSoon(u); return { error: "You already have that item now" }; }
+  if (w.item && o.owned.includes(w.item)) { saveSoon(u); return { error: `${o.name} already has that item now` }; }
+  o.coins += w.coins - g.coins; u.coins += g.coins - w.coins;
+  if (g.item) moveItem(o, u, g.item);
+  if (w.item) moveItem(u, o, w.item);
+  u.stats.trades = (u.stats.trades || 0) + 1; o.stats.trades = (o.stats.trades || 0) + 1;
+  dmPush(u, o, { from: u.id, t: Date.now(), trade: "accepted the trade ✅" });
+  saveSoon(u); saveSoon(o);
+  return { ok: true, other: o.id, msg: "Trade done!" };
+}
+function sendDm(u, o, text) {
+  if (!o || !isFriend(u, o.id)) return { error: "You can only message friends" };
+  if ((o.blocked || []).includes(u.id)) return { ok: true };
+  const m = { from: u.id, t: Date.now(), text };
+  dmPush(u, o, m); saveSoon(u); saveSoon(o);
+  return { ok: true, m };
+}
+function dmThread(u, id) { return (u.dms || {})[id] || []; }
+function tradesPublic(u) { return (u.tradesIn || []).map((t) => ({ id: t.id, from: t.from, fromName: t.fromName, give: t.give, want: t.want, at: t.at, text: tradeText(t) })); }
+
+// ======================= Share codes (tracks and replays) =======================
+// Short codes like "K7PQ2M" for a drawn track or a saved replay. Kept in Upstash when it's set up,
+// otherwise in files next to the accounts.
+const SHARE_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const SHARE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
+function shareCode(seed) { const h = crypto.createHash("sha256").update(String(seed)).digest(); let s = ""; for (let i = 0; i < 6; i++) s += SHARE_ABC[h[i] % SHARE_ABC.length]; return s; }
+const shareFile = (kind, code) => path.join(DATA_DIR, "shared", kind + "_" + code + ".json");
+async function putShared(kind, code, value, ttlSec) {
+  if (!SHARE_RE.test(code) || !/^[a-z]+$/.test(kind)) throw new Error("bad code");
+  if (UP_URL) return redis(["SET", `tb:share:${kind}:${code}`, value, "EX", ttlSec]);
+  fs.mkdirSync(path.join(DATA_DIR, "shared"), { recursive: true });
+  fs.writeFileSync(shareFile(kind, code), JSON.stringify({ until: Date.now() + ttlSec * 1000, value }), { mode: 0o600 });
+}
+async function getShared(kind, code) {
+  code = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!SHARE_RE.test(code) || !/^[a-z]+$/.test(kind)) return null;
+  if (UP_URL) return (await redis(["GET", `tb:share:${kind}:${code}`])) || null;
+  try { const o = JSON.parse(fs.readFileSync(shareFile(kind, code), "utf8")); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
+}
 
 // save everything right now (the server is about to restart)
 async function flush() {
@@ -1057,7 +1384,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -1117,4 +1444,6 @@ module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
+  buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
+  shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
 };

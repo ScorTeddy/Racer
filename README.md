@@ -37,9 +37,36 @@ full race against the AI (about 30 seconds). If anything says `not ok`, don't up
   the room with the same code, settings and track, and the others join it again automatically.
 - **Friends** (Profile › Friends): add by username or friend code, accept requests, see who's online and where,
   invite them to your room. **Leaderboards** (Profile › Leaderboards): most wins, achievements, km, fastest laps
-  per real track. **Weekly challenges**: 3 new ones every Monday (Achievements tab), paying coins.
-- **Replay**: the last 25 seconds of every race can be watched again from the results screen.
+  per real track, ranked, Track of the week. **Daily and weekly challenges** (Achievements tab), paying coins and pass XP.
+- **Replay**: the last 30 seconds of every race can be watched again, saved or shared from the results screen.
 - **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
+
+## Ranked, season pass, trading, sharing, replays, photo mode
+- **Ranked** (🏆 on the menu, Profile › Ranked): `ranked:play` makes a one-player room (`r.ranked`) that nobody can
+  join or change (`isHost()` is false in it) and starts itself: a random track, 3 laps, random theme/weather.
+  Skill rating (SR) from 0: Iron, Bronze, Silver, Gold, Platinum, Diamond, Master (III/II/I, 100 SR each), then
+  Overdrive Elite at 2100+. Iron-Bronze race 3 Hard AI, Silver-Gold 5 EXTREME, Platinum+ 5 **Overdrive** AI
+  (`AI_LEVELS.overdrive`, ranked only). The "left the race" loss (-45) is charged at the lights (`rankedStart`)
+  and replaced by the real result at the flag (`rankedFinish`), so quitting can't dodge it. Ranked leaderboard.
+- **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
+  coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
+- **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
+  Festive), 30 tiers of 250 XP. Free track: coins, a themed item (tier 15) and a themed crate (tier 30). Premium
+  (2,000 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)
+  and themed crates (`crate:open`) only come from the pass. XP: races, dailies (+150), weeklies (+300).
+- **Gifts, trades and chat with friends** (Profile › Friends › 💬 🎁 🤝): friends only, one gift/offer a minute,
+  5,000 coins a day max, the receiver can't already own the item, trades are checked again when accepted. Messages
+  are filtered like chat and kept on both accounts (last 40 per friend).
+- **Track share codes**: 🔗 Share code on the track tools gives a 6-character code (`track:share`); 📥 Load code
+  (host) loads it with its start line, direction and theme. Stored for a year (Upstash, or `data/shared/`).
+- **Track of the week** (menu card, 🌟 on the track tools): the same random track for everyone all week (built from
+  the week number with a seeded `Math.random`, `withSeed`), with its own best-lap leaderboard that resets Mondays.
+- **Night and fog**: night themes darken everything except headlights and the floodlit start (Settings › Effects
+  off = the old light version). Weather **Fog**: you only see the road near your car.
+- **Replays**: the last 30 seconds are kept; 💾 Save (in the browser, up to 8) or 🔗 Share (a code, 30 days; the
+  browser gzips it, the server checks and rebuilds it in `cleanReplay`). 🎬 Replays on the menu plays them.
+- **Photo mode** (📷 or **K** in a race or replay): freezes the view, drag/scroll/pinch to move and zoom, tilt,
+  names on/off, 📸 saves a PNG. Racing alone as host, the race really pauses while you're in it.
 
 ## Render's free plan (worth knowing)
 It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 seconds) and has very little CPU
