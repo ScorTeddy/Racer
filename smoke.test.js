@@ -365,3 +365,16 @@ test("the season pass never touches the password (sign in on a second device wor
   assert.ok(!v.pwLost && v.pass.salt);
   assert.ok((await accounts.logIn("PassBroken", "Brand-New-Lane-77")).token, "and it signs in again");
 });
+
+test("idle for an hour in a room: warned, then removed and disconnected", { timeout: 60000 }, async () => {
+  const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok));
+  const got = (ev) => new Promise((ok) => s.once(ev, ok));
+  s.emit("create", { name: "Sleepy" }); const j = await got("joined");
+  const sk = game.io.sockets.sockets.get(j.you);
+  sk.data.lastAct = Date.now() - game.IDLE_MS + 60e3;          // 1 minute left
+  assert.ok((await got("idleWarn")).seconds <= 120, "warned first");
+  sk.data.lastAct = Date.now() - game.IDLE_MS - 1000;          // past the hour
+  const gone = got("disconnect");
+  await got("idleKicked"); await gone;
+  assert.ok(!game.rooms.get(j.code)?.players.has(j.you), "removed from the room");
+});

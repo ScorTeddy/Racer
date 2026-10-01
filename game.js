@@ -1273,7 +1273,7 @@
   // keep the "come back here" note fresh (and remember the room so the host can rebuild it after an update)
   setInterval(() => { if (S.code) saveRejoin({ code: S.code, host: !!S.host, pub: !!S.lobby?.public, settings: S.lobby?.settings || null, stroke: S.host ? S.lobby?.stroke || null : null }); }, 5000);
   // ---- dropped connection / server restart: reconnect and take your car back ----
-  socket.on("disconnect", () => { if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔧 The game is updating. Back in a minute..." : "📡 Connection lost. Reconnecting..."; } });
+  socket.on("disconnect", () => { if (S.code && !S.idleKicked) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔧 The game is updating. Back in a minute..." : "📡 Connection lost. Reconnecting..."; } });
   socket.on("serverRestart", () => { S.restarting = true; if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 The game is updating. Back in a minute..."; } else popup("The game is updating: back in a minute!", true); });
   // Every connection starts with the server's version. Running old code (the game just updated)?
   // Reload to get the new version: you land straight back in your room, and your race.
@@ -1340,6 +1340,19 @@
     else boardHint("Nice track! Press Start race when everyone's ready.", false);
   });
   socket.on("toast", (t) => popup(t, true));
+  // ---- idle kick: an hour in a room with nobody touching anything = removed (so a device left on lets go) ----
+  let lastAlive = 0;
+  const alive = () => { const now = Date.now(); if (S.code && now - lastAlive > 60000) { lastAlive = now; socket.emit("alive"); } };
+  for (const ev of ["pointerdown", "keydown", "touchstart", "wheel"]) document.addEventListener(ev, alive, { passive: true, capture: true });
+  socket.on("idleWarn", (d) => { lastAlive = 0; popup(`💤 Still there? You'll be removed in ${Math.max(1, Math.round((d?.seconds || 120) / 60))} min for being inactive. Tap or press anything.`, true); sfx("level"); });
+  socket.on("idleKicked", (d) => {
+    S.idleKicked = true; S.code = null;
+    try { sessionStorage.removeItem("tb-rejoin"); } catch (e) {}
+    $("netVeil").classList.remove("hidden");
+    $("netMsg").textContent = `💤 You were removed after ${d?.minutes || 60} minutes with no activity.`;
+    const sm = $("netVeil").querySelector("small"); if (sm) sm.textContent = "Reload the page to play again.";
+    $("netVeil").querySelector(".spinner")?.classList.add("hidden");
+  });
 
   socket.on("race", (r) => {
     if (S.replaying) stopReplay();
@@ -4607,6 +4620,7 @@
       "🏆 Win a race and earn coins: 50 on Easy AI, 100 on Normal, 150 on Hard, 500 on Extreme.",
       "🤖 Win coins need at least 7 AI drivers in the race. Races with only real players don't pay win coins.",
       "🔒 One account, one match: your account can't be in two rooms at once (another tab or device has to leave first).",
+      "💤 Left a device on? After an hour in a room with no activity you're removed (with a warning 2 minutes before), so your account is free to play somewhere else.",
       "🔑 Fixed: signing in on a second device. A bug could wipe your password. If yours was hit, the game tells you and you can set a new one in Profile > Security.",
     ] },
     { v: "2026-09-30", title: "DRS zones", items: [

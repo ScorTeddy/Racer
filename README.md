@@ -49,6 +49,10 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   ranked Overdrive 500), but only with at least `WIN_MIN_AI` (7) real AI drivers in the race (`c.isAi`; players who
   left don't count). A race with only real people pays no win coins, so friends can't farm wins off each other.
   Winners get a toast either way, saying why if there were too few AI.
+- **Idle kick**: anyone in a room with no activity for `IDLE_MS` (1 hour) gets a warning 2 minutes before, then is
+  removed from the room and disconnected ("💤 You were removed..."; reload to play). Activity = any message from
+  the player, plus `alive` (the page sends it at most once a minute on a tap/click/key). The page's own background
+  requests (`IDLE_PASSIVE`: menu info, friends list...) don't count.
 - **One account, one match**: an account can only be in one room at a time. Joining (create, Quick Play, code,
   ranked) from a second tab/device is refused until the first one leaves. Signing in inside a room where that
   account is already playing (or coming back to a room after it moved) leaves you a guest there.

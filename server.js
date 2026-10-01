@@ -35,7 +35,9 @@ const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
 // (a race with just friends pays nothing, so nobody can farm wins off each other)
 const WIN_COINS = { easy: 50, medium: 100, hard: 150, extreme: 500, overdrive: 500 }, WIN_MIN_AI = 7;
-const RIVAL_COINS = 100, DOTD_COINS = 150;   // bonuses for beating your rival / being Driver of the Day
+const RIVAL_COINS = 100, DOTD_COINS = 150;
+const IDLE_MS = 60 * 60e3, IDLE_WARN_MS = 2 * 60e3;          // an hour in a room with no activity = kicked (warned 2 min before)
+const IDLE_PASSIVE = new Set(["friends:get", "menuInfo", "catalog", "totw:info", "auth:resume", "rejoin", "presets:get", "setPresets:get"]);   // bonuses for beating your rival / being Driver of the Day
 // Run the tank dry and it's locked for 5s (no boosting, no regen) unless an overtake or the line refills it.
 const NITRO_LOCKOUT = 5;
 // Heavy rain: from 60% wet the wets are the tire to be on. Anything else is a lot slower
@@ -2706,6 +2708,10 @@ io.on("connection", (socket) => {
   socketsPerIp.set(ip, (socketsPerIp.get(ip) || 0) + 1);
   socket.on("disconnect", () => { const n = (socketsPerIp.get(ip) || 1) - 1; if (n <= 0) socketsPerIp.delete(ip); else socketsPerIp.set(ip, n); });
   let tokens = BUCKET_MAX, last = Date.now(), strikes = 0;
+  // idle check: anything the PLAYER does counts as activity (the browser's own background requests don't)
+  socket.data.lastAct = Date.now();
+  socket.use(([ev], next) => { if (!IDLE_PASSIVE.has(ev)) { socket.data.lastAct = Date.now(); socket.data.idleWarned = false; } next(); });
+  socket.on("alive", () => {});              // the browser saying "someone touched the screen / a key" (once a minute at most)
   socket.use(([ev], next) => {
     const now = Date.now(); tokens = Math.min(BUCKET_MAX, tokens + ((now - last) / 1000) * BUCKET_REFILL); last = now;
     const cost = EVENT_COST[ev] ?? 1;
@@ -3362,6 +3368,23 @@ io.on("connection", (socket) => {
   });
 });
 
+// Idle kick: anyone in a room with no activity for IDLE_MS (an hour) is warned 2 minutes before, then removed
+// from the room and disconnected (a phone or PC left on somewhere shouldn't hold the account or a seat).
+setInterval(() => {
+  const now = Date.now();
+  for (const r of [...rooms.values()]) for (const p of [...r.players.values()]) {
+    const sk = io.sockets.sockets.get(p.id); if (!sk) continue;
+    const idle = now - (sk.data.lastAct || now);
+    if (idle >= IDLE_MS) {
+      sk.emit("idleKicked", { minutes: Math.round(IDLE_MS / 60000) });
+      r.removePlayer(sk.id, false); sk.leave(r.code); sk.data.room = null; menuDirty = true;
+      setTimeout(() => sk.disconnect(true), 300);
+    } else if (idle >= IDLE_MS - IDLE_WARN_MS && !sk.data.idleWarned) {
+      sk.data.idleWarned = true; sk.emit("idleWarn", { seconds: Math.round((IDLE_MS - idle) / 1000) });
+    }
+  }
+}, 15000);
+
 // Main loop: 30 ticks a second. Each room is guarded so one broken race can't freeze the others.
 setInterval(() => {
   for (const r of rooms.values()) {
@@ -3372,4 +3395,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { io, IDLE_MS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
