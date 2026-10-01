@@ -2875,7 +2875,7 @@ io.on("connection", (socket) => {
   // ---- accounts ----
   const daily = (u) => {
     // achievements you already qualify for (e.g. new ones added in an update) unlock right away
-    if (u.pwLost) setTimeout(() => socket.emit("toast", "🔑 Your password needs to be set again (an old bug wiped it). Go to Profile > Security and pick a new one, or you can't sign in on other devices."), 3000);
+    if (u.pwLost) setTimeout(() => socket.emit("toast", "🔑 Your password needs to be set again (an old bug wiped it). Go to Profile > 🔒 Security and pick a new one, or you can't sign in on other devices."), 3000);
     const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
     const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {

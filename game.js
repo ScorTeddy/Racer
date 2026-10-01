@@ -756,7 +756,7 @@
     $("authCodeLabel").firstChild.textContent = mode === "reset" ? "Authenticator code or a backup code " : "6-digit code from your authenticator app (or a backup code) ";
     $("authPass").autocomplete = mode === "login" ? "current-password" : "new-password";
     $("authPass").placeholder = mode === "login" ? "" : "12+ characters, mix it up";
-    $("authNote").textContent = mode === "signup" ? "No email needed. Use a password you don't use anywhere else. After signing up you can turn on two-factor sign-in (Profile > Security)."
+    $("authNote").textContent = mode === "signup" ? "No email needed. Use a password you don't use anywhere else. After signing up you can turn on two-factor sign-in (Profile > 🔒 Security)."
       : mode === "reset" ? "Only works if you turned on two-factor sign-in. Without it there's no way to prove it's you (there's no email)." : mode === "code" ? "Open your authenticator app and type the code shown for Scribble GP." : "";
     $("authBox").classList.remove("hidden");
     if (mode === "signup" || mode === "reset") loadMeter();
@@ -842,7 +842,13 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   function renderHub() {
     const u = A.user;
+    // wide screens: Achievements live in "Me" (stats), Leaderboards in Ranked
+    if (DESK.on && A.tab === "ach") { A.tab = "stats"; A.scrollAch = true; }
+    if (DESK.on && A.tab === "lb") A.tab = "ranked";
+    // (merged panels sit inside their tab's panel so they scroll as one; put them back before redrawing)
+    for (const [inner, outer] of [["hubAch", "hubStats"], ["hubLb", "hubRanked"]]) if ($(inner).parentElement === $(outer)) $(outer).after($(inner));
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
+    $("hubSecBtn")?.setAttribute("aria-pressed", String(A.tab === "sec"));
     for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
@@ -852,6 +858,14 @@
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
+    if (DESK.on && A.tab === "stats") {
+      $("hubAch").classList.remove("hidden"); renderAchs(u); $("hubStats").appendChild($("hubAch"));
+      if (A.scrollAch) { A.scrollAch = false; requestAnimationFrame(() => $("hubAch").scrollIntoView({ block: "start" })); }
+    }
+    if (DESK.on && A.tab === "ranked") {
+      $("hubLb").classList.remove("hidden"); renderLb(); $("hubRanked").appendChild($("hubLb"));
+      if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); }
+    }
   }
   function renderStats(u) {
     const box = $("hubStats"); box.textContent = "";
@@ -1047,7 +1061,7 @@
     if (F2.reqOut.length) { box.appendChild(el("h3", "hub-h", "⏳ Waiting for them to accept")); for (const f of F2.reqOut) box.appendChild(person(f, [["Cancel", "ghost", () => socket.emit("friends:remove", f.id)]])); }
   }
   // ---- Leaderboards tab ----
-  socket.on("lb", (d) => { A.lb = d; if (d.tracks) A.lbTracks = d.tracks; if (A.tab === "lb") renderLb(); });
+  socket.on("lb", (d) => { A.lb = d; if (d.tracks) A.lbTracks = d.tracks; if (A.tab === "lb" || (DESK.on && A.tab === "ranked")) renderLb(); });
   function renderLb() {
     const box = $("hubLb"); box.textContent = "";
     const kinds = [["wins", "🏆 Most wins"], ["ranked", "⚡ Ranked"], ["totw", "🌟 Track of the week"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
@@ -1700,6 +1714,7 @@
     document.querySelectorAll(".rc-tabs [data-tab]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
     document.querySelectorAll(".rc-pane").forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.tab));
     if (b.dataset.tab === "ai" && S.lobby) renderRoster(S.lobby);
+    deskPanes();
     sfx("tick");
   }));
   // track info card: length, corners, bridges, rough lap time
@@ -2427,7 +2442,7 @@
     $("setPresetSaveBtn").disabled = !S.lobby; $("setPresetName").disabled = !S.lobby;
     $("setPresetNote").textContent = (!S.host ? "Only the host can load settings, but you can save the ones this room uses. " : "") + (A.user ? "Saved to your account and this browser." : "Saved in this browser. Make an account to have them on other devices too.");
     const g = $("setPresetGrid"); g.textContent = "";
-    if (!SP.list.length) { g.appendChild(el("p", "preset-note", "No saved settings yet. Set up the Race tab the way you like it, name it and hit Save.")); return; }
+    if (!SP.list.length) { g.appendChild(el("p", "preset-note", "No saved settings yet. Set up the race settings the way you like them, name it and hit Save.")); return; }
     for (const pr of SP.list) {
       const row = el("div", "set-preset"), info = el("div", "info");
       info.append(el("b", "", pr.name), el("small", "", spSummary(pr.settings)));
@@ -4638,10 +4653,78 @@
     return sec;
   }
 
+  // ======================= Desktop layout (wide screens only: phones keep their own layout) =======================
+  // Fewer tabs and a sectioned track-tools column. Everything here only applies with body.desk, which is
+  // on when the window is wider than 860px and phone mode is off. Nothing in the HTML moves.
+  const DESK = { on: false, dsec: "draw" };
+  const DOCK_SECS = {
+    draw: ["#drawMode", "#stampPick", "#snapBtn", "#widthTools", "#cutBtn", "#smoothBtn", "#clearBtn"],
+    tracks: ["#wonkTools", "#randomBtn", "#f1Btn", "#totwBtn", "#commBtn", "#presetBtn", "#loadCodeBtn", "#shareTrackBtn"],
+    edit: ["#startLineBtn", "#reverseBtn", "#drsBtn", "#drsAutoBtn", "#drsClearBtn", "#moreBtn", "#moreTools"],
+  };
+  for (const [sec, sels] of Object.entries(DOCK_SECS)) for (const q of sels) document.querySelector(q)?.setAttribute("data-sec", sec);
+  // section switcher at the top of the track tools
+  (() => {
+    const dock = document.querySelector(".dock"); if (!dock) return;
+    const bar = document.createElement("div"); bar.className = "dock-secs"; bar.setAttribute("role", "tablist"); bar.setAttribute("aria-label", "Track tools");
+    for (const [k, ic, label] of [["draw", "✏️", "Draw"], ["tracks", "📚", "Tracks"], ["edit", "🔧", "Edit"]]) {
+      const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab"); b.dataset.dsec = k;
+      b.setAttribute("aria-selected", String(k === DESK.dsec)); b.title = { draw: "Draw a track", tracks: "Random, real, saved and shared tracks", edit: "Start line, direction, DRS zones and reshaping" }[k];
+      const i = document.createElement("span"); i.textContent = ic; i.setAttribute("aria-hidden", "true"); b.append(i, label);
+      b.addEventListener("click", () => setDockSec(k)); bar.appendChild(b);
+    }
+    dock.prepend(bar);
+  })();
+  function setDockSec(k) {
+    DESK.dsec = k; document.querySelector(".dock")?.setAttribute("data-dsec", k);
+    document.querySelectorAll("[data-dsec]").forEach((b) => b.tagName === "BUTTON" && b.setAttribute("aria-selected", String(b.dataset.dsec === k)));
+  }
+  setDockSec("draw");
+  // 🔒 security button in the profile header (wide screens; Security isn't a tab there)
+  (() => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "x hub-sec-btn"; b.id = "hubSecBtn"; b.title = "Sign-in and security"; b.setAttribute("aria-label", "Sign-in and security"); b.textContent = "🔒";
+    b.addEventListener("click", () => { A.tab = "sec"; renderHub(); });
+    $("hubClose").before(b);
+  })();
+  const relabel = (el, html) => { if (!el) return; if (el.dataset.orig === undefined) el.dataset.orig = el.innerHTML; el.innerHTML = DESK.on ? html : el.dataset.orig; };
+  // merged room panes: Drivers shows the AI list too, Settings shows the points system too
+  function deskPanes() {
+    if (!DESK.on) return;
+    const cur = document.querySelector(".rc-tabs [aria-selected=true]")?.dataset.tab;
+    if (cur === "ai") return document.querySelector('.rc-tabs [data-tab="drivers"]').click();
+    if (cur === "points") return document.querySelector('.rc-tabs [data-tab="race"]').click();
+    document.querySelector('.rc-pane[data-pane="ai"]').hidden = cur !== "drivers";
+    document.querySelector('.rc-pane[data-pane="points"]').hidden = cur !== "race";
+  }
+  function applyDesk() {
+    const on = window.innerWidth > 860 && !document.body.classList.contains("phone");
+    if (on === DESK.on) return;
+    DESK.on = on; document.body.classList.toggle("desk", on);
+    relabel(document.querySelector('.rc-tabs [data-tab="race"]'), '<span class="ti" aria-hidden="true">⚙️</span>Settings');
+    relabel(document.querySelector('[data-ht="stats"]'), "🏅 Me");
+    relabel(document.querySelector('.acct-actions [data-hub="stats"]'), "🏅 Profile");
+    if (on) { $("aiBox").open = false; $("pointsBox").open = false; deskPanes(); }
+    else {   // back to the normal tabs: show just the selected pane
+      const cur = document.querySelector(".rc-tabs [aria-selected=true]")?.dataset.tab || "drivers";
+      document.querySelectorAll(".rc-pane").forEach((p) => (p.hidden = p.dataset.pane !== cur));
+      $("aiBox").open = true; $("pointsBox").open = true;
+    }
+    if (!$("hub").classList.contains("hidden")) renderHub();
+  }
+  window.addEventListener("resize", applyDesk);
+  new MutationObserver(applyDesk).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  applyDesk();
+
   // ======================= What's new (shown once after each update) =======================
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-04", title: "Tidier screens on computers", items: [
+      "🧰 Track tools are split into ✏️ Draw, 📚 Tracks and 🔧 Edit, so the column fits on screen.",
+      "👥 The room has 3 tabs: Drivers (with the AI list), Settings (with points) and Standings.",
+      "🏅 Your profile has 5 tabs: Me (stats and achievements), Store, Season pass, Ranked (with leaderboards) and Friends. Security is the 🔒 button.",
+      "📱 Phones look the same as before.",
+    ] },
     { v: "2026-10-03", title: "Prestige, community tracks and weekend events", items: [
       "🎖️ Prestige: max the season pass, then reset it for 1,000 coins and a prestige badge next to your name. The tiers pay out again.",
       "🌍 Community tracks: share a track and add it to the community list. Browse the most played, top rated and newest, 👍 or 👎 them, and load them in your room.",
@@ -4658,7 +4741,7 @@
       "🤖 Win coins need at least 7 AI drivers in the race. Races with only real players don't pay win coins.",
       "🔒 One account, one match: your account can't be in two rooms at once (another tab or device has to leave first).",
       "💤 Left a device on? After an hour in a room with no activity you're removed (with a warning 2 minutes before), so your account is free to play somewhere else.",
-      "🔑 Fixed: signing in on a second device. A bug could wipe your password. If yours was hit, the game tells you and you can set a new one in Profile > Security.",
+      "🔑 Fixed: signing in on a second device. A bug could wipe your password. If yours was hit, the game tells you and you can set a new one in Profile > 🔒 Security.",
     ] },
     { v: "2026-09-30", title: "DRS zones", items: [
       "🟩 DRS: cross the start of a DRS zone within 1 second of the car ahead and you get +7% top speed until the zone ends. It opens from lap 2, not in the wet or behind the safety car. In qualifying it's open in every zone.",

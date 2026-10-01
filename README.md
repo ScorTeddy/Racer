@@ -45,6 +45,12 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Replay**: the last 30 seconds of every race can be watched again, saved or shared from the results screen.
 - **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
 
+- **Desktop layout** (`body.desk`: window wider than 860px and phone mode off; phones never get it, and the
+  HTML is the same for both): the track tools get a ✏️ Draw / 📚 Tracks / 🔧 Edit switcher (`DOCK_SECS` in game.js
+  says which button is in which section, via `data-sec`); the room has 3 tabs (the AI pane shows under Drivers,
+  the points pane under Settings); the profile has 5 tabs (Achievements sit inside "Me", Leaderboards inside
+  Ranked, Security behind the 🔒 button); the menu's account bar has one Profile button. All the CSS for it is at
+  the end of game.css. New buttons go in `DOCK_SECS` or they show in every section.
 - **Prestige** (season pass): at tier 30, "Prestige" resets the pass to tier 0 (premium stays) for `PRESTIGE_COINS`
   (1,000) and a 🎖️N badge (`u.prestige`, lifetime count) shown before your name in rooms and races (`extras.prest`).
   The tiers pay out again on the way back up (items you own turn into coins, as always).

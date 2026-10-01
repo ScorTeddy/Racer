@@ -1106,3 +1106,41 @@ body.rm .card.rare, body.rm .garage[class*="aura-"] { animation: none; }
 .preset .row .btn.on { outline: 2px solid #3ee06a; }
 .ask-card { width: min(28rem, 100%); }
 .prest-box { display: flex; align-items: center; gap: 0.8rem; justify-content: space-between; flex-wrap: wrap; padding: 0.7rem 0.9rem; border-radius: 0.9rem; background: rgba(255,204,31,0.12); border: 1.5px solid #ffcc1f; }
+
+/* ===================== Desktop layout (body.desk: wider than 860px, phone mode off) =====================
+   Fewer tabs and a sectioned track-tools column. Phones never get body.desk, so none of this touches them. */
+.dock-secs, .hub-sec-btn { display: none; }
+body.desk .dock-secs { display: flex; gap: 0.15rem; padding: 0.15rem; border-radius: 0.8rem; background: rgba(255,255,255,0.05); border: 1.5px solid var(--edge); }
+body.desk .dock-secs button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.05rem; padding: 0.32rem 0.1rem; border: 0; border-radius: 0.6rem;
+  background: transparent; color: var(--soft); font-family: inherit; font-size: 0.66rem; font-weight: 700; cursor: pointer;
+}
+body.desk .dock-secs button span { font-size: 1rem; }
+body.desk .dock-secs button:hover { color: var(--ink); background: rgba(255,255,255,0.08); }
+body.desk .dock-secs button[aria-selected="true"] { background: var(--yellow); color: #1b1b1b; }
+body.desk .dock-secs button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+body.desk .dock[data-dsec="draw"] [data-sec]:not([data-sec="draw"]),
+body.desk .dock[data-dsec="tracks"] [data-sec]:not([data-sec="tracks"]),
+body.desk .dock[data-dsec="edit"] [data-sec]:not([data-sec="edit"]) { display: none !important; }
+body.desk #boardTools > .dock-label { display: none; }
+/* room: 3 tabs (Drivers incl. AI, Settings incl. points, Standings) */
+body.desk .rc-tabs [data-tab="points"], body.desk .rc-tabs [data-tab="ai"] { display: none; }
+body.desk .rc-pane[data-pane="ai"], body.desk .rc-pane[data-pane="points"] { margin-top: 0.6rem; }
+/* profile: 5 tabs (Me = stats + achievements, Ranked incl. leaderboards), security behind the 🔒 */
+body.desk [data-ht="ach"], body.desk [data-ht="lb"], body.desk [data-ht="sec"] { display: none; }
+body.desk .hub-sec-btn { display: grid; }
+body.desk .hub-sec-btn[aria-pressed="true"] { background: var(--yellow); color: #1b1b1b; }
+body.desk #hubAch::before, body.desk #hubLb::before { display: block; font-family: "Russo One", sans-serif; font-size: 1.15rem; margin: 1.2rem 0 0.4rem; padding-top: 1rem; border-top: 1.5px solid var(--edge); }
+body.desk #hubAch::before { content: "🏅 Achievements"; }
+body.desk #hubLb::before { content: "🏆 Leaderboards"; }
+/* menu: one Profile button instead of Stats / Achievements / Rank */
+body.desk .acct-actions [data-hub="ach"], body.desk .acct-actions [data-hub="ranked"] { display: none; }
+/* Edit section: the reshaping tools show straight away (no extra "Edit track" click), after start line / DRS */
+body.desk #moreBtn { display: none !important; }
+body.desk .dock[data-dsec="edit"] #moreTools.hidden { display: grid !important; }
+body.desk #moreTools { order: 3; }
+/* nested panels inside "Me" / Ranked don't scroll on their own */
+body.desk .hub-body .hub-body { overflow: visible; min-height: 0; padding-right: 0; }
+body.desk #hub .hub-head, body.desk #hub .hub-tabs, body.desk #hubGuest { flex-shrink: 0; }
+body.desk #hub .hub-body { min-height: 0; }
+body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile > 🔒 Security > Sessions on wide screens */
