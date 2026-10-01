@@ -201,7 +201,11 @@ Change the list in `BUILTIN` (index.html). Settings: Master / Music / Sound effe
 **Password bug (fixed Oct 2026):** the season pass used to be saved in `u.pass`, the same field as the password
 hash, so the first look at the pass wiped the password and the account could only stay signed in on the device it
 was on. The pass is in `u.bp` now. `fix()` moves old pass data over and flags broken accounts `pwLost`: they get a
-toast, sign-ins elsewhere say why, and Profile > Security lets them set a new password without the old one.
+toast, and Profile > Security lets them set a new password without the old one. Signed out? Signing in on a
+device that played on the account works too: its signed backup proves it's theirs, so the typed password becomes
+the new one (`pwRepaired`). Elsewhere the error explains this.
+**Owner fallback:** Render > Environment > `RESET_PASSWORD` = `username:NewPassword123!` sets that password when
+the server starts (check the log), for any account. **Delete the variable straight after.**
 
 ## Accounts setup
 **Make an account** (username + password) works with no setup at all. Passwords are stored only as a

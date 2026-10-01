@@ -285,7 +285,17 @@ async function logIn(username, password, backup) {
   username = String(username || "").trim();
   let u = USER_RE.test(username) ? await getUser("u_" + username.toLowerCase()) : null;
   if (!u && backup && USER_RE.test(username)) u = await restore(backup, "u_" + username.toLowerCase());
-  if (u && u.pwLost && !u.pass) throw new Error("This account's password has to be set again (an old bug wiped it). Open the game on the device you're still signed in on and set a new password in Profile > Security, then sign in here.");
+  // Password wiped by the old season-pass bug: a browser that played on this account still has its signed copy
+  // (the backup), which proves it's yours. Signing in there makes the password you type your new one.
+  if (u && u.pwLost && !u.pass) {
+    const b = backup ? readBackup(backup) : null;
+    if (!b || b.id !== u.id) throw new Error("A bug wiped this account's password. Fix: sign in on the computer or phone you played on before, typing the NEW password you want. It becomes your password, and then you can use it anywhere.");
+    try { await checkPassword(password, u.name); }
+    catch (e) { throw new Error("A bug wiped this account's password, so what you type now becomes your new one. " + e.message); }
+    u.pass = hashPass(password); delete u.pwLost; saveSoon(u);
+    const token = await addSession(u);
+    return { u, token, pwRepaired: true };
+  }
   if (!u || !passOk(u, password)) throw new Error("Wrong username or password." + (UP_URL ? "" : NO_PERM_NOTE));
   const token = await addSession(u);
   return { u, token };
@@ -1456,7 +1466,9 @@ async function unstash(key) {     // read it once (and forget it)
   if (UP_URL) { const v = await redis(["GET", "tb:tmp:" + key]); if (v) redis(["DEL", "tb:tmp:" + key]).catch(() => {}); return v || null; }
   try { const o = JSON.parse(fs.readFileSync(tmpFile(key), "utf8")); fs.unlinkSync(tmpFile(key)); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
 }
+async function setPasswordByOwner(u, pw) { await checkPassword(pw, u.name); u.pass = hashPass(pw); delete u.pwLost; saveSoon(u); }
 module.exports = {
+  setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,

@@ -360,10 +360,15 @@ test("the season pass never touches the password (sign in on a second device wor
   v.pass = { m: "2026-09", xp: 500, prem: true, tier: 2 }; delete v.bp;
   accounts.fixUser(v);                                          // what loading the account does
   assert.ok(v.pwLost && !v.pass && v.bp?.prem, "flagged, season pass kept in bp");
-  await assert.rejects(accounts.logIn("PassBroken", "Turbo-Fox-Lane-42"), /set again/);
-  assert.ok((await accounts.changePassword(v, "", "Brand-New-Lane-77")).ok, "new password without the old one");
-  assert.ok(!v.pwLost && v.pass.salt);
-  assert.ok((await accounts.logIn("PassBroken", "Brand-New-Lane-77")).token, "and it signs in again");
+  await assert.rejects(accounts.logIn("PassBroken", "Turbo-Fox-Lane-42"), /wiped/, "no saved copy: explains the fix");
+  // signed out, on the device that played on it (it has the signed copy): the typed password becomes the new one
+  const res = await accounts.logIn("PassBroken", "Brand-New-Lane-77", accounts.makeBackup(v));
+  assert.ok(res.token && res.pwRepaired && !v.pwLost && v.pass.salt, "fixed by signing in");
+  assert.ok((await accounts.logIn("PassBroken", "Brand-New-Lane-77")).token, "and it signs in anywhere now");
+  // still signed in somewhere: Profile > Security works without the old password too
+  const { u: x } = await accounts.signUp("PassBroke2", "Turbo-Fox-Lane-42");
+  x.pass = { m: "2026-09", xp: 1, prem: false, tier: 0 }; accounts.fixUser(x);
+  assert.ok((await accounts.changePassword(x, "", "Brand-New-Lane-77")).ok);
 });
 
 test("idle for an hour in a room: warned, then removed and disconnected", { timeout: 60000 }, async () => {

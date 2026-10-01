@@ -1340,6 +1340,18 @@
     else boardHint("Nice track! Press Start race when everyone's ready.", false);
   });
   socket.on("toast", (t) => popup(t, true));
+  // ---- mouse wheel scrolls sideways on rows that only scroll sideways (profile tabs, season pass, track tools...) ----
+  document.addEventListener("wheel", (e) => {
+    if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || !e.deltaY) return;
+    for (let el = e.target; el && el !== document.body; el = el.parentElement) {
+      if (!(el instanceof HTMLElement) || el.scrollWidth <= el.clientWidth + 1) continue;
+      const ox = getComputedStyle(el).overflowX; if (ox !== "auto" && ox !== "scroll") continue;
+      if (el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY !== "hidden" && getComputedStyle(el).overflowY !== "visible") return;   // it scrolls up/down too: leave it alone
+      const max = el.scrollWidth - el.clientWidth;
+      if ((e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return;   // at the end: let the page scroll
+      el.scrollLeft += e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY; e.preventDefault(); return;
+    }
+  }, { passive: false });
   // ---- idle kick: an hour in a room with nobody touching anything = removed (so a device left on lets go) ----
   let lastAlive = 0;
   const alive = () => { const now = Date.now(); if (S.code && now - lastAlive > 60000) { lastAlive = now; socket.emit("alive"); } };
@@ -4616,6 +4628,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-02", title: "Fixes", items: [
+      "🔑 Password wiped by the old bug? Sign in on a device you played on before and type the new password you want. It becomes your password.",
+      "🖱️ Your mouse wheel now scrolls sideways on rows that only go sideways (profile tabs, season pass, track tools).",
+    ] },
     { v: "2026-10-01", title: "Win coins", items: [
       "🏆 Win a race and earn coins: 50 on Easy AI, 100 on Normal, 150 on Hard, 500 on Extreme.",
       "🤖 Win coins need at least 7 AI drivers in the race. Races with only real players don't pay win coins.",

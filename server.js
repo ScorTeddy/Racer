@@ -2876,7 +2876,7 @@ io.on("connection", (socket) => {
     if (authLimited()) return;
     if (loginLocked(d?.username)) return authFail(new Error("Too many wrong passwords for that account. Try again in 10 minutes."));
     if (gated(d)) return;
-    accounts.logIn(d?.username, d?.password, d?.backup).then((res) => { authOk(ip); signedIn(res); }, (e) => { loginFailed(d?.username); authFailed(ip, "login", d?.username); authFail(e); });
+    accounts.logIn(d?.username, d?.password, d?.backup).then((res) => { authOk(ip); signedIn(res); if (res.pwRepaired) socket.emit("toast", "🔑 Password fixed! That's your password now. Use it to sign in on any device."); }, (e) => { loginFailed(d?.username); authFailed(ip, "login", d?.username); authFail(e); });
   });
   // step 2 of a 2FA sign-in: the 6-digit code (or a backup code)
   socket.on("auth:2fa", async (d) => {
@@ -3367,6 +3367,18 @@ io.on("connection", (socket) => {
     if (r.frozen) socket.emit("toast", "⏸ The race is on hold for a few seconds while everyone gets back in.");
   });
 });
+
+// Owner fallback: RESET_PASSWORD=username:newpassword in Render > Environment sets that account's password when the
+// server starts (for a wiped or forgotten password when no device can fix it). Remove it again afterwards!
+if (process.env.RESET_PASSWORD && require.main === module) setTimeout(async () => {
+  const raw = process.env.RESET_PASSWORD, i = raw.indexOf(":"), name = raw.slice(0, i).trim(), pw = raw.slice(i + 1);
+  try {
+    const u = i > 0 && await accounts.getUser("u_" + name.toLowerCase());
+    if (!u) return console.warn(`RESET_PASSWORD: no account called "${name}"`);
+    await accounts.setPasswordByOwner(u, pw);
+    console.warn(`RESET_PASSWORD: password set for "${u.name}". Now REMOVE RESET_PASSWORD from the Environment.`);
+  } catch (e) { console.warn("RESET_PASSWORD failed:", e.message); }
+}, 3000);
 
 // Idle kick: anyone in a room with no activity for IDLE_MS (an hour) is warned 2 minutes before, then removed
 // from the room and disconnected (a phone or PC left on somewhere shouldn't hold the account or a seat).
