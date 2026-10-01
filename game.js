@@ -1135,6 +1135,7 @@
     if (u.hasPassword) {
       const pw = el("section", "sec-box"); pw.appendChild(el("h3", "hub-h", "🔑 Change password"));
       const [l1, i1] = field("Current password", "password", "current-password");
+      if (u.pwLost) { l1.classList.add("hidden"); pw.appendChild(el("p", "preset-note", "⚠️ An old bug wiped your password, so you can't sign in on other devices. Pick a new one here (no current password needed).")); }
       const [l2, i2] = field("New password (12+ characters)", "password", "new-password");
       const [l3, i3] = field("New password again", "password", "new-password");
       const go = el("button", "btn", "Change password"); go.type = "button";
@@ -4602,6 +4603,12 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-01", title: "Win coins", items: [
+      "🏆 Win a race and earn coins: 50 on Easy AI, 100 on Normal, 150 on Hard, 500 on Extreme.",
+      "🤖 Win coins need at least 7 AI drivers in the race. Races with only real players don't pay win coins.",
+      "🔒 One account, one match: your account can't be in two rooms at once (another tab or device has to leave first).",
+      "🔑 Fixed: signing in on a second device. A bug could wipe your password. If yours was hit, the game tells you and you can set a new one in Profile > Security.",
+    ] },
     { v: "2026-09-30", title: "DRS zones", items: [
       "🟩 DRS: cross the start of a DRS zone within 1 second of the car ahead and you get +7% top speed until the zone ends. It opens from lap 2, not in the wet or behind the safety car. In qualifying it's open in every zone.",
       "🏆 Real tracks have their real DRS zones, on the same straights as the real circuits.",

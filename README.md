@@ -45,6 +45,13 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Replay**: the last 30 seconds of every race can be watched again, saved or shared from the results screen.
 - **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
 
+- **Race win coins**: first place pays `WIN_COINS` by AI level (Easy 50, Normal 100, Hard 150, Extreme 500,
+  ranked Overdrive 500), but only with at least `WIN_MIN_AI` (7) real AI drivers in the race (`c.isAi`; players who
+  left don't count). A race with only real people pays no win coins, so friends can't farm wins off each other.
+  Winners get a toast either way, saying why if there were too few AI.
+- **One account, one match**: an account can only be in one room at a time. Joining (create, Quick Play, code,
+  ranked) from a second tab/device is refused until the first one leaves. Signing in inside a room where that
+  account is already playing (or coming back to a room after it moved) leaves you a guest there.
 - **DRS** (host setting, on by default): cross the start of a DRS zone within `DRS_GAP` (1s) of whoever crossed it last
   and you get `DRS_BONUS` (+7%) top speed until the zone ends. It's on from lap 2 (`DRS_FROM_LAP`), off at 50%+ wet and
   under the safety car (plus 10s after), and open in every zone in qualifying. The feed says "DRS enabled" once it's live
@@ -186,6 +193,11 @@ Change the list in `BUILTIN` (index.html). Settings: Master / Music / Sound effe
   e.g. mash the keyboard for 40 characters) and never change it. If you change it, old copies stop working.
   Only the browser that last used an account has its copy, so for playing on several devices use Upstash too.
 - **Saved tracks (💾 My tracks):** stored in the browser (updates never touch that) and on the account.
+
+**Password bug (fixed Oct 2026):** the season pass used to be saved in `u.pass`, the same field as the password
+hash, so the first look at the pass wiped the password and the account could only stay signed in on the device it
+was on. The pass is in `u.bp` now. `fix()` moves old pass data over and flags broken accounts `pwLost`: they get a
+toast, sign-ins elsewhere say why, and Profile > Security lets them set a new password without the old one.
 
 ## Accounts setup
 **Make an account** (username + password) works with no setup at all. Passwords are stored only as a

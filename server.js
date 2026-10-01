@@ -32,6 +32,9 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
+// winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
+// (a race with just friends pays nothing, so nobody can farm wins off each other)
+const WIN_COINS = { easy: 50, medium: 100, hard: 150, extreme: 500, overdrive: 500 }, WIN_MIN_AI = 7;
 const RIVAL_COINS = 100, DOTD_COINS = 150;   // bonuses for beating your rival / being Driver of the Day
 // Run the tank dry and it's locked for 5s (no boosting, no regen) unless an overtake or the line refills it.
 const NITRO_LOCKOUT = 5;
@@ -1353,7 +1356,7 @@ class Room {
       } else {
         const a = slot.ai, R = this.roster[a];
         Object.assign(base, {
-          owner: null, name: R.name, color: R.color, livery: R.livery, number: R.number, team: R.team, up: blankUp(),
+          owner: null, isAi: true, name: R.name, color: R.color, livery: R.livery, number: R.number, team: R.team, up: blankUp(),
           // rivals get sharper as the season goes on and as the teams level up
           skill: DL.skill[0] + Math.random() * (DL.skill[1] - DL.skill[0]) + Math.min(0.06, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
           power: DL.power - 0.015 + Math.random() * 0.03 + Math.min(0.05, this.avgLevel() * 0.006),
@@ -2388,6 +2391,7 @@ class Room {
     const fastestCar = order.find((c) => c.bestLap === this.fastest && isFinite(c.bestLap));
     const maxLevel = this.track ? Math.round(Math.max(0, ...this.track.elev)) : 0;
     const kmPerLap = this.track ? this.track.length / 4200 : 0;
+    const aiCount = order.filter((c) => c.isAi).length;          // real AI drivers (not players who left)
     for (const c of humans) {
       const p = this.players.get(c.owner); if (!p?.uid) continue;
       const pos = order.indexOf(c) + 1, rs = c.rs || {};
@@ -2407,10 +2411,13 @@ class Room {
         totw: this.trackKind === "totw" && this.totwWeek === weekNow() && !this.track?.reverse ? this.totwWeek : 0,
         margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
+        aiCount, winCoins: pos === 1 && c.finished && aiCount >= WIN_MIN_AI ? WIN_COINS[this.settings.aiLevel] || WIN_COINS.medium : 0,
       };
       accounts.getUser(p.uid).then((u) => {
         if (!u) return;
         const got = accounts.recordRace(u, r);
+        if (r.winCoins) io.to(p.id).emit("toast", `🏆 Race win: +${r.winCoins} coins!`);
+        else if (pos === 1 && c.finished) io.to(p.id).emit("toast", `🏆 You won! Win coins need at least ${WIN_MIN_AI} AI drivers in the race (this one had ${aiCount}).`);
         if (r.newPb) io.to(p.id).emit("toast", r.oldPb ? `🏅 New personal best on this track! ${r.best.toFixed(2)}s (was ${r.oldPb.toFixed(2)}s)` : `🏅 First lap record set on this track: ${r.best.toFixed(2)}s`);
         io.to(p.id).emit("account", accounts.publicUser(u));
         for (const a of got) io.to(p.id).emit("achievement", a);
@@ -2720,9 +2727,24 @@ io.on("connection", (socket) => {
   const room = () => rooms.get(socket.data.room);
   const me = () => { const r = room(); return r ? r.players.get(socket.id) : null; };
   const isHost = () => { const r = room(); return r && r.hostId === socket.id && !r.ranked; };      // nobody runs a ranked room: it runs itself
+  // the same account can only be in one room at a time (another tab or device has to leave first)
+  const accountBusy = (uid) => {
+    if (!uid) return null;
+    for (const r of rooms.values()) for (const p of r.players.values()) if (p.uid === uid && p.id !== socket.id) return r.code;
+    return null;
+  };
+  const busyMsg = (code) => `Your account is already in a match (room ${code}) on another device or tab. Leave that one first.`;
+  const blockedJoin = () => { const code = accountBusy(socket.data.uid); if (code) { socket.emit("joinError", busyMsg(code)); return true; } return false; };
+  // signing in while already in a room: attach the account, unless it's in a match somewhere else
+  const attachAccount = (p, uid, extras) => {
+    const code = accountBusy(uid);
+    if (code) { p.uid = null; p.extras = null; socket.emit("toast", `You're signed in, but your account is in a match on another device (room ${code}), so you're a guest in this room.`); return; }
+    p.uid = uid; p.extras = extras;
+  };
   const leave = () => { const r = room(); if (r) { socket.leave(r.code); r.removePlayer(socket.id); } socket.data.room = null; socket.join("menu"); menuDirty = true; };
 
   socket.on("create", (profile, opts) => {
+    if (blockedJoin()) return;
     if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit");
     leave();
     // a host coming back after an update asks for their old room code (if nobody has it)
@@ -2731,6 +2753,7 @@ io.on("connection", (socket) => {
     const r = new Room(code, opts?.public === true); rooms.set(r.code, r); r.addPlayer(socket, profile); });
   // Quick Play: the busiest public room with space (lobby first, a race you can watch next), or a new public room
   socket.on("quickPlay", (profile) => {
+    if (blockedJoin()) return;
     const open = [...rooms.values()].filter((r) => r.public && r.players.size && r.players.size < MAX_PLAYERS && !hostBlocks(r, socket.data.uid));
     open.sort((a, b) => (a.phase === "lobby" ? 0 : 1) - (b.phase === "lobby" ? 0 : 1) || b.players.size - a.players.size);
     if (open[0]) { leave(); open[0].addPlayer(socket, profile); socket.emit("toast", "Found a room!"); return; }
@@ -2744,6 +2767,7 @@ io.on("connection", (socket) => {
     if (r.ranked) return socket.emit("joinError", "That's a ranked race: it's one player only");
     if (hostBlocks(r, socket.data.uid)) return socket.emit("joinError", "You can't join that room");
     if (r.players.size >= MAX_PLAYERS) return socket.emit("joinError", "That room is full (6 players max)");
+    if (blockedJoin()) return;
     leave(); r.addPlayer(socket, d.profile);
   });
   socket.on("menuInfo", () => socket.emit("menuInfo", menuInfo()));
@@ -2805,6 +2829,7 @@ io.on("connection", (socket) => {
   // ---- accounts ----
   const daily = (u) => {
     // achievements you already qualify for (e.g. new ones added in an update) unlock right away
+    if (u.pwLost) setTimeout(() => socket.emit("toast", "🔑 Your password needs to be set again (an old bug wiped it). Go to Profile > Security and pick a new one, or you can't sign in on other devices."), 3000);
     const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
     const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {
@@ -2818,7 +2843,7 @@ io.on("connection", (socket) => {
     }
     socket.data.uid = res.u.id; socket.data.extras = accounts.extrasOf(res.u); daily(res.u); goOnline();
     socket.emit("account", { ...accounts.publicUser(res.u), token: res.token });
-    const p = me(); if (p) { p.uid = res.u.id; p.extras = socket.data.extras; room().sendLobby(); }
+    const p = me(); if (p) { attachAccount(p, res.u.id, socket.data.extras); room().sendLobby(); }
   };
   const goOnline = () => { const id = socket.data.uid; if (!id) return; if (!online.has(id)) online.set(id, new Set()); online.get(id).add(socket.id); };
   const goOffline = () => { const id = socket.data.uid; const set = id && online.get(id); if (set) { set.delete(socket.id); if (!set.size) online.delete(id); } };
@@ -2914,7 +2939,7 @@ io.on("connection", (socket) => {
       if (!u) return socket.emit("signedOut");
       socket.data.uid = u.id; socket.data.extras = accounts.extrasOf(u); goOnline();
       socket.emit("account", accounts.publicUser(u)); daily(u);
-      const p = me(); if (p) { p.uid = u.id; p.extras = socket.data.extras; room().sendLobby(); }
+      const p = me(); if (p) { attachAccount(p, u.id, socket.data.extras); room().sendLobby(); }
     } catch (e) { authFail(e); }
   });
   // signed in with the cookie? log straight back in (if the server forgot you, ask the browser for its backup)
@@ -2983,6 +3008,7 @@ io.on("connection", (socket) => {
   socket.on("ranked:play", async (profile) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("joinError", "Sign in to play ranked (your rank is saved on your account)");
+    if (blockedJoin()) return;
     if (rooms.size >= MAX_ROOMS) return socket.emit("joinError", "The server is full right now, try again in a bit");
     leave(); makeRankedRoom(socket, profile, u);
   });
@@ -3315,6 +3341,8 @@ io.on("connection", (socket) => {
     const g = r.gone?.get(String(d?.key || "")); if (!g || Date.now() > g.until) return socket.emit("rejoinFail", "expired");
     r.gone.delete(String(d.key)); leave();
     const p = g.p; p.id = socket.id; p.nitroHeld = false;
+    const elsewhere = accountBusy(p.uid);
+    if (elsewhere) { p.uid = null; p.extras = null; }        // the account moved to another device meanwhile: guest here
     r.players.set(socket.id, p);
     socket.leave("menu"); socket.join(r.code); socket.data.room = r.code;
     if (!r.hostId || !r.players.has(r.hostId) || (r.restoreHostKey && r.restoreHostKey === p.rejoinKey)) r.hostId = socket.id;
@@ -3328,6 +3356,7 @@ io.on("connection", (socket) => {
       socket.emit("race", { ...r.lastRaceMsg, cars: r.lastRaceMsg.cars.map((x) => (c && x.id === c.id ? { ...x, owner: socket.id } : x)) });
       r.resendOffer(p);
     }
+    if (elsewhere) socket.emit("toast", `Your account is in a match on another device (room ${elsewhere}), so you're a guest here.`);
     r.emit("toast", `${p.name} is back!`); socket.emit("toast", c ? "Reconnected: your car is yours again!" : "Reconnected!");
     if (r.frozen) socket.emit("toast", "⏸ The race is on hold for a few seconds while everyone gets back in.");
   });

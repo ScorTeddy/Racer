@@ -302,3 +302,66 @@ test("DRS: real zones on real tracks, auto zones everywhere else, and it opens i
   assert.ok(opened > 0, "DRS opened for someone");
   assert.equal(early, 0, "never on lap 1");
 });
+
+test("race win coins: by AI difficulty, only with 7+ AI drivers", async () => {
+  const seen = [], real = accounts.recordRace;
+  accounts.recordRace = (u, r) => { seen.push(r); return []; };
+  const u = await accounts.signUp("WinCoiner", "Turbo-Fox-Lane-42");
+  try {
+    const run = async (level, ai, humanPos = 1, extraHumans = 0) => {
+      const r = new game.Room("WINCO" + seen.length, false); r.settings.aiLevel = level;
+      const me = { id: "s-me", uid: u.u.id, name: "Me" }; r.players.set(me.id, me);
+      const order = [];
+      for (let i = 0; i < ai; i++) order.push({ id: i, isAi: true, finished: true, lapsDone: 3, pits: 0, bestLap: 30 });
+      for (let i = 0; i < extraHumans; i++) { const o = { id: "s-h" + i, uid: null, name: "Pal" }; r.players.set(o.id, o); order.push({ id: 100 + i, owner: o.id, finished: true, lapsDone: 3, pits: 0, bestLap: 30 }); }
+      order.splice(humanPos - 1, 0, { id: 99, owner: me.id, finished: true, lapsDone: 3, pits: 0, bestLap: 30 });
+      r.recordStats(order, order.map(() => ({ pts: 0 })), null);
+      await new Promise((ok) => setTimeout(ok, 50));
+      return seen[seen.length - 1].winCoins;
+    };
+    assert.equal(await run("easy", 7), 50);
+    assert.equal(await run("medium", 9), 100);
+    assert.equal(await run("hard", 7), 150);
+    assert.equal(await run("extreme", 12), 500);
+    assert.equal(await run("extreme", 6), 0, "6 AI is not enough");
+    assert.equal(await run("easy", 0, 1, 4), 0, "a race with only real people pays nothing");
+    assert.equal(await run("hard", 8, 2), 0, "only the winner gets win coins");
+  } finally { accounts.recordRace = real; }
+});
+
+test("one account can't be in two matches at once", { timeout: 30000 }, async () => {
+  await accounts.signUp("TwoTabs", "Turbo-Fox-Lane-42");
+  const open = async () => { const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok)); return s; };
+  const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
+  const a = await open(), b = await open();
+  for (const s of [a, b]) { s.emit("auth:login", { username: "TwoTabs", password: "Turbo-Fox-Lane-42" }); await got(s, "account"); }
+  a.emit("create", { name: "Tab A" }); const j = await got(a, "joined");
+  b.emit("create", { name: "Tab B" }); assert.match(await got(b, "joinError"), /already in a match/);
+  b.emit("join", { code: j.code, profile: { name: "Tab B" } }); assert.match(await got(b, "joinError"), /already in a match/);
+  b.emit("quickPlay", { name: "Tab B" }); assert.match(await got(b, "joinError"), /already in a match/);
+  // a guest tab can still join, and signing in there leaves it a guest in that room
+  const c = await open(); c.emit("join", { code: j.code, profile: { name: "Guest" } }); await got(c, "joined");
+  c.emit("auth:login", { username: "TwoTabs", password: "Turbo-Fox-Lane-42" });
+  assert.match(await got(c, "toast"), /guest in this room/);
+  assert.equal([...game.rooms.get(j.code).players.values()].filter((p) => p.uid).length, 1, "only one copy of the account in the room");
+  // once tab A leaves, tab B can play
+  a.disconnect(); await new Promise((ok) => setTimeout(ok, 300));
+  b.emit("create", { name: "Tab B" }); assert.ok((await got(b, "joined")).code);
+  for (const s of [b, c]) s.disconnect();
+});
+
+test("the season pass never touches the password (sign in on a second device works)", async () => {
+  const { u } = await accounts.signUp("PassKeeper", "Turbo-Fox-Lane-42");
+  accounts.publicUser(u); accounts.passXp(u, 300);              // this used to overwrite the password hash
+  assert.ok(u.pass?.salt, "password hash still there");
+  assert.ok((await accounts.logIn("PassKeeper", "Turbo-Fox-Lane-42")).token, "second sign-in works");
+  // an account the old bug already broke: flagged, and it can set a new password while signed in
+  const { u: v } = await accounts.signUp("PassBroken", "Turbo-Fox-Lane-42");
+  v.pass = { m: "2026-09", xp: 500, prem: true, tier: 2 }; delete v.bp;
+  accounts.fixUser(v);                                          // what loading the account does
+  assert.ok(v.pwLost && !v.pass && v.bp?.prem, "flagged, season pass kept in bp");
+  await assert.rejects(accounts.logIn("PassBroken", "Turbo-Fox-Lane-42"), /set again/);
+  assert.ok((await accounts.changePassword(v, "", "Brand-New-Lane-77")).ok, "new password without the old one");
+  assert.ok(!v.pwLost && v.pass.salt);
+  assert.ok((await accounts.logIn("PassBroken", "Brand-New-Lane-77")).token, "and it signs in again");
+});

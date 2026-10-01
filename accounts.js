@@ -17,6 +17,10 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 // never in production: it lets anyone in without a password
 const DEV_LOGIN = process.env.DEV_LOGIN === "1" && process.env.NODE_ENV !== "production" && !process.env.RENDER;
 const UP_URL = process.env.UPSTASH_REDIS_REST_URL || "", UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+// On Render without Upstash, accounts live in a file that's wiped on every restart: then only the device that
+// last used an account can bring it back (its backup), and signing in on a NEW device fails. Shout about it.
+if (!UP_URL && (process.env.RENDER || process.env.NODE_ENV === "production")) console.warn("⚠️  NO UPSTASH: accounts are NOT stored permanently. After a restart, players can only sign in on the device they last used. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (see README: Accounts setup, step 2).");
+const NO_PERM_NOTE = " Made this account on another device? This server doesn't keep accounts permanently yet, so after a restart only that device can bring it back: open the game there once, then try again.";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const FILE = path.join(DATA_DIR, "accounts.json");
 
@@ -109,7 +113,7 @@ async function redis(cmd) {
 function loadFile() {
   if (fileDb) return fileDb;
   try { fileDb = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (e) { fileDb = { users: {} }; }
-  for (const u of Object.values(fileDb.users)) { cache.set(u.id, u); for (const h of u.sessions || []) sessIndex.set(h, u.id); }
+  for (const u of Object.values(fileDb.users)) { fix(u); cache.set(u.id, u); for (const h of u.sessions || []) sessIndex.set(h, u.id); }
   for (const id of fileDb.deleted || []) deleted.add(id);
   return fileDb;
 }
@@ -176,6 +180,14 @@ async function dropSession(u, token) {
   saveSoon(u);
 }
 function fix(u) {
+  // BUG FIX: the season pass used to be saved in u.pass, the same field as the password hash, so showing
+  // the pass wiped the password (no more sign-ins on other devices). The pass lives in u.bp now. An account
+  // whose hash was overwritten is flagged pwLost: signed in (with its session) it can set a new password.
+  if (u.pass && typeof u.pass === "object" && !u.pass.salt) {
+    if (!u.bp && u.pass.m) u.bp = u.pass;
+    delete u.pass;
+    if (String(u.id || "").startsWith("u_")) u.pwLost = true;
+  }
   u.stats = Object.assign(blankStats(), u.stats || {});
   u.ach = u.ach || {}; u.owned = u.owned || []; u.equipped = u.equipped || {}; u.coins = u.coins || 0;
   u.stats.realTracks = u.stats.realTracks || [];
@@ -273,7 +285,8 @@ async function logIn(username, password, backup) {
   username = String(username || "").trim();
   let u = USER_RE.test(username) ? await getUser("u_" + username.toLowerCase()) : null;
   if (!u && backup && USER_RE.test(username)) u = await restore(backup, "u_" + username.toLowerCase());
-  if (!u || !passOk(u, password)) throw new Error("Wrong username or password");
+  if (u && u.pwLost && !u.pass) throw new Error("This account's password has to be set again (an old bug wiped it). Open the game on the device you're still signed in on and set a new password in Profile > Security, then sign in here.");
+  if (!u || !passOk(u, password)) throw new Error("Wrong username or password." + (UP_URL ? "" : NO_PERM_NOTE));
   const token = await addSession(u);
   return { u, token };
 }
@@ -773,8 +786,8 @@ function recordRace(u, r) {
   s.races++; s.raceSec += r.raceSec || 0;
   if (r.pos === 1) s.wins++;
   if (r.pos <= 3) s.podiums++;
-  // bonuses: beat your rival, Driver of the Day (most places gained)
-  const bonus = (r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0);
+  // bonuses: beat your rival, Driver of the Day (most places gained), winning (with 7+ AI)
+  const bonus = (r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0) + (r.winCoins || 0);   // + race win coins (by AI difficulty)
   if (r.beatRival) s.rivalWins = (s.rivalWins || 0) + 1;
   if (r.dotd) s.dotd = (s.dotd || 0) + 1;
   if (bonus) { u.coins += bonus; s.coinsEarned = (s.coinsEarned || 0) + bonus; }
@@ -1049,8 +1062,8 @@ function passRewards(T = monthTheme()) {
 }
 function passState(u) {
   const m = monthKey();
-  if (!u.pass || u.pass.m !== m) u.pass = { m, xp: 0, prem: false, tier: 0 };
-  return u.pass;
+  if (!u.bp || u.bp.m !== m) u.bp = { m, xp: 0, prem: false, tier: 0 };     // (u.bp, NOT u.pass: that's the password)
+  return u.bp;
 }
 function grant(u, rw, why) {
   if (rw.coins) { u.coins += rw.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + rw.coins; return `+${rw.coins} coins`; }
@@ -1339,9 +1352,10 @@ function disable2fa(u, password, code) {
 }
 function verify2fa(u, code) { return totpCheck(u, code) || useBackupCode(u, code); }
 async function changePassword(u, oldPw, newPw) {
-  if (!u.pass || !passOk(u, oldPw)) return { error: "Your current password is wrong" };
+  const lost = u.pwLost && !u.pass;              // wiped by the old bug: being signed in is the proof
+  if (!lost && (!u.pass || !passOk(u, oldPw))) return { error: "Your current password is wrong" };
   await checkPassword(newPw, u.name);
-  u.pass = hashPass(newPw); saveSoon(u);
+  u.pass = hashPass(newPw); delete u.pwLost; saveSoon(u);
   return { ok: true };
 }
 // forgot password: only possible with 2FA (a backup code or an authenticator code) since there's no email
@@ -1349,7 +1363,7 @@ async function resetPassword(username, code, newPw) {
   const u = USER_RE.test(String(username || "")) ? await getUser("u_" + String(username).toLowerCase()) : null;
   if (!u || !u.totp?.on || !verify2fa(u, code)) throw new Error("That username and code don't match");
   await checkPassword(newPw, u.name);
-  u.pass = hashPass(newPw);
+  u.pass = hashPass(newPw); delete u.pwLost;
   dropAllSessions(u);
   return u;
 }
@@ -1385,7 +1399,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -1443,6 +1457,7 @@ async function unstash(key) {     // read it once (and forget it)
   try { const o = JSON.parse(fs.readFileSync(tmpFile(key), "utf8")); fs.unlinkSync(tmpFile(key)); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
 }
 module.exports = {
+  fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
