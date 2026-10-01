@@ -90,6 +90,7 @@
       <div class="totw-tx"><small>🌟 Track of the week</small><b id="totwName">Loading...</b><span id="totwSub"></span></div>
       <div class="totw-btns"><button type="button" class="btn go" id="totwRace">Race it</button><button type="button" class="btn" id="totwBoard">🏆 Times</button></div>
     </div>
+    <div class="event-card hidden" id="eventCard"><span class="ev-ic" id="eventIc">🎉</span><div class="ev-tx"><small id="eventWhen">Weekend event</small><b id="eventName"></b><span id="eventDesc"></span></div></div>
     <div class="menu-row2"><button type="button" class="btn" id="replaysBtn" title="Replays you saved, or load one from a code">🎬 Replays</button><button type="button" class="btn" data-hub="pass" title="This month's season pass">🎟️ Season pass</button></div>
     <div class="sep-or">or play with friends</div>
     <div class="row">
@@ -161,6 +162,7 @@
           <label class="f wide">Teams <select id="sTeams"><option value="on">On: team up, teams score points</option><option value="off">Off: everyone for themselves</option></select></label>
           <label class="f wide">Championship length <select id="sSeason"><option value="0">Endless (never ends)</option><option value="3">3 races</option><option value="5">5 races</option><option value="8">8 races</option><option value="10">10 races</option></select></label>
           <label class="f wide">XP per second <span class="range-row"><input type="range" id="sXp" min="10" max="50" step="5" value="10" aria-label="XP per second"><output id="sXpOut" for="sXp">10 XP/s</output></span></label>
+          <label class="f wide">Grid order <select id="sRevGrid"><option value="off">Normal</option><option value="on">Reverse grid: from race 2, the championship leaders start at the back (with qualifying off)</option></select></label>
           <label class="f wide">DRS <select id="sDrs"><option value="on">On: within 1s of the car ahead at a DRS zone = +7% top speed (from lap 2)</option><option value="off">Off</option></select></label>
           <label class="f wide">Safety car <select id="sSafety"><option value="off">Off</option><option value="on">On: a big crash brings out the safety car and bunches everyone up</option></select></label>
           <label class="f wide">Team colors <select id="sTeamColors"><option value="off">Off: everyone keeps their paint</option><option value="on">On: teammates share paint</option></select></label>
@@ -270,6 +272,7 @@
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
         <button type="button" class="tool" id="f1Btn" title="Race a real circuit (F1 tracks, the Nordschleife, ovals)"><span>🏆</span>Real tracks</button>
         <button type="button" class="tool" id="presetBtn" title="Save this track, or load one you saved"><span>💾</span>My tracks</button>
+        <button type="button" class="tool" id="commBtn" title="Tracks other players shared: most played, top rated, newest"><span>🌍</span>Community</button>
         <button type="button" class="tool" id="totwBtn" title="Load this week's featured track (it has its own leaderboard)"><span>🌟</span>Track of the week</button>
         <button type="button" class="tool" id="shareTrackBtn" title="Get a short code anyone can use to load this track"><span>🔗</span>Share code</button>
         <button type="button" class="tool" id="loadCodeBtn" title="Load a track someone shared with you"><span>📥</span>Load code</button>
@@ -421,6 +424,25 @@
 <div class="invite-box hidden" id="inviteBox" role="alert"><span id="inviteText"></span><button type="button" class="btn go" id="inviteJoin">Join</button><button type="button" class="btn ghost" id="inviteNo">Not now</button></div>
 
 <!-- ============ Saved tracks ============ -->
+<div id="commBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="commTitle">
+  <div class="preset-card panel">
+    <header class="hub-head"><h2 id="commTitle">🌍 Community tracks</h2><button type="button" class="x" id="commClose" aria-label="Close">✕</button></header>
+    <nav class="hub-tabs" role="tablist" id="commTabs">
+      <button type="button" role="tab" data-cs="popular" aria-selected="true">🔥 Most played</button>
+      <button type="button" role="tab" data-cs="top" aria-selected="false">👍 Top rated</button>
+      <button type="button" role="tab" data-cs="new" aria-selected="false">🆕 Newest</button>
+    </nav>
+    <p class="preset-note" id="commNote">Share any track (🔗 Share code) to add it here. Signed-in players can rate tracks.</p>
+    <div class="preset-grid" id="commGrid"></div>
+  </div>
+</div>
+<div id="askBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+  <div class="preset-card panel ask-card">
+    <header class="hub-head"><h2 id="askTitle"></h2></header>
+    <p id="askText"></p>
+    <div class="sec-row"><button type="button" class="btn go" id="askYes"></button><button type="button" class="btn" id="askNo">Cancel</button></div>
+  </div>
+</div>
 <div id="newsBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="newsTitle">
   <div class="preset-card panel news-card">
     <header class="hub-head"><h2 id="newsTitle">📰 What's new</h2><button type="button" class="x" id="newsClose" aria-label="Close">✕</button></header>
@@ -538,6 +560,7 @@
     <div class="big-code" id="codeShow"></div>
     <form class="preset-save hidden" id="codeForm"><input type="text" id="codeInput" maxlength="8" placeholder="6-letter code" aria-label="Track code" autocomplete="off" spellcheck="false"><button type="submit" class="btn go">Load track</button></form>
     <div class="sec-row" id="codeBtns"><button type="button" class="btn go" id="codeCopy">📋 Copy code</button></div>
+    <form class="preset-save hidden" id="commPub"><input type="text" id="commPubName" maxlength="30" placeholder="Track name" aria-label="Track name for the community list"><button type="submit" class="btn">🌍 Add to community</button></form>
     <p class="sec-msg" id="codeMsg" role="status"></p>
   </div>
 </div>

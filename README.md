@@ -45,6 +45,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Replay**: the last 30 seconds of every race can be watched again, saved or shared from the results screen.
 - **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
 
+- **Prestige** (season pass): at tier 30, "Prestige" resets the pass to tier 0 (premium stays) for `PRESTIGE_COINS`
+  (1,000) and a 🎖️N badge (`u.prestige`, lifetime count) shown before your name in rooms and races (`extras.prest`).
+  The tiers pay out again on the way back up (items you own turn into coins, as always).
+- **Weekend events** (`EVENTS` in server.js): every Saturday + Sunday (UTC) one is on, a different one each week:
+  Rain weekend, Street fight (x2 coins on street circuits / City / Neon), Double pass XP, Fog weekend, Double win
+  coins, Night fever (x2 coins on Night / Neon / City). Never in ranked. The menu shows the live one or the next one.
+  `FORCE_EVENT=<id>` in the Environment turns one on right now for testing (remove it after).
+- **Reverse grid** (room setting, off by default): from race 2 of a championship, fewest points at the front and the
+  leader at the back. Only with qualifying off. It overrides host grid spots.
+- **Community tracks** (🌍 Community in the track tools): after 🔗 Share code, signed-in players can "Add to community"
+  with a name (max `COMM_PER_USER` 15 each, `COMM_MAX` 300 total, the weakest old ones drop off). Sort by most played
+  (each finished race on a listed track = 1 play), top rated (👍 minus 👎, one vote per account, not your own) or
+  newest. Owners can remove theirs. Stored as one small document (`tb:comm:tracks` in Upstash, or
+  `data/community.json`).
+- **Sign out my other device**: when the one-account rule blocks you, a dialog offers to sign the other device out
+  (`account:kickOther`: removes it from its room, ends that device's session, and tells it why).
 - **Race win coins**: first place pays `WIN_COINS` by AI level (Easy 50, Normal 100, Hard 150, Extreme 500,
   ranked Overdrive 500), but only with at least `WIN_MIN_AI` (7) real AI drivers in the race (`c.isAi`; players who
   left don't count). A race with only real people pays no win coins, so friends can't farm wins off each other.

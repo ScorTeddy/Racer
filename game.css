@@ -788,7 +788,7 @@
   .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
-  #newsBox, #presetBox, #setPresetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  #commBox, #askBox, #newsBox, #presetBox, #setPresetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .preset-card { width: min(46rem, 100%); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; gap: 0.7rem; padding: 1rem 1.2rem; }
   .preset-save { display: flex; gap: 0.5rem; } .preset-save input { flex: 1; min-width: 0; }
   .preset-note { margin: 0; color: var(--soft); font-size: 0.82rem; }
@@ -1093,3 +1093,16 @@ body.rm .card.rare, body.rm .garage[class*="aura-"] { animation: none; }
 .news-item h3 small { color: var(--soft); font-weight: 600; margin-left: 0.4rem; font-size: 0.75rem; }
 .news-item ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
 .news-item.old { opacity: 0.6; }
+
+/* Weekend event card (menu) */
+.event-card { display: flex; gap: 0.7rem; align-items: center; padding: 0.6rem 0.8rem; border-radius: 0.9rem; background: linear-gradient(120deg, rgba(255,204,31,0.16), rgba(120,90,255,0.16)); border: 1.5px solid var(--edge); }
+.event-card.live { border-color: #ffcc1f; }
+.event-card .ev-ic { font-size: 1.8rem; }
+.event-card .ev-tx { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.event-card small { color: var(--soft); font-size: 0.75rem; font-weight: 700; }
+.event-card span { font-size: 0.82rem; color: var(--soft); }
+/* Community tracks */
+.comm-stats { display: flex; gap: 0.6rem; font-size: 0.78rem; color: var(--soft); }
+.preset .row .btn.on { outline: 2px solid #3ee06a; }
+.ask-card { width: min(28rem, 100%); }
+.prest-box { display: flex; align-items: center; gap: 0.8rem; justify-content: space-between; flex-wrap: wrap; padding: 0.7rem 0.9rem; border-radius: 0.9rem; background: rgba(255,204,31,0.12); border: 1.5px solid #ffcc1f; }

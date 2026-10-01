@@ -1198,6 +1198,7 @@
   }
   function renderMenuInfo() {
     const m = S.menu; if (!m) return;
+    renderEvent(m.event);
     const t = $("onlineText"); t.textContent = "";
     const b1 = document.createElement("b"); b1.textContent = m.online;
     const b2 = document.createElement("b"); b2.textContent = m.racing;
@@ -1557,7 +1558,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -1600,7 +1601,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs", sRevGrid: "reverseGrid" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -1734,7 +1735,7 @@
       const cv = document.createElement("canvas"); cv.width = 112; cv.height = 64;
       drawCar(cv.getContext("2d"), p, 56, 32, 0, 1.9);
       if (p.id === S.me) li.classList.add("me");
-      const n = document.createElement("span"); n.className = "nm"; n.textContent = `#${p.number} ${p.name}`;
+      const n = document.createElement("span"); n.className = "nm"; n.textContent = `#${p.number} ${p.extras?.prest ? p.extras.prest + " " : ""}${p.extras?.badge ? p.extras.badge + " " : ""}${p.name}`;
       const tm = document.createElement("span"); tm.className = "team"; tm.textContent = p.team || ""; n.appendChild(tm);
       const t = document.createElement("span"); t.className = "tg"; t.innerHTML = "";
       if (p.id === l.hostId) { const cr = document.createElement("span"); cr.className = "crown"; cr.textContent = "👑 host"; t.append(cr, document.createElement("br")); }
@@ -1779,7 +1780,7 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" ? (s[key] ? "on" : "off") : String(s[key]);
+      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" ? (s[key] ? "on" : "off") : String(s[key]);
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
@@ -2411,7 +2412,7 @@
   // ---- setting presets: every race setting in one go (saved like tracks: this browser + your account) ----
   const SP = { list: (() => { try { return JSON.parse(localStorage.getItem("tb-setpresets") || "[]"); } catch (e) { return []; } })() };
   const storeSP = (list) => { try { localStorage.setItem("tb-setpresets", JSON.stringify(list)); } catch (e) {} };
-  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar", "drs"];
+  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar", "drs", "reverseGrid"];
   socket.on("setPresets", (list) => {
     if (!list) return;
     const merged = mergePresets(SP.list, list);
@@ -4077,7 +4078,7 @@
       const showName = (settings.names === "all" || (settings.names === "mine" && c.id === S.myCar)) && (!PH.on || PH.names);
       if (showName) {
         const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
-        const label = (pos ? `P${pos} ` : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
+        const label = (pos ? `P${pos} ` : "") + (c.extras?.prest ? c.extras.prest + " " : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
         ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
         ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
@@ -4438,6 +4439,9 @@
     $("codeShow").textContent = load ? "" : d.code; $("codeShow").classList.toggle("hidden", load);
     $("codeForm").classList.toggle("hidden", !load); $("codeBtns").classList.toggle("hidden", load);
     if (load) { $("codeInput").value = ""; setTimeout(() => $("codeInput").focus(), 50); }
+    const pub = !load && d.kind === "track";
+    $("commPub").classList.toggle("hidden", !pub);
+    if (pub) $("commPubName").value = d.name || S.track?.name || "";
   }
   $("codeClose").addEventListener("click", () => $("codeBox").classList.add("hidden"));
   $("codeBox").addEventListener("click", (e) => { if (e.target.id === "codeBox") $("codeBox").classList.add("hidden"); });
@@ -4486,6 +4490,16 @@
     if (P.prem) head.appendChild(el("span", "pass-prem on", "⭐ PREMIUM"));
     else { const b = el("button", "btn go", `⭐ Unlock premium · 🪙 ${P.price}`); b.type = "button"; b.disabled = u.coins < P.price; b.title = u.coins < P.price ? `You need ${P.price - u.coins} more coins` : ""; b.addEventListener("click", () => { if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = `Spend 🪙 ${P.price}? Click again`; setTimeout(() => { b.dataset.sure = ""; b.textContent = `⭐ Unlock premium · 🪙 ${P.price}`; }, 3000); return; } socket.emit("pass:buy"); }); head.appendChild(b); }
     box.appendChild(head);
+    if (P.tier >= P.tiers || P.prestigeTotal) {
+      const pb = el("section", "prest-box");
+      pb.appendChild(el("div", "", P.prestigeTotal ? `🎖️ Prestige ${P.prestigeTotal}${P.prestige ? ` (${P.prestige} this month)` : ""}` : "🎖️ Prestige"));
+      if (P.tier >= P.tiers) {
+        const b = el("button", "btn go", `Prestige: reset for 🪙 ${P.prestigeCoins} + a badge`); b.type = "button";
+        b.addEventListener("click", () => askBox("🎖️ Prestige?", `Your pass goes back to tier 0 (premium stays) and you get ${P.prestigeCoins} coins plus a 🎖️ prestige badge next to your name. The tiers pay out again on the way back up.`, "Prestige!", () => socket.emit("pass:prestige")));
+        pb.appendChild(b);
+      } else pb.appendChild(el("small", "", "Max the pass again to prestige once more."));
+      box.appendChild(pb);
+    }
     box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). The free track pays coins, a themed item and a crate. Premium adds this month's items and themed crates, which you can't get anywhere else."));
     // crates you own
     const crates = Object.entries(u.crates || {}).filter(([, n]) => n > 0);
@@ -4628,6 +4642,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-03", title: "Prestige, community tracks and weekend events", items: [
+      "🎖️ Prestige: max the season pass, then reset it for 1,000 coins and a prestige badge next to your name. The tiers pay out again.",
+      "🌍 Community tracks: share a track and add it to the community list. Browse the most played, top rated and newest, 👍 or 👎 them, and load them in your room.",
+      "🎉 Weekend events: every Saturday and Sunday something special is on (rain weekends, double coins on street circuits, double pass XP and more). See the menu.",
+      "🔄 Reverse grid (room setting): from race 2 of a championship, the leaders start at the back.",
+      "📱 Account busy on another device? You can sign that device out right from the message.",
+    ] },
     { v: "2026-10-02", title: "Fixes", items: [
       "🔑 Password wiped by the old bug? Sign in on a device you played on before and type the new password you want. It becomes your password.",
       "🖱️ Your mouse wheel now scrolls sideways on rows that only go sideways (profile tabs, season pass, track tools).",
@@ -4678,6 +4699,88 @@
   $("newsClose").addEventListener("click", closeNews); $("newsOk").addEventListener("click", closeNews);
   $("newsBox").addEventListener("click", (e) => { if (e.target === $("newsBox")) closeNews(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("newsBox").classList.contains("hidden")) closeNews(); });
+
+  // ======================= Small yes/no dialog =======================
+  let askYesFn = null;
+  function askBox(title, text, yes, fn) {
+    $("askTitle").textContent = title; $("askText").textContent = text; $("askYes").textContent = yes; askYesFn = fn;
+    $("askBox").classList.remove("hidden"); $("askYes").focus();
+  }
+  const askClose = () => { $("askBox").classList.add("hidden"); askYesFn = null; };
+  $("askYes").addEventListener("click", () => { const f = askYesFn; askClose(); if (f) f(); });
+  $("askNo").addEventListener("click", askClose);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("askBox").classList.contains("hidden")) askClose(); });
+
+  // ======================= Your account is in a match on another device =======================
+  socket.on("accountBusy", (d) => askBox("📱 Playing somewhere else?", `Your account is in a match on another device or tab (room ${d?.code || "?"}). Sign that one out so you can play here?`, "Sign out my other device", () => socket.emit("account:kickOther")));
+  socket.on("kickedOther", (d) => { menuErr.textContent = ""; popup(d?.n ? "✅ Your other device was signed out. Press play again!" : "Your other device had already left. Press play again!"); });
+  socket.on("signedOutElsewhere", () => {
+    S.idleKicked = true; S.code = null; A.user = null;
+    try { sessionStorage.removeItem("tb-rejoin"); localStorage.removeItem("tb-token"); } catch (e) {}
+    $("netVeil").classList.remove("hidden");
+    $("netMsg").textContent = "📱 You were signed out here because your account started playing on another device.";
+    const sm = $("netVeil").querySelector("small"); if (sm) sm.textContent = "Reload the page to play here again.";
+    $("netVeil").querySelector(".spinner")?.classList.add("hidden");
+  });
+
+  // ======================= Weekend event (menu card) =======================
+  function renderEvent(ev) {
+    const card = $("eventCard"); if (!ev) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden"); card.classList.toggle("live", !!ev.live);
+    $("eventIc").textContent = ev.icon; $("eventName").textContent = ev.name; $("eventDesc").textContent = ev.desc;
+    const hrs = Math.max(1, Math.round(((ev.live ? ev.ends : ev.starts) - Date.now()) / 3600000));
+    const left = hrs >= 48 ? `${Math.round(hrs / 24)} days` : `${hrs} hour${hrs === 1 ? "" : "s"}`;
+    $("eventWhen").textContent = ev.live ? `🎉 Weekend event · ON NOW · ends in ${left}` : `Next weekend event · starts in ${left}`;
+  }
+
+  // ======================= Community tracks =======================
+  let commSort = "popular";
+  function openComm() { $("commBox").classList.remove("hidden"); $("commGrid").textContent = ""; $("commGrid").appendChild(el("p", "preset-note", "Loading...")); socket.emit("community:list", { sort: commSort }); }
+  function commCard(t) {
+    const card = el("div", "preset"); card.dataset.code = t.code;
+    const cv = document.createElement("canvas"); cv.width = 200; cv.height = 120;
+    const c = cv.getContext("2d"); c.strokeStyle = "#ffcc1f"; c.lineWidth = 3; c.lineJoin = "round"; c.beginPath();
+    t.prev.forEach(([x, y], i) => { const X = 50 + x, Y = 10 + y; i ? c.lineTo(X, Y) : c.moveTo(X, Y); }); c.closePath(); c.stroke();
+    card.append(cv, el("b", "", t.name), el("small", "", `by ${t.by} · ${t.map} map · code ${t.code}`));
+    const st = el("div", "comm-stats"); st.append(el("span", "", `▶ ${t.plays} race${t.plays === 1 ? "" : "s"}`), el("span", "", `👍 ${t.up}`), el("span", "", `👎 ${t.down}`)); card.appendChild(st);
+    const row = el("div", "row");
+    const load = el("button", "btn go", "Load"); load.type = "button";
+    load.disabled = !S.host || S.lobby?.phase !== "lobby"; load.title = load.disabled ? "Only the host can load a track, in the lobby" : "";
+    load.addEventListener("click", () => { socket.emit("track:load", t.code); $("commBox").classList.add("hidden"); boardHint(`Loading "${t.name}"...`, false); });
+    row.appendChild(load);
+    if (t.mine) {
+      const rm = el("button", "btn", "Remove"); rm.type = "button";
+      rm.addEventListener("click", () => askBox("Remove it?", `Take "${t.name}" out of the community list? (Its share code keeps working.)`, "Remove", () => { socket.emit("community:remove", { code: t.code }); setTimeout(() => socket.emit("community:list", { sort: commSort }), 400); }));
+      row.appendChild(rm);
+    } else for (const [v, ic] of [[1, "👍"], [-1, "👎"]]) {
+      const b = el("button", "btn" + (t.myVote === v ? " on" : ""), ic); b.type = "button"; b.setAttribute("aria-pressed", String(t.myVote === v));
+      b.title = A.user ? (v > 0 ? "Good track" : "Not for me") : "Sign in to rate tracks";
+      b.addEventListener("click", () => socket.emit("community:vote", { code: t.code, v: t.myVote === v ? 0 : v }));
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+    return card;
+  }
+  socket.on("community", (d) => {
+    const g = $("commGrid"); g.textContent = "";
+    if (!d.list.length) g.appendChild(el("p", "preset-note", "No community tracks yet. Share a track (🔗 Share code) and add it!"));
+    for (const t of d.list) g.appendChild(commCard(t));
+  });
+  socket.on("communityVoted", (t) => { const old = $("commGrid").querySelector(`[data-code="${t.code}"]`); if (old) old.replaceWith(commCard(t)); });
+  socket.on("communityMsg", (m) => { if (m.error) { if (!$("codeBox").classList.contains("hidden")) $("codeMsg").textContent = m.error; else popup(m.error, true); } else { $("codeMsg").textContent = m.ok; $("commPub").classList.add("hidden"); popup(m.ok); } });
+  document.querySelectorAll("[data-cs]").forEach((b) => b.addEventListener("click", () => {
+    commSort = b.dataset.cs; document.querySelectorAll("[data-cs]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    socket.emit("community:list", { sort: commSort });
+  }));
+  $("commBtn").addEventListener("click", openComm);
+  $("commClose").addEventListener("click", () => $("commBox").classList.add("hidden"));
+  $("commBox").addEventListener("click", (e) => { if (e.target.id === "commBox") $("commBox").classList.add("hidden"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("commBox").classList.contains("hidden")) $("commBox").classList.add("hidden"); });
+  $("commPub").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!A.user) { $("codeMsg").textContent = "Sign in to add tracks to the community list"; return; }
+    socket.emit("community:publish", { code: $("codeShow").textContent, name: $("commPubName").value.trim() });
+  });
 
   // ======================= Replays: save, share, load =======================
   const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name", "drs"];

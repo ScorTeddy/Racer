@@ -383,3 +383,69 @@ test("idle for an hour in a room: warned, then removed and disconnected", { time
   await got("idleKicked"); await gone;
   assert.ok(!game.rooms.get(j.code)?.players.has(j.you), "removed from the room");
 });
+
+test("weekend events: on Saturdays and Sundays, change the weather and pay double", async () => {
+  const sat = Date.UTC(2026, 9, 3, 12), wed = Date.UTC(2026, 9, 7, 12);    // Sat 3 Oct, Wed 7 Oct 2026
+  assert.ok(game.eventInfo(sat).live, "on at the weekend");
+  assert.ok(!game.eventInfo(wed).live, "off midweek (shows the next one)");
+  assert.ok(game.eventInfo(wed).starts > wed);
+  const r = new game.Room("EVENTS", false); r.setRandomTrack("normal", "regular"); r.settings.weather = "sunny";
+  process.env.FORCE_EVENT = "rain";
+  try {
+    assert.equal(r.weatherSetting(), "rain", "rain weekend: rain");
+    r.ranked = true; assert.equal(r.weatherSetting(), "sunny", "ranked never changes"); r.ranked = false;
+    process.env.FORCE_EVENT = "wins";
+    const seen = [], real = accounts.recordRace; accounts.recordRace = (u, x) => { seen.push(x); return []; };
+    try {
+      const { u } = await accounts.signUp("EventWinner", "Turbo-Fox-Lane-42");
+      const me = { id: "s-ev", uid: u.id, name: "Me" }; r.players.set(me.id, me); r.settings.aiLevel = "easy";
+      const order = [{ id: 99, owner: me.id, finished: true, lapsDone: 3, pits: 0, bestLap: 30 }];
+      for (let i = 0; i < 7; i++) order.push({ id: i, isAi: true, finished: true, lapsDone: 3, pits: 0, bestLap: 30 });
+      r.recordStats(order, order.map(() => ({ pts: 0 })), null); await new Promise((ok) => setTimeout(ok, 50));
+      assert.equal(seen[0].winCoins, 100, "double win coins: 50 x 2");
+    } finally { accounts.recordRace = real; }
+  } finally { delete process.env.FORCE_EVENT; }
+});
+
+test("reverse grid: the championship leader starts at the back", { timeout: 60000 }, () => {
+  const r = new game.Room("REVGRD", false); r.setRandomTrack("normal", "regular");
+  Object.assign(r.settings, { ai: 6, quali: 0, reverseGrid: true }); r.ensureRoster(6);
+  r.champ = { [r.roster[0].name]: 50, [r.roster[1].name]: 30, [r.roster[2].name]: 10 }; r.raceNo = 1;
+  r.startRace();
+  const byGrid = r.cars.slice().sort((a, b) => a.rs.grid - b.rs.grid).map((c) => c.name);
+  assert.equal(byGrid[byGrid.length - 1], r.roster[0].name, "leader last");
+  assert.equal(byGrid[byGrid.length - 2], r.roster[1].name, "second place second to last");
+});
+
+test("prestige: maxed pass resets for coins and a badge", async () => {
+  const { u } = await accounts.signUp("Prestiger", "Turbo-Fox-Lane-42");
+  assert.ok(accounts.prestige(u).error, "not before the pass is maxed");
+  accounts.passXp(u, 999999);
+  const coins = u.coins, r = accounts.prestige(u);
+  assert.ok(r.ok); assert.equal(u.coins, coins + 1000);
+  const P = accounts.publicUser(u).pass; assert.equal(P.tier, 0); assert.equal(P.prestigeTotal, 1);
+  assert.equal(accounts.extrasOf(u).prest, "🎖️1");
+});
+
+test("community tracks: list a shared track, rate it, and the busy-account sign-out", { timeout: 40000 }, async () => {
+  await accounts.signUp("CommMaker", "Turbo-Fox-Lane-42"); await accounts.signUp("CommRater", "Turbo-Fox-Lane-42");
+  const open = async (name) => { const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok)); s.emit("auth:login", { username: name, password: "Turbo-Fox-Lane-42" }); await new Promise((ok) => s.once("account", ok)); return s; };
+  const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
+  const a = await open("CommMaker"), b = await open("CommRater");
+  a.emit("create", { name: "Maker" }); const j = await got(a, "joined");
+  game.rooms.get(j.code).setRandomTrack("normal", "regular");
+  a.emit("track:share"); const sc = await got(a, "shareCode");
+  a.emit("community:publish", { code: sc.code, name: "Test Loop" }); assert.ok((await got(a, "communityMsg")).ok);
+  a.emit("community:publish", { code: sc.code, name: "Again" }); assert.ok((await got(a, "communityMsg")).error, "no double listing");
+  a.emit("community:vote", { code: sc.code, v: 1 }); assert.match((await got(a, "communityMsg")).error, /own track/);
+  b.emit("community:vote", { code: sc.code, v: 1 }); assert.equal((await got(b, "communityVoted")).up, 1);
+  b.emit("community:list", { sort: "top" }); const L = await got(b, "community");
+  const t = L.list.find((x) => x.code === sc.code); assert.ok(t && t.name === "Test Loop" && t.myVote === 1 && t.prev.length > 5);
+  // the same account on a second device: blocked, then "sign out my other device"
+  const a2 = await open("CommMaker");
+  a2.emit("create", { name: "Maker 2" }); await got(a2, "accountBusy");
+  const out = got(a, "signedOutElsewhere");
+  a2.emit("account:kickOther"); assert.equal((await got(a2, "kickedOther")).n, 1); await out;
+  a2.emit("create", { name: "Maker 2" }); assert.ok((await got(a2, "joined")).code, "plays after signing the other one out");
+  for (const s of [a2, b]) s.disconnect();
+});

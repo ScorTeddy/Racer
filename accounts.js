@@ -758,6 +758,7 @@ function extrasOf(u) {
   const out = {};
   for (const [slot, id] of Object.entries(u.equipped || {})) { const it = STORE_BY_ID.get(id); if (it && it.slot === slot && u.owned.includes(id)) out[slot] = it.look; }
   for (const [slot, id] of Object.entries(u.equipped || {})) { const it = STORE_BY_ID.get(id); if (it?.onlyBody && out.body !== it.onlyBody) delete out[slot]; }
+  if (u.prestige > 0) out.prest = "🎖️" + Math.min(u.prestige, 999);          // prestige badge
   return Object.keys(out).length ? out : null;
 }
 function buy(u, id) {
@@ -797,7 +798,7 @@ function recordRace(u, r) {
   if (r.pos === 1) s.wins++;
   if (r.pos <= 3) s.podiums++;
   // bonuses: beat your rival, Driver of the Day (most places gained), winning (with 7+ AI)
-  const bonus = (r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0) + (r.winCoins || 0);   // + race win coins (by AI difficulty)
+  const bonus = Math.round(((r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0)) * (r.coinMult || 1)) + (r.winCoins || 0);   // (win coins already include event bonuses)   // + race win coins (by AI difficulty)
   if (r.beatRival) s.rivalWins = (s.rivalWins || 0) + 1;
   if (r.dotd) s.dotd = (s.dotd || 0) + 1;
   if (bonus) { u.coins += bonus; s.coinsEarned = (s.coinsEarned || 0) + bonus; }
@@ -842,7 +843,7 @@ function recordRace(u, r) {
   const got = checkAch(u, r);
   got.push(...weeklyRace(u, r));
   got.push(...dailyRace(u, r));
-  got.push(...passXp(u, raceXp(r)));
+  got.push(...passXp(u, raceXp(r) * (r.passMult || 1)));
   updateBoards(u, r);
   saveSoon(u);
   return got;
@@ -1122,7 +1123,19 @@ function openCrate(u, key) {
 }
 function passPublic(u) {
   const P = passState(u), T = monthTheme();
-  return { month: P.m, ends: monthEnds(), theme: { key: T.key, name: T.name, icon: T.icon, c: T.c }, xp: P.xp, tier: P.tier, prem: P.prem, tiers: PASS_TIERS, perTier: PASS_TIER_XP, price: PASS_PRICE, rewards: passRewards(T) };
+  return { month: P.m, ends: monthEnds(), theme: { key: T.key, name: T.name, icon: T.icon, c: T.c }, xp: P.xp, tier: P.tier, prem: P.prem, tiers: PASS_TIERS, perTier: PASS_TIER_XP, price: PASS_PRICE, rewards: passRewards(T),
+    prestige: P.prestige || 0, prestigeTotal: u.prestige || 0, prestigeCoins: PRESTIGE_COINS };
+}
+// Prestige: maxed the pass? Reset it to tier 0 (premium stays) for PRESTIGE_COINS and a prestige badge (🎖️ + how
+// many times you've done it, ever) shown next to your name. The tiers pay out again on the way back up.
+const PRESTIGE_COINS = 1000;
+function prestige(u) {
+  const P = passState(u);
+  if (P.tier < PASS_TIERS) return { error: `Reach tier ${PASS_TIERS} of the season pass first` };
+  P.xp = 0; P.tier = 0; P.prestige = (P.prestige || 0) + 1; u.prestige = (u.prestige || 0) + 1;
+  u.coins += PRESTIGE_COINS; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + PRESTIGE_COINS;
+  saveSoon(u);
+  return { ok: true, msg: `🎖️ Prestige ${u.prestige}! +${PRESTIGE_COINS} coins, and your badge shows next to your name. The pass starts again from tier 1.` };
 }
 
 // ======================= Ranked =======================
@@ -1466,8 +1479,20 @@ async function unstash(key) {     // read it once (and forget it)
   if (UP_URL) { const v = await redis(["GET", "tb:tmp:" + key]); if (v) redis(["DEL", "tb:tmp:" + key]).catch(() => {}); return v || null; }
   try { const o = JSON.parse(fs.readFileSync(tmpFile(key), "utf8")); fs.unlinkSync(tmpFile(key)); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
 }
+// ======================= Community tracks (one small JSON document) =======================
+const COMM_FILE = path.join(DATA_DIR, "community.json");
+async function commLoad() {
+  if (UP_URL) { const v = await redis(["GET", "tb:comm:tracks"]); return v ? JSON.parse(v, noProto) : {}; }
+  try { return JSON.parse(fs.readFileSync(COMM_FILE, "utf8"), noProto); } catch (e) { return {}; }
+}
+async function commSave(obj) {
+  const v = JSON.stringify(obj);
+  if (UP_URL) return redis(["SET", "tb:comm:tracks", v]);
+  fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(COMM_FILE, v, { mode: 0o600 });
+}
 async function setPasswordByOwner(u, pw) { await checkPassword(pw, u.name); u.pass = hashPass(pw); delete u.pwLost; saveSoon(u); }
 module.exports = {
+  prestige, commLoad, commSave,
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
