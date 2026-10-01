@@ -71,6 +71,8 @@
   const settings = {};
   for (const x of SETTINGS) settings[x.key] = x.def;
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
+  // played here before this page load? (checked before anything gets saved, for the "What's new" popup)
+  let PLAYED_BEFORE = false; try { PLAYED_BEFORE = !!(localStorage.getItem("tb-settings") || localStorage.getItem("tb-profile") || localStorage.getItem("tb-news")); } catch (e) {}
   // old Off/Low/Med/High sound settings -> the new sliders
   { const OLD = { off: 0, low: 25, med: 55, high: 100 }; if (typeof settings.sound === "string" && OLD[settings.sound] !== undefined) { settings.vFx = OLD[settings.sound]; delete settings.sound; } if (typeof settings.music === "string") { settings.vMusic = settings.music === "off" ? 0 : OLD[settings.music] ?? 45; delete settings.music; } if (!["auto", "shuffle", "race"].includes(settings.track)) settings.track = "auto"; }
   const fxVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vFx) / 100);
@@ -1230,7 +1232,7 @@
       : S.screen === "results" ? `Results · ${T}` : T;
   }
   function show(screen) {
-    S.screen = screen; setTimeout(setTitle, 0);
+    S.screen = screen; setTimeout(setTitle, 0); setTimeout(maybeNews, 600);
     $("menu").classList.toggle("hidden", screen !== "menu");
     $("lobby").classList.toggle("hidden", screen !== "lobby");
     document.body.classList.toggle("in-lobby", screen === "lobby");
@@ -1330,6 +1332,7 @@
     if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
     if (r.error) boardHint(r.error, true);
     else if (r.moved) boardHint("Start/finish line moved!", false);
+    else if (r.drs) boardHint(r.drs === "cleared" ? "DRS zones removed: no DRS on this track." : r.drs === "real" ? `Real DRS zones back (${r.zones}).` : r.drs === "auto" ? `DRS put on the longest straights (${r.zones} zone${r.zones === 1 ? "" : "s"}).` : r.drs === "set" ? `DRS zones loaded (${r.zones}).` : `DRS zone added! This track has ${r.zones} now.`, false);
     else if (r.reversed !== undefined) boardHint(r.reversed ? "Track reversed: racing the other way!" : "Back to the original direction.", false);
     else if (r.f1) boardHint(`${r.f1}! Real layout, sized by its real length. Reverse or move the start line if you like.`, false);
     else if (r.random) boardHint(`Random track: ${r.bridges || 0} bridge${r.bridges === 1 ? "" : "s"}${r.maxLevel >= 2 ? ", with a DOUBLE ramp!" : ""} Hit Random again for another.`, false);
@@ -1491,10 +1494,10 @@
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
     for (const a of st.cars) {
-      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost] = a;
+      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost });
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: !!drs });
     }
     lapDelta();
     if (S.tutorial) {            // tutorial hints that depend on your car
@@ -1528,7 +1531,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -1571,7 +1574,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -1750,7 +1753,7 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" ? (s[key] ? "on" : "off") : String(s[key]);
+      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" ? (s[key] ? "on" : "off") : String(s[key]);
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
@@ -1976,6 +1979,17 @@
       arrows(false);
       for (const br of G.bridges) drawBridge(c, T, G, th, br);
       arrows(true);
+      // DRS zones: a green band over the road, and "DRS" where each one starts
+      (T.drs || []).forEach((z, zi) => {
+        c.beginPath();
+        for (let k = 0; k <= z.len; k++) { const p = T.pts[(z.from + k) % T.N]; k ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y); }
+        c.lineCap = "butt"; c.lineJoin = "round"; c.lineWidth = hwAt(T, z.from % T.N) * 1.3; c.strokeStyle = "rgba(62,224,106,0.42)"; c.stroke();
+        const p = T.pts[z.from % T.N];
+        c.fillStyle = "#3ee06a"; c.font = `700 ${(11 / B.s) * T.scale}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.textBaseline = "bottom";
+        c.lineWidth = 4 * T.scale / B.s / 2; c.strokeStyle = "rgba(0,0,0,0.6)";
+        const lab = `DRS ${zi + 1}`, y = p.y + hwAt(T, z.from % T.N) + 30 * T.scale / B.s;
+        c.strokeText(lab, p.x, y); c.fillText(lab, p.x, y);
+      });
       const p0 = T.pts[0];
       c.fillStyle = "#fff"; c.font = `700 ${(12 / B.s) * T.scale}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.textBaseline = "bottom";
       c.lineWidth = 4 * T.scale / B.s / 2; c.strokeStyle = "rgba(0,0,0,0.6)";
@@ -1983,6 +1997,10 @@
       c.restore();
     }
     drawCutPreview(c);
+    if (drsMode && drsMode.a) {         // first click of a new DRS zone
+      c.fillStyle = "#3ee06a"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
+      c.beginPath(); c.arc(drsMode.a[0], drsMode.a[1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+    }
     // the drawing you're working on (or the host's, live)
     const d = S.draft || (preview ? { pts: S.preview, corners: [], preview: true } : watching ? { pts: S.hostDraft.slice(0, Math.max(2, Math.ceil(S.hostShown || 0))), corners: [] } : null);
     if (d && d.pts.length) {
@@ -2043,7 +2061,7 @@
     if (d && drawMode === "line" && hover) rubber(d.pts[d.pts.length - 1], snapPt(d.pts[d.pts.length - 1], hover));
     if (d && shiftAnchor && S.shiftEnd) rubber(shiftAnchor, snapPt(shiftAnchor, S.shiftEnd));
     // brush size preview under the pointer
-    if (hover && S.host && S.lobby?.phase === "lobby" && !startMode && !cut) {
+    if (hover && S.host && S.lobby?.phase === "lobby" && !startMode && !cut && !drsMode) {
       c.strokeStyle = "rgba(255,255,255,0.7)"; c.lineWidth = 1.5 / B.s;
       c.beginPath(); c.arc(hover[0], hover[1], brushW / 6, 0, Math.PI * 2); c.stroke();
     }
@@ -2056,7 +2074,7 @@
   // Drawing: Freehand and Straight both add to the SAME drawing, so you can mix them:
   // drag a curvy bit, click a few straight lines, drag some more... then close the loop.
   // The width brush sets how wide the road is for whatever you draw next.
-  let drawMode = "free", hover = null, drawing = false, shiftAnchor = null, startMode = false;
+  let drawMode = "free", hover = null, drawing = false, shiftAnchor = null, startMode = false, drsMode = null;
   let stampShape = "oval", stampStart = null, snapOn = false; const redoStack = [];
   let cut = null;          // Redraw part: { a, b, flip } indexes into the track's stroke (board units)
   let brushW = 130;
@@ -2322,10 +2340,21 @@
   $("closeLoop").addEventListener("click", finishDraft);
   $("startLineBtn").addEventListener("click", () => {
     if (!S.track) { boardHint("Draw a track first.", true); return; }
-    endCut(); startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
+    endCut(); endDrs(); startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
     boardHint(startMode ? "Click anywhere on the track to put the start/finish line there." : "", false);
   });
   $("reverseBtn").addEventListener("click", () => { if (S.track) socket.emit("reverse"); else boardHint("Draw a track first.", true); });
+  // DRS zones: click where one starts, then where it ends (in the racing direction)
+  function endDrs() { drsMode = null; $("drsBtn")?.classList.remove("on"); }
+  $("drsBtn").addEventListener("click", () => {
+    if (!S.track) { boardHint("Draw a track first.", true); return; }
+    if (drsMode) { endDrs(); boardHint("", false); drawBoard(); return; }
+    endCut(); startMode = false; $("startLineBtn").classList.remove("on");
+    drsMode = { a: null }; $("drsBtn").classList.add("on");
+    boardHint("Click on the track where the DRS zone starts (going the way the arrows point).", false);
+  });
+  $("drsAutoBtn").addEventListener("click", () => { if (S.track) { endDrs(); socket.emit("drs:auto"); } else boardHint("Draw a track first.", true); });
+  $("drsClearBtn").addEventListener("click", () => { if (S.track) { endDrs(); socket.emit("drs:clear"); } else boardHint("Draw a track first.", true); });
   // ---- Phone mode: the board in the room is only a preview (swipe over it to scroll). Tapping it
   // (or "Draw the track") opens a full-screen editor: big board on top, all the tools below, Done.
   var editing = false;       // (var: show() can run before this line on startup)
@@ -2356,7 +2385,7 @@
   // ---- setting presets: every race setting in one go (saved like tracks: this browser + your account) ----
   const SP = { list: (() => { try { return JSON.parse(localStorage.getItem("tb-setpresets") || "[]"); } catch (e) { return []; } })() };
   const storeSP = (list) => { try { localStorage.setItem("tb-setpresets", JSON.stringify(list)); } catch (e) {} };
-  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar"];
+  const SET_KEYS = ["laps", "ai", "aiLevel", "quali", "points", "teamColors", "teams", "season", "smooth", "xpRate", "weather", "theme", "speed", "wear", "map", "safetyCar", "drs"];
   socket.on("setPresets", (list) => {
     if (!list) return;
     const merged = mergePresets(SP.list, list);
@@ -2435,7 +2464,8 @@
   function currentPreset(name) {
     const T = S.track, p0 = T.pts[0];
     return { name, stroke: S.lobby.stroke, map: S.lobby.settings.map, smooth: !!S.lobby.settings.smooth, theme: S.lobby.settings.theme, reverse: !!T.reverse,
-      start: [T.minX + (p0.x - T.pad) / T.scale, T.minY + (p0.y - T.pad) / T.scale], saved: Date.now() };
+      start: [T.minX + (p0.x - T.pad) / T.scale, T.minY + (p0.y - T.pad) / T.scale], saved: Date.now(),
+      drs: (T.drs || []).map((z) => { const b = (i) => { const q = T.pts[i % T.N]; return [T.minX + (q.x - T.pad) / T.scale, T.minY + (q.y - T.pad) / T.scale]; }; return [...b(z.from), ...b(z.from + z.len)]; }) };
   }
   $("presetForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -2454,6 +2484,7 @@
     endCut(); S.draft = null; S.lastDraft = null; updateDraftUi();
     // after it's built: turn it round if it was reversed, then put the start line back
     P.steps = []; if (pr.reverse) P.steps.push(() => socket.emit("reverse")); if (pr.start) P.steps.push(() => socket.emit("setStart", { x: pr.start[0], y: pr.start[1] }));
+    if (Array.isArray(pr.drs)) P.steps.push(() => socket.emit("drs:set", pr.drs));
     P.loading = pr.name;
     setTimeout(() => socket.emit("track", { stroke: pr.stroke, map: pr.map }), pr.smooth !== !!st.smooth ? 250 : 0);
     $("presetBox").classList.add("hidden"); boardHint(`Loading "${pr.name}"...`, false);
@@ -2703,7 +2734,7 @@
   $("cutBtn").addEventListener("click", () => {
     if (cut) { endCut(); boardHint("", false); return; }
     if (!cutStroke() || !S.track) { boardHint("Draw a track first.", true); return; }
-    startMode = false; $("startLineBtn").classList.remove("on");
+    startMode = false; $("startLineBtn").classList.remove("on"); endDrs();
     S.draft = null; drawing = false; updateDraftUi();
     cut = { a: null, b: null, flip: false }; $("cutBtn").classList.add("on");
     boardHint("Click where the part you don't like starts.", false); drawBoard();
@@ -2743,6 +2774,11 @@
     const p = toBoard(e);
     if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
+    if (drsMode) {
+      if (!drsMode.a) { drsMode.a = p; boardHint("Now click where the DRS zone ends (just before the braking point).", false); drawBoard(); }
+      else { socket.emit("drs:add", { a: drsMode.a, b: p }); endDrs(); drawBoard(); }
+      return;
+    }
     redoStack.length = 0; updateRedo();
     if (drawMode === "stamp") { board.setPointerCapture(e.pointerId); drawing = true; stampStart = p; S.stampEnd = p; drawBoard(); return; }
     if (drawMode === "curve") {
@@ -3710,10 +3746,27 @@
       c.save(); c.translate(-22, 0); c.rotate(Math.cos(ang) < 0 ? Math.PI / 2 : -Math.PI / 2); c.fillText(label, 0, 0); c.restore();
       c.restore();
     }
+    if (!opts.board) drawDrsZones(c, t);
     const s0 = t.pts[0], tn = t.tan[0], hw0 = hwAt(t, 0);
     c.save(); c.translate(s0.x, s0.y); c.rotate(Math.atan2(tn.y, tn.x));
     for (let r = 0; r < 2; r++) for (let q = 0; q < Math.ceil(hw0 / 5); q++) { c.fillStyle = (r + q) % 2 ? "#111" : "#fff"; c.fillRect(-10 + r * 10, -hw0 + q * 10, 10, Math.min(10, hw0 * 2 - q * 10)); }
     c.restore();
+  }
+  // DRS zones on the road: a dashed green line down each edge, and the activation line with "DRS" painted on
+  function drawDrsZones(c, t) {
+    for (const z of t.drs || []) {
+      for (const side of [1, -1]) {
+        c.beginPath();
+        for (let k = 0; k <= z.len; k++) { const i = (z.from + k) % t.N, p = t.pts[i], n = t.nor[i], o = (hwAt(t, i) - 9) * side; k ? c.lineTo(p.x + n.x * o, p.y + n.y * o) : c.moveTo(p.x + n.x * o, p.y + n.y * o); }
+        c.lineWidth = 5; c.strokeStyle = "rgba(62,224,106,0.85)"; c.setLineDash([30, 22]); c.stroke(); c.setLineDash([]);
+      }
+      const i = z.from % t.N, p = t.pts[i], tn = t.tan[i], hw = hwAt(t, i), ang = Math.atan2(tn.y, tn.x);
+      c.save(); c.translate(p.x, p.y); c.rotate(ang);
+      c.fillStyle = "rgba(255,255,255,0.9)"; c.fillRect(-3, -hw, 6, hw * 2);
+      c.fillStyle = "rgba(62,224,106,0.9)"; c.font = "30px 'Russo One', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.translate(34, 0); c.rotate(Math.PI / 2); c.fillText("DRS", 0, 0);
+      c.restore();
+    }
   }
   // Double ramps (a bridge over a bridge) get their own colours so you can tell the levels apart:
   // level 2 is a blue steel deck with cyan kerbs, level 3 a purple one with pink kerbs.
@@ -4105,13 +4158,17 @@
     const me = S.cars.get(S.myCar);
     $("boostPanel").classList.toggle("hidden", !me);
     if (!me) return;
-    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0);
+    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0) + (me.drs ? 1 : 0);
     if (key === boostShown) return; boostShown = key;
     $("boostPct").textContent = lock > 0 ? `⏳${lock}s` : pct + "%";
     boostBtn.classList.toggle("locked", lock > 0); $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
     boostBtn.classList.toggle("empty", pct < 3);
-    $("slipTag").classList.toggle("hidden", !me.slip || !!me.fin);
-    $("slipTag").textContent = window.innerWidth <= 860 ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%";
+    const small = window.innerWidth <= 860, tags = [];
+    if (me.slip) tags.push(small ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%");
+    if (me.drs) tags.push(small ? "🟩 DRS" : "🟩 DRS OPEN +7%");
+    $("slipTag").classList.toggle("hidden", !tags.length || !!me.fin);
+    $("slipTag").classList.toggle("drs", !!me.drs && !me.slip);
+    $("slipTag").textContent = tags.join(" · ");
   }
   let lastHudStand = "";
   const fmtGap = (g, i) => (i === 0 ? "Leader" : g < 0 ? "+1 lap" : "+" + g.toFixed(1) + "s");
@@ -4541,8 +4598,52 @@
     return sec;
   }
 
+  // ======================= What's new (shown once after each update) =======================
+  // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
+  // Players who've already played see it once on the menu or in a room; brand-new players don't.
+  const WHATS_NEW = [
+    { v: "2026-09-30", title: "DRS zones", items: [
+      "🟩 DRS: cross the start of a DRS zone within 1 second of the car ahead and you get +7% top speed until the zone ends. It opens from lap 2, not in the wet or behind the safety car. In qualifying it's open in every zone.",
+      "🏆 Real tracks have their real DRS zones, on the same straights as the real circuits.",
+      "🎲 Random, drawn and shared tracks get DRS on their longest straights automatically.",
+      "🛠️ Hosts can place their own zones (Add DRS), reset them (Auto DRS) or remove them (No DRS). Zones are kept in share codes and saved tracks. There's a DRS on/off setting too.",
+      "⚡ Firing your boost now earns 1.5x upgrade XP while it's on.",
+      "🎯 Beating your rival now also gives 100 season pass XP (on top of the 100 coins).",
+      "📰 This \"What's new\" window. Open it again any time from the menu.",
+    ] },
+  ];
+  function openNews(onlyNew) {
+    let seen = null; try { seen = localStorage.getItem("tb-news"); } catch (e) {}
+    const list = $("newsList"); list.textContent = "";
+    const cut = WHATS_NEW.findIndex((n) => n.v === seen);
+    WHATS_NEW.forEach((n, i) => {
+      const fresh = !onlyNew || cut < 0 || i < cut;
+      const box = document.createElement("div"); box.className = "news-item" + (fresh ? "" : " old");
+      const h = document.createElement("h3"); h.textContent = n.title; const sm = document.createElement("small"); sm.textContent = n.v; h.appendChild(sm); box.appendChild(h);
+      const ul = document.createElement("ul"); for (const it of n.items) { const li = document.createElement("li"); li.textContent = it; ul.appendChild(li); } box.appendChild(ul);
+      list.appendChild(box);
+    });
+    $("newsBox").classList.remove("hidden"); $("newsOk").focus();
+    try { localStorage.setItem("tb-news", WHATS_NEW[0].v); } catch (e) {}
+  }
+  function closeNews() { $("newsBox").classList.add("hidden"); }
+  function maybeNews() {
+    if (!WHATS_NEW.length || (S.screen !== "menu" && S.screen !== "lobby") || !$("newsBox").classList.contains("hidden")) return;
+    let seen = null, played = false;
+    try { seen = localStorage.getItem("tb-news"); played = PLAYED_BEFORE; } catch (e) { return; }
+    if (seen === WHATS_NEW[0].v) return;
+    if (!seen && !played) { try { localStorage.setItem("tb-news", WHATS_NEW[0].v); } catch (e) {} return; }   // brand new: nothing is "new" to them
+    if (S.tutorial) return;
+    openNews(true);
+  }
+  setTimeout(maybeNews, 1200);          // the menu is already up when the page loads
+  $("newsLink").addEventListener("click", (e) => { e.preventDefault(); openNews(false); });
+  $("newsClose").addEventListener("click", closeNews); $("newsOk").addEventListener("click", closeNews);
+  $("newsBox").addEventListener("click", (e) => { if (e.target === $("newsBox")) closeNews(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("newsBox").classList.contains("hidden")) closeNews(); });
+
   // ======================= Replays: save, share, load =======================
-  const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name"];
+  const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name", "drs"];
   function buildReplay() {
     if (RP.buf.length < 30 || !S.track || !S.race) return null;
     const track = {}; for (const k of TRACK_KEYS) track[k] = S.track[k];

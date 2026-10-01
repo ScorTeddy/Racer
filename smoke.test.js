@@ -281,3 +281,24 @@ test("a whole ranked race: signed in, locked settings, rating changes at the fla
   assert.ok(typeof res.delta === "number" && res.after && res.pos >= 1);
   s.close();
 });
+
+test("DRS: real zones on real tracks, auto zones everywhere else, and it opens in a race", { timeout: 120000 }, () => {
+  const r = new game.Room("DRSTST", false);
+  assert.equal(r.setF1Track("it-1922"), null);
+  assert.equal(r.track.drs.length, 2, "the Monza-style layout has its 2 real zones");
+  for (const w of ["little", "regular", "very"]) { r.setRandomTrack("normal", w); assert.ok(r.track.drs.length >= 1, `a ${w} random track gets DRS`); }
+  // share codes keep the zones; hand-placed zones follow the racing direction
+  r.setF1Track("it-1922");
+  const r2 = new game.Room("DRSTS2", false); r2.setSharedTrack(r.shareData());
+  assert.deepEqual(r2.track.drs, r.track.drs);
+  const t = r2.track, bp = (i) => [t.minX + (t.pts[i].x - t.pad) / 3, t.minY + (t.pts[i].y - t.pad) / 3];
+  assert.ok(r2.drsZoneFrom(...bp(10), ...bp(40)).zone, "a zone can be placed by hand");
+  assert.ok(r2.drsZoneFrom(...bp(40), ...bp(10)).error, "a backwards zone is refused");
+  // a short race: DRS only from lap 2, and somebody gets it
+  r.settings.ai = 10; r.settings.laps = 3; r.settings.weather = "sunny"; r.settings.quali = 0; r.ensureRoster(10);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  let opened = 0, early = 0;
+  for (let n = 0; n < 60 * 60 * 6 && r.phase === "race"; n++) { r.step(1 / 60); for (const c of r.cars) if (c.drsOpen) { opened++; if (c.lapsDone < 2) early++; } }
+  assert.ok(opened > 0, "DRS opened for someone");
+  assert.equal(early, 0, "never on lap 1");
+});

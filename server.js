@@ -83,6 +83,77 @@ const SEASONS = [0, 3, 5, 8, 10];                        // championship length 
 let F1_TRACKS = [];
 try { F1_TRACKS = JSON.parse(fs.readFileSync(path.join(__dirname, "f1-tracks.json"), "utf8")); } catch (e) { console.log("f1-tracks.json not found: no F1 tracks"); }
 const f1List = () => F1_TRACKS.map((t) => ({ id: t.id, name: t.name, place: t.place, km: t.km, w: t.w, h: t.h, pts: t.pts.filter((_, i) => i % 3 === 0) }));
+
+// ======================= DRS zones =======================
+// A car that crosses the start of a zone within DRS_GAP seconds of the car ahead gets DRS for that
+// zone: +7% top speed. From lap 2 of the race, not in the wet or under the safety car. In qualifying
+// it's open in every zone (like the real thing). Zones live on the track shape as base-index pairs
+// [a, b] (the drawing's own direction), so moving the start line or reversing keeps them.
+const DRS_BONUS = 0.07, DRS_GAP = 1.0, DRS_WET = 0.5, DRS_MAX_ZONES = 6, DRS_FROM_LAP = 2;
+// Real-world DRS zones (the last seasons that had DRS), as lap fractions from each layout's real start
+// line (the first point in f1-tracks.json), in its racing direction. Circuits that never raced with DRS
+// aren't listed: they get zones on their longest straights like drawn and random tracks.
+const F1_DRS = {
+  "au-1953": [[0.9, 0.02], [0.2, 0.29], [0.58, 0.68], [0.7, 0.79]], "bh-2002": [[0.92, 0.06], [0.12, 0.25], [0.44, 0.58]],
+  "cn-2004": [[0.88, 0.99], [0.63, 0.8]], "es-1991": [[0.9, 0.09], [0.62, 0.73]], "mc-1929": [[0.95, 0.04]],
+  "ca-1978": [[0.4, 0.5], [0.72, 0.93], [0.96, 0.05]], "fr-1969": [[0.92, 0.99], [0.33, 0.48]],
+  "at-1969": [[0.92, 0.06], [0.12, 0.28], [0.31, 0.45]], "gb-1948": [[0.22, 0.36], [0.73, 0.86]],
+  "de-1932": [[0.25, 0.45], [0.5, 0.58], [0.93, 0.05]], "hu-1986": [[0.92, 0.07], [0.12, 0.19]],
+  "be-1925": [[0.14, 0.33], [0.9, 0.97]], "it-1922": [[0.5, 0.72], [0.9, 0.06]],
+  "sg-2008": [[0.92, 0.07], [0.15, 0.27], [0.32, 0.4], [0.66, 0.8]], "ru-2014": [[0.97, 0.12], [0.62, 0.76]],
+  "jp-1962": [[0.92, 0.04]], "us-2012": [[0.44, 0.58], [0.97, 0.08]], "mx-1962": [[0.97, 0.22], [0.3, 0.45], [0.72, 0.82]],
+  "br-1940": [[0.9, 0.07], [0.16, 0.3]], "ae-2009": [[0.3, 0.46], [0.53, 0.66]], "it-1953": [[0.9, 0.05]],
+  "de-1927": [[0.72, 0.88], [0.95, 0.08]], "pt-2008": [[0.9, 0.07]], "it-1914": [[0.92, 0.08]],
+  "my-1999": [[0.74, 0.87], [0.9, 0.05]], "tr-2005": [[0.62, 0.82], [0.93, 0.05]], "nl-1948": [[0.88, 0.06], [0.22, 0.36]],
+  "us-2022": [[0.38, 0.56], [0.66, 0.84], [0.92, 0.04]], "qa-2004": [[0.92, 0.04]], "az-2016": [[0.84, 0.99], [0.14, 0.26]],
+  "us-2023": [[0.52, 0.8], [0.84, 0.99]],
+};
+// flat-out stretches of a finished track (track indices), longest first. On an oval where the whole
+// lap is flat out, the "straights" are the least curvy parts instead.
+function flatRuns(t, thr = MAX_SPEED) {
+  const N = t.N;
+  let flat = t.vcorner.map((v) => v >= thr);
+  if (flat.every(Boolean)) { const q = t.vcorner.slice().sort((x, y) => x - y)[Math.floor(N * 0.4)]; flat = t.vcorner.map((v) => v > q); }
+  const s0 = flat.findIndex((f) => !f); if (s0 < 0) return [];
+  const runs = [];
+  for (let i = 0; i < N;) {
+    if (!flat[(s0 + i) % N]) { i++; continue; }
+    let j = i; while (j < N && flat[(s0 + j) % N]) j++;
+    runs.push({ from: (s0 + i) % N, len: j - i, px: (j - i) * t.spacing }); i = j;
+  }
+  return runs.sort((a, b) => b.px - a.px);
+}
+// a zone in track indices -> [a, b] in the shape's own (drawing) direction
+function drsToBase(t, from, len) {
+  const N = t.N, a = t.order[from % N], b = t.order[(from + len) % N];
+  return t.reverse ? [b, a] : [a, b];
+}
+// zones for a track nobody placed by hand: the last part of its 1-3 longest straights, ending at the
+// braking point. Twisty tracks (lots of random ones) get their fastest stretch, so every track has DRS.
+const DRS_AUTO_MAX = 3600;                        // longest automatic zone, px (about 850 m)
+function autoDrs(t) {
+  const want = t.length > 16000 ? 3 : t.length > 7000 ? 2 : 1;
+  for (const k of [1, 0.88, 0.76, 0.64]) {
+    const out = [];
+    for (const r of flatRuns(t, MAX_SPEED * k)) {
+      if (out.length >= want || r.px < 900) break;
+      let from = r.from + Math.round(r.len * 0.2), end = r.from + r.len - 1;
+      while (end > from && t.vmax[end % t.N] < MAX_SPEED * k * 0.93) end--;        // stop where the braking starts
+      const cap = Math.min(DRS_AUTO_MAX, t.length * 0.18);                          // (short tracks: shorter zones)
+      if ((end - from) * t.spacing > cap) from = end - Math.round(cap / t.spacing);
+      if ((end - from) * t.spacing < 600) continue;
+      out.push(drsToBase(t, from % t.N, end - from));
+    }
+    if (out.length) return out;
+  }
+  return [];
+}
+// base-index zones -> [{from, len}] on this finished track (in its racing direction)
+function drsMap(t, zones) {
+  if (!Array.isArray(zones) || !zones.length) return [];
+  const N = t.N, inv = new Int32Array(N); t.order.forEach((b, i) => { inv[b] = i; });
+  return zones.map(([a, b]) => ({ from: t.reverse ? inv[b % N] : inv[a % N], len: (b - a + N) % N })).filter((z) => z.len >= 3 && z.len <= N * 0.45);
+}
 const DESIGN = /^[0-9a-f.]{288}$/;   // car paint job: 24 x 12 pixels, one palette colour (0-f) or "." (see-through) each
 
 // Upgrades. Every level is a big, feelable jump. `fx(level)` is what the card shows ("Now: ...").
@@ -655,6 +726,7 @@ function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
     pts: world.map((p) => ({ x: p.x, y: p.y })), tan, nor, hw, N, length, spacing, vmax, vcorner, W: shape.W, H: shape.H, trackW: TRACK_W,
     line, gravel, pitLane, elev, bridges: crossings.length, maxLevel,
     order, start, reverse, minX: shape.minX, minY: shape.minY, pad: shape.pad,
+    drs: shape.drs ? drsMap({ N, order, reverse }, shape.drs) : [],
   };
 }
 // every team gets its own garage box along the pit lane
@@ -974,7 +1046,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false };
+    this.settings = { drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -1048,7 +1120,7 @@ class Room {
     const t = this.track;
     return { pts: t.pts.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 })), tan: t.tan, nor: t.nor, N: t.N, W: t.W, H: t.H, length: t.length, trackW: t.trackW, theme: this.settings.theme,
       hw: t.hw.map((v) => Math.round(v * 10) / 10), line: t.line.map((v) => Math.round(v)), gravel: t.gravel, pitLane: t.pitLane, minX: t.minX, minY: t.minY, pad: t.pad, scale: SCALE, reverse: t.reverse,
-      elev: t.elev.map((v) => Math.round(v * 100) / 100), bridges: t.bridges, maxLevel: t.maxLevel, vmax: t.vmax.map((v) => Math.round(v)), name: this.trackName };
+      elev: t.elev.map((v) => Math.round(v * 100) / 100), bridges: t.bridges, maxLevel: t.maxLevel, vmax: t.vmax.map((v) => Math.round(v)), name: this.trackName, drs: t.drs || [] };
   }
   allTeams() { return [...[...this.players.values()].map((p) => p.team), ...this.roster.slice(0, this.settings.ai).map((r) => r.team)]; }
   rebuildTrack(start, reverse) {
@@ -1064,7 +1136,7 @@ class Room {
     this.rebuildTrack(t.order[best], t.reverse);
     return null;
   }
-  setTrack(stroke, map, kind = "drawn", name = null) {
+  setTrack(stroke, map, kind = "drawn", name = null, realDrs = null) {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
@@ -1076,6 +1148,9 @@ class Room {
     this.track = finalizeTrack(shape, kind === "drawn" ? 0 : bestStart(shape), false, this.allTeams());
     this.stroke = stroke.slice(0, 8000).map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10, Math.round(clamp(Number(q[2]) || TRACK_W, MIN_W, MAX_W))]);
     this.settings.map = MAP_SIZES[map] ? map : "normal";
+    // DRS: real zones for real circuits that had them, otherwise on the longest straights
+    const real = realDrs && this.realDrsZones(realDrs, stroke[0]);
+    this.setDrs(real && real.length ? real : autoDrs(this.track));
     this.emit("track", this.trackMsg());
     this.sendLobby();
     return null;
@@ -1090,6 +1165,7 @@ class Room {
       this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
+      this.setDrs(autoDrs(this.track));
       this.emit("track", this.trackMsg()); this.sendLobby();
       return null;
     }
@@ -1101,11 +1177,12 @@ class Room {
   setTotwTrack() {
     const T = totw();
     if (!T) return "Couldn't build this week's track";
-    this.shape = T.shape; this.trackKind = "totw"; this.trackName = T.name; this.draft = null; this.wonk = T.wonk; this.trackId = null;
+    this.shape = { ...T.shape }; this.trackKind = "totw"; this.trackName = T.name; this.draft = null; this.wonk = T.wonk; this.trackId = null;
     this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
     this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
     this.settings.map = T.map; this.settings.theme = T.theme;
     this.totwWeek = T.week; this.trackKey = "totw_" + T.week; this.trackBy = null;
+    this.setDrs(autoDrs(this.track));
     this.emit("track", this.trackMsg()); this.sendLobby();
     return null;
   }
@@ -1115,11 +1192,12 @@ class Room {
     if (err) return err;
     if (Array.isArray(d.start) && d.start.length === 2) this.setStart(Number(d.start[0]), Number(d.start[1]));
     if (d.reverse) this.rebuildTrack(this.track.start, true);
+    if (Array.isArray(d.drs)) { this.applyDrsBoard(d.drs); this.emit("track", this.trackMsg()); }
     return null;
   }
   shareData() {
     const t = this.track, p = t.pts[0];
-    return { v: 1, stroke: this.stroke, map: this.settings.map, name: this.trackName || null, start: [Math.round(((p.x - t.pad) / SCALE + t.minX) * 10) / 10, Math.round(((p.y - t.pad) / SCALE + t.minY) * 10) / 10], reverse: !!t.reverse, theme: this.settings.theme };
+    return { v: 1, stroke: this.stroke, map: this.settings.map, name: this.trackName || null, start: [Math.round(((p.x - t.pad) / SCALE + t.minX) * 10) / 10, Math.round(((p.y - t.pad) / SCALE + t.minY) * 10) / 10], reverse: !!t.reverse, theme: this.settings.theme, drs: this.drsBoard() };
   }
   // A real F1 circuit, sized by its real length (Monaco is short, Spa is long) on the
   // smallest map it fits.
@@ -1132,16 +1210,83 @@ class Room {
     const [BW, BH] = MAP_SIZES[map];
     s = Math.min(s, BW * 0.9 / tr.w, BH * 0.9 / tr.h);
     const ox = (BW - tr.w * s) / 2, oy = (BH - tr.h * s) / 2;
-    const err = this.setTrack(tr.pts.map(([x, y]) => [ox + x * s, oy + y * s, TRACK_W]), map, "f1", tr.name);
+    const err = this.setTrack(tr.pts.map(([x, y]) => [ox + x * s, oy + y * s, TRACK_W]), map, "f1", tr.name, F1_DRS[tr.id] || null);
     if (!err) { this.trackId = tr.id; this.trackKey = "f1_" + tr.id; }
     return err;
   }
   // "Smooth track" switched on/off: rebuild the current track from the same drawing
   rebuildSmooth() {
     if (!this.stroke || !this.track) return;
-    const rev = this.track.reverse;
+    const rev = this.track.reverse, keepDrs = this.drsBoard();
     this.setTrack(this.stroke, this.settings.map, this.trackKind || "drawn", this.trackName);
     if (rev) this.rebuildTrack(this.track.start, true);
+    this.applyDrsBoard(keepDrs); this.emit("track", this.trackMsg());       // same DRS zones on the rebuilt track
+  }
+  // ---- DRS zones on the current track ----
+  setDrs(zones) {
+    this.shape.drs = (zones || []).slice(0, DRS_MAX_ZONES).map(([a, b]) => [a, b]);
+    this.track.drs = drsMap(this.track, this.shape.drs);
+  }
+  // real zones (lap fractions from the layout's start line) -> base-index zones
+  realDrsZones(list, first) {
+    const B = this.shape.base, n = B.length, t = this.track;
+    const wx = (first[0] - t.minX) * SCALE + t.pad, wy = (first[1] - t.minY) * SCALE + t.pad;
+    let j0 = 0, bd = Infinity; B.forEach((p, i) => { const d = (p.x - wx) ** 2 + (p.y - wy) ** 2; if (d < bd) { bd = d; j0 = i; } });
+    return list.map(([f1, f2]) => [(j0 + Math.round(f1 * n)) % n, (j0 + Math.round(f2 * n)) % n]);
+  }
+  // zones as board points [ax, ay, bx, by] (for share codes, saved tracks and rebuilds)
+  drsBoard() {
+    if (!this.shape || !this.track) return [];
+    const B = this.shape.base, t = this.track, bp = (i) => [Math.round(((B[i].x - t.pad) / SCALE + t.minX) * 10) / 10, Math.round(((B[i].y - t.pad) / SCALE + t.minY) * 10) / 10];
+    return (this.shape.drs || []).map(([a, b]) => (t.reverse ? [...bp(b), ...bp(a)] : [...bp(a), ...bp(b)]));
+  }
+  // nearest track index to a board point (or -1 if it's not on/near the track)
+  nearIdx(bx, by) {
+    const t = this.track, wx = (bx - t.minX) * SCALE + t.pad, wy = (by - t.minY) * SCALE + t.pad;
+    let best = -1, bd = Infinity;
+    t.pts.forEach((p, i) => { const d = (p.x - wx) ** 2 + (p.y - wy) ** 2; if (d < bd) { bd = d; best = i; } });
+    return Math.sqrt(bd) > TRACK_W * 3 ? -1 : best;
+  }
+  // a zone from board point a to board point b, in the racing direction
+  drsZoneFrom(ax, ay, bx, by) {
+    if (![ax, ay, bx, by].every(Number.isFinite)) return { error: "Click on the track." };
+    const t = this.track, i = this.nearIdx(ax, ay), j = this.nearIdx(bx, by);
+    if (i < 0 || j < 0) return { error: "Click on the track to place DRS." };
+    const len = (j - i + t.N) % t.N;
+    if (len * t.spacing < 300) return { error: "That DRS zone is too short: make it longer." };
+    if (len > t.N * 0.45) return { error: "That DRS zone is too long (or backwards: click where it starts first, then where it ends)." };
+    return { zone: drsToBase(t, i, len) };
+  }
+  applyDrsBoard(list) {
+    if (!this.track || !Array.isArray(list)) return;
+    const zones = [];
+    for (const q of list.slice(0, DRS_MAX_ZONES)) { if (!Array.isArray(q)) continue; const r = this.drsZoneFrom(...q.slice(0, 4).map(Number)); if (r.zone) zones.push(r.zone); }
+    this.setDrs(zones);
+  }
+  // which DRS zone this car is in (-1 = none)
+  drsZoneOf(c) {
+    const Z = this.track.drs; if (!Z || !Z.length || c.idx === undefined) return -1;
+    for (let z = 0; z < Z.length; z++) if ((c.idx - Z[z].from + this.track.N) % this.track.N <= Z[z].len) return z;
+    return -1;
+  }
+  drsAllowed(c) {
+    if (this.settings.drs === false || c.punct || c.inPit || c.finished) return false;
+    if (this.qualifying) return true;
+    return this.phase === "race" && !this.sc && this.time - this.scDoneAt > 10 && (c.lapsDone || 0) >= DRS_FROM_LAP && (this.wet || 0) < DRS_WET;
+  }
+  // detection at the start of each zone: within DRS_GAP of whoever crossed it last = DRS open
+  stepDrs(c) {
+    const z = this.drsZoneOf(c);
+    if (z !== c.drsZone) {
+      c.drsOpen = false;
+      if (z >= 0) {
+        const last = (this.drsPass || [])[z];
+        c.drsOpen = this.drsAllowed(c) && (this.qualifying || (last !== undefined && this.time - last <= DRS_GAP));
+        if (!this.ghost(c)) (this.drsPass ||= [])[z] = this.time;
+      }
+      c.drsZone = z;
+    }
+    if (c.drsOpen && (this.sc || c.inPit || c.punct || (!this.qualifying && (this.wet || 0) >= DRS_WET))) c.drsOpen = false;
   }
 
   // ======================= Race =======================
@@ -1229,7 +1374,7 @@ class Room {
         else Object.assign(c, paint[c.team]);
       }
     }
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99;
+    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false;
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -1837,7 +1982,9 @@ class Room {
       }
       return;
     }
+    this.stepDrs(c);
     let maxSp = st.maxSpeed * this.tireSpeed(c.tire) * this.compoundSpeed(c), accel = st.accel;
+    if (c.drsOpen) maxSp *= 1 + DRS_BONUS;             // DRS open: the rear wing flap cuts drag
     if (c.punct) { maxSp *= 0.33; accel *= 0.4; }
     if (c.damage > 0) { maxSp *= 1 - 0.14 * c.damage; accel *= 1 - 0.2 * c.damage; }
     // Slipstream: tucked in within half a second of the car ahead = +30% top speed
@@ -1959,6 +2106,7 @@ class Room {
 
   onLap(c) {
     const p = c.owner && this.players.get(c.owner);
+    if (!this.qualifying && !this.drsOn && c.lapsDone >= DRS_FROM_LAP && this.settings.drs !== false && this.track.drs?.length) { this.drsOn = true; this.emit("feed", { t: "drs" }); }
     if (c.lapsDone >= 1) {
       const lt = this.time - c.lapStart;
       if (lt < c.bestLap) c.bestLap = lt;
@@ -2293,7 +2441,7 @@ class Room {
       c.pits, c.pitting > 0 ? r2(1 - c.pitting / (c.pitTotal || 1)) : -1, c.mistakeT > 0 ? 1 : 0, c.finished ? 1 : 0,
       c.slide > 70 && c.onTrack ? 1 : 0, c.onTrack ? 1 : 0, c.boosting ? 1 : 0, Math.round(c.progress), isFinite(c.bestLap) ? r2(c.bestLap) : 0,
       COMPOUNDS[c.compound].short, c.punct ? 1 : 0, c.surface, c.inPit ? 1 : 0, r2(c.damage), c.crashT > 0 ? 1 : 0, r2(this.track.elev[c.idx] || 0),
-      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0,
+      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 1 : 0,
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.settings.weather === "dynamic" };
@@ -2365,6 +2513,7 @@ function cleanReplay(o) {
       boxes: Object.fromEntries(Object.entries(T.pitLane.boxes && typeof T.pitLane.boxes === "object" ? T.pitLane.boxes : {}).slice(0, 70).map(([k, v]) => [String(k).slice(0, 40), Math.round(num(v))])) } : null,
     minX: num(T.minX), minY: num(T.minY), pad: num(T.pad), scale: num(T.scale, SCALE), reverse: !!T.reverse,
     bridges: Math.round(num(T.bridges)),
+    drs: Array.isArray(T.drs) ? T.drs.slice(0, DRS_MAX_ZONES).map((z) => ({ from: Math.round(num(z?.from)) % N, len: clamp(Math.round(num(z?.len)), 0, Math.floor(N * 0.45)) })).filter((z) => z.from >= 0 && z.len >= 3) : [],
     maxLevel: Math.round(num(T.maxLevel)), name: typeof T.name === "string" ? cleanTeam(T.name).slice(0, 30) || null : null,
   };
   const cars = o.cars.slice(0, MAX_AI + MAX_PLAYERS).map((c) => ({
@@ -2496,7 +2645,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -2615,6 +2764,7 @@ io.on("connection", (socket) => {
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
+    if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
     if (THEME_KEYS.includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
     if ([1, 2, 3].includes(Number(s?.speed))) S.speed = Number(s.speed);
     if (WEAR_LEVELS[s?.wear]) S.wear = s.wear;
@@ -3008,6 +3158,34 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.track) return;
     r.rebuildTrack(r.track.start, !r.track.reverse);
     socket.emit("trackResult", { error: null, reversed: r.track.reverse });
+  });
+  // ---- DRS zones (host, in the lobby) ----
+  socket.on("drs:add", (d) => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.track) return;
+    if ((r.shape.drs || []).length >= DRS_MAX_ZONES) return socket.emit("trackResult", { error: `${DRS_MAX_ZONES} DRS zones is the most a track can have.` });
+    const z = r.drsZoneFrom(Number(d?.a?.[0]), Number(d?.a?.[1]), Number(d?.b?.[0]), Number(d?.b?.[1]));
+    if (z.error) return socket.emit("trackResult", { error: z.error });
+    r.setDrs([...(r.shape.drs || []), z.zone]); r.emit("track", r.trackMsg());
+    socket.emit("trackResult", { error: null, drs: "added", zones: r.track.drs.length });
+  });
+  socket.on("drs:set", (list) => {             // a saved track putting its zones back
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.track || !Array.isArray(list)) return;
+    r.applyDrsBoard(list); r.emit("track", r.trackMsg());
+    socket.emit("trackResult", { error: null, drs: "set", zones: r.track.drs.length });
+  });
+  socket.on("drs:clear", () => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.track) return;
+    r.setDrs([]); r.emit("track", r.trackMsg());
+    socket.emit("trackResult", { error: null, drs: "cleared", zones: 0 });
+  });
+  socket.on("drs:auto", () => {                // back to the real zones (real circuits) or the longest straights
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.track) return;
+    const fr = r.trackKind === "f1" && r.trackId && F1_DRS[r.trackId];
+    const tr = fr && F1_TRACKS.find((x) => x.id === r.trackId);
+    let zones = null;
+    if (tr && r.stroke?.length) { const first = r.stroke[0]; zones = r.realDrsZones(fr, first); }
+    r.setDrs(zones && zones.length ? zones : autoDrs(r.track)); r.emit("track", r.trackMsg());
+    socket.emit("trackResult", { error: null, drs: fr ? "real" : "auto", zones: r.track.drs.length });
   });
   socket.on("compound", (k) => { const r = room(), p = me(); if (r && p && r.cars) r.pickCompound(p, k); });
   socket.on("kick", (id) => {

@@ -102,7 +102,7 @@
     <div class="hidden" id="menuFriends"><div class="lob-head"><div class="sect">Friends online</div></div><div class="lobbies" id="friendsList"></div></div>
     <p class="err" id="menuErr" role="alert"></p>
     </section>
-    <footer class="menu-foot"><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
+    <footer class="menu-foot"><a href="#" id="newsLink">📰 What's new</a><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
   </form>
 </div>
 
@@ -154,13 +154,14 @@
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
           <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
-          <label class="f">Track theme <select id="sTheme"><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="night">🌙 Night (headlights on)</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
+          <label class="f">Track theme <select id="sTheme"><option value="night" selected>🌙 Night (headlights on)</option><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
           <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
           <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
           <label class="f wide">Weather <select id="sWeather"><option value="sunny">☀ Always sunny</option><option value="rain">🌧 Always rainy</option><option value="dynamic">⛅ Dynamic (changes mid-race)</option><option value="fog">🌫 Fog (you can't see far)</option></select></label>
           <label class="f wide">Teams <select id="sTeams"><option value="on">On: team up, teams score points</option><option value="off">Off: everyone for themselves</option></select></label>
           <label class="f wide">Championship length <select id="sSeason"><option value="0">Endless (never ends)</option><option value="3">3 races</option><option value="5">5 races</option><option value="8">8 races</option><option value="10">10 races</option></select></label>
           <label class="f wide">XP per second <span class="range-row"><input type="range" id="sXp" min="10" max="50" step="5" value="10" aria-label="XP per second"><output id="sXpOut" for="sXp">10 XP/s</output></span></label>
+          <label class="f wide">DRS <select id="sDrs"><option value="on">On: within 1s of the car ahead at a DRS zone = +7% top speed (from lap 2)</option><option value="off">Off</option></select></label>
           <label class="f wide">Safety car <select id="sSafety"><option value="off">Off</option><option value="on">On: a big crash brings out the safety car and bunches everyone up</option></select></label>
           <label class="f wide">Team colors <select id="sTeamColors"><option value="off">Off: everyone keeps their paint</option><option value="on">On: teammates share paint</option></select></label>
         </div>
@@ -263,6 +264,9 @@
         <span class="dock-label">Track</span>
         <button type="button" class="tool" id="startLineBtn" title="Then click on the track"><span>🏁</span>Start line</button>
         <button type="button" class="tool" id="reverseBtn"><span>🔄</span>Reverse</button>
+        <button type="button" class="tool" id="drsBtn" title="Add a DRS zone: click where it starts, then where it ends"><span>🟩</span>Add DRS</button>
+        <button type="button" class="tool" id="drsAutoBtn" title="Real DRS zones on real circuits, or zones on the longest straights"><span>✨</span>Auto DRS</button>
+        <button type="button" class="tool" id="drsClearBtn" title="Remove every DRS zone from this track"><span>🚫</span>No DRS</button>
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
         <button type="button" class="tool" id="f1Btn" title="Race a real circuit (F1 tracks, the Nordschleife, ovals)"><span>🏆</span>Real tracks</button>
         <button type="button" class="tool" id="presetBtn" title="Save this track, or load one you saved"><span>💾</span>My tracks</button>
@@ -417,6 +421,13 @@
 <div class="invite-box hidden" id="inviteBox" role="alert"><span id="inviteText"></span><button type="button" class="btn go" id="inviteJoin">Join</button><button type="button" class="btn ghost" id="inviteNo">Not now</button></div>
 
 <!-- ============ Saved tracks ============ -->
+<div id="newsBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="newsTitle">
+  <div class="preset-card panel news-card">
+    <header class="hub-head"><h2 id="newsTitle">📰 What's new</h2><button type="button" class="x" id="newsClose" aria-label="Close">✕</button></header>
+    <div class="news-list" id="newsList"></div>
+    <button type="button" class="btn go" id="newsOk">Let's race!</button>
+  </div>
+</div>
 <div id="presetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="presetTitle">
   <div class="preset-card panel">
     <header class="hub-head"><h2 id="presetTitle">💾 My tracks</h2><button type="button" class="x" id="presetClose" aria-label="Close">✕</button></header>

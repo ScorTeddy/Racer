@@ -1396,7 +1396,8 @@ function cleanPreset(p) {
   if (st.length < 8) return null;
   if (st.length > 2500) { const k = st.length / 2500; st = Array.from({ length: 2500 }, (_, i) => st[Math.floor(i * k)]); }
   const start = Array.isArray(p.start) && p.start.length === 2 && p.start.every(Number.isFinite) ? p.start.map((v) => Math.round(v * 10) / 10) : null;
-  return { name, stroke: st, map: ["small", "normal", "large", "huge"].includes(p.map) ? p.map : "normal", start, reverse: !!p.reverse, smooth: !!p.smooth, theme: typeof p.theme === "string" ? p.theme.slice(0, 12) : null, saved: Number(p.saved) || Date.now() };
+  const drs = Array.isArray(p.drs) ? p.drs.filter((q) => Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)).slice(0, 6).map((q) => q.map((v) => Math.round(v * 10) / 10)) : null;
+  return { name, stroke: st, map: ["small", "normal", "large", "huge"].includes(p.map) ? p.map : "normal", start, drs, reverse: !!p.reverse, smooth: !!p.smooth, theme: typeof p.theme === "string" ? p.theme.slice(0, 12) : null, saved: Number(p.saved) || Date.now() };
 }
 function savePreset(u, p) {
   const c = cleanPreset(p); if (!c) return { error: "That track couldn't be saved" };

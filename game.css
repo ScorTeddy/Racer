@@ -788,7 +788,7 @@
   .acct-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .acct-actions .btn { min-height: 2.3rem; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   .coins { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--yellow); padding: 0.3rem 0.7rem; border-radius: 99px; background: rgba(255,204,31,0.12); border: 1.5px solid rgba(255,204,31,0.35); white-space: nowrap; }
-  #presetBox, #setPresetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
+  #newsBox, #presetBox, #setPresetBox { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; padding: 1rem; background: rgba(8,9,12,0.82); animation: fadeIn 250ms ease both; }
   .preset-card { width: min(46rem, 100%); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; gap: 0.7rem; padding: 1rem 1.2rem; }
   .preset-save { display: flex; gap: 0.5rem; } .preset-save input { flex: 1; min-width: 0; }
   .preset-note { margin: 0; color: var(--soft); font-size: 0.82rem; }
@@ -1083,3 +1083,13 @@ body.rm .card.rare, body.rm .garage[class*="aura-"] { animation: none; }
   .hub-card { justify-self: center; }
   .hub-body { min-width: 0; }
   .pass-track { max-width: 100%; }
+
+/* DRS tag (shares the slipstream tag's spot) */
+.slip-tag.drs { color: #3ee06a; }
+/* What's new */
+.news-card { width: min(34rem, 100%); }
+.news-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem; }
+.news-item h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+.news-item h3 small { color: var(--soft); font-weight: 600; margin-left: 0.4rem; font-size: 0.75rem; }
+.news-item ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.news-item.old { opacity: 0.6; }

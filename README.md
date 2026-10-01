@@ -25,6 +25,10 @@ public/og-image.png, favicon.svg                    link-preview picture (1200x6
 `npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
 full race against the AI (about 30 seconds). If anything says `not ok`, don't upload yet.
 
+**Then add a "What's new" entry:** at the top of `WHATS_NEW` in game.js, add `{ v: "2026-10-05", title: "...", items: ["...", "..."] }`
+(any new `v` works; the date is easiest). Everyone who has played before sees it once, on the menu or in a room, after
+the update. Brand-new players don't. 📰 What's new in the menu footer opens it again. It's remembered in `tb-news`.
+
 ## New-player and multiplayer features
 - **Tutorial** (🎓 on the menu, highlighted on a first visit): a short easy race with coach cards for tires,
   the start, boost, upgrades and pit stops.
@@ -41,6 +45,19 @@ full race against the AI (about 30 seconds). If anything says `not ok`, don't up
 - **Replay**: the last 30 seconds of every race can be watched again, saved or shared from the results screen.
 - **Colorblind-friendly tires** (Settings): every tire gets its own ring pattern.
 
+- **DRS** (host setting, on by default): cross the start of a DRS zone within `DRS_GAP` (1s) of whoever crossed it last
+  and you get `DRS_BONUS` (+7%) top speed until the zone ends. It's on from lap 2 (`DRS_FROM_LAP`), off at 50%+ wet and
+  under the safety car (plus 10s after), and open in every zone in qualifying. The feed says "DRS enabled" once it's live
+  and the HUD shows 🟩 DRS OPEN. Zones are stored on the shape as base-index pairs (`shape.drs`), so moving the start line
+  or reversing keeps them. `trackMsg().drs` and state field 30 (DRS open) go to the browser.
+  **Real tracks:** `F1_DRS` in server.js lists each circuit's real zones as lap fractions from its real start line (the
+  first point in f1-tracks.json), from the last seasons that had DRS (F1 dropped it in 2026). Circuits that never had
+  DRS (Nordschleife, ovals, Indy, Kyalami...) and the 2026 Madrid track use automatic zones.
+  **Automatic zones** (`autoDrs`, drawn/random/shared tracks): the last part of the 1-3 longest flat-out straights, ending at
+  the braking point, max 850 m and 18% of a lap each. Twisty tracks get their fastest stretch, so every track has DRS.
+  **Host tools** (Track tools): 🟩 Add DRS (click where it starts, then where it ends, up to 6 zones), ✨ Auto DRS (real or
+  automatic zones again), 🚫 No DRS. Zones are kept in share codes, saved tracks (`drs` as board points) and on Smooth on/off.
+  Sockets: `drs:add {a, b}`, `drs:set [[ax, ay, bx, by]...]`, `drs:clear`, `drs:auto`.
 - **Boost XP**: while your boost is firing, every bit of upgrade XP you earn is worth 1.5x (`BOOST_XP_MULT` in server.js).
 
 ## Ranked, season pass, trading, sharing, replays, photo mode
