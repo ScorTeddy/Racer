@@ -1144,3 +1144,4 @@ body.desk .hub-body .hub-body { overflow: visible; min-height: 0; padding-right:
 body.desk #hub .hub-head, body.desk #hub .hub-tabs, body.desk #hubGuest { flex-shrink: 0; }
 body.desk #hub .hub-body { min-height: 0; }
 body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile > 🔒 Security > Sessions on wide screens */
+  .rr-coins { color: var(--yellow); }

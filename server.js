@@ -34,8 +34,11 @@ const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BO
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
 // (a race with just friends pays nothing, so nobody can farm wins off each other)
-const WIN_COINS = { easy: 50, medium: 100, hard: 150, extreme: 500, overdrive: 500 }, WIN_MIN_AI = 7;
+const WIN_COINS = { easy: 50, medium: 100, hard: 150, extreme: 500 }, WIN_MIN_AI = 7;   // (ranked pays rank-up coins instead)
 const RIVAL_COINS = 100, DOTD_COINS = 150;
+// Race coins (win, rival, Driver of the Day) only for real races: more than 5 laps, on a track that isn't
+// tiny (COIN_MIN_LEN px = 0.6 km as the lobby shows it), and never in ranked (ranked pays when you rank up).
+const COIN_MIN_LAPS = 6, COIN_MIN_LEN = 6000;
 // Weekend events: every Saturday + Sunday (UTC) one of these is on, a different one each week.
 // FORCE_EVENT=<id> in the Environment turns one on right now (for testing).
 const STREET_IDS = new Set(["mc-1929", "sg-2008", "az-2016", "us-2022", "us-2023"]);
@@ -1108,6 +1111,13 @@ class Room {
         color: AI_COLORS[i % AI_COLORS.length], livery: LIVERIES[(i * 3 + 1) % LIVERIES.length],
       });
     }
+  }
+  // why this race pays no race coins (null = it pays)
+  noCoinsWhy() {
+    if (this.ranked) return "ranked";
+    if ((this.qualifying ? this.realLaps : this.settings.laps) < COIN_MIN_LAPS) return "laps";
+    if ((this.track?.length || 0) < COIN_MIN_LEN) return "tiny";
+    return null;
   }
   // the weekend event, if one is on and counts in this room (ranked races never change)
   eventHere() { const ev = this.ranked ? null : eventNow(); return ev && (!ev.applies || ev.applies(this)) ? ev : null; }
@@ -2397,12 +2407,12 @@ class Room {
       const mi = order.findIndex((c) => c.owner === p.id), ri = order.findIndex((c) => c.name === p.rival);
       if (mi < 0 || ri < 0) continue;
       p.beatRival = mi < ri;
-      io.to(p.id).emit("rivalResult", { name: p.rival, beat: p.beatRival, coins: p.beatRival && p.uid ? RIVAL_COINS : 0, xp: p.beatRival && p.uid ? 100 : 0 });
+      io.to(p.id).emit("rivalResult", { name: p.rival, beat: p.beatRival, coins: p.beatRival && p.uid && !this.noCoinsWhy() ? RIVAL_COINS : 0, xp: p.beatRival && p.uid ? 100 : 0 });
     }
     this.dotd = dotd && dotd.car;
-    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner ? DOTD_COINS : 0 } });
+    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
-    if (this.commCode) communityPlayed(this.commCode);
+    if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
     if (this.ranked && this.rankedUid) {
       const i = order.findIndex((c) => c.id === this.rankedCar), c = order[i];
       const done = !!(c && c.owner && c.finished);
@@ -2432,6 +2442,7 @@ class Room {
     const kmPerLap = this.track ? this.track.length / 4200 : 0;
     const aiCount = order.filter((c) => c.isAi).length;          // real AI drivers (not players who left)
     const ev = this.eventHere();                                   // weekend event bonuses
+    const noCoins = this.noCoinsWhy();                             // too short / tiny track / ranked: no race coins
     for (const c of humans) {
       const p = this.players.get(c.owner); if (!p?.uid) continue;
       const pos = order.indexOf(c) + 1, rs = c.rs || {};
@@ -2451,14 +2462,16 @@ class Room {
         totw: this.trackKind === "totw" && this.totwWeek === weekNow() && !this.track?.reverse ? this.totwWeek : 0,
         margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
-        aiCount, winCoins: pos === 1 && c.finished && aiCount >= WIN_MIN_AI ? (WIN_COINS[this.settings.aiLevel] || WIN_COINS.medium) * (ev?.winMult || 1) * (ev?.coinMult || 1) : 0,
+        raceCoins: !noCoins, aiCount, winCoins: !noCoins && pos === 1 && c.finished && aiCount >= WIN_MIN_AI ? (WIN_COINS[this.settings.aiLevel] || WIN_COINS.medium) * (ev?.winMult || 1) * (ev?.coinMult || 1) : 0,
         coinMult: ev?.coinMult || 1, passMult: ev?.passMult || 1, event: ev?.id || null,
       };
       accounts.getUser(p.uid).then((u) => {
         if (!u) return;
         const got = accounts.recordRace(u, r);
         if (r.winCoins) io.to(p.id).emit("toast", `🏆 Race win: +${r.winCoins} coins!${ev && (ev.winMult || ev.coinMult) ? ` (${ev.icon} ${ev.name})` : ""}`);
-        else if (pos === 1 && c.finished) io.to(p.id).emit("toast", `🏆 You won! Win coins need at least ${WIN_MIN_AI} AI drivers in the race (this one had ${aiCount}).`);
+        else if (pos === 1 && c.finished && !this.ranked) io.to(p.id).emit("toast", noCoins === "laps" ? `🏆 You won! Race coins need more than ${COIN_MIN_LAPS - 1} laps.`
+          : noCoins === "tiny" ? `🏆 You won! This track is too tiny for race coins (it needs to be at least ${COIN_MIN_LEN / 10000} km).`
+          : `🏆 You won! Win coins need at least ${WIN_MIN_AI} AI drivers in the race (this one had ${aiCount}).`);
         if (r.newPb) io.to(p.id).emit("toast", r.oldPb ? `🏅 New personal best on this track! ${r.best.toFixed(2)}s (was ${r.oldPb.toFixed(2)}s)` : `🏅 First lap record set on this track: ${r.best.toFixed(2)}s`);
         io.to(p.id).emit("account", accounts.publicUser(u));
         for (const a of got) io.to(p.id).emit("achievement", a);
@@ -2526,20 +2539,29 @@ const totwInfo = () => { const T = totw(); return T ? { week: T.week, name: T.na
 
 // ======================= Ranked rooms =======================
 // A private room with one player, fixed settings, and AI picked by your tier. Starts by itself.
-const RANKED_THEMES = THEME_KEYS, RANKED_WEATHER = ["sunny", "sunny", "dynamic", "fog", "rain"];
+// Tracks: half the time a real circuit (with its real DRS zones), otherwise a random track on the normal map,
+// never VERY wonky. Mostly daytime and dry; night and fog never come together.
+const RANKED_DAY = ["grass", "grass", "desert", "snow", "autumn", "beach", "city", "volcano"], RANKED_NIGHT = ["night", "neon"];
+const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
+function rankedLook() {
+  const night = Math.random() < 0.2, r = Math.random();
+  const weather = r < 0.5 ? "sunny" : r < 0.78 ? "dynamic" : r < 0.92 || night ? "rain" : "fog";
+  return { theme: pickOne(night ? RANKED_NIGHT : RANKED_DAY), weather };
+}
+const rankedReal = () => F1_TRACKS.filter((t) => t.km >= 3 && t.km <= 7.2);
 function makeRankedRoom(socket, profile, u) {
   const r = new Room(makeCode(), false); rooms.set(r.code, r);
   r.ranked = true;
   const R = accounts.rankedPublic(u), F = R.field;
   r.rankedTier = R.rank.label;
-  Object.assign(r.settings, { laps: 3, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15,
-    theme: RANKED_THEMES[Math.floor(Math.random() * RANKED_THEMES.length)], weather: RANKED_WEATHER[Math.floor(Math.random() * RANKED_WEATHER.length)] });
+  Object.assign(r.settings, { laps: 3, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
-  const wonk = ["little", "regular", "regular", "very"][Math.floor(Math.random() * 4)];
-  const err = r.setRandomTrack(Math.random() < 0.5 ? "small" : "normal", wonk);
-  if (err) { r.setRandomTrack("small", "regular"); }
-  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · starting soon`);
+  const real = rankedReal();
+  let err = real.length && Math.random() < 0.5 ? r.setF1Track(pickOne(real).id) : "random";
+  if (err) err = r.setRandomTrack("normal", Math.random() < 0.6 ? "regular" : "little");
+  if (err) r.setRandomTrack("normal", "little");
+  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
   return r;
 }
@@ -2570,7 +2592,7 @@ function cleanReplay(o) {
     design: typeof c?.design === "string" && DESIGN.test(c.design) ? c.design : null,
     extras: c?.extras && typeof c.extras === "object" ? Object.fromEntries(Object.entries(c.extras).slice(0, 14).filter(([k, v]) => /^[a-z]{2,8}$/.test(k) && typeof v === "string").map(([k, v]) => [k, v.slice(0, 16)])) : null,
   }));
-  const carRow = (a) => (Array.isArray(a) ? a.slice(0, 30).map((v, i) => (i === 16 ? (["D", "I", "F", "W"].includes(v) ? v : "I") : Math.round(num(v) * 100) / 100)) : []);
+  const carRow = (a) => (Array.isArray(a) ? a.slice(0, 31).map((v, i) => (i === 16 ? (["D", "I", "F", "W"].includes(v) ? v : "I") : Math.round(num(v) * 100) / 100)) : []);
   const frames = o.frames.slice(0, 1500).map((f) => ({ t: Math.round(num(f?.t) * 1000) / 1000, s: numArr(f?.s, cars.length).map(Math.round), c: Array.isArray(f?.c) ? f.c.slice(0, cars.length).map(carRow) : [], w: Math.max(0, Math.min(1, num(f?.w))), r: f?.r ? 1 : 0 }));
   if (frames.length < 10) return null;
   return { v: 1, at: Date.now(), title: typeof o.title === "string" ? cleanTeam(o.title).slice(0, 40) : "", track, cars, frames, speed: [1, 2, 3].includes(o.speed) ? o.speed : 1, fog: !!o.fog, winner: typeof o.winner === "string" ? o.winner.slice(0, 20) : "" };
@@ -3084,13 +3106,14 @@ io.on("connection", (socket) => {
     if (Object.values(C).filter((t) => t.byUid === u.id).length >= COMM_PER_USER) return socket.emit("communityMsg", { error: `You have ${COMM_PER_USER} tracks listed already. Remove one first.` });
     let data = null; try { data = JSON.parse(raw); } catch (e) {}
     if (!data || !Array.isArray(data.stroke)) return socket.emit("communityMsg", { error: "That track couldn't be listed" });
+    if (data.byUid && data.byUid !== u.id) return socket.emit("communityMsg", { error: "Only the player who shared this track first can put it in the community list" });
     C[code] = { code, name, by: u.name, byUid: u.id, map: data.map || "normal", at: Date.now(), plays: 0, up: 0, down: 0, votes: {}, prev: commPreview(data.stroke) };
     commPrune(); commSaveSoon();
     socket.emit("communityMsg", { ok: `🌍 "${name}" is in the community list!` });
   });
   socket.on("community:vote", async (d) => {
     const uid = socket.data.uid; if (!uid) return socket.emit("communityMsg", { error: "Sign in to rate tracks" });
-    const C = await commGet(), t = C[String(d?.code || "")]; if (!t) return;
+    const C = await commGet(), t = commOwn(C, d?.code); if (!t) return;
     if (t.byUid === uid) return socket.emit("communityMsg", { error: "You can't rate your own track" });
     const v = [1, -1, 0].includes(d?.v) ? d.v : 0, old = t.votes[uid] || 0;
     if (old === 1) t.up--; else if (old === -1) t.down--;
@@ -3099,7 +3122,7 @@ io.on("connection", (socket) => {
     commSaveSoon(); socket.emit("communityVoted", commPublic(t, uid));
   });
   socket.on("community:remove", async (d) => {
-    const uid = socket.data.uid, C = await commGet(), t = C[String(d?.code || "")];
+    const uid = socket.data.uid, C = await commGet(), t = commOwn(C, d?.code);
     if (!t || !uid || t.byUid !== uid) return;
     delete C[t.code]; commSaveSoon(); socket.emit("communityMsg", { ok: `Removed "${t.name}" from the list` });
   });
@@ -3133,7 +3156,9 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !r.track || !r.stroke) return socket.emit("shareCode", { error: "There's no track to share yet" });
     const data = JSON.stringify(r.shareData());
     const code = accounts.shareCode("trk:" + data);
-    await accounts.putShared("trk", code, data, 365 * 86400);
+    let by = socket.data.uid || null;
+    try { const old = await accounts.getShared("trk", code); if (old) by = JSON.parse(old).byUid || by; } catch (e) {}   // first sharer keeps it
+    await accounts.putShared("trk", code, JSON.stringify({ ...JSON.parse(data), byUid: by }), 365 * 86400);
     socket.emit("shareCode", { kind: "track", code, name: r.trackName || null });
   });
   socket.on("track:load", async (code) => {
@@ -3492,7 +3517,15 @@ function commPreview(stroke) {
   return pts.map(([x, y]) => [Math.round((x - x0) * k), Math.round((y - y0) * k)]);
 }
 const commPublic = (t, uid) => ({ code: t.code, name: t.name, by: t.by, map: t.map, at: t.at, plays: t.plays, up: t.up, down: t.down, prev: t.prev, mine: !!uid && t.byUid === uid, myVote: (uid && t.votes[uid]) || 0 });
-async function communityPlayed(code) { const C = await commGet(); if (C[code]) { C[code].plays++; commSaveSoon(); } }
+const commOwn = (C, code) => { const k = String(code || ""); return Object.prototype.hasOwnProperty.call(C, k) ? C[k] : null; };
+// a play = a signed-in player finishing a 3+ lap race on it, once per account per track per day
+const commSeen = new Set(); let commSeenDay = 0;
+async function communityPlayed(code, uids) {
+  const day = Math.floor(Date.now() / DAY); if (day !== commSeenDay) { commSeenDay = day; commSeen.clear(); }
+  const C = await commGet(), t = commOwn(C, code); if (!t) return;
+  let n = 0; for (const uid of uids) { const k = uid + "|" + code; if (!commSeen.has(k)) { commSeen.add(k); n++; } }
+  if (n) { t.plays += n; commSaveSoon(); }
+}
 
 // Owner fallback: RESET_PASSWORD=username:newpassword in Render > Environment sets that account's password when the
 // server starts (for a wiped or forgotten password when no device can fix it). Remove it again afterwards!

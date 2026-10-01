@@ -308,8 +308,8 @@ test("race win coins: by AI difficulty, only with 7+ AI drivers", async () => {
   accounts.recordRace = (u, r) => { seen.push(r); return []; };
   const u = await accounts.signUp("WinCoiner", "Turbo-Fox-Lane-42");
   try {
-    const run = async (level, ai, humanPos = 1, extraHumans = 0) => {
-      const r = new game.Room("WINCO" + seen.length, false); r.settings.aiLevel = level;
+    const run = async (level, ai, humanPos = 1, extraHumans = 0, laps = 6, len = 20000, ranked = false) => {
+      const r = new game.Room("WINCO" + seen.length, false); r.settings.aiLevel = level; r.settings.laps = laps; r.track = { length: len, elev: [0] }; r.ranked = ranked;
       const me = { id: "s-me", uid: u.u.id, name: "Me" }; r.players.set(me.id, me);
       const order = [];
       for (let i = 0; i < ai; i++) order.push({ id: i, isAi: true, finished: true, lapsDone: 3, pits: 0, bestLap: 30 });
@@ -326,6 +326,11 @@ test("race win coins: by AI difficulty, only with 7+ AI drivers", async () => {
     assert.equal(await run("extreme", 6), 0, "6 AI is not enough");
     assert.equal(await run("easy", 0, 1, 4), 0, "a race with only real people pays nothing");
     assert.equal(await run("hard", 8, 2), 0, "only the winner gets win coins");
+    assert.equal(await run("extreme", 9, 1, 0, 5), 0, "5 laps is too short for coins");
+    assert.equal(seen[seen.length - 1].raceCoins, false, "no rival / Driver of the Day coins either");
+    assert.equal(await run("extreme", 9, 1, 0, 6), 500, "6 laps is enough");
+    assert.equal(await run("extreme", 9, 1, 0, 10, 4000), 0, "a tiny track pays no coins");
+    assert.equal(await run("extreme", 9, 1, 0, 10, 20000, true), 0, "ranked pays no race coins");
   } finally { accounts.recordRace = real; }
 });
 
@@ -398,7 +403,7 @@ test("weekend events: on Saturdays and Sundays, change the weather and pay doubl
     const seen = [], real = accounts.recordRace; accounts.recordRace = (u, x) => { seen.push(x); return []; };
     try {
       const { u } = await accounts.signUp("EventWinner", "Turbo-Fox-Lane-42");
-      const me = { id: "s-ev", uid: u.id, name: "Me" }; r.players.set(me.id, me); r.settings.aiLevel = "easy";
+      const me = { id: "s-ev", uid: u.id, name: "Me" }; r.players.set(me.id, me); r.settings.aiLevel = "easy"; r.settings.laps = 6;   // (race coins need 6+ laps)
       const order = [{ id: 99, owner: me.id, finished: true, lapsDone: 3, pits: 0, bestLap: 30 }];
       for (let i = 0; i < 7; i++) order.push({ id: i, isAi: true, finished: true, lapsDone: 3, pits: 0, bestLap: 30 });
       r.recordStats(order, order.map(() => ({ pts: 0 })), null); await new Promise((ok) => setTimeout(ok, 50));
@@ -448,4 +453,37 @@ test("community tracks: list a shared track, rate it, and the busy-account sign-
   a2.emit("account:kickOther"); assert.equal((await got(a2, "kickedOther")).n, 1); await out;
   a2.emit("create", { name: "Maker 2" }); assert.ok((await got(a2, "joined")).code, "plays after signing the other one out");
   for (const s of [a2, b]) s.disconnect();
+});
+
+test("ranked pays coins only for reaching a new division, once", () => {
+  assert.equal(accounts.rankUpCoins(0, 99), 0, "still Iron III");
+  assert.equal(accounts.rankUpCoins(0, 100), 150, "Iron II: a new division");
+  assert.equal(accounts.rankUpCoins(250, 310), 600, "Bronze III: a new tier");
+  assert.equal(accounts.rankUpCoins(2050, 2120), 3000, "Overdrive Elite");
+  const u = { id: "u_rk", coins: 0, stats: {}, ranked: { sr: 95, peak: 95, games: 0, wins: 0 } };
+  accounts.rankedStart(u);
+  const up = accounts.rankedFinish(u, 1, 6, true);
+  assert.equal(up.coins, 150); assert.equal(u.coins, 150);
+  u.ranked.sr = 60;                                // dropped back down...
+  accounts.rankedStart(u);
+  const again = accounts.rankedFinish(u, 1, 6, true);
+  assert.ok(u.ranked.sr >= 100 && again.coins === 0, "...and climbing back to a division you've had pays nothing");
+});
+
+test("ranked races are on real circuits or tidy random tracks", { timeout: 60000 }, async () => {
+  const res = await accounts.signUp("RankTracks", "Turbo-Fox-Lane-42");
+  const s = io(base, { transports: ["websocket"], forceNew: true });
+  const got = (ev) => new Promise((ok) => s.once(ev, ok));
+  await got("connect");
+  s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); await got("account");
+  const kinds = new Set();
+  for (let i = 0; i < 4; i++) {
+    s.emit("ranked:play", { name: "RankTracks" });
+    const j = await got("joined"), r = game.rooms.get(j.code);
+    assert.ok(r.trackKind === "f1" || (r.trackKind === "random" && r.wonk !== "very" && r.settings.map === "normal"), `ranked track: ${r.trackKind} ${r.wonk} ${r.settings.map}`);
+    assert.ok(!(r.settings.weather === "fog" && ["night", "neon"].includes(r.settings.theme)), "never night + fog");
+    kinds.add(r.trackKind);
+    s.emit("leave"); await new Promise((ok) => setTimeout(ok, 1200));
+  }
+  s.close();
 });

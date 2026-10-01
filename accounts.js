@@ -798,7 +798,8 @@ function recordRace(u, r) {
   if (r.pos === 1) s.wins++;
   if (r.pos <= 3) s.podiums++;
   // bonuses: beat your rival, Driver of the Day (most places gained), winning (with 7+ AI)
-  const bonus = Math.round(((r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0)) * (r.coinMult || 1)) + (r.winCoins || 0);   // (win coins already include event bonuses)   // + race win coins (by AI difficulty)
+  // (no race coins in short races, on tiny tracks or in ranked: r.raceCoins === false)
+  const bonus = r.raceCoins === false ? 0 : Math.round(((r.beatRival ? 100 : 0) + (r.dotd ? 150 : 0)) * (r.coinMult || 1)) + (r.winCoins || 0);   // (win coins already include event bonuses)   // + race win coins (by AI difficulty)
   if (r.beatRival) s.rivalWins = (s.rivalWins || 0) + 1;
   if (r.dotd) s.dotd = (s.dotd || 0) + 1;
   if (bonus) { u.coins += bonus; s.coinsEarned = (s.coinsEarned || 0) + bonus; }
@@ -1174,18 +1175,29 @@ function rankedDelta(sr, pos, of) {
   const gain = [1.25, 1.15, 1.05, 1, 0.9, 0.85, 0.8, 0.7][i], loss = [0.4, 0.55, 0.7, 0.85, 1, 1.05, 1.1, 1.2][i];
   return Math.round(k >= 0 ? 40 * k * gain + (pos === 1 ? 8 : 0) : 40 * k * loss);
 }
+// Ranked pays no race coins: you get coins when you reach a division you've never reached before
+// (each one once, so dropping and climbing back pays nothing). A new tier pays more, Overdrive Elite most.
+const divIdx = (sr) => (sr >= OE_SR ? 21 : Math.floor(Math.max(0, sr) / 100));
+const RANK_UP_COINS = { div: 150, tier: 600, oe: 3000 };
+function rankUpCoins(oldPeak, newSr) {
+  let coins = 0;
+  for (let d = divIdx(oldPeak) + 1; d <= divIdx(newSr); d++) coins += d === 21 ? RANK_UP_COINS.oe : d % 3 === 0 ? RANK_UP_COINS.tier : RANK_UP_COINS.div;
+  return coins;
+}
 function rankedFinish(u, pos, of, finished) {
   const R = rankedState(u);
   if (!R.live) return null;
-  const sr0 = R.live.sr0; delete R.live;
+  const sr0 = R.live.sr0, peak0 = R.peak || 0; delete R.live;
   const d = finished ? rankedDelta(sr0, pos, of) : -RANKED_DNF;
   const before = rankOf(sr0);
-  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(R.peak || 0, R.sr); R.games++; if (pos === 1 && finished) R.wins++;
+  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(peak0, R.sr); R.games++; if (pos === 1 && finished) R.wins++;
+  const coins = rankUpCoins(peak0, R.sr);
+  if (coins) { u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; }
   R.hist = [...(R.hist || []), { d, pos, of, at: Date.now() }].slice(-10);
   const after = rankOf(R.sr);
   putRankBoard(u);
   saveSoon(u);
-  return { delta: R.sr - sr0, sr: R.sr, before, after, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
+  return { delta: R.sr - sr0, sr: R.sr, before, after, coins, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
 }
 function rankedPublic(u) { const R = rankedState(u); return { sr: R.sr, peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
 async function putRankBoard(u) { const B = await boards(); B.ranked = B.ranked || []; putBoard(B.ranked, { id: u.id, name: u.name, v: u.ranked.sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
@@ -1498,6 +1510,6 @@ module.exports = {
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
-  buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
+  rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
 };

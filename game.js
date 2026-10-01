@@ -1854,7 +1854,8 @@
       tr.append(a, b, c); cb.appendChild(tr);
     });
     if (!S.track && S.host && !S.draft) boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can mix in Freehand too." : "Click to place corners. You can mix in Freehand too.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
-    if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
+    if (l.ranked) boardHint(`🏆 Ranked race on ${l.trackName || "a random track"}: starting in a moment...`, false);
+    else if (!S.host) boardHint(S.track ? `${l.players.find((p) => p.id === l.hostId)?.name || "Host"} made this track` : "Waiting for the host to draw a track...", false);
     drawBoard();
   }
   // Teams: every team with its drivers (players + AI), and a Join button
@@ -4131,13 +4132,14 @@
         ctx.stroke();
       }
     }
+    const fogX = PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, fogY = PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z;
     if (th.night) {
       if (settings.fx === "off") {       // cheap version: just darker round the edges
         if (!S.vignette || S.vignette.w !== w || S.vignette.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); S.vignette = { g, w, h }; }
         ctx.fillStyle = S.vignette.g; ctx.fillRect(0, 0, w, h);
-      } else drawNight(w, h, dpr, z, shx, shy, th);
+      } else drawNight(w, h, dpr, z, shx, shy, th, S.race?.fog ? { now, x: fogX, y: fogY } : null);
     }
-    if (S.race?.fog) drawFog(w, h, !!th.night, now, PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z);
+    if (S.race?.fog && !(th.night && settings.fx !== "off")) drawFog(w, h, !!th.night, now, fogX, fogY);
     if (settings.lines === "on" && !reducedMotion && sp > 640) {
       const a = clamp((sp - 640) / 240, 0, 1) * 0.35;
       ctx.strokeStyle = target.nitroOn ? `rgba(120,200,255,${a + 0.15})` : `rgba(255,255,255,${a})`; ctx.lineWidth = 2;
@@ -4384,13 +4386,15 @@
       lad.appendChild(li);
     });
     box.appendChild(lad);
-    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Ranked races are you against the AI on a random track, 3 laps, random weather (fog and night included)."));
+    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Ranked races are you against the AI, 3 laps, on a real circuit or a random track."));
+    box.appendChild(el("p", "preset-note", "🪙 Ranked races don't pay coins. Ranking up does: 150 coins for each new division, 600 for each new tier and 3,000 for reaching Overdrive Elite. Each one pays once, the first time you get there."));
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
   }
   socket.on("rankedResult", (r) => {
     S.rankedRes = r; renderRankedRes();
     if (r.up) setTimeout(() => { banner(`RANK UP! ${r.after.icon} ${r.after.label}`, r.after.color); sfx("win"); }, 2400);
+    if (r.coins) setTimeout(() => popup(`🪙 +${r.coins} coins: first time reaching ${r.after.label}!`), 3200);
     else if (r.down) setTimeout(() => popup(`Down to ${r.after.label}. You'll get it back!`, true), 2400);
   });
   function renderRankedRes() {
@@ -4399,6 +4403,7 @@
     box.textContent = ""; box.style.setProperty("--rk", r.after.color);
     const d = el("div", "rr-main");
     d.append(rankBadge(r.after), el("b", "rr-delta " + (r.delta >= 0 ? "up" : "down"), `${r.delta >= 0 ? "+" : ""}${r.delta} SR`), el("small", "", r.dnf ? "You left the race: that counts as last." : `P${r.pos} of ${r.of} · now ${r.sr} SR`));
+    if (r.coins) d.appendChild(el("b", "rr-coins", `🪙 +${r.coins} (new rank reached)`));
     const row = el("div", "sec-row");
     const again = el("button", "btn go", "🏁 Race ranked again"); again.type = "button"; again.addEventListener("click", playRanked);
     const menu = el("button", "btn", "Menu"); menu.type = "button"; menu.addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; S.rankedRaced = false; show("menu"); });
@@ -4719,6 +4724,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-06", title: "Better ranked, fairer coins", items: [
+      "🏆 Ranked races are on real circuits (with their real DRS zones) or good random tracks now: no more tiny, VERY wonky ones.",
+      "🪙 Ranked doesn't pay race coins any more. Ranking up does: 150 coins for each new division, 600 for each new tier, 3,000 for Overdrive Elite (each one once).",
+      "🏁 Race coins (wins, rivals, Driver of the Day) need more than 5 laps, on a track that isn't tiny (0.6 km or more).",
+      "🌙 Night and 🌫 fog races run a lot smoother.",
+      "🌍 Community tracks: only the player who first shared a track can list it, and plays count once per player per day.",
+    ] },
     { v: "2026-10-04", title: "Tidier screens on computers", items: [
       "🧰 Track tools are split into ✏️ Draw, 📚 Tracks and 🔧 Edit, so the column fits on screen.",
       "👥 The room has 3 tabs: Drivers (with the AI list), Settings (with points) and Standings.",
@@ -5035,46 +5047,65 @@
 
   // ======================= Night and fog =======================
   // Night: the whole screen goes dark except where headlights (and a little glow round each car) reach.
-  let nightCv = null;
-  function drawNight(w, h, dpr, z, shx, shy, th) {
+  // Both are drawn from pictures made once (not new gradients every frame), and the dark layer is half size:
+  // it's soft anyway, and that keeps night and fog races as smooth as the others.
+  let nightCv = null, coneSp = null, glowSp = null, fogSp = null, fogKey = "", blobSp = null, blobCol = "";
+  const sprite = (w, h, paint) => { const cv = document.createElement("canvas"); cv.width = w; cv.height = h; paint(cv.getContext("2d")); return cv; };
+  function nightSprites() {
+    if (coneSp) return;
+    // a headlight beam pointing right from (0, 130): fully clear near the car, fading out by 330px
+    coneSp = sprite(380, 260, (c) => {
+      const g = c.createRadialGradient(20, 130, 10, 20, 130, 330);
+      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.55, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g; c.beginPath(); c.moveTo(16, 121); c.lineTo(330, 5); c.quadraticCurveTo(372, 130, 330, 255); c.lineTo(16, 139); c.closePath(); c.fill();
+    });
+    glowSp = sprite(128, 128, (c) => { const r = c.createRadialGradient(64, 64, 8, 64, 64, 58); r.addColorStop(0, "rgba(0,0,0,0.9)"); r.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = r; c.fillRect(0, 0, 128, 128); });
+  }
+  function drawNight(w, h, dpr, z, shx, shy, th, fog) {
+    nightSprites();
+    const k = dpr * 0.5, W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
     if (!nightCv) nightCv = document.createElement("canvas");
-    if (nightCv.width !== Math.round(w * dpr) || nightCv.height !== Math.round(h * dpr)) { nightCv.width = Math.round(w * dpr); nightCv.height = Math.round(h * dpr); }
+    if (nightCv.width !== W || nightCv.height !== H) { nightCv.width = W; nightCv.height = H; }
     const n = nightCv.getContext("2d");
-    n.setTransform(1, 0, 0, 1, 0, 0); n.globalCompositeOperation = "source-over"; n.clearRect(0, 0, nightCv.width, nightCv.height);
-    n.fillStyle = th.key === "neon" ? "rgba(8,4,26,0.5)" : "rgba(3,5,16,0.7)"; n.fillRect(0, 0, nightCv.width, nightCv.height);
+    n.setTransform(1, 0, 0, 1, 0, 0); n.globalCompositeOperation = "copy";
+    n.fillStyle = th.key === "neon" ? "rgba(8,4,26,0.5)" : "rgba(3,5,16,0.7)"; n.fillRect(0, 0, W, H);
     n.globalCompositeOperation = "destination-out";
     const rot = PH.on ? PH.rot : 0;
-    n.setTransform(dpr * z, 0, 0, dpr * z, dpr * (w / 2 + shx), dpr * (h / 2 + shy));
+    n.setTransform(k * z, 0, 0, k * z, k * (w / 2 + shx), k * (h / 2 + shy));
     if (rot) n.rotate(rot);
     n.translate(-cam.x, -cam.y);
     const reach = Math.hypot(w, h) / 2 / z + 380;          // headlights reach ~330px: skip cars too far away to show
     for (const c of S.cars.values()) {
       if (c.x === undefined || Math.abs(c.x - cam.x) > reach || Math.abs(c.y - cam.y) > reach) continue;
       n.save(); n.translate(c.x, c.y); n.rotate(c.h);
-      const g = n.createRadialGradient(20, 0, 10, 20, 0, 330);
-      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.55, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
-      n.fillStyle = g; n.beginPath(); n.moveTo(16, -9); n.lineTo(330, -125); n.quadraticCurveTo(372, 0, 330, 125); n.lineTo(16, 9); n.closePath(); n.fill();
-      const r = n.createRadialGradient(0, 0, 8, 0, 0, 58); r.addColorStop(0, "rgba(0,0,0,0.9)"); r.addColorStop(1, "rgba(0,0,0,0)");
-      n.fillStyle = r; n.beginPath(); n.arc(0, 0, 58, 0, Math.PI * 2); n.fill();
+      n.drawImage(coneSp, 0, -130); n.drawImage(glowSp, -64, -64);
       n.restore();
     }
     // the start/finish straight is floodlit
     const t = S.track;
-    if (t?.pts?.length) { const p = t.pts[0], g = n.createRadialGradient(p.x, p.y, 40, p.x, p.y, 520); g.addColorStop(0, "rgba(0,0,0,0.8)"); g.addColorStop(1, "rgba(0,0,0,0)"); n.fillStyle = g; n.beginPath(); n.arc(p.x, p.y, 520, 0, Math.PI * 2); n.fill(); }
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(nightCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (t?.pts?.length) { const p = t.pts[0]; n.drawImage(glowSp, p.x - 590, p.y - 590, 1180, 1180); }
+    // night AND fog: the fog goes on this same half-size layer, so the screen is only covered once
+    if (fog) { n.globalCompositeOperation = "source-over"; n.setTransform(k, 0, 0, k, 0, 0); drawFog(w, h, true, fog.now, fog.x, fog.y, n); }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(nightCv, 0, 0, W, H, 0, 0, Math.round(w * dpr), Math.round(h * dpr)); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   // Fog: you can see the road around your car, then it fades into grey (darker at night). A few banks drift past.
-  function drawFog(w, h, night, now, fx, fy) {
-    const R = Math.min(w, h), g = ctx.createRadialGradient(fx, fy, R * 0.12, fx, fy, R * 0.62);
-    const col = night ? "46,50,62" : "196,202,208";
-    g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.55, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0.94)`);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  function drawFog(w, h, night, now, fx, fy, out = ctx) {
+    const R = Math.min(w, h), col = night ? "46,50,62" : "196,202,208", key = `${Math.round(w)}x${Math.round(h)}|${col}`;
+    if (key !== fogKey) {        // twice the screen size, clear in the middle: slid around to follow the car
+      fogKey = key;
+      fogSp = sprite(Math.round(w * 2), Math.round(h * 2), (c) => {
+        const g = c.createRadialGradient(w, h, R * 0.12, w, h, R * 0.62);
+        g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.55, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0.94)`);
+        c.fillStyle = g; c.fillRect(0, 0, w * 2, h * 2);
+      });
+    }
+    out.drawImage(fogSp, fx - w, fy - h);
     if (reducedMotion) return;
+    if (blobCol !== col) { blobCol = col; blobSp = sprite(128, 128, (c) => { const b = c.createRadialGradient(64, 64, 0, 64, 64, 64); b.addColorStop(0, `rgba(${col},0.22)`); b.addColorStop(1, `rgba(${col},0)`); c.fillStyle = b; c.fillRect(0, 0, 128, 128); }); }
     const t = now / 1000;
     for (let i = 0; i < 6; i++) {
       const x = ((i * 0.37 + t * (0.012 + i * 0.004)) % 1.4 - 0.2) * w, y = (0.15 + ((i * 0.53) % 1) * 0.7) * h + Math.sin(t * 0.3 + i) * 30, r = R * (0.25 + (i % 3) * 0.08);
-      const b = ctx.createRadialGradient(x, y, 0, x, y, r); b.addColorStop(0, `rgba(${col},0.22)`); b.addColorStop(1, `rgba(${col},0)`);
-      ctx.fillStyle = b; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      out.drawImage(blobSp, x - r, y - r, r * 2, r * 2);
     }
   }
 

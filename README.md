@@ -60,17 +60,18 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   `FORCE_EVENT=<id>` in the Environment turns one on right now for testing (remove it after).
 - **Reverse grid** (room setting, off by default): from race 2 of a championship, fewest points at the front and the
   leader at the back. Only with qualifying off. It overrides host grid spots.
-- **Community tracks** (🌍 Community in the track tools): after 🔗 Share code, signed-in players can "Add to community"
+- **Community tracks** (🌍 Community in the track tools): after 🔗 Share code, the player who first shared it (`byUid` in the share data) can "Add to community"
   with a name (max `COMM_PER_USER` 15 each, `COMM_MAX` 300 total, the weakest old ones drop off). Sort by most played
-  (each finished race on a listed track = 1 play), top rated (👍 minus 👎, one vote per account, not your own) or
+  (a signed-in player finishing a 3+ lap race on it, once per player per track per day), top rated (👍 minus 👎, one vote per account, not your own) or
   newest. Owners can remove theirs. Stored as one small document (`tb:comm:tracks` in Upstash, or
   `data/community.json`).
 - **Sign out my other device**: when the one-account rule blocks you, a dialog offers to sign the other device out
   (`account:kickOther`: removes it from its room, ends that device's session, and tells it why).
-- **Race win coins**: first place pays `WIN_COINS` by AI level (Easy 50, Normal 100, Hard 150, Extreme 500,
-  ranked Overdrive 500), but only with at least `WIN_MIN_AI` (7) real AI drivers in the race (`c.isAi`; players who
-  left don't count). A race with only real people pays no win coins, so friends can't farm wins off each other.
-  Winners get a toast either way, saying why if there were too few AI.
+- **Race win coins**: first place pays `WIN_COINS` by AI level (Easy 50, Normal 100, Hard 150, Extreme 500), but only
+  with at least `WIN_MIN_AI` (7) real AI drivers in the race (`c.isAi`; players who left don't count). A race with only
+  real people pays no win coins, so friends can't farm wins off each other. Winners get a toast either way, saying why.
+  **All race coins** (win, rival, Driver of the Day) also need more than 5 laps (`COIN_MIN_LAPS` 6) on a track that isn't
+  tiny (`COIN_MIN_LEN` 6000 px = 0.6 km as the lobby shows it), and never come in ranked (`Room.noCoinsWhy()`).
 - **Idle kick**: anyone in a room with no activity for `IDLE_MS` (1 hour) gets a warning 2 minutes before, then is
   removed from the room and disconnected ("💤 You were removed..."; reload to play). Activity = any message from
   the player, plus `alive` (the page sends it at most once a minute on a tap/click/key). The page's own background
@@ -100,6 +101,10 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Overdrive Elite at 2100+. Iron-Bronze race 3 Hard AI, Silver-Gold 5 EXTREME, Platinum+ 5 **Overdrive** AI
   (`AI_LEVELS.overdrive`, ranked only). The "left the race" loss (-45) is charged at the lights (`rankedStart`)
   and replaced by the real result at the flag (`rankedFinish`), so quitting can't dodge it. Ranked leaderboard.
+  Tracks (`makeRankedRoom`): half the time a real circuit of 3-7.2 km (with its real DRS zones), otherwise a random
+  track on the normal map (never VERY wonky). Mostly daytime and dry (`rankedLook`); night and fog never together.
+  **Coins:** ranked races pay no race coins. Reaching a division for the first time does (`rankUpCoins`, compared
+  with your peak): 150 per division, 600 per new tier, 3,000 for Overdrive Elite.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
@@ -114,7 +119,8 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Track of the week** (menu card, 🌟 on the track tools): the same random track for everyone all week (built from
   the week number with a seeded `Math.random`, `withSeed`), with its own best-lap leaderboard that resets Mondays.
 - **Night and fog**: night themes darken everything except headlights and the floodlit start (Settings › Effects
-  off = the old light version). Weather **Fog**: you only see the road near your car.
+  off = the old light version). Weather **Fog**: you only see the road near your car. Both are drawn from sprites
+  made once (`nightSprites`, `fogSp`), and the night layer is half resolution, so they cost about the same as a normal race.
 - **Replays**: the last 30 seconds are kept; 💾 Save (in the browser, up to 8) or 🔗 Share (a code, 30 days; the
   browser gzips it, the server checks and rebuilds it in `cleanReplay`). 🎬 Replays on the menu plays them.
 - **Photo mode** (📷 or **K** in a race or replay): freezes the view, drag/scroll/pinch to move and zoom, tilt,
