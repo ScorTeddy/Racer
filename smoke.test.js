@@ -171,7 +171,9 @@ test("ranked tiers, rating maths and who you race", () => {
   assert.equal(silver.aiLevel, "extreme");
   assert.equal(plat.aiLevel, "overdrive");
   assert.ok(oe.ai > plat.ai && plat.ai > silver.ai && silver.ai > iron.ai, "more AI every tier");
-  assert.ok(oe.laps > plat.laps && plat.laps >= silver.laps && silver.laps > iron.laps, "more laps going up");
+  const allLaps = [0, 300, 600, 900, 1200, 1500, 1800, 2100].map((sr) => accounts.rankedField(sr).laps);
+  assert.ok(allLaps.every((l, i) => !i || l > allLaps[i - 1]), "laps go up every tier: " + allLaps);
+  assert.equal(oe.laps, 15, "Overdrive Elite races 15 laps");
   assert.ok(oe.maps.includes("huge") && oe.wonks.includes("very"), "the top is big and wonky");
   assert.ok(game.AI_LEVELS.overdrive.rankedOnly, "Overdrive AI is ranked only");
   const u = { id: "u_x", ranked: { sr: 500, peak: 500, games: 0, wins: 0 }, stats: {}, owned: [], ach: {} };
@@ -490,7 +492,7 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
   s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); const acct = await got("account");
   const u = await accounts.getUser(acct.id);
   for (const [sr, check] of [[0, (r) => (r.trackKind === "f1" || (r.settings.map === "large" && r.wonk === "little")) && r.settings.ai === 3 && r.settings.laps === 4 && r.track.length > 9000],
-    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 7 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || r.settings.map === "huge")]]) {
+    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 15 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || r.settings.map === "huge")]]) {
     u.ranked = { sr, peak: sr, games: 0, wins: 0 };
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);

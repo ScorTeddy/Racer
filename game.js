@@ -4352,8 +4352,8 @@
   }
   $("rankedBtn").addEventListener("click", playRanked);
   const AI_WORD = { hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE" };
-  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 4 laps · big, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 4 laps · big tracks"], ["Silver", "🥈", 600, "5 EXTREME AI · 5 laps · big, wonky"], ["Gold", "🥇", 900, "6 EXTREME AI · 5 laps · some very wonky tracks"],
-    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 5 laps · big or huge tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 6 laps · huge tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 6 laps · huge, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 7 laps · huge, very wonky"]];
+  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 4 laps · big, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 6 laps · big tracks"], ["Silver", "🥈", 600, "5 EXTREME AI · 7 laps · big, wonky"], ["Gold", "🥇", 900, "6 EXTREME AI · 9 laps · some very wonky tracks"],
+    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 10 laps · big or huge tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 12 laps · huge tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 13 laps · huge, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 15 laps · huge, very wonky"]];
   function rankBadge(rank, big) {
     const b = el("div", "rank-badge" + (big ? " big" : "")); b.style.setProperty("--rk", rank.color);
     b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
@@ -4724,6 +4724,9 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-08", title: "Longer ranked races", items: [
+      "🏁 Ranked laps go up steadily with your tier: 4 at Iron, then 6, 7, 9, 10, 12, 13 and 15 laps at Overdrive Elite.",
+    ] },
     { v: "2026-10-07", title: "Bigger ranked tracks", items: [
       "🏆 Every ranked tier races on big tracks now (no more tiny ones): Iron is 4 laps on the large map, and from Diamond up it's the huge map.",
       "📏 Ranked races are longer at every tier: 4 laps at Iron, up to 7 at Overdrive Elite. Real circuits show up from Iron too.",
