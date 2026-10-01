@@ -4352,8 +4352,8 @@
   }
   $("rankedBtn").addEventListener("click", playRanked);
   const AI_WORD = { hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE" };
-  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 3 laps · small, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 3 laps"], ["Silver", "🥈", 600, "5 EXTREME AI · 4 laps"], ["Gold", "🥇", 900, "6 EXTREME AI · 4 laps · some very wonky tracks"],
-    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 5 laps · bigger tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 5 laps · big tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 6 laps · big, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 7 laps · huge, very wonky"]];
+  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 4 laps · big, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 4 laps · big tracks"], ["Silver", "🥈", 600, "5 EXTREME AI · 5 laps · big, wonky"], ["Gold", "🥇", 900, "6 EXTREME AI · 5 laps · some very wonky tracks"],
+    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 5 laps · big or huge tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 6 laps · huge tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 6 laps · huge, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 7 laps · huge, very wonky"]];
   function rankBadge(rank, big) {
     const b = el("div", "rank-badge" + (big ? " big" : "")); b.style.setProperty("--rk", rank.color);
     b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
@@ -4386,7 +4386,7 @@
       lad.appendChild(li);
     });
     box.appendChild(lad);
-    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Low tiers are short races against a few AI on small, gentle tracks; every tier up adds AI and laps, with bigger, wonkier tracks and real circuits."));
+    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Every tier races on big tracks: Iron is 4 laps against 3 AI on gentle ones, and every tier up adds AI and laps, with huge, wonkier tracks and real circuits."));
     box.appendChild(el("p", "preset-note", "🪙 Ranked races don't pay coins. Ranking up does: 150 coins for each new division, 600 for each new tier and 3,000 for reaching Overdrive Elite. Each one pays once, the first time you get there."));
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
@@ -4724,6 +4724,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-07", title: "Bigger ranked tracks", items: [
+      "🏆 Every ranked tier races on big tracks now (no more tiny ones): Iron is 4 laps on the large map, and from Diamond up it's the huge map.",
+      "📏 Ranked races are longer at every tier: 4 laps at Iron, up to 7 at Overdrive Elite. Real circuits show up from Iron too.",
+    ] },
     { v: "2026-10-06", title: "Better ranked, fairer coins", items: [
       "🏆 Ranked grows with you: Iron is a short race against 3 AI on small, gentle tracks. Every tier up adds AI and laps, with bigger, wonkier tracks and real circuits, up to 12 Overdrive AI over 7 laps at Overdrive Elite.",
       "🟩 Automatic DRS only goes on real straights now (a track that's all corners gets none). Hosts can still put a zone anywhere with Add DRS.",

@@ -103,8 +103,9 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   (`AI_LEVELS.overdrive`, ranked only). The "left the race" loss (-45) is charged at the lights (`rankedStart`)
   and replaced by the real result at the flag (`rankedFinish`), so quitting can't dodge it. Ranked leaderboard.
   **Each tier races something different** (`RANKED_FIELDS` in accounts.js, used by `makeRankedRoom`): Iron is 3 Hard AI,
-  3 laps, small gentle tracks; every tier up adds AI and laps with bigger, wonkier tracks and more real circuits, up to
-  Overdrive Elite: 12 Overdrive AI, 7 laps, large/huge VERY wonky tracks or real circuits up to 8 km. Mostly daytime and
+  4 laps on the large map (gentle tracks, or a real circuit up to 4.5 km); every tier up adds AI and laps with bigger,
+  wonkier tracks and more real circuits: the huge map from Diamond, up to Overdrive Elite: 12 Overdrive AI, 7 laps,
+  huge VERY wonky tracks or real circuits up to 8 km. Mostly daytime and
   dry (`rankedLook`); night and fog never together.
   **Coins:** ranked races pay no race coins. Reaching a division for the first time does (`rankUpCoins`, compared
   with your peak): 150 per division, 600 per new tier, 3,000 for Overdrive Elite.

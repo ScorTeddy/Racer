@@ -1156,18 +1156,19 @@ function rankOf(sr) {
   const i = Math.floor(sr / 300), div = 3 - Math.floor((sr % 300) / 100), T = TIERS[i];
   return { ...T, i, div: ["", "I", "II", "III"][div], sr, into: sr % 100, need: 100, label: `${T.name} ${["", "I", "II", "III"][div]}` };
 }
-// What each tier races: the low tiers are short races against a few AI on small, gentle tracks; every tier up
-// adds AI and laps, and the tracks get bigger and wonkier (real circuits get longer too).
+// What each tier races. Even Iron gets a proper-sized track (the large map) and 4 laps, about a minute and a
+// half of racing; every tier up adds AI and laps, and the tracks get bigger and wonkier, up to the huge map.
 // real = chance of a real circuit (up to realKm long) instead of a random track on one of `maps` at one of `wonks`.
+// (Rough lap times: large map 22-38s, huge 34-76s.)
 const RANKED_FIELDS = [
-  { ai: 3, aiLevel: "hard", laps: 3, maps: ["small"], wonks: ["little"], real: 0, realKm: 0 },                                       // Iron
-  { ai: 4, aiLevel: "hard", laps: 3, maps: ["small", "normal"], wonks: ["little", "regular"], real: 0.25, realKm: 4.5 },             // Bronze
-  { ai: 5, aiLevel: "extreme", laps: 4, maps: ["normal"], wonks: ["regular"], real: 0.35, realKm: 5.5 },                             // Silver
-  { ai: 6, aiLevel: "extreme", laps: 4, maps: ["normal"], wonks: ["regular", "regular", "very"], real: 0.4, realKm: 6 },             // Gold
-  { ai: 7, aiLevel: "overdrive", laps: 5, maps: ["normal", "large"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },           // Platinum
-  { ai: 8, aiLevel: "overdrive", laps: 5, maps: ["large"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },                     // Diamond
-  { ai: 10, aiLevel: "overdrive", laps: 6, maps: ["large"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Master
-  { ai: 12, aiLevel: "overdrive", laps: 7, maps: ["large", "huge"], wonks: ["very"], real: 0.4, realKm: 8 },                          // Overdrive Elite
+  { ai: 3, aiLevel: "hard", laps: 4, maps: ["large"], wonks: ["little"], real: 0.2, realKm: 4.5 },                                  // Iron
+  { ai: 4, aiLevel: "hard", laps: 4, maps: ["large"], wonks: ["little", "regular"], real: 0.3, realKm: 5.5 },                       // Bronze
+  { ai: 5, aiLevel: "extreme", laps: 5, maps: ["large"], wonks: ["regular"], real: 0.35, realKm: 6 },                               // Silver
+  { ai: 6, aiLevel: "extreme", laps: 5, maps: ["large"], wonks: ["regular", "regular", "very"], real: 0.4, realKm: 7.2 },           // Gold
+  { ai: 7, aiLevel: "overdrive", laps: 5, maps: ["large", "huge"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },            // Platinum
+  { ai: 8, aiLevel: "overdrive", laps: 6, maps: ["huge"], wonks: ["regular", "very"], real: 0.4, realKm: 8 },                       // Diamond
+  { ai: 10, aiLevel: "overdrive", laps: 6, maps: ["huge"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Master
+  { ai: 12, aiLevel: "overdrive", laps: 7, maps: ["huge"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Overdrive Elite
 ];
 function rankedField(sr) { return { ...RANKED_FIELDS[rankOf(sr).i] }; }
 const RANKED_DNF = 45;

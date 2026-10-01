@@ -167,11 +167,11 @@ test("ranked tiers, rating maths and who you race", () => {
   assert.equal(accounts.rankOf(750).label, "Silver II");
   assert.equal(accounts.rankOf(2100).key, "oe");
   const iron = accounts.rankedField(100), silver = accounts.rankedField(700), plat = accounts.rankedField(1300), oe = accounts.rankedField(2500);
-  assert.deepEqual([iron.ai, iron.aiLevel, iron.laps, iron.maps, iron.wonks], [3, "hard", 3, ["small"], ["little"]], "Iron: a short race against 3 Hard AI on small, gentle tracks");
+  assert.deepEqual([iron.ai, iron.aiLevel, iron.laps, iron.maps, iron.wonks], [3, "hard", 4, ["large"], ["little"]], "Iron: 4 laps against 3 Hard AI on big, gentle tracks");
   assert.equal(silver.aiLevel, "extreme");
   assert.equal(plat.aiLevel, "overdrive");
   assert.ok(oe.ai > plat.ai && plat.ai > silver.ai && silver.ai > iron.ai, "more AI every tier");
-  assert.ok(oe.laps > plat.laps && plat.laps > silver.laps && silver.laps > iron.laps, "more laps");
+  assert.ok(oe.laps > plat.laps && plat.laps >= silver.laps && silver.laps > iron.laps, "more laps going up");
   assert.ok(oe.maps.includes("huge") && oe.wonks.includes("very"), "the top is big and wonky");
   assert.ok(game.AI_LEVELS.overdrive.rankedOnly, "Overdrive AI is ranked only");
   const u = { id: "u_x", ranked: { sr: 500, peak: 500, games: 0, wins: 0 }, stats: {}, owned: [], ach: {} };
@@ -482,15 +482,15 @@ test("ranked pays coins only for reaching a new division, once", () => {
   assert.ok(u.ranked.sr >= 100 && again.coins === 0, "...and climbing back to a division you've had pays nothing");
 });
 
-test("ranked races grow with your tier: Iron is short and gentle, the top is big", { timeout: 60000 }, async () => {
+test("ranked races grow with your tier: even Iron gets big tracks, the top is huge", { timeout: 60000 }, async () => {
   await accounts.signUp("RankTracks", "Turbo-Fox-Lane-42");
   const s = io(base, { transports: ["websocket"], forceNew: true });
   const got = (ev) => new Promise((ok) => s.once(ev, ok));
   await got("connect");
   s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); const acct = await got("account");
   const u = await accounts.getUser(acct.id);
-  for (const [sr, check] of [[0, (r) => r.trackKind === "random" && r.settings.map === "small" && r.wonk === "little" && r.settings.ai === 3 && r.settings.laps === 3],
-    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 7 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || ["large", "huge"].includes(r.settings.map))]]) {
+  for (const [sr, check] of [[0, (r) => (r.trackKind === "f1" || (r.settings.map === "large" && r.wonk === "little")) && r.settings.ai === 3 && r.settings.laps === 4 && r.track.length > 9000],
+    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 7 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || r.settings.map === "huge")]]) {
     u.ranked = { sr, peak: sr, games: 0, wins: 0 };
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);
