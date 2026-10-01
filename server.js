@@ -159,25 +159,38 @@ function drsToBase(t, from, len) {
   const N = t.N, a = t.order[from % N], b = t.order[(from + len) % N];
   return t.reverse ? [b, a] : [a, b];
 }
-// zones for a track nobody placed by hand: the last part of its 1-3 longest straights, ending at the
-// braking point. Twisty tracks (lots of random ones) get their fastest stretch, so every track has DRS.
+// zones for a track nobody placed by hand (random, drawn, shared): the end of its 1-3 longest STRAIGHTS,
+// stopping at the braking point. Only real straights count (DRS_STRAIGHT_R: gentle kinks are fine, bends
+// aren't), so a really twisty track can end up with no DRS at all. Hosts can still put a zone anywhere.
 const DRS_AUTO_MAX = 3600;                        // longest automatic zone, px (about 850 m)
-function autoDrs(t) {
-  const want = t.length > 16000 ? 3 : t.length > 7000 ? 2 : 1;
-  for (const k of [1, 0.88, 0.76, 0.64]) {
-    const out = [];
-    for (const r of flatRuns(t, MAX_SPEED * k)) {
-      if (out.length >= want || r.px < 900) break;
-      let from = r.from + Math.round(r.len * 0.2), end = r.from + r.len - 1;
-      while (end > from && t.vmax[end % t.N] < MAX_SPEED * k * 0.93) end--;        // stop where the braking starts
-      const cap = Math.min(DRS_AUTO_MAX, t.length * 0.18);                          // (short tracks: shorter zones)
-      if ((end - from) * t.spacing > cap) from = end - Math.round(cap / t.spacing);
-      if ((end - from) * t.spacing < 600) continue;
-      out.push(drsToBase(t, from % t.N, end - from));
-    }
-    if (out.length) return out;
+const DRS_STRAIGHT_R = 2500;                      // tighter than this radius (px) isn't a straight
+function straightRuns(t) {
+  const N = t.N, sp = t.spacing, ok = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const a = t.tan[(i - 3 + N) % N], b = t.tan[(i + 3) % N];
+    ok[i] = Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y)) / (6 * sp) < 1 / DRS_STRAIGHT_R && !(t.elev?.[i] > 0);
   }
-  return [];
+  const s0 = ok.findIndex((f) => !f); if (s0 < 0) return [];
+  const runs = [];
+  for (let i = 0; i < N;) {
+    if (!ok[(s0 + i) % N]) { i++; continue; }
+    let j = i; while (j < N && ok[(s0 + j) % N]) j++;
+    runs.push({ from: (s0 + i) % N, len: j - i, px: (j - i) * sp }); i = j;
+  }
+  return runs.sort((x, y) => y.px - x.px);
+}
+function autoDrs(t) {
+  const want = t.length > 16000 ? 3 : t.length > 7000 ? 2 : 1, out = [];
+  for (const r of straightRuns(t)) {
+    if (out.length >= want || r.px < 700) break;
+    let from = r.from + Math.round(r.len * 0.15), end = r.from + r.len - 1;
+    while (end > from && t.vmax[end % t.N] < MAX_SPEED * 0.93) end--;            // stop where the braking starts
+    const cap = Math.min(DRS_AUTO_MAX, t.length * 0.18);                          // (short tracks: shorter zones)
+    if ((end - from) * t.spacing > cap) from = end - Math.round(cap / t.spacing);
+    if ((end - from) * t.spacing < 500) continue;
+    out.push(drsToBase(t, from % t.N, end - from));
+  }
+  return out;
 }
 // base-index zones -> [{from, len}] on this finished track (in its racing direction)
 function drsMap(t, zones) {
@@ -2548,20 +2561,20 @@ function rankedLook() {
   const weather = r < 0.5 ? "sunny" : r < 0.78 ? "dynamic" : r < 0.92 || night ? "rain" : "fog";
   return { theme: pickOne(night ? RANKED_NIGHT : RANKED_DAY), weather };
 }
-const rankedReal = () => F1_TRACKS.filter((t) => t.km >= 3 && t.km <= 7.2);
+const rankedReal = (maxKm) => F1_TRACKS.filter((t) => t.km >= 3 && t.km <= maxKm);
 function makeRankedRoom(socket, profile, u) {
   const r = new Room(makeCode(), false); rooms.set(r.code, r);
   r.ranked = true;
-  const R = accounts.rankedPublic(u), F = R.field;
+  const R = accounts.rankedPublic(u), F = R.field;      // the tier decides AI, laps, map size, wonkiness
   r.rankedTier = R.rank.label;
-  Object.assign(r.settings, { laps: 3, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
-  const real = rankedReal();
-  let err = real.length && Math.random() < 0.5 ? r.setF1Track(pickOne(real).id) : "random";
-  if (err) err = r.setRandomTrack("normal", Math.random() < 0.6 ? "regular" : "little");
-  if (err) r.setRandomTrack("normal", "little");
-  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
+  const real = rankedReal(F.realKm);
+  let err = real.length && Math.random() < F.real ? r.setF1Track(pickOne(real).id) : "random";
+  if (err) err = r.setRandomTrack(pickOne(F.maps), pickOne(F.wonks));
+  if (err) r.setRandomTrack(F.maps[0], "little");
+  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
   return r;
 }
@@ -3566,4 +3579,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };

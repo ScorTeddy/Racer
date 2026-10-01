@@ -1348,7 +1348,7 @@
     if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
     if (r.error) boardHint(r.error, true);
     else if (r.moved) boardHint("Start/finish line moved!", false);
-    else if (r.drs) boardHint(r.drs === "cleared" ? "DRS zones removed: no DRS on this track." : r.drs === "real" ? `Real DRS zones back (${r.zones}).` : r.drs === "auto" ? `DRS put on the longest straights (${r.zones} zone${r.zones === 1 ? "" : "s"}).` : r.drs === "set" ? `DRS zones loaded (${r.zones}).` : `DRS zone added! This track has ${r.zones} now.`, false);
+    else if (r.drs) boardHint(r.drs === "cleared" ? "DRS zones removed: no DRS on this track." : r.drs === "real" ? `Real DRS zones back (${r.zones}).` : r.drs === "auto" ? (r.zones ? `DRS put on the longest straights (${r.zones} zone${r.zones === 1 ? "" : "s"}).` : "No straight long enough for automatic DRS. Use 🟩 Add DRS to put a zone anywhere.") : r.drs === "set" ? `DRS zones loaded (${r.zones}).` : `DRS zone added! This track has ${r.zones} now.`, false);
     else if (r.reversed !== undefined) boardHint(r.reversed ? "Track reversed: racing the other way!" : "Back to the original direction.", false);
     else if (r.f1) boardHint(`${r.f1}! Real layout, sized by its real length. Reverse or move the start line if you like.`, false);
     else if (r.random) boardHint(`Random track: ${r.bridges || 0} bridge${r.bridges === 1 ? "" : "s"}${r.maxLevel >= 2 ? ", with a DOUBLE ramp!" : ""} Hit Random again for another.`, false);
@@ -4352,8 +4352,8 @@
   }
   $("rankedBtn").addEventListener("click", playRanked);
   const AI_WORD = { hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE" };
-  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI"], ["Bronze", "🥉", 300, "3 Hard AI"], ["Silver", "🥈", 600, "5 EXTREME AI"], ["Gold", "🥇", 900, "5 EXTREME AI"],
-    ["Platinum", "💠", 1200, "5 OVERDRIVE AI (ranked only)"], ["Diamond", "💎", 1500, "5 OVERDRIVE AI"], ["Master", "🔮", 1800, "5 OVERDRIVE AI"], ["Overdrive Elite", "⚡", 2100, "5 OVERDRIVE AI"]];
+  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 3 laps · small, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 3 laps"], ["Silver", "🥈", 600, "5 EXTREME AI · 4 laps"], ["Gold", "🥇", 900, "6 EXTREME AI · 4 laps · some very wonky tracks"],
+    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 5 laps · bigger tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 5 laps · big tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 6 laps · big, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 7 laps · huge, very wonky"]];
   function rankBadge(rank, big) {
     const b = el("div", "rank-badge" + (big ? " big" : "")); b.style.setProperty("--rk", rank.color);
     b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
@@ -4369,7 +4369,7 @@
     tx.append(el("b", "", `${R.sr} SR`), el("small", "", R.rank.i === 7 ? "Overdrive Elite: the very top. Keep climbing the leaderboard!" : `${R.rank.into} / 100 to the next division`));
     if (R.rank.i < 7) { const bar = el("div", "ach-bar"); const f = el("i"); f.style.width = R.rank.into + "%"; bar.appendChild(f); tx.appendChild(bar); }
     tx.appendChild(el("small", "", `Peak ${R.peakRank.label} · ${R.games} ranked races · ${R.wins} wins`));
-    tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, 3 laps, a random track`));
+    tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, ${R.field.laps} laps${R.field.real ? ", a random track or a real circuit" : ", a random track"}`));
     const go = el("button", "btn go", "🏁 Play ranked"); go.type = "button"; go.addEventListener("click", playRanked);
     top.append(tx, go); box.appendChild(top);
     if (R.hist?.length) {
@@ -4386,7 +4386,7 @@
       lad.appendChild(li);
     });
     box.appendChild(lad);
-    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Ranked races are you against the AI, 3 laps, on a real circuit or a random track."));
+    box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Low tiers are short races against a few AI on small, gentle tracks; every tier up adds AI and laps, with bigger, wonkier tracks and real circuits."));
     box.appendChild(el("p", "preset-note", "🪙 Ranked races don't pay coins. Ranking up does: 150 coins for each new division, 600 for each new tier and 3,000 for reaching Overdrive Elite. Each one pays once, the first time you get there."));
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
@@ -4725,7 +4725,8 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
     { v: "2026-10-06", title: "Better ranked, fairer coins", items: [
-      "🏆 Ranked races are on real circuits (with their real DRS zones) or good random tracks now: no more tiny, VERY wonky ones.",
+      "🏆 Ranked grows with you: Iron is a short race against 3 AI on small, gentle tracks. Every tier up adds AI and laps, with bigger, wonkier tracks and real circuits, up to 12 Overdrive AI over 7 laps at Overdrive Elite.",
+      "🟩 Automatic DRS only goes on real straights now (a track that's all corners gets none). Hosts can still put a zone anywhere with Add DRS.",
       "🪙 Ranked doesn't pay race coins any more. Ranking up does: 150 coins for each new division, 600 for each new tier, 3,000 for Overdrive Elite (each one once).",
       "🏁 Race coins (wins, rivals, Driver of the Day) need more than 5 laps, on a track that isn't tiny (0.6 km or more).",
       "🌙 Night and 🌫 fog races run a lot smoother.",

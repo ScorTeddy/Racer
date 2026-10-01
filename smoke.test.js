@@ -166,9 +166,13 @@ test("ranked tiers, rating maths and who you race", () => {
   assert.equal(accounts.rankOf(299).label, "Iron I");
   assert.equal(accounts.rankOf(750).label, "Silver II");
   assert.equal(accounts.rankOf(2100).key, "oe");
-  assert.deepEqual(accounts.rankedField(100), { ai: 3, aiLevel: "hard" });
-  assert.deepEqual(accounts.rankedField(700), { ai: 5, aiLevel: "extreme" });
-  assert.deepEqual(accounts.rankedField(1300), { ai: 5, aiLevel: "overdrive" });
+  const iron = accounts.rankedField(100), silver = accounts.rankedField(700), plat = accounts.rankedField(1300), oe = accounts.rankedField(2500);
+  assert.deepEqual([iron.ai, iron.aiLevel, iron.laps, iron.maps, iron.wonks], [3, "hard", 3, ["small"], ["little"]], "Iron: a short race against 3 Hard AI on small, gentle tracks");
+  assert.equal(silver.aiLevel, "extreme");
+  assert.equal(plat.aiLevel, "overdrive");
+  assert.ok(oe.ai > plat.ai && plat.ai > silver.ai && silver.ai > iron.ai, "more AI every tier");
+  assert.ok(oe.laps > plat.laps && plat.laps > silver.laps && silver.laps > iron.laps, "more laps");
+  assert.ok(oe.maps.includes("huge") && oe.wonks.includes("very"), "the top is big and wonky");
   assert.ok(game.AI_LEVELS.overdrive.rankedOnly, "Overdrive AI is ranked only");
   const u = { id: "u_x", ranked: { sr: 500, peak: 500, games: 0, wins: 0 }, stats: {}, owned: [], ach: {} };
   accounts.rankedStart(u);
@@ -286,7 +290,15 @@ test("DRS: real zones on real tracks, auto zones everywhere else, and it opens i
   const r = new game.Room("DRSTST", false);
   assert.equal(r.setF1Track("it-1922"), null);
   assert.equal(r.track.drs.length, 2, "the Monza-style layout has its 2 real zones");
-  for (const w of ["little", "regular", "very"]) { r.setRandomTrack("normal", w); assert.ok(r.track.drs.length >= 1, `a ${w} random track gets DRS`); }
+  // automatic DRS only ever goes on straights (a really twisty track can have none); big gentle tracks always get some
+  let withDrs = 0;
+  for (const w of ["little", "regular", "very", "very"]) {
+    r.setRandomTrack("large", w); const t0 = r.track;
+    if (t0.drs.length) withDrs++;
+    const runs = game.straightRuns(t0);
+    for (const z of t0.drs) assert.ok(runs.some((ru) => { const k = (z.from - ru.from + t0.N) % t0.N; return k + z.len <= ru.len; }), `a ${w} track's DRS zone sits on a straight`);
+  }
+  assert.ok(withDrs >= 1, "random tracks with straights get DRS");
   // share codes keep the zones; hand-placed zones follow the racing direction
   r.setF1Track("it-1922");
   const r2 = new game.Room("DRSTS2", false); r2.setSharedTrack(r.shareData());
@@ -470,19 +482,20 @@ test("ranked pays coins only for reaching a new division, once", () => {
   assert.ok(u.ranked.sr >= 100 && again.coins === 0, "...and climbing back to a division you've had pays nothing");
 });
 
-test("ranked races are on real circuits or tidy random tracks", { timeout: 60000 }, async () => {
-  const res = await accounts.signUp("RankTracks", "Turbo-Fox-Lane-42");
+test("ranked races grow with your tier: Iron is short and gentle, the top is big", { timeout: 60000 }, async () => {
+  await accounts.signUp("RankTracks", "Turbo-Fox-Lane-42");
   const s = io(base, { transports: ["websocket"], forceNew: true });
   const got = (ev) => new Promise((ok) => s.once(ev, ok));
   await got("connect");
-  s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); await got("account");
-  const kinds = new Set();
-  for (let i = 0; i < 4; i++) {
+  s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); const acct = await got("account");
+  const u = await accounts.getUser(acct.id);
+  for (const [sr, check] of [[0, (r) => r.trackKind === "random" && r.settings.map === "small" && r.wonk === "little" && r.settings.ai === 3 && r.settings.laps === 3],
+    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 7 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || ["large", "huge"].includes(r.settings.map))]]) {
+    u.ranked = { sr, peak: sr, games: 0, wins: 0 };
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);
-    assert.ok(r.trackKind === "f1" || (r.trackKind === "random" && r.wonk !== "very" && r.settings.map === "normal"), `ranked track: ${r.trackKind} ${r.wonk} ${r.settings.map}`);
+    assert.ok(check(r), `SR ${sr}: ${r.trackKind} ${r.settings.map} ${r.wonk} ${r.settings.ai} AI ${r.settings.laps} laps`);
     assert.ok(!(r.settings.weather === "fog" && ["night", "neon"].includes(r.settings.theme)), "never night + fog");
-    kinds.add(r.trackKind);
     s.emit("leave"); await new Promise((ok) => setTimeout(ok, 1200));
   }
   s.close();

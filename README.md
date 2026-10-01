@@ -87,8 +87,9 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   **Real tracks:** `F1_DRS` in server.js lists each circuit's real zones as lap fractions from its real start line (the
   first point in f1-tracks.json), from the last seasons that had DRS (F1 dropped it in 2026). Circuits that never had
   DRS (Nordschleife, ovals, Indy, Kyalami...) and the 2026 Madrid track use automatic zones.
-  **Automatic zones** (`autoDrs`, drawn/random/shared tracks): the last part of the 1-3 longest flat-out straights, ending at
-  the braking point, max 850 m and 18% of a lap each. Twisty tracks get their fastest stretch, so every track has DRS.
+  **Automatic zones** (`autoDrs`, drawn/random/shared tracks): the end of the 1-3 longest real straights (`straightRuns`:
+  nothing tighter than a `DRS_STRAIGHT_R` 2500 px radius, never on bridges), ending at the braking point, max 850 m and
+  18% of a lap each. A really twisty track can get no automatic DRS; hosts can still place zones anywhere by hand.
   **Host tools** (Track tools): 🟩 Add DRS (click where it starts, then where it ends, up to 6 zones), ✨ Auto DRS (real or
   automatic zones again), 🚫 No DRS. Zones are kept in share codes, saved tracks (`drs` as board points) and on Smooth on/off.
   Sockets: `drs:add {a, b}`, `drs:set [[ax, ay, bx, by]...]`, `drs:clear`, `drs:auto`.
@@ -101,8 +102,10 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Overdrive Elite at 2100+. Iron-Bronze race 3 Hard AI, Silver-Gold 5 EXTREME, Platinum+ 5 **Overdrive** AI
   (`AI_LEVELS.overdrive`, ranked only). The "left the race" loss (-45) is charged at the lights (`rankedStart`)
   and replaced by the real result at the flag (`rankedFinish`), so quitting can't dodge it. Ranked leaderboard.
-  Tracks (`makeRankedRoom`): half the time a real circuit of 3-7.2 km (with its real DRS zones), otherwise a random
-  track on the normal map (never VERY wonky). Mostly daytime and dry (`rankedLook`); night and fog never together.
+  **Each tier races something different** (`RANKED_FIELDS` in accounts.js, used by `makeRankedRoom`): Iron is 3 Hard AI,
+  3 laps, small gentle tracks; every tier up adds AI and laps with bigger, wonkier tracks and more real circuits, up to
+  Overdrive Elite: 12 Overdrive AI, 7 laps, large/huge VERY wonky tracks or real circuits up to 8 km. Mostly daytime and
+  dry (`rankedLook`); night and fog never together.
   **Coins:** ranked races pay no race coins. Reaching a division for the first time does (`rankUpCoins`, compared
   with your peak): 150 per division, 600 per new tier, 3,000 for Overdrive Elite.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay

@@ -1156,10 +1156,20 @@ function rankOf(sr) {
   const i = Math.floor(sr / 300), div = 3 - Math.floor((sr % 300) / 100), T = TIERS[i];
   return { ...T, i, div: ["", "I", "II", "III"][div], sr, into: sr % 100, need: 100, label: `${T.name} ${["", "I", "II", "III"][div]}` };
 }
-function rankedField(sr) {
-  const i = rankOf(sr).i;
-  return i <= 1 ? { ai: 3, aiLevel: "hard" } : i <= 3 ? { ai: 5, aiLevel: "extreme" } : { ai: 5, aiLevel: "overdrive" };
-}
+// What each tier races: the low tiers are short races against a few AI on small, gentle tracks; every tier up
+// adds AI and laps, and the tracks get bigger and wonkier (real circuits get longer too).
+// real = chance of a real circuit (up to realKm long) instead of a random track on one of `maps` at one of `wonks`.
+const RANKED_FIELDS = [
+  { ai: 3, aiLevel: "hard", laps: 3, maps: ["small"], wonks: ["little"], real: 0, realKm: 0 },                                       // Iron
+  { ai: 4, aiLevel: "hard", laps: 3, maps: ["small", "normal"], wonks: ["little", "regular"], real: 0.25, realKm: 4.5 },             // Bronze
+  { ai: 5, aiLevel: "extreme", laps: 4, maps: ["normal"], wonks: ["regular"], real: 0.35, realKm: 5.5 },                             // Silver
+  { ai: 6, aiLevel: "extreme", laps: 4, maps: ["normal"], wonks: ["regular", "regular", "very"], real: 0.4, realKm: 6 },             // Gold
+  { ai: 7, aiLevel: "overdrive", laps: 5, maps: ["normal", "large"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },           // Platinum
+  { ai: 8, aiLevel: "overdrive", laps: 5, maps: ["large"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },                     // Diamond
+  { ai: 10, aiLevel: "overdrive", laps: 6, maps: ["large"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Master
+  { ai: 12, aiLevel: "overdrive", laps: 7, maps: ["large", "huge"], wonks: ["very"], real: 0.4, realKm: 8 },                          // Overdrive Elite
+];
+function rankedField(sr) { return { ...RANKED_FIELDS[rankOf(sr).i] }; }
 const RANKED_DNF = 45;
 function rankedState(u) { u.ranked = u.ranked || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; return u.ranked; }
 // at the lights: charge the "left the race" loss up front, so quitting can't dodge it. The finish replaces it.
