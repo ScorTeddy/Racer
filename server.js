@@ -120,7 +120,10 @@ const f1List = () => F1_TRACKS.map((t) => ({ id: t.id, name: t.name, place: t.pl
 // zone: +7% top speed. From lap 2 of the race, not in the wet or under the safety car. In qualifying
 // it's open in every zone (like the real thing). Zones live on the track shape as base-index pairs
 // [a, b] (the drawing's own direction), so moving the start line or reversing keeps them.
-const DRS_BONUS = 0.07, DRS_GAP = 1.0, DRS_WET = 0.5, DRS_MAX_ZONES = 6, DRS_FROM_LAP = 2;
+// DRS_BONUS: +12% top speed and +15% acceleration with the flap open. Players have to press DRS (D / the DRS
+// button) once it's available in a zone; AI open it themselves. Drivers with DRS open go for overtakes from further back.
+const DRS_ACCEL = 0.15, DRS_REACH = 0.7;
+const DRS_BONUS = 0.12, DRS_GAP = 1.0, DRS_WET = 0.5, DRS_MAX_ZONES = 6, DRS_FROM_LAP = 2;
 // Real-world DRS zones (the last seasons that had DRS), as lap fractions from each layout's real start
 // line (the first point in f1-tracks.json), in its racing direction. Circuits that never raced with DRS
 // aren't listed: they get zones on their longest straights like drawn and random tracks.
@@ -1329,18 +1332,31 @@ class Room {
     return this.phase === "race" && !this.sc && this.time - this.scDoneAt > 10 && (c.lapsDone || 0) >= DRS_FROM_LAP && (this.wet || 0) < DRS_WET;
   }
   // detection at the start of each zone: within DRS_GAP of whoever crossed it last = DRS open
+  // A car that's allowed DRS in this zone has it AVAILABLE (c.drsAvail): AI open it straight away, players
+  // have to press the DRS button (the "drs" socket event). It closes at the end of the zone.
   stepDrs(c) {
     const z = this.drsZoneOf(c);
     if (z !== c.drsZone) {
-      c.drsOpen = false;
+      c.drsOpen = false; c.drsAvail = false;
       if (z >= 0) {
         const last = (this.drsPass || [])[z];
-        c.drsOpen = this.drsAllowed(c) && (this.qualifying || (last !== undefined && this.time - last <= DRS_GAP));
+        const ok = this.drsAllowed(c) && (this.qualifying || (last !== undefined && this.time - last <= DRS_GAP));
         if (!this.ghost(c)) (this.drsPass ||= [])[z] = this.time;
+        if (ok) {
+          if (c.owner && this.players.has(c.owner)) { c.drsAvail = true; io.to(c.owner).emit("drsReady"); }
+          else c.drsOpen = true;
+        }
       }
       c.drsZone = z;
     }
-    if (c.drsOpen && (this.sc || c.inPit || c.punct || (!this.qualifying && (this.wet || 0) >= DRS_WET))) c.drsOpen = false;
+    if ((c.drsOpen || c.drsAvail) && (this.sc || c.inPit || c.punct || (!this.qualifying && (this.wet || 0) >= DRS_WET))) c.drsOpen = c.drsAvail = false;
+  }
+  // the player pressed DRS
+  openDrs(p) {
+    const c = this.carOf(p.id);
+    if (!c || !c.drsAvail || this.phase !== "race") return false;
+    c.drsAvail = false; c.drsOpen = true;
+    return true;
   }
 
   // ======================= Race =======================
@@ -1911,7 +1927,7 @@ class Room {
       // corner first, the other side if that's blocked. Only into space that's actually free.
       if (!calm && !cooldown && !c.punct && lead && c.passT <= 0.25) {
         const theirV = lead.speed, closing = speed - theirV;
-        const reach = (0.45 + 0.12 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0);
+        const reach = (0.45 + 0.12 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0) + (c.drsOpen ? DRS_REACH : 0);   // DRS open: go for it
         if (gapT < reach || (closing > 60 && gapT < 1.1)) {
           const cornerNear = (apex - c.idx + N) % N * t.spacing < 500;
           const first = cornerNear ? inside : (lead.lat > 0 ? -1 : 1);
@@ -2048,7 +2064,7 @@ class Room {
     }
     this.stepDrs(c);
     let maxSp = st.maxSpeed * this.tireSpeed(c.tire) * this.compoundSpeed(c), accel = st.accel;
-    if (c.drsOpen) maxSp *= 1 + DRS_BONUS;             // DRS open: the rear wing flap cuts drag
+    if (c.drsOpen) { maxSp *= 1 + DRS_BONUS; accel *= 1 + DRS_ACCEL; }        // DRS open: the rear wing flap cuts drag
     if (c.punct) { maxSp *= 0.33; accel *= 0.4; }
     if (c.damage > 0) { maxSp *= 1 - 0.14 * c.damage; accel *= 1 - 0.2 * c.damage; }
     // Slipstream: tucked in within half a second of the car ahead = +30% top speed
@@ -2515,7 +2531,7 @@ class Room {
       c.pits, c.pitting > 0 ? r2(1 - c.pitting / (c.pitTotal || 1)) : -1, c.mistakeT > 0 ? 1 : 0, c.finished ? 1 : 0,
       c.slide > 70 && c.onTrack ? 1 : 0, c.onTrack ? 1 : 0, c.boosting ? 1 : 0, Math.round(c.progress), isFinite(c.bestLap) ? r2(c.bestLap) : 0,
       COMPOUNDS[c.compound].short, c.punct ? 1 : 0, c.surface, c.inPit ? 1 : 0, r2(c.damage), c.crashT > 0 ? 1 : 0, r2(this.track.elev[c.idx] || 0),
-      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 1 : 0,
+      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0,
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
@@ -2728,7 +2744,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { drs: 0.5, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3419,6 +3435,7 @@ io.on("connection", (socket) => {
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
+  socket.on("drs", () => { const r = room(), p = me(); if (r && p && r.cars && r.openDrs(p)) socket.emit("drsOn"); });
   socket.on("box", () => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "race") return;
     const c = r.carOf(p.id); if (!c || c.finished || c.pitting > 0 || c.aiMode === "pitLane" || c.aiMode === "pitOut") return;

@@ -317,6 +317,31 @@ test("DRS: real zones on real tracks, auto zones everywhere else, and it opens i
   assert.equal(early, 0, "never on lap 1");
 });
 
+test("DRS: players have to press the button, AI open it themselves", () => {
+  const r = new game.Room("DRSBTN", false);
+  r.setF1Track("it-1922");
+  const p = { id: "s-drs", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set(p.id, p);
+  r.settings.ai = 6; r.settings.quali = 1; r.settings.laps = 3; r.ensureRoster(6);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const mine = r.cars.find((c) => c.owner === p.id);
+  let avail = 0, openedByItself = 0, aiOpen = 0;
+  for (let n = 0; n < 60 * 50 && r.phase === "race"; n++) {
+    r.step(1 / 60);
+    if (mine.drsAvail) avail++;
+    if (mine.drsOpen) openedByItself++;
+    for (const c of r.cars) if (!c.owner && c.drsOpen) aiOpen++;
+  }
+  assert.ok(avail > 0, "DRS became available for the player");
+  assert.equal(openedByItself, 0, "but it never opened without the button");
+  assert.ok(aiOpen > 0, "AI cars open DRS on their own");
+  // in a zone with DRS available: pressing opens it
+  for (let n = 0; n < 60 * 50 && !mine.drsAvail; n++) r.step(1 / 60);
+  assert.ok(mine.drsAvail);
+  assert.ok(r.openDrs(p), "the button works");
+  assert.ok(mine.drsOpen && !mine.drsAvail);
+  assert.ok(!r.openDrs(p), "pressing again does nothing");
+});
+
 test("race win coins: by AI difficulty, only with 7+ AI drivers", async () => {
   const seen = [], real = accounts.recordRace;
   accounts.recordRace = (u, r) => { seen.push(r); return []; };

@@ -1538,7 +1538,7 @@
       const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: !!drs });
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1 });
     }
     lapDelta();
     if (S.tutorial) {            // tutorial hints that depend on your car
@@ -4140,6 +4140,18 @@
       } else drawNight(w, h, dpr, z, shx, shy, th, S.race?.fog ? { now, x: fogX, y: fogY } : null);
     }
     if (S.race?.fog && !(th.night && settings.fx !== "off")) drawFog(w, h, !!th.night, now, fogX, fogY);
+    // DRS open: the screen edges glow green (with a pulse when it opens), and green speed streaks
+    if (target.id === S.myCar && target.drs) {
+      const pulse = S.drsFlash ? Math.max(0, 1 - (performance.now() - S.drsFlash) / 700) : 0;
+      if (!S.drsVig || S.drsVig.w !== w || S.drsVig.h !== h) { const g2 = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.32, w / 2, h / 2, Math.hypot(w, h) / 2); g2.addColorStop(0, "rgba(62,224,106,0)"); g2.addColorStop(1, "rgba(62,224,106,0.42)"); S.drsVig = { g: g2, w, h }; }
+      ctx.globalAlpha = 0.75 + 0.25 * Math.sin(now / 120) + pulse; ctx.fillStyle = S.drsVig.g; ctx.fillRect(0, 0, w, h); ctx.globalAlpha = 1;
+      if (pulse > 0) { ctx.fillStyle = `rgba(62,224,106,${0.22 * pulse})`; ctx.fillRect(0, 0, w, h); }
+      if (!reducedMotion) {
+        ctx.strokeStyle = "rgba(120,255,160,0.55)"; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let i = 0; i < 18; i++) { const ang = Math.random() * Math.PI * 2, r1 = Math.min(w, h) * (0.36 + Math.random() * 0.1), r2 = r1 + 60 + Math.random() * 90; ctx.moveTo(w / 2 + Math.cos(ang) * r1, h / 2 + Math.sin(ang) * r1); ctx.lineTo(w / 2 + Math.cos(ang) * r2, h / 2 + Math.sin(ang) * r2); }
+        ctx.stroke();
+      }
+    }
     if (settings.lines === "on" && !reducedMotion && sp > 640) {
       const a = clamp((sp - 640) / 240, 0, 1) * 0.35;
       ctx.strokeStyle = target.nitroOn ? `rgba(120,200,255,${a + 0.15})` : `rgba(255,255,255,${a})`; ctx.lineWidth = 2;
@@ -4191,6 +4203,13 @@
     nitroHeld = on; socket.emit("nitro", on);
     $("boostBtn").classList.toggle("on", on);
   }
+  // ---- DRS: in a zone with DRS available, press D (or the DRS button) to open the flap ----
+  function openDrs() { const me = S.cars.get(S.myCar); if (me && me.drsAvail) socket.emit("drs"); }
+  $("drsGo").addEventListener("pointerdown", (e) => { e.preventDefault(); openDrs(); });
+  socket.on("drsReady", () => { sfx("tick"); if (!S.drsTold) { S.drsTold = true; popup("🟩 DRS available! Press D (or the DRS button) to open it."); } });
+  socket.on("drsOn", () => {
+    sfx("level"); banner("DRS OPEN", "#3ee06a"); S.drsFlash = performance.now();
+  });
   const boostBtn = $("boostBtn");
   boostBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); boostBtn.setPointerCapture(e.pointerId); if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); });
   for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) boostBtn.addEventListener(ev, () => setNitro(false));
@@ -4202,16 +4221,21 @@
     const me = S.cars.get(S.myCar);
     $("boostPanel").classList.toggle("hidden", !me);
     if (!me) return;
-    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0) + (me.drs ? 1 : 0);
+    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0) + (me.drs ? 1 : 0) + (me.drsAvail ? 1 : 0);
     if (key === boostShown) return; boostShown = key;
     $("boostPct").textContent = lock > 0 ? `⏳${lock}s` : pct + "%";
     boostBtn.classList.toggle("locked", lock > 0); $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
     boostBtn.classList.toggle("empty", pct < 3);
     const small = window.innerWidth <= 860, tags = [];
     if (me.slip) tags.push(small ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%");
-    if (me.drs) tags.push(small ? "🟩 DRS" : "🟩 DRS OPEN +7%");
+    if (me.drs) tags.push(small ? "🟩 DRS OPEN" : "🟩 DRS OPEN +12%");
+    else if (me.drsAvail) tags.push(small ? "🟩 DRS: press D" : "🟩 DRS AVAILABLE: press D");
+    const dg = $("drsGo"); dg.classList.toggle("hidden", !(me.drs || me.drsAvail) || !!me.fin);
+    dg.classList.toggle("ready", !!me.drsAvail); dg.classList.toggle("open", !!me.drs);
+    dg.querySelector(".dg-lab").textContent = me.drs ? "DRS OPEN" : "DRS";
     $("slipTag").classList.toggle("hidden", !tags.length || !!me.fin);
-    $("slipTag").classList.toggle("drs", !!me.drs && !me.slip);
+    $("slipTag").classList.toggle("drs", !!(me.drs || me.drsAvail) && !me.slip);
+    document.body.classList.toggle("drs-open", !!me.drs && !me.fin);
     $("slipTag").textContent = tags.join(" · ");
   }
   let lastHudStand = "";
@@ -4219,7 +4243,9 @@
   // Phones: stack the bottom HUD (radio, then tires/XP, then the pit tire picker) by measuring,
   // so nothing hides behind anything at any interface size.
   function layoutHud() {
-    const phone = window.innerWidth <= 860, bottom = $("hudBottom"), radio = $("radio"), pick = $("pitPick");
+    // (phones held sideways have their own fixed layout in the CSS: nothing to measure)
+    const sideways = window.innerHeight <= 520 && window.innerWidth > window.innerHeight;
+    const phone = window.innerWidth <= 860 && !sideways, bottom = $("hudBottom"), radio = $("radio"), pick = $("pitPick");
     if (!phone || radio.classList.contains("hidden")) { bottom.style.bottom = ""; pick.style.bottom = ""; return; }
     const rH = radio.getBoundingClientRect().height, bH = bottom.getBoundingClientRect().height;
     bottom.style.bottom = `calc(${Math.round(rH + 12)}px + env(safe-area-inset-bottom, 0px))`;
@@ -4327,6 +4353,7 @@
     if (e.code === "Space") { e.preventDefault(); if (e.repeat) return; if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); }
     if (e.code === "KeyN" && !e.repeat) setNitro(true);
     if (e.code === "KeyB" && !e.repeat) { socket.emit("box"); sfx("tick"); }
+    if (e.code === "KeyD" && !e.repeat) openDrs();
     if (e.code === "Tab") {       // spectate: cycle who the camera follows
       e.preventDefault();
       const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);
@@ -4724,6 +4751,11 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-09", title: "Press for DRS, and sideways phones", items: [
+      "🟩 DRS is yours to open now: when it's available in a zone, press D (or tap the green DRS button next to Boost).",
+      "💚 With DRS open your screen glows green, and it's much stronger: +12% top speed and better acceleration. Expect lots of overtakes in DRS zones (the AI use it too!).",
+      "📱 Holding your phone sideways now shows the whole race HUD: standings, tires, team level, boost and DRS, around the edges so the road stays clear.",
+    ] },
     { v: "2026-10-08", title: "Longer ranked races", items: [
       "🏁 Ranked laps go up steadily with your tier: 4 at Iron, then 6, 7, 9, 10, 12, 13 and 15 laps at Overdrive Elite.",
     ] },

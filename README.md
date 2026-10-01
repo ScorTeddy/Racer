@@ -80,7 +80,11 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   ranked) from a second tab/device is refused until the first one leaves. Signing in inside a room where that
   account is already playing (or coming back to a room after it moved) leaves you a guest there.
 - **DRS** (host setting, on by default): cross the start of a DRS zone within `DRS_GAP` (1s) of whoever crossed it last
-  and you get `DRS_BONUS` (+7%) top speed until the zone ends. It's on from lap 2 (`DRS_FROM_LAP`), off at 50%+ wet and
+  and DRS becomes **available** (`c.drsAvail`). Players have to open it themselves: **D** or the green DRS button
+  (`drs` socket event, `Room.openDrs`); AI open it straight away. Open, it gives `DRS_BONUS` (+12%) top speed and
+  `DRS_ACCEL` (+15%) acceleration until the zone ends, and drivers with it open go for overtakes from much further back
+  (`DRS_REACH`). The screen edges glow green with green speed streaks while yours is open. State field 30 is 0 / 1
+  (available) / 2 (open). It's on from lap 2 (`DRS_FROM_LAP`), off at 50%+ wet and
   under the safety car (plus 10s after), and open in every zone in qualifying. The feed says "DRS enabled" once it's live
   and the HUD shows 🟩 DRS OPEN. Zones are stored on the shape as base-index pairs (`shape.drs`), so moving the start line
   or reversing keeps them. `trackMsg().drs` and state field 30 (DRS open) go to the browser.
