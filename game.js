@@ -67,10 +67,26 @@
     { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { key: "theme", label: "Menu theme", def: "dark", opts: [["dark", "Dark"], ["light", "Light"]] },
     { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
+    // ---- Assists tab: things done for you in the race ----
+    { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
+    { tab: "assists", key: "asBoost", label: "⚡ Boost assist", hint: "Fires your boost for you on the straights, saving some for fights. Holding the boost key still works too.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
+    { tab: "assists", key: "asDrs", label: "🟩 DRS assist", hint: "Opens DRS the moment it's available, so you never miss it.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
   ];
+  // ---- keybinds (Settings > Keybinds): every race key can be changed ----
+  const KEY_ACTIONS = [
+    ["boost", "⚡ Boost (hold) · start reaction", "Space"], ["boost2", "⚡ Boost, second key", "KeyN"], ["drs", "🟩 Open DRS", "KeyD"],
+    ["box", "🔧 Box this lap", "KeyB"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"],
+    ["pause", "⏸ Pause race (host)", "KeyP"], ["spectate", "👀 Watch the next car", "Tab"], ["settings", "⚙ Settings", "KeyO"],
+  ];
+  const KEY_DEFAULTS = Object.fromEntries(KEY_ACTIONS.map(([a, , k]) => [a, k]));
   const settings = {};
   for (const x of SETTINGS) settings[x.key] = x.def;
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
+  settings.keys = { ...KEY_DEFAULTS, ...(settings.keys && typeof settings.keys === "object" ? settings.keys : {}) };
+  const KEY = (a) => settings.keys[a] || KEY_DEFAULTS[a];
+  const keyName = (code) => (!code ? "?" : code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) : code.startsWith("Numpad") ? "Num " + code.slice(6)
+    : { Space: "Space", Tab: "Tab", Enter: "Enter", ShiftLeft: "L Shift", ShiftRight: "R Shift", ControlLeft: "L Ctrl", ControlRight: "R Ctrl", AltLeft: "L Alt", AltRight: "R Alt",
+      ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/" }[code] || code);
   // played here before this page load? (checked before anything gets saved, for the "What's new" popup)
   let PLAYED_BEFORE = false; try { PLAYED_BEFORE = !!(localStorage.getItem("tb-settings") || localStorage.getItem("tb-profile") || localStorage.getItem("tb-news")); } catch (e) {}
   // old Off/Low/Med/High sound settings -> the new sliders
@@ -101,9 +117,18 @@
     }
     try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
   }
+  let setTab = "general", rebinding = null;
   function renderSettings() {
     const body = $("setBody"); body.textContent = "";
-    for (const x of SETTINGS) {
+    const tabs = document.createElement("nav"); tabs.className = "hub-tabs set-tabs"; tabs.setAttribute("role", "tablist");
+    for (const [k, t] of [["general", "⚙ General"], ["assists", "🤝 Assists"], ["keys", "⌨️ Keybinds"]]) {
+      const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab"); b.textContent = t; b.setAttribute("aria-selected", String(setTab === k));
+      b.addEventListener("click", () => { setTab = k; rebinding = null; renderSettings(); }); tabs.appendChild(b);
+    }
+    body.appendChild(tabs);
+    if (setTab === "keys") { renderKeybinds(body); return; }
+    if (setTab === "assists") { const n = document.createElement("p"); n.className = "preset-note"; n.textContent = "Assists do things for you in the race. They work in every race, ranked too."; body.appendChild(n); }
+    for (const x of SETTINGS.filter((y) => (y.tab || "general") === setTab)) {
       const row = document.createElement("div"); row.className = "set-row";
       const l = document.createElement("div"); const b = document.createElement("b"); b.textContent = x.label; l.appendChild(b);
       if (x.hint) { const s = document.createElement("small"); s.textContent = x.hint; l.appendChild(s); }
@@ -119,7 +144,7 @@
       for (const [v, t] of x.opts) {
         const o = document.createElement("button"); o.type = "button"; o.textContent = t; o.setAttribute("role", "radio");
         o.setAttribute("aria-checked", String(settings[x.key] === v));
-        o.addEventListener("click", () => { settings[x.key] = v; applySettings(); renderSettings(); sfx("tick"); });
+        o.addEventListener("click", () => { settings[x.key] = v; applySettings(); renderSettings(); sfx("tick"); if (x.tab === "assists") sendAssists(); });
         seg.appendChild(o);
       }
       row.append(l, seg); body.appendChild(row);
@@ -131,6 +156,41 @@
         np.append(t2, sk); body.appendChild(np);
       }
     }
+  }
+  function renderKeybinds(body) {
+    const n = document.createElement("p"); n.className = "preset-note";
+    n.textContent = rebinding ? "Press the key you want (Esc to cancel). A key that's already used swaps places." : "Click a key to change it. Number keys still pick tires and upgrade cards, and Esc still leaves a race.";
+    body.appendChild(n);
+    for (const [a, label] of KEY_ACTIONS) {
+      const row = document.createElement("div"); row.className = "set-row";
+      const l = document.createElement("div"); const b = document.createElement("b"); b.textContent = label; l.appendChild(b);
+      const k = document.createElement("button"); k.type = "button"; k.className = "btn key-btn" + (rebinding === a ? " listening" : "");
+      k.textContent = rebinding === a ? "Press a key..." : keyName(KEY(a)); k.setAttribute("aria-label", `${label}: ${keyName(KEY(a))}. Click to change`);
+      k.addEventListener("click", () => { rebinding = rebinding === a ? null : a; renderSettings(); });
+      row.append(l, k); body.appendChild(row);
+    }
+    const reset = document.createElement("button"); reset.type = "button"; reset.className = "btn ghost"; reset.textContent = "Reset all keys";
+    reset.addEventListener("click", () => { settings.keys = { ...KEY_DEFAULTS }; rebinding = null; applySettings(); keyHints(); renderSettings(); });
+    body.appendChild(reset);
+  }
+  // listening for a new key: grab it before anything else sees it
+  window.addEventListener("keydown", (e) => {
+    if (!rebinding) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.code !== "Escape" && !/^Digit[1-4]$/.test(e.code)) {
+      const other = Object.keys(settings.keys).find((a) => a !== rebinding && settings.keys[a] === e.code);
+      if (other) settings.keys[other] = KEY(rebinding);                 // swap
+      settings.keys[rebinding] = e.code;
+      applySettings(); keyHints(); sfx("tick");
+    }
+    rebinding = null; renderSettings();
+  }, true);
+  // the little key labels on buttons follow your keybinds
+  function keyHints() {
+    const set = (sel, a) => document.querySelectorAll(sel).forEach((k) => (k.textContent = keyName(KEY(a))));
+    const bk = document.querySelectorAll("#boostBtn small kbd"); if (bk[0]) bk[0].textContent = keyName(KEY("boost")); if (bk[1]) bk[1].textContent = keyName(KEY("boost2"));
+    set("#boxBtn kbd, #mustBox kbd", "box"); set("#photoBtn kbd", "photo"); set("#pauseBtn kbd", "pause"); set("#drsGo kbd", "drs"); set("#laterBtn kbd", "cards");
+    const lp = $("lightsSay"); if (lp && lp.querySelector("kbd")) lp.querySelector("kbd").textContent = keyName(KEY("boost"));
   }
   const setEl = $("settings");
   function openSettings() { renderSettings(); setEl.classList.remove("hidden"); }
@@ -1404,7 +1464,7 @@
     show("race");
     const L = $("lights"); L.classList.add("hidden");
     L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
-    $("lightsSay").innerHTML = S.myCar ? "Press <kbd>Space</kbd> the moment the lights go out!" : "Watching this race. You're in the next one!";
+    $("lightsSay").innerHTML = S.myCar ? `Press <kbd>${keyName(KEY("boost")).replace(/[<>&]/g, "")}</kbd> the moment the lights go out!` : "Watching this race. You're in the next one!";
     $("goBtn").classList.toggle("hidden", !S.myCar);
     resize();
   });
@@ -2689,7 +2749,7 @@
   const togglePause = () => { if (S.host && S.screen === "race") socket.emit("pause"); };
   $("pauseBtn").addEventListener("click", togglePause);
   $("resumeBtn").addEventListener("click", togglePause);
-  document.addEventListener("keydown", (e) => { if ((e.key === "p" || e.key === "P") && !e.repeat && S.screen === "race" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) togglePause(); });
+  document.addEventListener("keydown", (e) => { if (e.code === KEY("pause") && !e.repeat && S.screen === "race" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) togglePause(); });
   // ---- you NEED to pit ----
   const MUST_WHY = { rain: "It's pouring and you're on dry tires. Wets are much faster now.", tires: "Your tires won't make it to the flag.", damage: "The car is badly damaged." };
   socket.on("mustPit", (d) => {
@@ -4203,10 +4263,14 @@
     nitroHeld = on; socket.emit("nitro", on);
     $("boostBtn").classList.toggle("on", on);
   }
+  // ---- assists: tell the server (it does the pit calls / boost / DRS) ----
+  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on" }); }
+  socket.on("connect", sendAssists); socket.on("joined", sendAssists); socket.on("race", sendAssists);
+  keyHints();
   // ---- DRS: in a zone with DRS available, press D (or the DRS button) to open the flap ----
   function openDrs() { const me = S.cars.get(S.myCar); if (me && me.drsAvail) socket.emit("drs"); }
   $("drsGo").addEventListener("pointerdown", (e) => { e.preventDefault(); openDrs(); });
-  socket.on("drsReady", () => { sfx("tick"); if (!S.drsTold) { S.drsTold = true; popup("🟩 DRS available! Press D (or the DRS button) to open it."); } });
+  socket.on("drsReady", () => { sfx("tick"); if (!S.drsTold) { S.drsTold = true; popup(`🟩 DRS available! Press ${keyName(KEY("drs"))} (or the DRS button) to open it. (Settings > Assists can open it for you.)`); } });
   socket.on("drsOn", () => {
     sfx("level"); banner("DRS OPEN", "#3ee06a"); S.drsFlash = performance.now();
   });
@@ -4229,7 +4293,7 @@
     const small = window.innerWidth <= 860, tags = [];
     if (me.slip) tags.push(small ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%");
     if (me.drs) tags.push(small ? "🟩 DRS OPEN" : "🟩 DRS OPEN +12%");
-    else if (me.drsAvail) tags.push(small ? "🟩 DRS: press D" : "🟩 DRS AVAILABLE: press D");
+    else if (me.drsAvail) tags.push(small ? `🟩 DRS: press ${keyName(KEY("drs"))}` : `🟩 DRS AVAILABLE: press ${keyName(KEY("drs"))}`);
     const dg = $("drsGo"); dg.classList.toggle("hidden", !(me.drs || me.drsAvail) || !!me.fin);
     dg.classList.toggle("ready", !!me.drsAvail); dg.classList.toggle("open", !!me.drs);
     dg.querySelector(".dg-lab").textContent = me.drs ? "DRS OPEN" : "DRS";
@@ -4342,19 +4406,19 @@
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
     if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }
-    if (e.code === "KeyO") { setEl.classList.contains("hidden") ? openSettings() : closeSettings(); return; }
-    if (e.code === "KeyU" && S.screen !== "menu") { $("cards").classList.contains("hidden") ? openCards() : laterCards(); return; }
+    if (e.code === KEY("settings")) { e.preventDefault(); setEl.classList.contains("hidden") ? openSettings() : closeSettings(); return; }
+    if (e.code === KEY("cards") && S.screen !== "menu") { $("cards").classList.contains("hidden") ? openCards() : laterCards(); return; }
     // number keys pick tires first while the pit picker is open (the crew is waiting; upgrade cards can be clicked)
     if (pitPickShown && { Digit1: 1, Digit2: 1, Digit3: 1, Digit4: 1 }[e.code]) { const b = $("ppRow").children[Number(e.code.slice(-1)) - 1]; if (b) b.click(); return; }
     const pick = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
     if (pick !== undefined && !e.repeat && !$("cards").classList.contains("hidden")) { pickCard(pick); return; }
     if (S.screen !== "race") return;
     if (e.code === "Escape") { leaveRace(); return; }
-    if (e.code === "Space") { e.preventDefault(); if (e.repeat) return; if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); }
-    if (e.code === "KeyN" && !e.repeat) setNitro(true);
-    if (e.code === "KeyB" && !e.repeat) { socket.emit("box"); sfx("tick"); }
-    if (e.code === "KeyD" && !e.repeat) openDrs();
-    if (e.code === "Tab") {       // spectate: cycle who the camera follows
+    if (e.code === KEY("boost")) { e.preventDefault(); if (e.repeat) return; if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); }
+    if (e.code === KEY("boost2") && !e.repeat) { e.preventDefault(); setNitro(true); }
+    if (e.code === KEY("box") && !e.repeat) { e.preventDefault(); socket.emit("box"); sfx("tick"); }
+    if (e.code === KEY("drs") && !e.repeat) { e.preventDefault(); openDrs(); }
+    if (e.code === KEY("spectate")) {       // spectate: cycle who the camera follows
       e.preventDefault();
       const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);
       S.camTarget = ids[(cur + 1) % ids.length];
@@ -4362,7 +4426,7 @@
       popup(`Watching ${S.cars.get(S.camTarget ?? S.myCar)?.name || ""}`);
     }
   });
-  window.addEventListener("keyup", (e) => { if (e.code === "Space" || e.code === "KeyN") setNitro(false); });
+  window.addEventListener("keyup", (e) => { if (e.code === KEY("boost") || e.code === KEY("boost2")) setNitro(false); });
   // tapping anywhere on the race view also counts as your start reaction (phones)
   view.addEventListener("pointerdown", () => { if (S.screen === "race" && !S.photoOn && !$("lights").classList.contains("hidden")) react(); });
 
@@ -4751,6 +4815,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-10", title: "Keybinds and assists", items: [
+      "⌨️ Settings > Keybinds: change any race key (boost, DRS, box, photo mode, pause, upgrade cards, watch next car, settings).",
+      "🤝 Settings > Assists: Pit assist calls your stops and picks tires, Boost assist fires your boost on the straights, DRS assist opens DRS the moment it's available.",
+    ] },
     { v: "2026-10-09", title: "Press for DRS, and sideways phones", items: [
       "🟩 DRS is yours to open now: when it's available in a zone, press D (or tap the green DRS button next to Boost).",
       "💚 With DRS open your screen glows green, and it's much stronger: +12% top speed and better acceleration. Expect lots of overtakes in DRS zones (the AI use it too!).",
@@ -5081,7 +5149,7 @@
   view.addEventListener("wheel", (e) => { if (!PH.on) return; e.preventDefault(); zoomPhoto(e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
   window.addEventListener("keydown", (e) => {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
-    if ((e.key === "k" || e.key === "K") && !e.repeat && S.screen === "race") { e.preventDefault(); photoMode(!PH.on); }
+    if (e.code === KEY("photo") && !e.repeat && S.screen === "race") { e.preventDefault(); photoMode(!PH.on); }
     else if (e.key === "Escape" && PH.on) photoMode(false);
   });
 

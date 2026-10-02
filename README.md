@@ -97,6 +97,13 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   **Host tools** (Track tools): 🟩 Add DRS (click where it starts, then where it ends, up to 6 zones), ✨ Auto DRS (real or
   automatic zones again), 🚫 No DRS. Zones are kept in share codes, saved tracks (`drs` as board points) and on Smooth on/off.
   Sockets: `drs:add {a, b}`, `drs:set [[ax, ay, bx, by]...]`, `drs:clear`, `drs:auto`.
+- **Assists** (Settings › Assists, `asPit` / `asBoost` / `asDrs`, sent as the `assists` socket event → `p.assist`):
+  pit assist runs the AI pit strategy for your car (calls the box, the strategist picks tires unless you picked
+  "Next tires"); boost assist runs the AI boost logic for your car (holding the key still works); DRS assist opens DRS
+  the moment it's available. They work everywhere, ranked included.
+- **Keybinds** (Settings › Keybinds): every race key can be changed (`KEY_ACTIONS` in game.js, kept in `settings.keys`,
+  read with `KEY(action)`). A key that's taken swaps places. Number keys 1-4 (tires / upgrade cards) and Esc stay fixed.
+  The little key labels on the buttons follow the binds (`keyHints`).
 - **Boost XP**: while your boost is firing, every bit of upgrade XP you earn is worth 1.5x (`BOOST_XP_MULT` in server.js).
 
 ## Ranked, season pass, trading, sharing, replays, photo mode

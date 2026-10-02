@@ -1142,7 +1142,7 @@ class Room {
   teamOrder() { return Object.entries(this.teamChamp).map(([n, p]) => ({ n, p })).sort((a, b) => b.p - a.p); }
 
   addPlayer(socket, profile) {
-    const p = { id: socket.id, rejoinKey: crypto.randomBytes(12).toString("hex"), ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false, uid: socket.data.uid || null, extras: socket.data.extras || null };
+    const p = { id: socket.id, rejoinKey: crypto.randomBytes(12).toString("hex"), ...cleanProfile(profile), up: blankUp(), level: 1, xp: 0, pendingPicks: 0, offer: null, nitroHeld: false, uid: socket.data.uid || null, extras: socket.data.extras || null, assist: socket.data.assist || null };
     this.players.set(socket.id, p);
     if (!this.hostId) this.hostId = socket.id;
     socket.leave("menu"); socket.join(this.code); socket.data.room = this.code;
@@ -1343,8 +1343,9 @@ class Room {
         const ok = this.drsAllowed(c) && (this.qualifying || (last !== undefined && this.time - last <= DRS_GAP));
         if (!this.ghost(c)) (this.drsPass ||= [])[z] = this.time;
         if (ok) {
-          if (c.owner && this.players.has(c.owner)) { c.drsAvail = true; io.to(c.owner).emit("drsReady"); }
-          else c.drsOpen = true;
+          const p = c.owner && this.players.get(c.owner);
+          if (p && !p.assist?.drs) { c.drsAvail = true; io.to(c.owner).emit("drsReady"); }
+          else c.drsOpen = true;                         // AI, or a player with DRS assist on
         }
       }
       c.drsZone = z;
@@ -1833,8 +1834,9 @@ class Room {
         else if (c.tire < 0.3 && c.tire < perLap * (lapsLeft - 0.3)) must = "tires";
       }
       if (must !== (p.must || null)) { p.must = must; io.to(p.id).emit("mustPit", must ? { reason: must, tire: Math.round(c.tire * 100) } : null); }
-    } else if (c.aiMode === "race" && !c.finished) {
-      // AI strategy: decide in the last part of the lap (before the pit entry) whether to stop
+    }
+    // AI strategy (and players with pit assist on): decide in the last part of the lap (before the pit entry) whether to stop
+    if ((!p || (p.assist?.pit && !p.boxCall)) && c.aiMode === "race" && !c.finished) {
       const left = laps - Math.max(0, c.lapsDone), toEntry = (pl.entry - c.idx + N) % N;
       if (left > 1 && toEntry < N * 0.3 && c.lapsDone >= 0 && !this.qualifying) {
         const perLap = c.lapWearMeas || 1 / this.lifeLaps(c, c.compound);
@@ -1850,7 +1852,10 @@ class Room {
         let want = critical || wrongTires || planned || undercut || (c.damage > 0.5 && left > 2);
         // don't queue behind a teammate who's already stopping, unless the tires are really gone
         if (want && !critical && !wrongTires && left > 2 && c.tire > perLap * 2.3 && this.cars.some((o) => o !== c && o.team === c.team && (o.aiMode === "pitLane" || o.pitting > 0))) { want = false; c.stintEnd = (c.stintEnd ?? laps) + 1; }
-        if (want) c.aiMode = "wantPit";
+        if (want) {
+          c.aiMode = "wantPit";
+          if (p) { p.boxCall = true; io.to(p.id).emit("toast", `🔧 Pit assist: boxing this lap${wrongTires ? " (wrong tires for the weather)" : critical ? " (tires won't last)" : ""}`); }
+        }
       }
     }
     if (c.punct && c.aiMode === "race" && !c.finished) c.aiMode = "wantPit";
@@ -1983,7 +1988,7 @@ class Room {
       // AI boost, used like a real driver would: fire it when flat out with no braking coming up,
       // hold it until the braking zone (no little taps), spend the tank regularly but keep a small
       // reserve for fights, and dump everything on the last lap.
-      if (!p) {
+      if (!p || p.assist?.boost) {
         const flatOut = v > speed * 1.06 + 20 && speed > st.maxSpeed * 0.55 && !calm && !cooldown && !c.punct;
         const inLine = lead && Math.abs(c.lat - lead.lat) < 30;
         const boxedIn = inLine && leadAlong < speed * 1.0 && lead.speed < speed * 1.08;   // someone right ahead in my lane: pull out first, then boost past
@@ -2053,8 +2058,9 @@ class Room {
       c.vx = c.vy = 0; c.pitting -= dt; c.nitroOn = false;
       if (c.pitting <= 0) {
         const p = c.owner && this.players.get(c.owner);
-        if (!p) this.aiPlan(c);
-        c.compound = p ? (p.nextCompound || c.compound) : c.planComp;
+        if (!p || p.assist?.pit) this.aiPlan(c);
+        // players: their "Next tires" pick; with pit assist and no pick, the strategist's choice
+        c.compound = p ? (p.nextCompound || (p.assist?.pit ? c.planComp || c.compound : c.compound)) : c.planComp;
         c.lapWearMeas = 0; c.tireAtLap = undefined;
         if (c.damage > 0 && c.owner) io.to(c.owner).emit("toast", "Crew fixed the damage!");
         c.tire = 1; c.pits++; c.aiMode = "pitOut"; c.punct = false; c.damage = 0;
@@ -2082,7 +2088,7 @@ class Room {
     if (c.boosting) { accel *= 1.8; maxSp *= 1.08; }
     // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
     const p = c.owner && this.players.get(c.owner);
-    const wantN = (p ? p.nitroHeld : c.aiNitro) && !this.sc;
+    const wantN = (p ? p.nitroHeld || (p.assist?.boost && c.aiNitro) : c.aiNitro) && !this.sc;      // (boost assist: fired for you)
     if (c.nitroLock > 0) c.nitroLock = Math.max(0, c.nitroLock - dt);
     c.nitroOn = !!wantN && c.nitro > 0 && !(c.nitroLock > 0) && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
@@ -2744,7 +2750,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { drs: 0.5, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3435,6 +3441,8 @@ io.on("connection", (socket) => {
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
+  // assists (Settings > Assists): pit stops, boost and DRS done for you
+  socket.on("assists", (d) => { const p = me(); if (p) p.assist = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true }; else socket.data.assist = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true }; });
   socket.on("drs", () => { const r = room(), p = me(); if (r && p && r.cars && r.openDrs(p)) socket.emit("drsOn"); });
   socket.on("box", () => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "race") return;

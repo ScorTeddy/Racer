@@ -527,3 +527,25 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
   }
   s.close();
 });
+
+test("assists: DRS, boost and pit stops done for the player", { timeout: 120000 }, () => {
+  const run = (quali) => {
+    const r = new game.Room("ASSIST" + quali, false);
+    r.setF1Track("it-1922");
+    const p = { id: "s-as", name: "Me", up: {}, level: 1, xp: 0, assist: { drs: true, boost: true, pit: true } }; r.players.set(p.id, p);
+    r.settings.ai = 4; r.settings.quali = quali; r.settings.laps = 6; r.settings.wear = "high"; r.settings.weather = "sunny"; r.ensureRoster(4);
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    const mine = r.cars.find((c) => c.owner === p.id), out = { drsOpen: 0, drsWaiting: 0, boosted: 0, mine };
+    for (let n = 0; n < 60 * 60 * (quali ? 1 : 8) && r.phase === "race" && !mine.finished; n++) {
+      r.step(1 / 60);
+      if (mine.drsOpen) out.drsOpen++; if (mine.drsAvail) out.drsWaiting++; if (mine.nitroOn) out.boosted++;
+    }
+    return out;
+  };
+  const q = run(1);                                  // qualifying: DRS in every zone
+  assert.ok(q.drsOpen > 0 && q.drsWaiting === 0, "DRS assist opens DRS straight away (never left waiting)");
+  const race = run(0);
+  assert.ok(race.drsWaiting === 0, "never waiting for a button press in the race either");
+  assert.ok(race.boosted > 0, "boost assist fired the boost without the key held");
+  assert.ok(race.mine.pits >= 1, "pit assist made a pit stop");
+});
