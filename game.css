@@ -1206,3 +1206,9 @@ body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile 
   .set-tabs { margin-bottom: 0.5rem; }
   .key-btn { min-width: 6.5rem; font-variant-numeric: tabular-nums; font-family: "Russo One", sans-serif; font-weight: 400; letter-spacing: 0.04em; }
   .key-btn.listening { border-color: var(--yellow); color: var(--yellow); animation: drsPulse 0.6s ease-in-out infinite alternate; }
+  #teamRankedBtn.dim { opacity: 0.6; }
+  .rc-foot #teamRankedBtn { width: 100%; margin-bottom: 0.4rem; }
+  .rank-top.team { margin-top: 0.3rem; }
+  /* player rows: the host's Make host / Kick buttons drop to their own line instead of squeezing the name away */
+  .plist li { flex-wrap: wrap; }
+  .plist .nm { min-width: 6rem; }

@@ -943,12 +943,12 @@ async function updateBoards(u, r) {
 }
 async function getBoard(kind, track) {
   const B = await boards();
-  if (kind === "ranked") return { kind, list: (B.ranked || []).map((x) => ({ ...x, rank: rankOf(x.v).label })) };
+  if (kind === "ranked" || kind === "rankedTeam") return { kind, list: (B[kind] || []).map((x) => ({ ...x, rank: rankOf(x.v).label })) };
   if (kind === "totw") return { kind, week: Number(track) || 0, list: B.totw && B.totw.week === Number(track) ? B.totw.list : [] };
   if (kind === "laps") return { kind, track, list: B.laps[String(track)] || [], tracks: Object.keys(B.laps) };
   return { kind, list: B[kind] || [] };
 }
-function dropFromBoards(id) { if (!BOARDS) return; if (BOARDS.totw) BOARDS.totw.list = BOARDS.totw.list.filter((x) => x.id !== id); for (const k of ["wins", "ach", "km", "ranked"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
+function dropFromBoards(id) { if (!BOARDS) return; if (BOARDS.totw) BOARDS.totw.list = BOARDS.totw.list.filter((x) => x.id !== id); for (const k of ["wins", "ach", "km", "ranked", "rankedTeam"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
 
 // ======================= Friends =======================
 // Add by username or by friend code (for Google accounts). Requests must be accepted.
@@ -1173,10 +1173,12 @@ const RANKED_FIELDS = [
 ];
 function rankedField(sr) { return { ...RANKED_FIELDS[rankOf(sr).i] }; }
 const RANKED_DNF = 45;
-function rankedState(u) { u.ranked = u.ranked || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; return u.ranked; }
+// mode "solo" (u.ranked) or "team" (u.rankedTeam: team ranked with friends has its own rating)
+const RKEY = (mode) => (mode === "team" ? "rankedTeam" : "ranked");
+function rankedState(u, mode) { const k = RKEY(mode); u[k] = u[k] || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; return u[k]; }
 // at the lights: charge the "left the race" loss up front, so quitting can't dodge it. The finish replaces it.
-function rankedStart(u) {
-  const R = rankedState(u);
+function rankedStart(u, mode) {
+  const R = rankedState(u, mode);
   R.live = { sr0: R.sr, at: Date.now() };
   R.sr = Math.max(0, R.sr - RANKED_DNF);
   saveSoon(u);
@@ -1196,23 +1198,24 @@ function rankUpCoins(oldPeak, newSr) {
   for (let d = divIdx(oldPeak) + 1; d <= divIdx(newSr); d++) coins += d === 21 ? RANK_UP_COINS.oe : d % 3 === 0 ? RANK_UP_COINS.tier : RANK_UP_COINS.div;
   return coins;
 }
-function rankedFinish(u, pos, of, finished) {
-  const R = rankedState(u);
+// (team ranked: pos is the team's average place, won = someone on the team won)
+function rankedFinish(u, pos, of, finished, mode, won) {
+  const R = rankedState(u, mode);
   if (!R.live) return null;
   const sr0 = R.live.sr0, peak0 = R.peak || 0; delete R.live;
   const d = finished ? rankedDelta(sr0, pos, of) : -RANKED_DNF;
   const before = rankOf(sr0);
-  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(peak0, R.sr); R.games++; if (pos === 1 && finished) R.wins++;
+  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(peak0, R.sr); R.games++; if ((won ?? pos === 1) && finished) R.wins++;
   const coins = rankUpCoins(peak0, R.sr);
   if (coins) { u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; }
-  R.hist = [...(R.hist || []), { d, pos, of, at: Date.now() }].slice(-10);
+  R.hist = [...(R.hist || []), { d, pos: Math.round(pos * 10) / 10, of, at: Date.now() }].slice(-10);
   const after = rankOf(R.sr);
-  putRankBoard(u);
+  putRankBoard(u, mode);
   saveSoon(u);
-  return { delta: R.sr - sr0, sr: R.sr, before, after, coins, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
+  return { mode: mode === "team" ? "team" : "solo", delta: R.sr - sr0, sr: R.sr, before, after, coins, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
 }
-function rankedPublic(u) { const R = rankedState(u); return { sr: R.sr, peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
-async function putRankBoard(u) { const B = await boards(); B.ranked = B.ranked || []; putBoard(B.ranked, { id: u.id, name: u.name, v: u.ranked.sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
+function rankedPublic(u, mode) { const R = rankedState(u, mode); return { sr: R.sr, peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
+async function putRankBoard(u, mode) { const k = RKEY(mode), B = await boards(); B[k] = B[k] || []; putBoard(B[k], { id: u.id, name: u.name, v: u[k].sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
 
 // ======================= Track of the week =======================
 // Best laps on this week's featured track. The board starts empty every Monday.
@@ -1446,7 +1449,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.

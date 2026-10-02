@@ -1109,7 +1109,7 @@ class Room {
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
   lobbyMsg() {
     return {
-      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
+      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null, team: !!this.teamRanked } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
       players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
@@ -1478,9 +1478,9 @@ class Room {
     this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
-      const c = this.cars.find((c) => c.owner); const p = c && this.players.get(c.owner);
-      this.rankedCar = c ? c.id : null; this.rankedUid = p?.uid || null; this.rankedPid = p?.id || null;
-      if (this.rankedUid) accounts.getUser(this.rankedUid).then((u) => { if (u) { accounts.rankedStart(u); if (p) io.to(p.id).emit("account", accounts.publicUser(u)); } }).catch(() => {});
+      const mode = this.teamRanked ? "team" : "solo";
+      this.rankedEntries = this.cars.filter((c) => c.owner && this.players.get(c.owner)?.uid).map((c) => ({ car: c.id, uid: this.players.get(c.owner).uid, pid: c.owner }));
+      for (const e of this.rankedEntries) accounts.getUser(e.uid).then((u) => { if (u) { accounts.rankedStart(u, mode); io.to(e.pid).emit("account", accounts.publicUser(u)); } }).catch(() => {});
     }
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
@@ -2448,21 +2448,31 @@ class Room {
     this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
     if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
-    if (this.ranked && this.rankedUid) {
-      const i = order.findIndex((c) => c.id === this.rankedCar), c = order[i];
-      const done = !!(c && c.owner && c.finished);
-      const uid = this.rankedUid; this.rankedUid = null;
-      accounts.getUser(uid).then((u) => {
-        if (!u) return;
-        const res = accounts.rankedFinish(u, i + 1, order.length, done);
-        if (!res) return;
-        for (const sid of online.get(uid) || []) { io.to(sid).emit("rankedResult", { ...res, pos: i + 1, of: order.length, dnf: !done }); io.to(sid).emit("account", accounts.publicUser(u)); }
-      }).catch((e) => console.log("ranked error", e.message));
+    if (this.ranked && this.rankedEntries?.length) {
+      const entries = this.rankedEntries; this.rankedEntries = null;
+      const team = !!this.teamRanked, of = order.length;
+      const placeOf = (e) => { const i = order.findIndex((c) => c.id === e.car), c = order[i]; return { pos: i + 1, done: !!(c && c.owner && c.finished) }; };
+      const places = entries.map(placeOf);
+      const teamPos = places.reduce((a, p) => a + (p.done ? p.pos : of), 0) / places.length, teamWon = places.some((p) => p.done && p.pos === 1);
+      entries.forEach((e, k) => {
+        const me = places[k];
+        accounts.getUser(e.uid).then((u) => {
+          if (!u) return;
+          const res = team ? accounts.rankedFinish(u, teamPos, of, me.done, "team", teamWon) : accounts.rankedFinish(u, me.pos, of, me.done);
+          if (!res) return;
+          for (const sid of online.get(e.uid) || []) { io.to(sid).emit("rankedResult", { ...res, pos: me.pos, teamPos: team ? Math.round(teamPos * 10) / 10 : null, of, dnf: !me.done }); io.to(sid).emit("account", accounts.publicUser(u)); }
+        }).catch((err) => console.log("ranked error", err.message));
+      });
     }
     this.sendLobby();
     setTimeout(() => {
       if (this.phase === "results") {
         this.phase = "lobby"; this.cars = null;
+        if (this.teamRanked) {
+          this.ranked = false; this.teamRanked = false; this.rankedTier = null;
+          if (this.preRanked) { Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public; this.preRanked = null; this.ensureRoster(this.settings.ai); }
+          this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
+        }
         if (seasonOver) { this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
         this.sendLobby();
       }
@@ -2584,6 +2594,40 @@ function rankedLook() {
   return { theme: pickOne(night ? RANKED_NIGHT : RANKED_DAY), weather };
 }
 const rankedReal = (maxKm) => F1_TRACKS.filter((t) => t.km >= 3 && t.km <= maxKm);
+// a ranked room's track: a real circuit or a random one, as the tier says
+function rankedTrack(r, F) {
+  const real = rankedReal(F.realKm);
+  let err = real.length && Math.random() < F.real ? r.setF1Track(pickOne(real).id) : "random";
+  if (err) err = r.setRandomTrack(pickOne(F.maps), pickOne(F.wonks));
+  if (err) r.setRandomTrack(F.maps[0], "little");
+}
+// Team ranked: a normal room's host takes the room (2-4 signed-in players) into ranked together. Everyone races as
+// one team against an AI field picked by the team's average team rating; every player's team rating moves by how
+// the TEAM did (its average place). After the podium the room is a normal room again.
+const TEAM_RANKED_MIN = 2, TEAM_RANKED_MAX = 4;
+async function startTeamRanked(r, socket) {
+  const humans = [...r.players.values()].filter((p) => !p.spectator);
+  if (humans.length < TEAM_RANKED_MIN || humans.length > TEAM_RANKED_MAX) return `Team ranked needs ${TEAM_RANKED_MIN}-${TEAM_RANKED_MAX} drivers in the room (spectators don't count)`;
+  if (humans.some((p) => !p.uid)) return "Everyone racing has to be signed in for team ranked";
+  const users = await Promise.all(humans.map((p) => accounts.getUser(p.uid)));
+  if (users.some((u) => !u)) return "Couldn't load everyone's account, try again";
+  if (r.phase !== "lobby" || r.ranked) return "The room is busy";
+  const avg = users.reduce((a, u) => a + accounts.rankedPublic(u, "team").sr, 0) / users.length;
+  const F = accounts.rankedField(avg), rank = accounts.rankOf(avg);
+  r.ranked = true; r.teamRanked = true; r.rankedTier = `${rank.label} team`;
+  r.preRanked = { settings: { ...r.settings, points: r.settings.points.slice() }, public: r.public };
+  r.public = false;
+  const squad = `${(r.players.get(r.hostId) || humans[0]).name}'s Squad`.slice(0, 20);
+  for (const p of humans) p.team = squad;
+  const ai = Math.min(MAX_AI, F.ai + 2 * (humans.length - 1));
+  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
+  r.ensureRoster(ai);
+  rankedTrack(r, F);
+  r.emit("toast", `🏆 Team ranked: ${rank.label} (team average) · ${humans.length} of you vs ${ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
+  r.sendLobby();
+  setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.teamRanked && r.players.size) r.startRace(); }, 5000);
+  return null;
+}
 function makeRankedRoom(socket, profile, u) {
   const r = new Room(makeCode(), false); rooms.set(r.code, r);
   r.ranked = true;
@@ -2592,10 +2636,7 @@ function makeRankedRoom(socket, profile, u) {
   Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
-  const real = rankedReal(F.realKm);
-  let err = real.length && Math.random() < F.real ? r.setF1Track(pickOne(real).id) : "random";
-  if (err) err = r.setRandomTrack(pickOne(F.maps), pickOne(F.wonks));
-  if (err) r.setRandomTrack(F.maps[0], "little");
+  rankedTrack(r, F);
   r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
   return r;
@@ -2750,7 +2791,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3106,8 +3147,13 @@ io.on("connection", (socket) => {
   socket.on("spectate", (on) => { const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return; p.spectator = !!on; r.sendLobby(); });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   // ---- leaderboards ----
-  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "rankedTeam", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
   // ---- ranked ----
+  socket.on("teamRanked:start", async () => {
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return socket.emit("toast", "Only the host can start team ranked, from the lobby");
+    const err = await startTeamRanked(r, socket);
+    if (err) socket.emit("toast", err);
+  });
   socket.on("ranked:play", async (profile) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("joinError", "Sign in to play ranked (your rank is saved on your account)");

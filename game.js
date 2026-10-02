@@ -1124,7 +1124,7 @@
   socket.on("lb", (d) => { A.lb = d; if (d.tracks) A.lbTracks = d.tracks; if (A.tab === "lb" || (DESK.on && A.tab === "ranked")) renderLb(); });
   function renderLb() {
     const box = $("hubLb"); box.textContent = "";
-    const kinds = [["wins", "🏆 Most wins"], ["ranked", "⚡ Ranked"], ["totw", "🌟 Track of the week"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
+    const kinds = [["wins", "🏆 Most wins"], ["ranked", "⚡ Ranked"], ["rankedTeam", "👥 Team ranked"], ["totw", "🌟 Track of the week"], ["ach", "🏅 Most achievements"], ["km", "🛣️ Most km"], ["laps", "⏱️ Fastest laps"]];
     const bar = el("div", "ach-filters");
     for (const [k, label] of kinds) { const b = el("button", "chip" + ((A.lbKind || "wins") === k ? " on" : ""), label); b.type = "button"; b.addEventListener("click", () => { A.lbKind = k; A.lb = null; socket.emit("lb:get", { kind: k, track: A.lbTrack || "" }); renderLb(); }); bar.appendChild(b); }
     box.appendChild(bar);
@@ -1149,7 +1149,7 @@
     const ol = el("ol", "lb-list");
     L.list.forEach((x, i) => {
       const li = el("li", x.id === A.user?.id ? "mine" : "");
-      li.append(el("span", "lp", i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1)), el("span", "ln", x.name), el("span", "lv", L.kind === "laps" || L.kind === "totw" ? fmt3(x.v) : L.kind === "ranked" ? `${x.rank} · ${x.v} SR` : L.kind === "km" ? `${x.v.toLocaleString()} km` : x.v.toLocaleString()));
+      li.append(el("span", "lp", i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : String(i + 1)), el("span", "ln", x.name), el("span", "lv", L.kind === "laps" || L.kind === "totw" ? fmt3(x.v) : L.kind === "ranked" || L.kind === "rankedTeam" ? `${x.rank} · ${x.v} SR` : L.kind === "km" ? `${x.v.toLocaleString()} km` : x.v.toLocaleString()));
       ol.appendChild(li);
     });
     box.appendChild(ol);
@@ -1402,7 +1402,7 @@
     drawBoard();
   });
   socket.on("trackResult", (r) => {
-    if (!r.error && P.steps.length) { P.steps.shift()(); return; }
+    if (!r.error && P.steps.length) { UNDO.quiet = true; try { P.steps.shift()(); } finally { UNDO.quiet = false; } return; }
     if (!r.error && P.loading) { boardHint(`Loaded "${P.loading}"!`, false); P.loading = null; return; }
     if (r.error) { P.steps = []; P.loading = null; if (S.preview) { S.preview = null; drawBoard(); } }
     if (!r.error && S.keepReverse && r.reversed === undefined && !r.moved) { S.keepReverse = false; socket.emit("reverse"); return; }
@@ -2313,7 +2313,8 @@
   });
   function updateDraftUi() {
     shareDraft();
-    $("undoPt").classList.toggle("hidden", !S.draft && !(S.lastDraft && S.host));
+    $("undoPt").classList.add("hidden");               // (one Undo button now: #trackUndo, for everything)
+    if (typeof refreshUndo === "function") refreshUndo();
     $("closeLoop").classList.toggle("hidden", !S.draft || S.draft.pts.length < 3);
     if (typeof updateRedo === "function" && $("redoPt")) updateRedo();
   }
@@ -2424,6 +2425,46 @@
     updateDraftUi(); drawBoard();
   }
   $("undoPt").addEventListener("click", undoDraft);
+  // ---- Undo anything in the drawing phase: the track as it was before every change is kept (last 30) ----
+  // Every message that changes the track is noticed on its way out; the track before it is saved first.
+  const UNDO = { stack: [], restoring: false, quiet: false };
+  const TRACK_EVENTS = new Set(["track", "randomTrack", "f1Track", "clearTrack", "reverse", "setStart", "totw:load", "track:load", "drs:add", "drs:set", "drs:clear", "drs:auto"]);
+  const snapTrack = () => (S.track && S.lobby?.stroke ? currentPreset("your last track") : { empty: true });
+  const sameSnap = (a, b) => !!a && !!b && (a.empty ? b.empty : !b.empty && JSON.stringify([a.stroke, a.start, a.reverse, a.drs, a.smooth]) === JSON.stringify([b.stroke, b.start, b.reverse, b.drs, b.smooth]));
+  {
+    const rawEmit = socket.emit.bind(socket);
+    socket.emit = (ev, ...args) => {
+      const changes = TRACK_EVENTS.has(ev) || (ev === "settings" && args[0] && typeof args[0] === "object" && ("smooth" in args[0] || "map" in args[0]));
+      if (changes && S.host && S.lobby?.phase === "lobby" && !UNDO.restoring && !UNDO.quiet) {
+        const snap = snapTrack();
+        if (!sameSnap(snap, UNDO.stack[UNDO.stack.length - 1])) { UNDO.stack.push(snap); if (UNDO.stack.length > 30) UNDO.stack.shift(); }
+        if (ev !== "track") S.lastDraft = null;          // (a finished drawing can only be "un-finished" right after)
+        refreshUndo();
+      }
+      return rawEmit(ev, ...args);
+    };
+  }
+  function refreshUndo() {
+    const can = S.host && S.lobby?.phase === "lobby" && (!!S.draft || !!S.lastDraft || UNDO.stack.length > 0);
+    $("undoTools").classList.toggle("hidden", !can);
+  }
+  function undoAnything() {
+    if (!S.host || S.lobby?.phase !== "lobby") return;
+    if (cut) { endCut(); boardHint("", false); return; }
+    if (S.draft || S.lastDraft) { undoDraft(); refreshUndo(); return; }
+    // the track before the last change (skipping any that look the same as now)
+    let snap = UNDO.stack.pop(); const now = snapTrack();
+    while (snap && sameSnap(snap, now)) snap = UNDO.stack.pop();
+    if (!snap) { boardHint("Nothing to undo.", true); refreshUndo(); return; }
+    // (putting it back isn't a new change: quiet until the server has rebuilt it, start line, direction and all)
+    if (snap.empty) { UNDO.quiet = true; socket.emit("clearTrack"); UNDO.quiet = false; boardHint("Undone: the track is cleared again.", false); }
+    else { UNDO.restoring = true; clearTimeout(UNDO.safety); UNDO.safety = setTimeout(() => (UNDO.restoring = false), 8000); loadPreset(snap); boardHint("↩️ Undone!", false); }
+    sfx("tick"); refreshUndo();
+  }
+  $("trackUndo").addEventListener("click", undoAnything);
+  socket.on("joined", () => { UNDO.stack = []; UNDO.restoring = false; refreshUndo(); });
+  socket.on("trackResult", (r) => { if (UNDO.restoring && (r.error || !P.steps.length)) { UNDO.restoring = false; clearTimeout(UNDO.safety); } });
+  socket.on("lobby", () => refreshUndo());
   function updateRedo() { $("redoPt").classList.toggle("hidden", !redoStack.length || !S.draft); }
   function redoDraft() {
     const r = redoStack.pop(), d = S.draft; if (!r || !d) return;
@@ -2439,7 +2480,7 @@
   }));
   $("snapBtn").addEventListener("click", () => { snapOn = !snapOn; $("snapBtn").setAttribute("aria-pressed", String(snapOn)); $("snapBtn").classList.toggle("on", snapOn); boardHint(snapOn ? "Snap on: straight lines go in 15° steps (Straight tool, or Shift while drawing)." : "Snap off.", false); drawBoard(); });
   $("moreBtn").addEventListener("click", () => { const open = $("moreTools").classList.toggle("hidden") === false; $("moreBtn").setAttribute("aria-expanded", String(open)); $("moreBtn").classList.toggle("on", open); requestAnimationFrame(sizeBoard); });
-  document.querySelectorAll("[data-tf]").forEach((b) => b.addEventListener("click", () => transformTrack(b.dataset.tf)));
+  document.querySelectorAll("[data-tf]").forEach((b) => b.addEventListener("click", () => (b.dataset.tf === "wide" || b.dataset.tf === "narrow" ? startWidthPick(b.dataset.tf) : transformTrack(b.dataset.tf))));
   $("closeLoop").addEventListener("click", finishDraft);
   $("startLineBtn").addEventListener("click", () => {
     if (!S.track) { boardHint("Draw a track first.", true); return; }
@@ -2809,12 +2850,13 @@
   function cutClick(p) {
     const i = nearestStroke(p);
     if (i === null) { boardHint("Click right on the track.", true); return; }
-    if (cut.a === null || cut.b !== null) { cut.a = i; cut.b = null; cut.flip = false; $("cutBar").classList.add("hidden"); boardHint("Now click where the part you don't like ends.", false); }
+    const widthMode = cut.mode === "wide" || cut.mode === "narrow";
+    if (cut.a === null || cut.b !== null) { cut.a = i; cut.b = null; cut.flip = false; if (!widthMode) $("cutBar").classList.add("hidden"); boardHint(widthMode ? "Now click where that part ends." : "Now click where the part you don't like ends.", false); }
     else {
       const n = cutStroke().length, d = Math.min((i - cut.a + n) % n, (cut.a - i + n) % n);
       if (d < 3) { boardHint("Pick a spot a bit further along the track.", true); return; }
       cut.b = i; $("cutBar").classList.remove("hidden");
-      boardHint("The red part will be deleted. Wrong part? Hit Other side.", false);
+      boardHint(widthMode ? `The highlighted part gets ${cut.mode === "wide" ? "wider" : "narrower"}. Wrong part? Hit Other side.` : "The red part will be deleted. Wrong part? Hit Other side.", false);
     }
     sfx("tick"); drawBoard();
   }
@@ -2839,10 +2881,40 @@
     if (!cutStroke() || !S.track) { boardHint("Draw a track first.", true); return; }
     startMode = false; $("startLineBtn").classList.remove("on"); endDrs();
     S.draft = null; drawing = false; updateDraftUi();
-    cut = { a: null, b: null, flip: false }; $("cutBtn").classList.add("on");
+    cut = { a: null, b: null, flip: false, mode: "delete" }; $("cutBtn").classList.add("on"); cutBarFor("delete");
     boardHint("Click where the part you don't like starts.", false); drawBoard();
   });
-  $("cutDo").addEventListener("click", doCut);
+  // Wider / Narrower: pick a part of the track (click where it starts, then where it ends), like Redraw part
+  function cutBarFor(mode) {
+    $("cutDo").textContent = mode === "wide" ? "🛣️ Make this part wider" : mode === "narrow" ? "🪡 Make this part narrower" : "✂️ Delete this part";
+    $("cutDo").className = "btn " + (mode === "delete" ? "danger-fill" : "go");
+    $("cutAll").classList.toggle("hidden", mode === "delete");
+  }
+  function startWidthPick(kind) {
+    if (!S.host || !cutStroke() || !S.track) { boardHint("Make a track first.", true); return; }
+    if (cut && cut.mode === kind) { endCut(); boardHint("", false); return; }
+    startMode = false; $("startLineBtn").classList.remove("on"); endDrs();
+    S.draft = null; drawing = false; updateDraftUi();
+    cut = { a: null, b: null, flip: false, mode: kind }; $("cutBtn").classList.remove("on"); cutBarFor(kind);
+    $("cutBar").classList.remove("hidden");
+    boardHint(`Click where the part to make ${kind === "wide" ? "wider" : "narrower"} starts (or press Whole track).`, false); drawBoard();
+  }
+  // widen / narrow the picked part, fading in and out at the ends, keeping the start line, direction and DRS
+  function applyWidth() {
+    const st = cutStroke(); if (!cut || cut.b === null || !st) return;
+    const n = st.length, { from, len } = cutRange(cut.a, cut.b, cut.flip), k = cut.mode === "wide" ? 1.25 : 1 / 1.25, fade = Math.min(6, Math.floor(len / 3));
+    const pts = st.map((q) => q.slice());
+    for (let j = 0; j <= len; j++) {
+      const w = fade ? Math.min(1, j / fade, (len - j) / fade) : 1, q = pts[(from + j) % n];
+      q[2] = clamp(Math.round(q[2] * (1 + (k - 1) * w)), 84, 260);
+    }
+    const keep = { ...cut };
+    loadPreset({ ...currentPreset(cut.mode === "wide" ? "wider part" : "narrower part"), stroke: pts });
+    cut = keep; cutBarFor(keep.mode); $("cutBar").classList.remove("hidden"); drawBoard();     // (still picked: press again for more)
+    boardHint(cut.mode === "wide" ? "That part is wider! Press it again for even wider." : "That part is narrower! Press it again for even narrower.", false);
+  }
+  $("cutDo").addEventListener("click", () => (cut && cut.mode !== "delete" ? applyWidth() : doCut()));
+  $("cutAll").addEventListener("click", () => { const m = cut?.mode; endCut(); if (m === "wide" || m === "narrow") transformTrack(m); });
   $("cutFlip").addEventListener("click", () => { if (cut) { cut.flip = !cut.flip; drawBoard(); } });
   $("cutCancel").addEventListener("click", () => { endCut(); boardHint("", false); });
   // red highlight of the part that would go
@@ -2855,7 +2927,8 @@
       const { from, len } = cutRange(cut.a, b, cut.flip), n = st.length;
       c.beginPath();
       for (let k = 0; k <= len; k++) { const q = st[(from + k) % n]; k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }
-      c.strokeStyle = cut.b === null ? "rgba(255,90,80,0.45)" : "rgba(255,70,60,0.75)";
+      const col = cut.mode === "wide" ? "62,224,106" : cut.mode === "narrow" ? "80,160,255" : "255,70,60";
+      c.strokeStyle = cut.b === null ? `rgba(${col},0.45)` : `rgba(${col},0.75)`;
       c.lineWidth = Math.max(10 / B.s, st[cut.a][2] / 3 + 8); c.stroke();
       c.setLineDash([8 / B.s, 6 / B.s]); c.lineWidth = 2 / B.s; c.strokeStyle = "#fff"; c.stroke(); c.setLineDash([]);
     }
@@ -2941,7 +3014,7 @@
     if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
     if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
     if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); redoDraft(); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && S.draft) { e.preventDefault(); undoDraft(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undoAnything(); }
     if (e.key === "[" || e.key === "]") { const ws = WIDTHS.map((x) => x[0]), i = ws.indexOf(brushW); setBrush(ws[clamp(i + (e.key === "]" ? 1 : -1), 0, ws.length - 1)]); }
   });
   const endDraw = () => {
@@ -4479,6 +4552,16 @@
     box.appendChild(lad);
     box.appendChild(el("p", "preset-note", "Win: about +40 SR. Last: about -40 (less in the low tiers, more at the top). Leaving a ranked race counts as a loss. Every tier races on big tracks: Iron is 4 laps against 3 AI on gentle ones, and every tier up adds AI and laps, with huge, wonkier tracks and real circuits."));
     box.appendChild(el("p", "preset-note", "🪙 Ranked races don't pay coins. Ranking up does: 150 coins for each new division, 600 for each new tier and 3,000 for reaching Overdrive Elite. Each one pays once, the first time you get there."));
+    // team ranked: its own rating, raced with friends from a room
+    const T = u.rankedTeam;
+    if (T) {
+      const tb = el("section", "rank-top team"); tb.style.setProperty("--rk", T.rank.color);
+      tb.appendChild(rankBadge(T.rank, true));
+      const tt = el("div", "rank-tx");
+      tt.append(el("b", "", `👥 Team ranked · ${T.sr} SR`), el("small", "", `${T.games} team races · ${T.wins} won by your team · peak ${T.peakRank.label}`),
+        el("small", "", "Get 2-4 signed-in friends in a room, then the host presses 👥 Team ranked. You race as one team against the AI (picked by your team's average rating), and everyone's team rating moves by how the team did on average. Ranking up pays coins here too."));
+      tb.appendChild(tt); box.appendChild(tb);
+    }
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
   }
@@ -4493,18 +4576,34 @@
     box.classList.toggle("hidden", !r); if (!r) return;
     box.textContent = ""; box.style.setProperty("--rk", r.after.color);
     const d = el("div", "rr-main");
-    d.append(rankBadge(r.after), el("b", "rr-delta " + (r.delta >= 0 ? "up" : "down"), `${r.delta >= 0 ? "+" : ""}${r.delta} SR`), el("small", "", r.dnf ? "You left the race: that counts as last." : `P${r.pos} of ${r.of} · now ${r.sr} SR`));
+    d.append(rankBadge(r.after), el("b", "rr-delta " + (r.delta >= 0 ? "up" : "down"), `${r.delta >= 0 ? "+" : ""}${r.delta} SR${r.mode === "team" ? " (team)" : ""}`),
+      el("small", "", r.dnf ? "You left the race: that counts as last." : r.mode === "team" ? `You finished P${r.pos} · your team's average place: ${r.teamPos} of ${r.of} · team rating ${r.sr} SR` : `P${r.pos} of ${r.of} · now ${r.sr} SR`));
     if (r.coins) d.appendChild(el("b", "rr-coins", `🪙 +${r.coins} (new rank reached)`));
     const row = el("div", "sec-row");
+    if (r.mode === "team") { box.append(d, el("small", "", "You'll be back in your room in a moment: the host can press 👥 Team ranked to go again.")); return; }
     const again = el("button", "btn go", "🏁 Race ranked again"); again.type = "button"; again.addEventListener("click", playRanked);
     const menu = el("button", "btn", "Menu"); menu.type = "button"; menu.addEventListener("click", () => { socket.emit("leave"); S.code = null; S.track = null; S.rankedRaced = false; show("menu"); });
     row.append(again, menu); box.append(d, row);
   }
+  // team ranked button (room host, 2-4 signed-in drivers)
+  $("teamRankedBtn").addEventListener("click", () => {
+    const L = S.lobby; if (!L) return;
+    const drivers = L.players.filter((p) => !p.spectator);
+    if (drivers.length < 2) return popup("Team ranked needs 2-4 drivers in the room. Invite your friends first!", true);
+    if (drivers.length > 4) return popup("Team ranked is for 2-4 drivers (others can spectate).", true);
+    if (drivers.some((p) => !p.signedIn)) return popup("Everyone racing needs to be signed in for team ranked.", true);
+    socket.emit("teamRanked:start");
+  });
+  socket.on("lobby", (l) => {
+    const show2 = !!S.host && l.phase === "lobby" && !l.ranked;
+    $("teamRankedBtn").classList.toggle("hidden", !show2);
+    if (show2) { const d = l.players.filter((p) => !p.spectator), ok = d.length >= 2 && d.length <= 4 && d.every((p) => p.signedIn); $("teamRankedBtn").classList.toggle("dim", !ok); $("teamRankedBtn").title = ok ? "Race ranked together as one team against the AI" : "Needs 2-4 drivers in the room, all signed in"; }
+  });
   // a ranked room runs itself: back to the menu once the podium is done
   socket.on("lobby", (l) => {
     document.body.classList.toggle("ranked-room", !!l.ranked);
-    if (l.ranked) { S.host = false; $("hostNote").textContent = `🏆 Ranked (${l.ranked.tier || ""}): the race starts by itself.`; }
-    if (l.ranked && l.phase === "lobby" && S.rankedRaced) { S.rankedRaced = false; socket.emit("leave"); S.code = null; S.track = null; show("menu"); openHub("ranked"); }
+    if (l.ranked) { S.host = false; $("hostNote").textContent = l.ranked.team ? `👥 Team ranked (${l.ranked.tier || ""}): starting by itself in a moment...` : `🏆 Ranked (${l.ranked.tier || ""}): the race starts by itself.`; }
+    if (l.ranked && !l.ranked.team && l.phase === "lobby" && S.rankedRaced) { S.rankedRaced = false; socket.emit("leave"); S.code = null; S.track = null; show("menu"); openHub("ranked"); }
   });
 
   // ======================= Track of the Week =======================
@@ -4815,6 +4914,11 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-11", title: "Team ranked, Undo everything, and part-width roads", items: [
+      "👥 Team ranked: get 2-4 signed-in friends in a room and the host presses Team ranked. You race as one team against the AI, with your own team rating.",
+      "↩️ Undo now undoes anything you do to the track in the lobby: drawing, deleting, rotating, flipping, resizing, random tracks, clearing, DRS... (Ctrl+Z works too).",
+      "🛣️ Wider road / Narrower now work on the part you pick: click where it starts and ends (or press Whole track).",
+    ] },
     { v: "2026-10-10", title: "Keybinds and assists", items: [
       "⌨️ Settings > Keybinds: change any race key (boost, DRS, box, photo mode, pause, upgrade cards, watch next car, settings).",
       "🤝 Settings > Assists: Pit assist calls your stops and picks tires, Boost assist fires your boost on the straights, DRS assist opens DRS the moment it's available.",

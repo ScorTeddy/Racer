@@ -549,3 +549,35 @@ test("assists: DRS, boost and pit stops done for the player", { timeout: 120000 
   assert.ok(race.boosted > 0, "boost assist fired the boost without the key held");
   assert.ok(race.mine.pits >= 1, "pit assist made a pit stop");
 });
+
+test("team ranked: friends race ranked together, then the room is normal again", { timeout: 180000 }, async () => {
+  for (const n of ["TeamOne", "TeamTwo"]) await accounts.signUp(n, "Turbo-Fox-Lane-42");
+  const open = async () => { const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok)); return s; };
+  const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
+  const a = await open(), b = await open();
+  a.emit("auth:login", { username: "TeamOne", password: "Turbo-Fox-Lane-42" }); await got(a, "account");
+  a.emit("create", { name: "TeamOne" }); const j = await got(a, "joined");
+  // a guest in the room: not allowed
+  b.emit("join", { code: j.code, profile: { name: "Guest" } }); await got(b, "joined");
+  a.emit("teamRanked:start"); assert.match(await got(a, "toast"), /signed in/);
+  b.emit("auth:login", { username: "TeamTwo", password: "Turbo-Fox-Lane-42" }); await got(b, "account");
+  await new Promise((ok) => setTimeout(ok, 600));
+  const r = game.rooms.get(j.code);
+  r.settings.laps = 3;                                          // (the room's own settings come back afterwards)
+  a.emit("teamRanked:start");
+  await new Promise((ok) => setTimeout(ok, 800));
+  assert.ok(r.ranked && r.teamRanked, "the room went ranked");
+  assert.ok(r.settings.teams && [...r.players.values()].every((p) => p.team === [...r.players.values()][0].team), "one team");
+  r.settings.laps = 1; r.settings.speed = 3;                    // (quick test race)
+  for (const s of [a, b]) { s.on("tirePick", () => s.emit("compound", "fast")); s.on("lightsOut", () => s.emit("react", 250)); }
+  const [ra, rb] = await Promise.all([got(a, "rankedResult"), got(b, "rankedResult")]);
+  assert.equal(ra.mode, "team"); assert.equal(rb.mode, "team");
+  assert.equal(ra.teamPos, rb.teamPos, "both judged on the team's average place");
+  const ua = await accounts.getUser("u_teamone");
+  assert.equal(ua.rankedTeam.games, 1, "team rating, not solo");
+  assert.ok(!ua.ranked || !ua.ranked.games, "solo ranked untouched");
+  await new Promise((ok) => setTimeout(ok, 13000));
+  assert.ok(!r.ranked && !r.teamRanked, "a normal room again after the podium");
+  assert.equal(r.settings.laps, 3, "with its own settings back");
+  a.close(); b.close();
+});

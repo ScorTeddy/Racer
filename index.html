@@ -204,6 +204,7 @@
     </div>
     <footer class="rc-foot">
       <p class="err" id="hostNote" style="color:var(--soft)"></p>
+      <button type="button" class="btn hidden" id="teamRankedBtn" title="Race ranked together: 2-4 signed-in players in this room, one team against the AI">👥 Team ranked</button>
       <button type="button" class="btn go" id="startBtn">🏁 Start race</button>
     </footer>
   </aside>
@@ -214,6 +215,7 @@
     <div class="board-hint panel" id="boardHint">Draw your track in one loop</div>
     <div class="dock panel" aria-label="Track tools">
       <button type="button" class="btn done-btn" id="doneEditBtn">✓ Done</button>
+      <div class="dock-group hidden" id="undoTools"><button type="button" class="tool undo-all" id="trackUndo" title="Undo (Ctrl+Z): drawing, deleting, rotating, resizing, anything"><span>↩️</span>Undo</button></div>
       <div class="dock-group" id="drawMode">
         <span class="dock-label">Draw</span>
         <button type="button" class="tool" data-dm="free" aria-pressed="true" title="Drag to draw. Hold Shift for a straight bit"><span>✏️</span>Freehand</button>
@@ -248,8 +250,8 @@
         <button type="button" class="tool" data-tf="big"><span>➕</span>Bigger</button>
         <button type="button" class="tool" data-tf="small"><span>➖</span>Smaller</button>
         <button type="button" class="tool" data-tf="center"><span>🎯</span>Center</button>
-        <button type="button" class="tool" data-tf="wide"><span>🛣️</span>Wider road</button>
-        <button type="button" class="tool" data-tf="narrow"><span>🪡</span>Narrower</button>
+        <button type="button" class="tool" data-tf="wide" title="Pick the part of the track to make wider"><span>🛣️</span>Wider road</button>
+        <button type="button" class="tool" data-tf="narrow" title="Pick the part of the track to make narrower"><span>🪡</span>Narrower</button>
         <button type="button" class="tool" data-tf="wiggle"><span>〰️</span>Wiggle</button>
       </div>
       <div class="dock-group" id="widthTools">
@@ -285,6 +287,7 @@
     <div class="cut-bar panel hidden" id="cutBar" role="group" aria-label="Redraw part of the track">
       <button type="button" class="btn danger-fill" id="cutDo">✂️ Delete this part</button>
       <button type="button" class="btn" id="cutFlip" title="Select the other way round the loop">↔ Other side</button>
+      <button type="button" class="btn hidden" id="cutAll" title="Change the whole track instead">Whole track</button>
       <button type="button" class="btn ghost" id="cutCancel">Cancel</button>
     </div>
   </main>

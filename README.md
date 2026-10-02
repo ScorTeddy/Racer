@@ -97,6 +97,16 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   **Host tools** (Track tools): 🟩 Add DRS (click where it starts, then where it ends, up to 6 zones), ✨ Auto DRS (real or
   automatic zones again), 🚫 No DRS. Zones are kept in share codes, saved tracks (`drs` as board points) and on Smooth on/off.
   Sockets: `drs:add {a, b}`, `drs:set [[ax, ay, bx, by]...]`, `drs:clear`, `drs:auto`.
+- **Team ranked** (👥 Team ranked in the room footer, host only): 2-4 signed-in drivers race ranked together as one team
+  (`startTeamRanked` in server.js). The field comes from the team's average **team rating** (`u.rankedTeam`, separate
+  from solo `u.ranked`) with 2 extra AI per extra player. Everyone's team rating moves by the team's average place
+  (anyone who leaves counts as last; leaving costs only them). After the podium the room is normal again, settings
+  and all (`preRanked`). Team ranked leaderboard (`rankedTeam`).
+- **Undo anything** (↩️ Undo in every track-tools section, Ctrl+Z): every message that changes the track
+  (`TRACK_EVENTS` in game.js) saves the track as it was first (start line, direction, DRS, smooth; last 30). Undo
+  rebuilds it like a saved track. Follow-up steps of one change (reverse / start line / DRS after a load) count as one.
+- **Wider road / Narrower** pick a part of the track first (click where it starts and ends, like Redraw part), fading in
+  and out at the ends; Whole track does the old thing. Press again for more.
 - **Assists** (Settings › Assists, `asPit` / `asBoost` / `asDrs`, sent as the `assists` socket event → `p.assist`):
   pit assist runs the AI pit strategy for your car (calls the box, the strategist picks tires unless you picked
   "Next tires"); boost assist runs the AI boost logic for your car (holding the key still works); DRS assist opens DRS
