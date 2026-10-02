@@ -399,7 +399,7 @@ function fetchSong(file) {
 // works too). Each line is made the first time it's needed, then kept (memory, and Upstash or the data folder),
 // so it's only paid for once. Without them, or if ElevenLabs fails, the built-in recorded voice plays.
 const elKey = () => (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY || process.env.XI_API_KEY || "").trim();
-const DEFAULT_VOICE = "rNzVNTrvSffyxdrTbLKv";      // the owner's pick (a voice ID isn't secret; the API key is, and lives only on Render)
+const DEFAULT_VOICE = "Tcy6kHow08Kgc7D6TrQL";      // the owner's pick (a voice ID isn't secret; the API key is, and lives only on Render)
 const FREE_VOICE = "JBFqnCBsd6RMkjVDRZzb";        // George: one of ElevenLabs' own voices, which free accounts can use
 const voicePaidOnly = new Set();                    // voices ElevenLabs said need a paid plan: George is used instead
 const pickedVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || DEFAULT_VOICE).trim();
