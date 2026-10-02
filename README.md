@@ -230,6 +230,12 @@ best-rated one) by `tools/commentary_gen.py`:
 and ducks the music. It's triggered by `lightsOut`, `feed` events (crash, winner, classWin, photo, lastLap,
 scOut/scIn, rain, puncture, fastest, elim), leader changes and pit stop results.
 
+## Selling
+`sell()` in accounts.js (`store:sell` socket): shop items give back half their price. Chest-only and pass items
+use `SELL_LOOT` by rarity (25 / 75 / 200 / 500 / 1,500). On average a chest's contents sell for well under what
+it cost, so there's nothing to farm. Every item carries its `sell` price in the catalog. Selling takes the item
+off your car. Store cards and Customize both have a two-tap Sell button.
+
 ## Customize
 Profile › 🎨 Customize (`renderCustom`): a live preview of your car with everything equipped, then each slot
 with only the items you own (rarest first) and a "None" option. Tapping sends `store:equip`.

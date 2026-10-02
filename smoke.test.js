@@ -862,3 +862,18 @@ test("achievement rewards rebalanced: half of the old payouts taken back, once, 
   assert.equal(fresh.coins, 500, "achievements earned after the change aren't touched");
   assert.ok(accounts.ACH.filter((a) => a.id.startsWith("g_wins_")).every((a) => a.coins <= 2000), "routine rewards are lower now");
 });
+
+test("selling: half price for shop items, a set value for chest items, and chests never pay to sell", () => {
+  const A = accounts, shop = A.STORE.find((x) => !x.loot && !x.pass && x.price >= 100), loot = A.STORE.find((x) => x.loot && x.rarity === "legendary");
+  const u = { coins: 0, owned: [shop.id, loot.id], equipped: { [shop.slot]: shop.id }, stats: {}, ach: {} };
+  const r1 = A.sell(u, shop.id);
+  assert.ok(r1.ok && r1.value === Math.floor(shop.price / 2) && u.coins === r1.value);
+  assert.ok(!u.owned.includes(shop.id) && !u.equipped[shop.slot], "gone, and taken off the car");
+  const r2 = A.sell(u, loot.id); assert.equal(r2.value, 500, "legendary chest item");
+  assert.ok(A.sell(u, loot.id).error, "can't sell what you don't own");
+  for (const b of A.BOXES) {
+    const ev = Object.entries(b.odds).reduce((t, [rar, w]) => t + (w / 100) * ({ common: 25, rare: 75, epic: 200, legendary: 500, mythic: 1500 })[rar], 0);
+    assert.ok(ev < b.price * 0.6, `${b.name}: opening to sell gets back ${Math.round(ev)} of ${b.price}`);
+  }
+  assert.ok(A.STORE.every((x) => x.sell > 0), "every item has a sell price");
+});

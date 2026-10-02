@@ -127,6 +127,7 @@
   <aside class="rc-side panel">
     <nav class="rc-tabs" role="tablist" aria-label="Room panels">
       <button type="button" role="tab" data-tab="drivers" aria-selected="true"><span class="ti" aria-hidden="true">👥</span>Drivers</button>
+      <button type="button" role="tab" data-tab="mode" aria-selected="false" id="modeTab"><span class="ti" aria-hidden="true">🎮</span>Mode</button>
       <button type="button" role="tab" data-tab="race" aria-selected="false"><span class="ti" aria-hidden="true">⚙️</span>Race</button>
       <button type="button" role="tab" data-tab="points" aria-selected="false"><span class="ti" aria-hidden="true">🏅</span>Points</button>
       <button type="button" role="tab" data-tab="ai" aria-selected="false"><span class="ti" aria-hidden="true">🤖</span>AI <span class="tab-count" id="aiCount">5</span></button>
@@ -147,9 +148,8 @@
         <div class="new-team"><input type="text" id="newTeamIn" maxlength="20" placeholder="Start a new team..." autocomplete="off"><button type="button" class="join-btn" id="newTeamBtn">Create</button></div>
         </div>
       </section>
-      <section class="rc-pane" data-pane="race" hidden>
-        <div class="settings-grid">
-          <div class="mode-pick wide" id="modePick">
+      <section class="rc-pane" data-pane="mode" hidden>
+          <div class="mode-pick" id="modePick">
             <div class="sect">Game mode</div>
             <div class="mode-cards" role="radiogroup" aria-label="Game mode">
               <button type="button" class="mode-card" data-mode="normal" role="radio"><b>🏁 Normal</b><small>Everyone drives the same kind of car.</small></button>
@@ -164,6 +164,9 @@
               <label class="f">AI class mix <select id="sMix"><option value="0.33">Mostly Hypers (1 in 3 AI is a GT)</option><option value="0.5">Half and half</option><option value="0.67">Mostly GTs (2 in 3 AI are GTs)</option></select></label>
             </div>
           </div>
+      </section>
+      <section class="rc-pane" data-pane="race" hidden>
+        <div class="settings-grid">
           <button type="button" class="btn wide" id="setPresetBtn">💾 Setting presets: save or load all of these</button>
           <label class="f">Laps (1-99) <input type="number" id="sLaps" min="1" max="99" step="1" value="5" inputmode="numeric"></label>
           <label class="f">AI difficulty <select id="sAiLevel"><option value="easy">😌 Easy</option><option value="medium">🙂 Medium</option><option value="hard">😤 Hard</option><option value="extreme">💀 EXTREME</option></select></label>

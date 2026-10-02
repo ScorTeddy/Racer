@@ -1031,6 +1031,22 @@ function buy(u, id) {
   saveSoon(u);
   return { ok: true, item: it, got };
 }
+// selling: shop items for half what they cost; chest and pass items for a value by rarity (well under what
+// the chests cost, so opening chests to sell what's inside always loses coins)
+const SELL_LOOT = { common: 25, rare: 75, epic: 200, legendary: 500, mythic: 1500 };
+const sellValue = (it) => (it.loot || it.pass || !it.price ? SELL_LOOT[it.rarity] || 25 : Math.max(5, Math.floor(it.price / 2)));
+for (const it of STORE) it.sell = sellValue(it);          // (sent with the catalog so the store can show it)
+function sell(u, id) {
+  const it = STORE_BY_ID.get(id);
+  if (!it) return { error: "Unknown item" };
+  if (!u.owned.includes(id)) return { error: "You don't own that" };
+  const value = sellValue(it);
+  u.owned = u.owned.filter((x) => x !== id);
+  for (const [slot, eq] of Object.entries(u.equipped)) if (eq === id) delete u.equipped[slot];
+  u.coins += value; u.stats.itemsSold = (u.stats.itemsSold || 0) + 1;
+  saveSoon(u);
+  return { ok: true, item: it, value };
+}
 function equip(u, slot, id) {
   if (id === null) { delete u.equipped[slot]; saveSoon(u); return { ok: true }; }
   const it = STORE_BY_ID.get(id);
@@ -1796,7 +1812,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,

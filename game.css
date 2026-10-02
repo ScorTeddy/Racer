@@ -1343,3 +1343,10 @@ body.touch .pg-pad { display: flex; }
 .cust-item.none { width: 5.2rem; justify-content: center; }
 .cust-none { font-size: 2rem; color: var(--soft); line-height: 1; }
 .cust-empty { font-size: 0.85rem; }
+
+/* ---- selling ---- */
+.sell-btn { min-height: 1.8rem !important; font-size: 0.75rem !important; padding: 0.15rem 0.4rem !important; }
+.sell-btn.sure, .cust-sell.sure { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.cust-cell { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.25rem; }
+.cust-sell { cursor: pointer; font: inherit; font-size: 0.7rem; font-weight: 800; padding: 0.15rem 0.3rem; border-radius: 0.45rem; border: 1px solid var(--edge); background: transparent; color: var(--soft); }
+.cust-sell:hover { color: var(--ink); border-color: var(--soft); }

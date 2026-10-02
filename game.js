@@ -1607,7 +1607,7 @@
           b.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
           b.append(itemPreview(it, 132, 72), el("small", "", it.name.replace(" (animated)", " ✨")));
           b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on === it.id ? null : it.id }));
-          row.appendChild(b);
+          const cell = el("div", "cust-cell"); cell.append(b, sellBtn(it, "cust-sell")); row.appendChild(cell);
         }
       }
       sec.appendChild(row); box.appendChild(sec);
@@ -1724,6 +1724,16 @@
   try { const v = JSON.parse(localStorage.getItem("tb-shop") || "null"); if (v) Object.assign(SHOP, v); } catch (e) {}
   if (!STORE_TABS.some((t) => t[0] === SHOP.tab)) SHOP.tab = "chests";
   const saveShop = () => { try { localStorage.setItem("tb-shop", JSON.stringify(SHOP)); } catch (e) {} };
+  // sell: tap once to see the price, tap again within 3 s to sell
+  function sellBtn(it, cls = "btn ghost sell-btn") {
+    const b = el("button", cls, `Sell 🪙${(it.sell || 0).toLocaleString()}`); b.type = "button"; b.title = "Sell it back (half price for shop items, a set value for chest items)";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = `Sure? +${(it.sell || 0).toLocaleString()}`; b.classList.add("sure"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = `Sell 🪙${(it.sell || 0).toLocaleString()}`; b.classList.remove("sure"); } }, 3000); return; }
+      socket.emit("store:sell", it.id); sfx("tick");
+    });
+    return b;
+  }
   function storeCard(it, u) {
     const slot = it.slot, owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
     const card = el("div", "item" + (on ? " on" : ""));
@@ -1746,6 +1756,7 @@
       row.appendChild(b);
     }
     card.appendChild(row);
+    if (owned) card.appendChild(sellBtn(it));
     return card;
   }
   function renderStore(u) {
@@ -2437,6 +2448,8 @@
       if (mode === "practice") en.textContent = "🏋️ Practice: no AI (the AI drivers setting is ignored) and no stats or coins. Sector times, your ghost and the pit stop minigame are all on. The host ends it from the race screen.";
       else if (mode === "elim") en.textContent = n < 2 ? "💥 Elimination needs at least 2 cars (add some AI)." : `💥 ${n} cars: ${per === 1 ? "the last car is" : `the last ${per} cars are`} knocked out every lap, so the race is ${Math.ceil((n - 1) / per)} laps (the Laps setting is ignored).`; }
     $("modePick").classList.toggle("hidden", !!l.ranked);
+    $("modeTab").classList.toggle("hidden", !!l.ranked);         // (ranked picks everything itself)
+    if (l.ranked && $("modeTab").getAttribute("aria-selected") === "true") document.querySelector('.rc-tabs [data-tab="drivers"]').click();
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
     // teams on/off, XP rate, public/private
@@ -5745,6 +5758,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-21", title: "Sell your stuff, and a Mode tab", items: [
+      "💰 Sell anything you own (in the Store or Customize): shop items sell for half what they cost, chest and pass items for a set price by rarity (Common 25 up to Mythic 1,500). Tap Sell, then again to confirm.",
+      "🎮 The game mode picker (Normal, Multiclass, Elimination, Practice) has its own Mode tab in the room now, so no more scrolling.",
+    ] },
     { v: "2026-10-20", title: "Customize your car, and a much better commentator", items: [
       "🎨 New Customize tab (menu, or Profile > Customize): a big live preview of your car and ONLY the things you own, slot by slot. Tap to put something on, ∅ to take it off.",
       "🎙️ New commentator voice: the best voice the AI model has (not the old robot one), and lines about drivers are now whole sentences with the name in them (\"Bolt wins the race! What a drive!\") instead of a name glued onto a line.",

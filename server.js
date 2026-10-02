@@ -3389,6 +3389,7 @@ io.on("connection", (socket) => {
     const p = me(); if (p && room().phase === "lobby") { p.extras = socket.data.extras; room().sendLobby(); }
   };
   socket.on("store:buy", (id) => storeAction((u) => accounts.buy(u, String(id))));
+  socket.on("store:sell", (id) => storeAction((u) => { const r = accounts.sell(u, String(id)); if (r.ok) socket.emit("toast", `💰 Sold ${r.item.name} for ${r.value.toLocaleString()} coins`); return r; }));
   // plinko: coins only, 10-1000 a ball, at most 6 balls a second
   let plinkoAt = [];
   socket.on("plinko:play", async (d) => {
