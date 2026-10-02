@@ -212,6 +212,18 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Rematch**: the results timeout is now `backToLobby()`. The host's `rematch` calls it and starts the race
   straight away. Other players' presses are votes (`rematchVotes`). Not in ranked.
 
+## 1v1 bets, multiclass knockouts, safety car ghosting
+
+- **1v1 bets** (`offerBet` / `answerBet` / `settleBets` in accounts.js, `bet:offer` / `bet:answer` sockets, Profile ›
+  Friends › ⚔️): friends only, 10-100,000 coins, both players must have the amount. Accepting takes both stakes
+  (`u.betsLive`, one running bet per pair). `recordStats` settles it after the next race they're both in: whoever
+  finished ahead gets 2× the stake; a player who left the race counts as last. Unraced bets refund after 3 days
+  (`expireBets`, run whenever the account is sent).
+- **Knockout qualifying in multiclass** (`koNext`): the Q1/Q2 cuts are worked out per class.
+- **Safety car**: `deploySafetyCar` ghosts every car for 2 seconds.
+- **GT3s yield** (`drive`, `c.yielding`): a GT with a Hyper closing in behind moves to the other side and lifts 5%.
+- **Plinko**: the ball spawns on click and sits on the top peg until the server's path arrives.
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style

@@ -1434,6 +1434,7 @@
     row.append(inp, go); top.appendChild(row); const fm = el("p", "sec-msg"); fm.id = "friendMsg"; fm.setAttribute("role", "status"); top.appendChild(fm);
     box.appendChild(top);
     const tb = tradesBlock(u); if (tb) box.appendChild(tb);
+    const bb = betsBlock(u); if (bb) box.appendChild(bb);
     if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     const person = (f, buttons) => {
       const d = el("div", "friend");
@@ -1452,7 +1453,7 @@
       const b = [];
       if (S.code && S.screen === "lobby") b.push(["Invite", "go", () => socket.emit("friends:invite", f.id)]);
       if (f.online && f.room && f.room !== S.code) b.push(["Join them", "", () => { closeHub(); saveProfile(); S.solo = false; socket.emit("join", { code: f.room, profile: prof }); }]);
-      b.push(["💬", "", () => openFriend(f, "chat")], ["🎁", "", () => openFriend(f, "gift")], ["🤝", "", () => openFriend(f, "trade")]);
+      b.push(["💬", "", () => openFriend(f, "chat")], ["🎁", "", () => openFriend(f, "gift")], ["🤝", "", () => openFriend(f, "trade")], ["⚔️", "", () => openFriend(f, "bet")]);
       b.push(["Remove", "ghost", () => socket.emit("friends:remove", f.id)]);
       box.appendChild(person(f, b));
     }
@@ -1642,8 +1643,15 @@
       c.fillStyle = plCol(m); c.globalAlpha = hit ? 1 : 0.85; rrect(c, x - G.sp / 2 + 2, G.by + (hit ? 4 : 0), G.sp - 4, 26, 5); c.fill(); c.globalAlpha = 1;
       c.fillStyle = "#fff"; c.font = `800 ${G.sp < 34 ? 9 : 11}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(m + "x", x, G.by + 13 + (hit ? 4 : 0));
     });
-    const dur = 1700;
+    // a ball appears the moment you click: it drops in on top of the first peg (and bounces there if the
+    // server is slow to answer), then follows the path the server rolled
+    const dur = 1350, lead = 220;
     PL.balls = PL.balls.filter((bl) => {
+      if (!bl.path || now < bl.at) {
+        const k = Math.min(1, (now - bl.made) / lead), y = k < 1 ? -8 + (G.top - 6) * k * k : G.top - 14 - Math.abs(Math.sin((now - bl.made - lead) / 120)) * 6;
+        c.fillStyle = "#ffcc1f"; c.shadowColor = "#ffcc1f"; c.shadowBlur = 8; c.beginPath(); c.arc(G.W / 2, y, 6, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
+        return true;
+      }
       const k = Math.min(1, (now - bl.at) / dur), tt = k * G.rows, i = Math.min(G.rows - 1, Math.floor(tt)), f = tt - i;
       const xAt = (row) => { let rights = 0; for (let q = 0; q < row; q++) rights += bl.path[q]; return G.W / 2 + (rights - row / 2) * G.sp; };
       const x = xAt(i) + (xAt(i + 1) - xAt(i)) * f, y = G.top - 14 + (i + f) * G.rowH - Math.sin(f * Math.PI) * G.rowH * 0.35;
@@ -1677,15 +1685,20 @@
     for (let k = 0; k < n; k++) setTimeout(() => {
       if (plShown() < bet) { if (!PL.toldPoor) { PL.toldPoor = true; popup("Not enough coins", true); setTimeout(() => (PL.toldPoor = false), 1500); } return; }
       const id = ++PL.id;
-      PL.pend.set(id, { bet, at: Date.now() }); plStatus(); socket.emit("plinko:play", { bet, risk: PL.risk, id });
-      setTimeout(() => { if (PL.pend.delete(id)) plStatus(); }, 8000);       // (no answer at all: give the bet back on screen)
+      PL.pend.set(id, { bet, at: Date.now() }); socket.emit("plinko:play", { bet, risk: PL.risk, id });
+      PL.balls.push({ id, path: null, win: 0, bet, made: performance.now() }); plStatus();
+      if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
+      setTimeout(() => { if (PL.pend.delete(id)) { plDropBall(id); plStatus(); } }, 8000);       // (no answer at all: give the bet back on screen)
     }, k * 160);
   }
+  const plDropBall = (id) => { PL.balls = PL.balls.filter((b) => b.id !== id || b.path); };
   socket.on("plinkoResult", (r) => {
     PL.pend.delete(r.id);
-    if (r.error) { if (!PL.toldErr) { PL.toldErr = true; popup("🎰 " + r.error, true); setTimeout(() => (PL.toldErr = false), 1500); } plStatus(); return; }
+    if (r.error) { plDropBall(r.id); if (!PL.toldErr) { PL.toldErr = true; popup("🎰 " + r.error, true); setTimeout(() => (PL.toldErr = false), 1500); } plStatus(); return; }
     PL.base = r.coins;                     // the server's balance, win included (it's held back on screen until the ball lands)
-    PL.balls.push({ path: r.path, bucket: r.bucket, mult: r.mult, win: r.win, bet: r.bet, at: performance.now() });
+    const now = performance.now(), res = { path: r.path, bucket: r.bucket, mult: r.mult, win: r.win, bet: r.bet };
+    const bl = PL.balls.find((b) => b.id === r.id && !b.path);
+    if (bl) Object.assign(bl, res, { at: Math.max(now, bl.made + 220) }); else PL.balls.push({ ...res, made: now - 220, at: now });
     plStatus();
     if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
   });
@@ -5634,7 +5647,7 @@
   socket.on("friendItems", (d) => { FR.items[d.id] = d.owned || []; if (FR.who?.id === d.id && FR.tab === "trade") renderFriend(); });
   socket.on("dm", (d) => {
     if (FR.who?.id === d.from && !$("friendBox").classList.contains("hidden")) return;
-    popup(d.gift ? `🎁 ${d.name} sent you ${d.gift}!` : d.trade ? `🤝 ${d.name} sent you a trade offer (Profile › Friends)` : d.tradeDone !== undefined ? `🤝 ${d.name} ${d.tradeDone ? "accepted" : "answered"} your trade` : `💬 ${d.name}: ${d.text}`);
+    popup(d.gift ? `🎁 ${d.name} sent you ${d.gift}!` : d.trade ? `🤝 ${d.name} sent you a trade offer (Profile › Friends)` : d.bet ? `⚔️ ${d.name} challenged you to a 1v1 bet (Profile › Friends)` : d.betDone !== undefined ? `⚔️ ${d.name} ${d.betDone ? "accepted your bet: race them!" : "declined your bet"}` : d.tradeDone !== undefined ? `🤝 ${d.name} ${d.tradeDone ? "accepted" : "answered"} your trade` : `💬 ${d.name}: ${d.text}`);
     sfx("tick");
   });
   const itemName = (id) => A.catalog?.store.find((x) => x.id === id)?.name || id;
@@ -5654,8 +5667,8 @@
       const th = A.dms[f.id] || [];
       if (!th.length) list.appendChild(el("p", "preset-note", `No messages yet. Say hi to ${f.name}!`));
       for (const m of th) {
-        const mine = m.from === u.id, d = el("div", "dm" + (mine ? " mine" : "") + (m.gift || m.trade ? " sys" : ""));
-        d.textContent = m.gift ? `🎁 ${mine ? "You sent" : f.name + " sent you"} ${m.gift}${m.text ? `: "${m.text}"` : ""}` : m.trade ? `🤝 ${mine ? "You" : f.name} ${m.trade}` : m.text;
+        const mine = m.from === u.id, d = el("div", "dm" + (mine ? " mine" : "") + (m.gift || m.trade || m.bet ? " sys" : ""));
+        d.textContent = m.bet ? `⚔️ ${mine ? "You" : f.name} ${m.bet}` : m.gift ? `🎁 ${mine ? "You sent" : f.name + " sent you"} ${m.gift}${m.text ? `: "${m.text}"` : ""}` : m.trade ? `🤝 ${mine ? "You" : f.name} ${m.trade}` : m.text;
         list.appendChild(d);
       }
       const form = el("form", "chat-foot"); const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 140; inp.placeholder = `Message ${f.name}...`; inp.setAttribute("aria-label", "Message");
@@ -5685,6 +5698,23 @@
       box.append(l1, l2, l3, go); if (cd) tickCd(go, "🎁 Send gift");
       return;
     }
+    if (FR.tab === "bet") {
+      const live = (u.bets?.live || []).find((b) => b.vs === f.id);
+      box.appendChild(el("p", "preset-note", `Bet ${f.name} coins on a 1v1: you both put in the same amount, and whoever finishes ahead in your next race together takes it all. Leaving that race counts as losing. Not raced each other within 3 days? You both get your coins back.`));
+      if (live) { box.appendChild(el("p", "bet-live", `⚔️ Bet running: 🪙 ${live.amount.toLocaleString()} each. Get in a race with ${f.name} and beat them to win 🪙 ${(live.amount * 2).toLocaleString()}!`)); return; }
+      const c = coinInput("Coins to bet"); c.min = "10"; c.max = "100000";
+      const go = el("button", "btn go", "⚔️ Send bet"); go.type = "button";
+      go.addEventListener("click", () => {
+        const amount = Math.floor(Number(c.value) || 0); if (amount < 10) return popup("Bets start at 10 coins", true);
+        if (amount > u.coins) return popup(`You only have 🪙 ${u.coins.toLocaleString()}`, true);
+        if (go.dataset.sure !== "1") { go.dataset.sure = "1"; go.textContent = `Bet 🪙 ${amount.toLocaleString()}? Click again`; return; }
+        go.dataset.sure = ""; go.textContent = "⚔️ Send bet";
+        socket.emit("bet:offer", { to: f.id, amount });
+      });
+      const l1 = el("label", "f", `Your stake (you have 🪙 ${u.coins.toLocaleString()}) `); l1.appendChild(c);
+      box.append(l1, go);
+      return;
+    }
     // trade
     const theirs = FR.items[f.id];
     box.appendChild(el("p", "preset-note", `Offer something, ask for something back. ${f.name} gets the offer in their Friends tab and can accept or decline. Everything is checked again when they accept.`));
@@ -5699,6 +5729,25 @@
     const go = el("button", "btn go", cd ? `Cooldown ${cd}s` : "🤝 Send offer"); go.type = "button"; go.disabled = !!cd;
     go.addEventListener("click", () => socket.emit("trade:offer", { to: f.id, give: { coins: gc.value, item: gi.value || null }, want: { coins: wc.value, item: wi.value || null } }));
     box.append(g, go); if (cd) tickCd(go, "🤝 Send offer");
+  }
+  function betsBlock(u) {
+    const inc = u?.bets?.in || [], live = u?.bets?.live || [];
+    if (!inc.length && !live.length) return null;
+    const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", `⚔️ 1v1 bets`));
+    for (const b of inc) {
+      const d = el("div", "friend");
+      const tx = el("div"); tx.append(el("b", "", b.fromName), el("small", "", `bets you 🪙 ${b.amount.toLocaleString()} they finish ahead of you (winner takes 🪙 ${(b.amount * 2).toLocaleString()})`));
+      const bs = el("div", "sec-row");
+      const yes = el("button", "btn go", "Accept"); yes.type = "button"; yes.addEventListener("click", () => socket.emit("bet:answer", { id: b.id, yes: true }));
+      const no = el("button", "btn ghost", "Decline"); no.type = "button"; no.addEventListener("click", () => socket.emit("bet:answer", { id: b.id, yes: false }));
+      bs.append(yes, no); d.append(el("span", "fdot on"), tx, bs); sec.appendChild(d);
+    }
+    for (const b of live) {
+      const d = el("div", "friend"), h = Math.max(0, Math.ceil((b.until - Date.now()) / 3600000));
+      const tx = el("div"); tx.append(el("b", "", `vs ${b.vsName}`), el("small", "", `🪙 ${b.amount.toLocaleString()} each is riding on your next race together (${h}h left, then it's refunded)`));
+      d.append(el("span", "fdot on"), tx); sec.appendChild(d);
+    }
+    return sec;
   }
   function tradesBlock(u) {
     if (!u?.trades?.length) return null;
@@ -5781,6 +5830,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-23", title: "1v1 bets, and GT3s let the Hypers by", items: [
+      "⚔️ Bet a friend: Profile › Friends › ⚔️. You both put in the same coins (you both need to have them), and whoever finishes ahead in your next race together gets both. Leaving the race counts as losing; no race within 3 days and you both get your coins back.",
+      "🏁 Multiclass knockout qualifying now knocks out the slowest of each class (Hypers and GT3s separately), not just the slowest overall.",
+      "👻 When the safety car comes out, every car is a ghost for 2 seconds so the crash doesn't turn into a pile-up.",
+      "🚗 In multiclass races, GT3s move over and lift a little to let the faster Hypers through.",
+      "🎰 Plinko feels instant: the ball drops the moment you click, and each drop is quicker.",
+    ] },
     { v: "2026-10-22", title: "Less lag, Plinko fixed, more commentary", items: [
       "⚡ Less lag: big races (9+ cars) send half as much data, which was choking the server and slow connections.",
       "🛑 If everyone racing leaves the race, it stops and goes back to the lobby instead of running on for nobody.",

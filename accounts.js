@@ -1607,6 +1607,77 @@ function sendDm(u, o, text) {
   return { ok: true, m };
 }
 function dmThread(u, id) { return (u.dms || {})[id] || []; }
+// ---- 1v1 bets: both put the same coins in, the next race you're both in decides it ----
+// offer -> (they accept) -> both stakes are taken and held -> whoever finishes ahead gets both.
+// Nobody raced each other within 3 days? Everyone gets their stake back.
+const BET_MIN = 10, BET_MAX = 100000, BET_TTL = 3 * 86400000;
+function expireBets(u) {
+  const now = Date.now(); let ch = false;
+  u.betsIn = (u.betsIn || []).filter((b) => now - b.at < 7 * 86400000 || !(ch = true));
+  u.betsLive = (u.betsLive || []).filter((b) => { if (now - b.at < BET_TTL) return true; u.coins += b.amount; ch = true; return false; });
+  if (ch) saveSoon(u);
+}
+async function offerBet(u, toId, amount) {
+  const o = await getUser(String(toId));
+  if (!o || !isFriend(u, o.id)) return { error: "You can only bet against friends" };
+  amount = Math.floor(Number(amount) || 0);
+  if (!(amount >= BET_MIN && amount <= BET_MAX)) return { error: `Bets are ${BET_MIN} to ${BET_MAX.toLocaleString()} coins` };
+  expireBets(u); expireBets(o);
+  if (u.coins < amount) return { error: `You don't have ${amount.toLocaleString()} coins` };
+  if (o.coins < amount) return { error: `${o.name} doesn't have ${amount.toLocaleString()} coins` };
+  if (u.betsLive.some((b) => b.vs === o.id)) return { error: `You already have a bet running with ${o.name}: race them first` };
+  o.betsIn = o.betsIn.filter((b) => b.from !== u.id);
+  if (o.betsIn.length >= 10) return { error: `${o.name} has too many bets waiting` };
+  const id = crypto.randomBytes(6).toString("hex");
+  o.betsIn.push({ id, from: u.id, fromName: u.name, amount, at: Date.now() });
+  dmPush(u, o, { from: u.id, t: Date.now(), bet: `offered a 1v1 bet: 🪙 ${amount.toLocaleString()} each, whoever finishes ahead in the next race together takes it all` });
+  saveSoon(u); saveSoon(o);
+  return { ok: true, other: o.id, name: o.name };
+}
+async function answerBet(u, id, yes) {
+  expireBets(u);
+  const b = u.betsIn.find((x) => x.id === id);
+  if (!b) return { error: "That bet is gone" };
+  u.betsIn = u.betsIn.filter((x) => x.id !== id);
+  const o = await getUser(b.from);
+  if (!yes || !o) { saveSoon(u); if (o) { dmPush(u, o, { from: u.id, t: Date.now(), bet: "declined the bet" }); saveSoon(o); } return { ok: true, other: b.from, msg: "Bet declined" }; }
+  expireBets(o);
+  if (u.betsLive.some((x) => x.vs === o.id) || o.betsLive.some((x) => x.vs === u.id)) { saveSoon(u); return { error: `You already have a bet running with ${o.name}` }; }
+  if (u.coins < b.amount) { saveSoon(u); return { error: `You need ${b.amount.toLocaleString()} coins for this bet` }; }
+  if (o.coins < b.amount) { saveSoon(u); return { error: `${o.name} doesn't have ${b.amount.toLocaleString()} coins any more` }; }
+  const at = Date.now();
+  u.coins -= b.amount; o.coins -= b.amount;            // both stakes are held until the race
+  u.betsLive.push({ id, vs: o.id, vsName: o.name, amount: b.amount, at });
+  o.betsLive.push({ id, vs: u.id, vsName: u.name, amount: b.amount, at });
+  dmPush(u, o, { from: u.id, t: at, bet: `accepted the bet: 🪙 ${b.amount.toLocaleString()} each, next race decides it` });
+  saveSoon(u); saveSoon(o);
+  return { ok: true, other: o.id, msg: `⚔️ Bet on! Beat ${o.name} in a race to win ${(b.amount * 2).toLocaleString()} coins` };
+}
+// after a race: ranked = [{ uid, rank }] (lower rank = finished ahead; Infinity = left the race)
+async function settleBets(ranked) {
+  const out = [], seen = new Set();
+  for (const a of ranked) for (const b of ranked) {
+    if (a.uid === b.uid || seen.has(a.uid + b.uid) || !(a.rank < b.rank)) continue;
+    seen.add(a.uid + b.uid); seen.add(b.uid + a.uid);
+    const [w, l] = await Promise.all([getUser(a.uid), getUser(b.uid)]);
+    if (!w || !l) continue;
+    expireBets(w); expireBets(l);
+    const bw = w.betsLive.find((x) => x.vs === l.id), bl = bw && l.betsLive.find((x) => x.id === bw.id);
+    if (!bw || !bl) continue;
+    w.betsLive = w.betsLive.filter((x) => x !== bw); l.betsLive = l.betsLive.filter((x) => x !== bl);
+    w.coins += bw.amount * 2;
+    w.stats.betsWon = (w.stats.betsWon || 0) + 1; w.stats.betCoins = (w.stats.betCoins || 0) + bw.amount;
+    l.stats.betsLost = (l.stats.betsLost || 0) + 1;
+    dmPush(w, l, { from: w.id, t: Date.now(), bet: `won the bet (🪙 ${(bw.amount * 2).toLocaleString()})` });
+    saveSoon(w); saveSoon(l);
+    out.push({ winner: w.id, loser: l.id, winnerName: w.name, loserName: l.name, amount: bw.amount });
+  }
+  return out;
+}
+function betsPublic(u) {
+  expireBets(u);
+  return { in: u.betsIn.map((b) => ({ id: b.id, from: b.from, fromName: b.fromName, amount: b.amount, at: b.at })), live: u.betsLive.map((b) => ({ vs: b.vs, vsName: b.vsName, amount: b.amount, until: b.at + BET_TTL })) };
+}
 function tradesPublic(u) { return (u.tradesIn || []).map((t) => ({ id: t.id, from: t.from, fromName: t.fromName, give: t.give, want: t.want, at: t.at, text: tradeText(t) })); }
 
 // ======================= Share codes (tracks and replays) =======================
@@ -1738,7 +1809,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -1822,6 +1893,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
+  offerBet, answerBet, settleBets, BET_MIN, BET_MAX,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,

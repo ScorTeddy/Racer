@@ -909,3 +909,78 @@ test("the race stops when everyone racing has left it", { timeout: 30000 }, () =
   assert.ok(stopped && r.phase === "lobby" && r.cars === null, "stopped and back to the lobby");
   assert.equal(r.settings.laps, 5);
 });
+
+test("multiclass knockout qualifying knocks out the slowest of each class, not overall", () => {
+  const r = new game.Room("KOMULTI", false); r.setRandomTrack("normal", "regular");
+  r.players.set("q", { id: "q", name: "Me", up: {}, level: 1, xp: 0, cls: "gt" });
+  Object.assign(r.settings, { ai: 11, quali: "ko", laps: 5, mode: "multi", mix: 0.5, weather: "sunny" }); r.ensureRoster(11);
+  r.startRace();
+  assert.ok(r.qualifying && r.qualiKO && r.multi);
+  // every Hyper is quicker than every GT: an overall cut would only ever knock out GTs
+  for (const c of r.cars) c.bestLap = (c.cls === "hyper" ? 30 : 40) + Math.random() * 5;
+  const n = (k) => r.cars.filter((c) => c.cls === k).length, slow = (k) => r.cars.filter((c) => c.cls === k).sort((a, b) => b.bestLap - a.bestLap);
+  const slowH = slow("hyper")[0], slowG = slow("gt")[0];
+  r.koNext();
+  for (const k of ["hyper", "gt"]) {
+    const out = r.cars.filter((c) => c.cls === k && c.out).length;
+    assert.equal(out, n(k) - Math.max(3, Math.ceil(n(k) * 2 / 3)), `${k}: its own slowest go out in Q1`);
+  }
+  assert.ok(slowH.out && slowG.out, "the slowest Hyper and the slowest GT are both out");
+  for (const c of r.cars.filter((c) => !c.out)) c.bestLap = 30 + Math.random() * 10;
+  r.koNext();
+  for (const k of ["hyper", "gt"]) assert.equal(r.cars.filter((c) => c.cls === k && !c.out).length, Math.max(2, Math.ceil(n(k) / 3)), `${k}: Q3 runners`);
+});
+
+test("safety car: every car is a ghost for 2 seconds when it comes out", () => {
+  const r = new game.Room("SCGHOST", false); r.setRandomTrack("normal", "regular");
+  r.players.set("g", { id: "g", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 5, weather: "sunny", safetyCar: true }); r.ensureRoster(5);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 12; n++) r.step(1 / 60);
+  r.scDoneAt = -999; r.deploySafetyCar();
+  assert.ok(r.sc, "safety car out");
+  assert.ok(r.cars.every((c) => r.ghost(c)), "everyone ghosted");
+  for (let n = 0; n < 60 * 2.2; n++) r.step(1 / 60);
+  assert.ok(r.cars.some((c) => !r.ghost(c)), "and solid again after 2 seconds");
+});
+
+test("multiclass: GT3s move over for the Hypers coming through", { timeout: 120000 }, () => {
+  const r = new game.Room("GTYIELD", false); r.setRandomTrack("normal", "regular");
+  r.players.set("y", { id: "y", name: "Me", up: {}, level: 1, xp: 0, cls: "hyper" });
+  Object.assign(r.settings, { ai: 9, quali: 0, laps: 8, mode: "multi", mix: 0.5, weather: "sunny" }); r.ensureRoster(9);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  let yields = 0;
+  for (let n = 0; n < 60 * 120 && r.phase === "race"; n++) { r.step(1 / 60); for (const c of r.cars) if (c.yielding) yields++; }
+  assert.ok(yields > 30, `GTs got out of the way (${yields} frames)`);
+  assert.ok(r.cars.every((c) => c.cls === "gt" || !c.yielding), "Hypers never yield");
+});
+
+test("1v1 bets: both stake the same, the one ahead takes both, unraced bets are refunded", async () => {
+  const a = (await accounts.signUp("BetA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("BetB", "Turbo-Fox-Lane-42")).u;
+  assert.ok((await accounts.offerBet(a, b.id, 100)).error, "friends only");
+  await accounts.friendAdd(a, "BetB"); await accounts.friendAccept(b, a.id);
+  a.coins = 1000; b.coins = 50;
+  assert.match((await accounts.offerBet(a, b.id, 100)).error, /doesn't have/, "they need the coins too");
+  assert.match((await accounts.offerBet(a, b.id, 5)).error, /Bets are/);
+  b.coins = 500;
+  assert.ok((await accounts.offerBet(a, b.id, 200)).ok);
+  assert.equal(a.coins, 1000, "nothing taken until they accept");
+  const bid = accounts.publicUser(b).bets.in[0].id;
+  assert.ok((await accounts.answerBet(b, bid, true)).ok);
+  assert.equal(a.coins, 800); assert.equal(b.coins, 300, "both stakes held");
+  assert.match((await accounts.offerBet(a, b.id, 10)).error, /already/, "one bet at a time with each friend");
+  // a race they're both in: B finishes ahead
+  const done = await accounts.settleBets([{ uid: a.id, rank: 3 }, { uid: b.id, rank: 1 }]);
+  assert.equal(done.length, 1);
+  assert.equal(b.coins, 700, "winner gets their stake back plus the loser's"); assert.equal(a.coins, 800);
+  assert.equal(accounts.publicUser(a).bets.live.length, 0);
+  assert.equal((await accounts.settleBets([{ uid: a.id, rank: 0 }, { uid: b.id, rank: 1 }])).length, 0, "settled only once");
+  // never raced: 3 days later both get their stake back
+  assert.ok((await accounts.offerBet(b, a.id, 100)).ok);
+  assert.ok((await accounts.answerBet(a, accounts.publicUser(a).bets.in[0].id, true)).ok);
+  assert.equal(a.coins, 700); assert.equal(b.coins, 600);
+  for (const u of [a, b]) u.betsLive[0].at -= 4 * 86400000;
+  accounts.publicUser(a); accounts.publicUser(b);
+  assert.equal(a.coins, 800); assert.equal(b.coins, 700, "refunded");
+  assert.ok(accounts.dmThread(a, b.id).some((m) => m.bet), "bets show in the chat");
+});

@@ -1629,6 +1629,7 @@ class Room {
       this.rankedEntries = this.cars.filter((c) => c.owner && this.players.get(c.owner)?.uid).map((c) => ({ car: c.id, uid: this.players.get(c.owner).uid, pid: c.owner }));
       for (const e of this.rankedEntries) accounts.getUser(e.uid).then((u) => { if (u) { accounts.rankedStart(u, mode); io.to(e.pid).emit("account", accounts.publicUser(u)); } }).catch(() => {});
     }
+    for (const c of this.cars) c.betUid = (c.owner && this.players.get(c.owner)?.uid) || null;   // (1v1 bets: who started in which car)
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: this.weatherSetting(), compounds: COMPOUNDS, perLap: this.perLapAll() });
@@ -1952,16 +1953,21 @@ class Room {
   }
   // ---- knockout qualifying: end of Q1 / Q2. The slowest are out (their grid spots are set), times reset ----
   koNext() {
-    const K = this.qualiKO, n = this.cars.length;
-    const run = this.cars.filter((c) => !c.out).sort((a, b) => (a.bestLap - b.bestLap) || (b.progress - a.progress));
-    const keep = Math.min(run.length - 1, K.stage === 1 ? Math.max(3, Math.ceil(n * 2 / 3)) : Math.max(2, Math.ceil(n / 3)));
-    const outs = run.slice(keep);
-    outs.forEach((c, i) => {
-      c.out = true; c.qOutStage = K.stage; c.qBest = c.bestLap; c.aiMode = c.aiMode === "race" ? "race" : c.aiMode;
-      const p = c.owner && this.players.get(c.owner);
-      if (p) io.to(p.id).emit("qualiOut", { stage: K.stage, pos: keep + i + 1 });
-    });
-    for (const c of run.slice(0, keep)) { c.qPrev = c.bestLap; c.bestLap = Infinity; }
+    const K = this.qualiKO, outs = [];
+    // multiclass: each class has its own knockout (the slowest Hypers and the slowest GT3s go out)
+    const groups = this.multi ? ["hyper", "gt"].map((k) => this.cars.filter((c) => c.cls === k)).filter((g) => g.length) : [this.cars];
+    for (const g of groups) {
+      const n = g.length;
+      const run = g.filter((c) => !c.out).sort((a, b) => (a.bestLap - b.bestLap) || (b.progress - a.progress));
+      const keep = Math.min(run.length - 1, K.stage === 1 ? Math.max(3, Math.ceil(n * 2 / 3)) : Math.max(2, Math.ceil(n / 3)));
+      if (keep < 1) continue;
+      run.slice(keep).forEach((c, i) => {
+        c.out = true; c.qOutStage = K.stage; c.qBest = c.bestLap; outs.push(c);
+        const p = c.owner && this.players.get(c.owner);
+        if (p) io.to(p.id).emit("qualiOut", { stage: K.stage, pos: keep + i + 1 });
+      });
+      for (const c of run.slice(0, keep)) { c.qPrev = c.bestLap; c.bestLap = Infinity; }
+    }
     K.stage++; this.fastest = Infinity; this.qualiEnd = this.time + KO_LEN[K.stage - 1];
     this.emit("feed", { t: "qko", stage: K.stage, out: outs.map((c) => c.name) });
   }
@@ -2169,6 +2175,19 @@ class Room {
           if (threat.passT > 0 && tAlong < -30 && Math.abs(myLat - threat.passOff) < 22) { threat.passT = 0; threat.passWait = 0.9; }
         }
       }
+      // multiclass: a GT3 with a Hyper coming up behind moves over to let it through (and lifts a touch)
+      c.yielding = false;
+      if (this.multi && c.cls === "gt" && !c.punct && !cooldown && !c.covering) {
+        let hy = null, hAlong = -Infinity;
+        for (let q = 0; q < near.length; q += 2) {
+          const o = near[q], along = near[q + 1];
+          if (o.cls === "hyper" && along < -6 && along > -(o.speed * 0.7 + 80) && o.speed > speed * 0.9 && along > hAlong) { hy = o; hAlong = along; }
+        }
+        if (hy) {
+          const side = hy.passT > 0 ? -Math.sign(hy.passOff - myLat || 1) : Math.abs(hy.lat) > 8 ? -Math.sign(hy.lat) : (myLat >= 0 ? 1 : -1);
+          off = off * 0.35 + side * lim * 0.8 * 0.65; c.yielding = true;
+        }
+      }
       // AI defending: Hard and up, in the last two laps, with someone right on them and boost to spare
       if (((!p && c.canDefend) || p?.assist?.defend) && !calm) {
         const late = c.lapsDone >= laps - 2;
@@ -2199,7 +2218,7 @@ class Room {
       tx = t.pts[i].x + t.nor[i].x * off; ty = t.pts[i].y + t.nor[i].y * off;
       // Target speed: look ahead and brake just in time for every corner coming up.
       // off the racing line (mid-overtake) the corner is tighter, so take it a little slower
-      const offLine = c.passT > 0 ? Math.abs(off - t.line[c.idx]) : c.covering ? Math.abs(off - t.line[c.idx]) * 0.4 : 0;
+      const offLine = c.passT > 0 ? Math.abs(off - t.line[c.idx]) : c.covering || c.yielding ? Math.abs(off - t.line[c.idx]) * 0.4 : 0;
       const cp = st.cornerPace * c.skill * this.compoundSpeed(c) * (c.attack ? 1.03 : 1) * (1 - Math.min(0.12, offLine * 0.0016)) * Math.sqrt(this.tireGrip(c.tire) * this.weatherGrip(c) * (c.damage > 0 ? 1 - 0.1 * c.damage : 1));
       const dec = st.planBrake * (1 - 0.3 * this.wet * (dryTires ? 1 : 0.4)) * (c.attack ? 1.08 : 1);
       const K = Math.min(60, Math.ceil((speed * speed) / (2 * dec) / t.spacing) + 3);
@@ -2216,6 +2235,7 @@ class Room {
       if (calm) targetSpeed = Math.min(targetSpeed, st.maxSpeed * 0.92);
       if (cooldown) targetSpeed = Math.min(targetSpeed, 240);
       if (saving) targetSpeed = Math.min(targetSpeed, speed * 0.96);
+      if (c.yielding) targetSpeed *= 0.95;
       // don't drive into the back of someone: follow close, matching their speed
       if (lead) {
         const theirV = lead.speed;
@@ -2616,6 +2636,7 @@ class Room {
     const leader = this.standings().find((c) => !c.finished);
     if (!leader || leader.lapsDone >= this.settings.laps - 1) return;       // never on the final lap
     this.sc = { since: this.time };
+    for (const c of this.cars) c.ghostUntil = Math.max(c.ghostUntil || 0, this.time + 2);   // 2s of ghosting so the pile-up doesn't turn into another one
     this.emit("feed", { t: "scOut" });
   }
   stepSafetyCar() {
@@ -2854,6 +2875,14 @@ class Room {
         for (const a of got) io.to(p.id).emit("achievement", a);
       }).catch((e) => console.log("stats error", e.message));
     }
+    // 1v1 bets between friends: whoever finished ahead takes both stakes (leaving the race = losing)
+    const betters = order.filter((c) => c.betUid).map((c) => ({ uid: c.betUid, rank: c.owner && this.players.get(c.owner)?.uid === c.betUid ? order.indexOf(c) : Infinity }));
+    if (betters.length > 1) accounts.settleBets(betters).then(async (done) => {
+      for (const b of done) for (const [uid, msg] of [[b.winner, `⚔️ You beat ${b.loserName} and won the bet: +${(b.amount * 2).toLocaleString()} coins!`], [b.loser, `⚔️ ${b.winnerName} beat you: you lost the ${b.amount.toLocaleString()} coin bet`]]) {
+        const u = await accounts.getUser(uid); if (!u) continue;
+        for (const sid of online.get(uid) || []) { io.to(sid).emit("account", accounts.publicUser(u)); io.to(sid).emit("toast", msg); }
+      }
+    }).catch((e) => console.log("bet error", e.message));
   }
 
   gaps(order) {
@@ -3127,7 +3156,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3657,6 +3686,16 @@ io.on("connection", (socket) => {
   socket.on("trade:answer", (d) => acctAction(async (u) => {
     const r = await accounts.answerTrade(u, String(d?.id || ""), d?.yes === true);
     if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, tradeDone: d?.yes === true }); }
+    return r;
+  }));
+  socket.on("bet:offer", (d) => acctAction(async (u) => {
+    const r = await accounts.offerBet(u, String(d?.to || ""), d?.amount);
+    if (r.ok) { socket.emit("toast", `⚔️ Bet sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, bet: true }); }
+    return r;
+  }));
+  socket.on("bet:answer", (d) => acctAction(async (u) => {
+    const r = await accounts.answerBet(u, String(d?.id || ""), d?.yes === true);
+    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, betDone: d?.yes === true }); }
     return r;
   }));
   let dmAt = 0;
