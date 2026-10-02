@@ -825,13 +825,13 @@ test("mythic chest, plinko, and the big achievement list", async () => {
   user.coins = 1000;
   const r = A.plinko(user, 100, "high");
   assert.ok(r.ok && r.path.length === 12 && r.bucket === r.path.reduce((a, b) => a + b, 0) && r.win === Math.floor(100 * A.PLINKO.high[r.bucket]));
-  assert.equal(user.coins, 1000 - 100 + r.win);
+  assert.equal(user.coins, 1000 - 100 + r.win + (r.got || []).reduce((t, a) => t + a.coins, 0));
   assert.ok(A.plinko(user, 5, "low").error && A.plinko(user, 5000, "low").error && A.plinko({ ...user, coins: 50 }, 100, "low").error, "bet limits and no going below zero");
   // achievements: 1,000+ new ones, all unique, with some brutal ones
   const g = A.ACH.filter((a) => a.id.startsWith("g_"));
   assert.ok(g.length >= 1000, `${g.length} new achievements`);
   assert.equal(new Set(A.ACH.map((a) => a.id)).size, A.ACH.length); assert.equal(new Set(A.ACH.map((a) => a.name)).size, A.ACH.length);
-  assert.ok(A.ACH.filter((a) => a.coins >= 10000).length >= 20, "very hard ones");
+  assert.ok(A.ACH.filter((a) => a.coins >= 5000).length >= 10, "very hard ones still pay big");
 });
 
 test("the safety car knows which bit of track (and how high) it's on, so it's drawn over ramps", () => {
@@ -844,4 +844,17 @@ test("the safety car knows which bit of track (and how high) it's on, so it's dr
   let st = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "state") st = d; return emit(ev, d); };
   r.sendState();
   assert.ok(Array.isArray(st.sc) && st.sc.length === 5 && Number.isInteger(st.sc[3]) && typeof st.sc[4] === "number", JSON.stringify(st.sc));
+});
+
+test("achievement rewards rebalanced: half of the old payouts taken back, once, never below zero", () => {
+  const ids = accounts.ACH.filter((a) => a.id.startsWith("g_") && a.coins >= 100).slice(0, 5).map((a) => a.id);
+  const u = accounts.fixUser({ id: "u_mig_test", name: "Mig", coins: 50000, ach: Object.fromEntries(ids.map((id) => [id, 1790956000000])) });
+  assert.ok(u.achAdjust && u.achAdjust.back > 0 && u.achAdjust.back === Math.floor(u.achAdjust.paid / 2));
+  assert.equal(u.coins, 50000 - u.achAdjust.back);
+  const again = accounts.publicUser(u); assert.equal(again.coins, 50000 - u.achAdjust.back, "only once");
+  const poor = accounts.fixUser({ id: "u_mig_poor", name: "Poor", coins: 10, ach: Object.fromEntries(ids.map((id) => [id, 1790956000000])) });
+  assert.equal(poor.coins, 0, "never below zero");
+  const fresh = accounts.fixUser({ id: "u_mig_new", name: "New", coins: 500, ach: Object.fromEntries(ids.map((id) => [id, Date.now() + 1e10])) });
+  assert.equal(fresh.coins, 500, "achievements earned after the change aren't touched");
+  assert.ok(accounts.ACH.filter((a) => a.id.startsWith("g_wins_")).every((a) => a.coins <= 2000), "routine rewards are lower now");
 });

@@ -1087,6 +1087,8 @@
   }
   socket.on("needBackup", () => socket.emit("auth:resume", { backup: backupFor(lastAcct()) }));
   socket.on("account", (u) => {
+    // one-time note: achievement rewards were rebalanced and half of the extra coins taken back
+    if (u?.achAdjust?.back) { const k = "tb-adj-" + u.id + "-" + u.achAdjust.at; try { if (!localStorage.getItem(k)) { localStorage.setItem(k, "1"); setTimeout(() => popup(`⚖️ Achievement rewards were rebalanced (the new ones paid way too much). Half of the ${u.achAdjust.paid.toLocaleString()} coins they gave you was taken back: −${u.achAdjust.back.toLocaleString()} coins.`, true), 1500); } } catch (e) {} }
     if (u.token) { storeToken(u.token); delete u.token; }
     if (u.backup) { keepBackup(u.id, u.backup); delete u.backup; }
     if (!A.user || A.user.id !== u.id) { socket.emit("presets:get"); socket.emit("setPresets:get"); socket.emit("friends:get"); }
@@ -5691,6 +5693,9 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-19", title: "Achievement rewards rebalanced", items: [
+      "⚖️ The 1,300 new achievements paid far too much (long-time players got 50,000+ coins at once). Their rewards are now about a quarter, the brutal ones about 60%, and every account gave back half of what those achievements paid out (never below 0 coins).",
+    ] },
     { v: "2026-10-18", title: "Mythic chest, Plinko, 1,300 new achievements, see-through ramps", items: [
       "🔮 The Mythic chest (5,000 coins): no commons or rares, 55% legendary, 15% mythic, double refunds on duplicates, and 5 mythics you can only get here (Supernova underglow, Phoenix trail, Solar Eclipse livery, Event Horizon flame, Liquid gold smoke).",
       "🎰 The gambling room (Profile > Plinko): bet 10-1000 coins, pick Low / Medium / High risk, drop balls and win up to 170x. Coins only, just for fun. The house wins in the end!",

@@ -186,6 +186,10 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   AI level and body, and brutal one-offs. New stats come from `recordRace` (`themeWins`, `aiWins`, `bodyWins`,
   `elimWins`, `classWins`, `defendSec`, `perfectStops`, `extremeStreak`...) and plinko. Anything with the same
   description as an older one is skipped. The Achievements tab has search and shows 120 at a time.
+  Rewards were cut after launch (routine ones ×0.25, the brutal ones ×0.6). The old values are kept in `ACH_OLD_COINS`.
+  `migrateAch()` (run once per account via `fix`, `getUser` and `publicUser`, flagged by `u.mig.achNerf`) took back
+  half of what those achievements had paid out before `ACH_NERF_AT`, never going below 0 coins. The client shows a
+  one-time note (`achAdjust`).
 - **See-through ramps**: after the bridges are drawn, any car under a higher bridge's deck is drawn again at 55% (a
   ghost). **Safety car on ramps**: the state's `sc` now carries its track point and level, so it's drawn in the
   right layer and scaled like the cars.

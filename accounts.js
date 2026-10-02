@@ -140,7 +140,7 @@ function saveSoon(u) {
 }
 async function getUser(id) {
   if (typeof id !== "string" || !ID_RE.test(id)) return null;
-  if (cache.has(id)) return cache.get(id);
+  if (cache.has(id)) return migrateAch(cache.get(id));
   if (UP_URL) { const v = await redis(["GET", "tb:user:" + id]); if (v) { const u = fix(JSON.parse(v)); cache.set(id, u); return u; } return null; }
   loadFile(); return cache.get(id) || null;
 }
@@ -179,6 +179,20 @@ async function dropSession(u, token) {
   if (UP_URL) redis(["DEL", "tb:sess:" + h]).catch(() => {});
   saveSoon(u);
 }
+// ---- one-off: the first big achievement list paid far too much. Those rewards were cut, and every account gives
+// back half of what it got from them (only achievements unlocked before the change; never below 0 coins).
+var ACH_OLD_COINS = null;
+const ACH_NERF_AT = 1790956088430;
+function migrateAch(u) {
+  if (!u || !ACH_OLD_COINS || u.mig?.achNerf) return u;
+  let paid = 0;
+  for (const [id, at] of Object.entries(u.ach || {})) { const old = ACH_OLD_COINS.get(id); if (old && typeof at === "number" && at < ACH_NERF_AT) paid += old; }
+  const back = Math.floor(paid / 2);
+  if (back > 0) { u.coins = Math.max(0, (u.coins || 0) - back); u.achAdjust = { back, paid, at: Date.now() }; }
+  u.mig = { ...(u.mig || {}), achNerf: true };
+  if (back > 0 && typeof saveSoon === "function") try { saveSoon(u); } catch (e) {}
+  return u;
+}
 function fix(u) {
   // BUG FIX: the season pass used to be saved in u.pass, the same field as the password hash, so showing
   // the pass wiped the password (no more sign-ins on other devices). The pass lives in u.bp now. An account
@@ -191,7 +205,7 @@ function fix(u) {
   u.stats = Object.assign(blankStats(), u.stats || {});
   u.ach = u.ach || {}; u.owned = u.owned || []; u.equipped = u.equipped || {}; u.coins = u.coins || 0;
   u.stats.realTracks = u.stats.realTracks || [];
-  return u;
+  return migrateAch(u);
 }
 function blankStats() {
   return {
@@ -494,7 +508,15 @@ ACH.push(
   const coinsFor = (k, n) => Math.round((40 + 6000 * Math.pow(k / Math.max(1, n - 1), 2.2)) / 10) * 10;
   const seen = new Set(ACH.map((a) => a.desc));
   const fmt = (n) => n.toLocaleString("en-US");
-  const add = (a) => { if (seen.has(a.desc) || ACH.some((b) => b.id === a.id)) return; seen.add(a.desc); ACH.push(a); };
+  // rewards: about a quarter of what the first version paid, the brutal one-offs about 60%
+  let brutal = false;
+  ACH_OLD_COINS = new Map();
+  const add = (a) => {
+    if (seen.has(a.desc) || ACH.some((b) => b.id === a.id)) return;
+    ACH_OLD_COINS.set(a.id, a.coins);
+    a.coins = Math.max(10, Math.round((a.coins * (brutal ? 0.6 : 0.25)) / 10) * 10);
+    seen.add(a.desc); ACH.push(a);
+  };
   const family = (id, icon, name, desc, key, min, max, n) => {
     const gs = goals(min, max, n);
     gs.forEach((g, k) => add(cnt(`g_${id}_${g}`, icon, `${name} ${ROMAN(k + 1)}`, desc(fmt(g), g), coinsFor(k, gs.length), key, g)));
@@ -570,6 +592,7 @@ ACH.push(
   for (const [k, nm] of Object.entries({ standard: "the standard car", kart: "the go-kart", muscle: "the muscle car", rally: "the rally hatch", lmp: "the endurance prototype", f1: "the open-wheel racer" })) for (const [g, c] of [[10, 500], [50, 2500], [250, 10000]]) add(cnt(`g_body_${k}_${g}`, "🚗", `Loyal to ${nm.replace("the ", "")} ${ROMAN([10, 50, 250].indexOf(g) + 1)}`, `Win ${g} races in ${nm}`, c, (s) => s.bodyWins?.[k] || 0, g));
   add(cnt("g_themes_all", "🌈", "Every Weather, Every World", "Win on every theme", 3000, (s) => Object.keys(THEMES).filter((k) => s.themeWins?.[k]).length, Object.keys(THEMES).length));
   // the brutal ones
+  brutal = true;
   const ext = (r, n) => (r.aiLevel === "extreme" || r.aiLevel === "overdrive") && r.of - (r.humans || 1) >= n;
   for (const [n, c] of [[10, 1500], [20, 4000], [30, 8000], [40, 15000], [59, 30000]]) add(one(`g_field_${n}`, "🏟️", `Giant Slayer ${ROMAN([10, 20, 30, 40, 59].indexOf(n) + 1)}`, `Win against ${n}+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && ext(r, n)));
   for (const [m, c] of [[5, 500], [10, 1500], [20, 4000], [30, 8000], [45, 15000]]) add(one(`g_margin_${m}`, "📏", `Daylight ${ROMAN([5, 10, 20, 30, 45].indexOf(m) + 1)}`, `Win by ${m}+ seconds against 8+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && r.margin >= m && r.margin < 99 && ext(r, 8)));
@@ -1698,8 +1721,8 @@ function dailyReward(u) {
 }
 function publicUser(u) {
   if (!u) return null;
-  indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  migrateAch(u); indexFriendCode(u);
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
