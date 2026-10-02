@@ -239,8 +239,8 @@ off your car. Store cards and Customize both have a two-tap Sell button.
 ### Your own commentator voice (ElevenLabs)
 Add two environment variables on Render (your service › **Environment**):
 - `ELEVENLABS_API_KEY`: your ElevenLabs API key (elevenlabs.io › profile › API keys). Keep it secret.
-- `COMMENTATOR_VOICE`: the voice ID from ElevenLabs (Voices › the voice › copy its ID). `COMMENTENTATOR_VOICE`
-  works too.
+- `COMMENTATOR_VOICE` (optional): the voice ID from ElevenLabs (Voices › the voice › copy its ID). Without it,
+  the voice ID in `DEFAULT_VOICE` (server.js) is used. `COMMENTENTATOR_VOICE` works too.
 - Optional: `COMMENTATOR_MODEL` (default `eleven_multilingual_v2`; `eleven_turbo_v2_5` is cheaper and faster).
 
 How it works: `/voice/config` tells the game a voice is set, and `/voice/<clip>.mp3` makes that line with

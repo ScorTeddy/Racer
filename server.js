@@ -399,7 +399,8 @@ function fetchSong(file) {
 // works too). Each line is made the first time it's needed, then kept (memory, and Upstash or the data folder),
 // so it's only paid for once. Without them, or if ElevenLabs fails, the built-in recorded voice plays.
 const elKey = () => (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY || process.env.XI_API_KEY || "").trim();
-const elVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || "").trim();
+const DEFAULT_VOICE = "rNzVNTrvSffyxdrTbLKv";      // the owner's pick (a voice ID isn't secret; the API key is, and lives only on Render)
+const elVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || DEFAULT_VOICE).trim();
 const elModel = () => (process.env.COMMENTATOR_MODEL || "eleven_multilingual_v2").trim();
 const voiceOn = () => !!(elKey() && /^[A-Za-z0-9]{10,40}$/.test(elVoice()));
 let VOICE_LINES = {};
