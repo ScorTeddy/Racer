@@ -100,6 +100,23 @@ test("super rare cards upgrade everything and everyone hears about it", { timeou
   s.close();
 });
 
+test("a super rare card is announced to players in other rooms too", { timeout: 60000 }, async () => {
+  const open = async () => { const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok)); return s; };
+  const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
+  const a = await open(), other = await open();
+  a.emit("create", { name: "Lucky2" }, {}); const j = await got(a, "joined");
+  a.emit("settings", { ai: 1, laps: 3, speed: 1, map: "small", quali: 0 }); a.emit("randomTrack", { map: "small" }); await got(a, "trackResult");
+  a.on("tirePick", () => a.emit("compound", "fast"));
+  a.emit("start"); await got(a, "race");
+  const r = game.rooms.get(j.code), p = r.players.get(a.id);
+  p.offer = ["corner", "__all1", "turbo"]; p.pendingPicks = 1;
+  const heard = got(other, "rareCardGlobal");         // "other" is just on the menu, not in that room
+  a.emit("pick", 1);
+  const g = await heard;
+  assert.equal(g.name, "Lucky2"); assert.equal(g.tier, "epic");
+  a.close(); other.close();
+});
+
 test("chat: room and team messages, filtered, global needs sign-in", { timeout: 30000 }, async () => {
   const a = io(base, { transports: ["websocket"], forceNew: true }), b = io(base, { transports: ["websocket"], forceNew: true });
   const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
@@ -573,6 +590,8 @@ test("team ranked: friends race ranked together, then the room is normal again",
   r.settings.laps = 1; r.settings.speed = 3;                    // (quick test race)
   for (const s of [a, b]) { s.on("tirePick", () => s.emit("compound", "fast")); s.on("lightsOut", () => s.emit("react", 250)); }
   const [ra, rb] = await Promise.all([got(a, "rankedResult"), got(b, "rankedResult")]);
+  const aiTeams = {}; for (const c of r.cars.filter((c) => c.isAi)) aiTeams[c.team] = (aiTeams[c.team] || 0) + 1;
+  assert.ok(Object.values(aiTeams).length > 0 && Object.values(aiTeams).every((n) => n === 2), "2 of us = AI teams of 2: " + JSON.stringify(aiTeams));
   assert.equal(ra.mode, "team"); assert.equal(rb.mode, "team");
   assert.equal(ra.teamPos, rb.teamPos, "both judged on the team's average place");
   const ua = await accounts.getUser("u_teamone");

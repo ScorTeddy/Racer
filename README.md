@@ -149,6 +149,12 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   made once (`nightSprites`, `fogSp`), and the night layer is half resolution, so they cost about the same as a normal race.
 - **Replays**: the last 30 seconds are kept; 💾 Save (in the browser, up to 8) or 🔗 Share (a code, 30 days; the
   browser gzips it, the server checks and rebuilds it in `cleanReplay`). 🎬 Replays on the menu plays them.
+- **Team ranked AI teams** match the party size (`r.aiTeamSize`): 2 friends race AI teams of 2, 3 friends teams of 3.
+- **Server-wide rare cards**: a super rare upgrade pick also goes to every other room (`rareCardGlobal`, `.world-toast`).
+- **Watch YOUR finish**: the client spots your car's finish, then builds a replay from 18 s before it with the camera
+  on you (`captureMyFinish`). The last 3 are kept in localStorage (`tb-finishes`) and listed at the top of 🎬 Replays.
+- **Sounds**: `engineSound` has two detuned saws through a filter with gears, a boost kick and noise whoosh, and a
+  hum from cars within 650 px; `sfx("drs")` plays when DRS opens.
 - **Photo mode** (📷 or **K** in a race or replay): freezes the view, drag/scroll/pinch to move and zoom, tilt,
   names on/off, 📸 saves a PNG. Racing alone as host, the race really pauses while you're in it.
 

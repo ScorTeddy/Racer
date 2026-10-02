@@ -1432,7 +1432,9 @@ class Room {
       } else {
         const a = slot.ai, R = this.roster[a];
         Object.assign(base, {
-          owner: null, isAi: true, name: R.name, color: R.color, livery: R.livery, number: R.number, team: R.team, up: blankUp(),
+          owner: null, isAi: true, name: R.name, color: R.color, livery: R.livery, number: R.number, up: blankUp(),
+          // (team ranked: AI teams as big as the players' team)
+          team: this.aiTeamSize ? AI_TEAMS[Math.floor(a / this.aiTeamSize) % AI_TEAMS.length] + (Math.floor(a / this.aiTeamSize) >= AI_TEAMS.length ? " " + (Math.floor(a / this.aiTeamSize / AI_TEAMS.length) + 1) : "") : R.team,
           // rivals get sharper as the season goes on and as the teams level up
           skill: DL.skill[0] + Math.random() * (DL.skill[1] - DL.skill[0]) + Math.min(0.06, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
           power: DL.power - 0.015 + Math.random() * 0.03 + Math.min(0.05, this.avgLevel() * 0.006),
@@ -2405,6 +2407,7 @@ class Room {
       // everyone sees it: an announcement, and an aura round the car for the rest of the race
       if (car) { car.rare = p.rare; const m = this.lastRaceMsg?.cars.find((x) => x.id === car.id); if (m) m.rare = p.rare; }
       this.emit("rareCard", { name: p.name, card: rare.name, tier: rare.tier, icon: rare.icon, car: car ? car.id : null, aura: p.rare });
+      io.except(this.code).emit("rareCardGlobal", { name: p.name, card: rare.name, tier: rare.tier, icon: rare.icon });   // ...and everyone else, everywhere
     }
     if (p.pendingPicks > 0) this.makeOffer(p);
   }
@@ -2470,6 +2473,7 @@ class Room {
         this.phase = "lobby"; this.cars = null;
         if (this.teamRanked) {
           this.ranked = false; this.teamRanked = false; this.rankedTier = null;
+          this.aiTeamSize = null;
           if (this.preRanked) { Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public; this.preRanked = null; this.ensureRoster(this.settings.ai); }
           this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
         }
@@ -2620,7 +2624,9 @@ async function startTeamRanked(r, socket) {
   r.public = false;
   const squad = `${(r.players.get(r.hostId) || humans[0]).name}'s Squad`.slice(0, 20);
   for (const p of humans) p.team = squad;
-  const ai = Math.min(MAX_AI, F.ai + 2 * (humans.length - 1));
+  // AI teams are the same size as yours (2 of you = AI teams of 2), so the AI count is a multiple of it
+  const size = humans.length, ai = Math.min(Math.floor(MAX_AI / size) * size, Math.ceil((F.ai + 2 * (size - 1)) / size) * size);
+  r.aiTeamSize = size;
   Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);

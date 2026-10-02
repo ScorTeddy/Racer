@@ -288,21 +288,44 @@
     else if (name === "tick") tone(1200, 0.03, "square", 0.08);
     else if (name === "warn") [880, 660, 880, 660].forEach((f, i) => tone(f, 0.12, "square", 0.16, 0, i * 0.14));
     else if (name === "card") tone(700, 0.12, "triangle", 0.18, 300);
+    else if (name === "drs") { tone(400, 0.25, "sawtooth", 0.1, 900); tone(1600, 0.12, "triangle", 0.12, 0, 0.05); }
   }
-  function engineSound(speed, on) {
+  // Engine: a growl (two saws an octave apart through a filter that opens with speed) that climbs through
+  // "gears", a rushing whoosh while your boost is firing, and a faint hum from the cars around you.
+  let noiseBuf = null;
+  const noise = (a) => { if (!noiseBuf) { noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const n = a.createBufferSource(); n.buffer = noiseBuf; n.loop = true; return n; };
+  function engineSound(speed, on, boost = false, near = null) {
     const want = on && settings.engine === "on" && fxVol() > 0;
     const a = want ? audio() : actx;
     if (!a) return;
     if (!engine && want) {
-      const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
-      o.type = "sawtooth"; f.type = "lowpass"; f.frequency.value = 600; g.gain.value = 0;
-      o.connect(f).connect(g).connect(a.destination); o.start();
-      engine = { o, g };
+      const o1 = a.createOscillator(), o2 = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
+      o1.type = "sawtooth"; o2.type = "sawtooth"; o2.detune.value = 7; f.type = "lowpass"; f.Q.value = 4; g.gain.value = 0;
+      const g2 = a.createGain(); g2.gain.value = 0.55; o2.connect(g2).connect(f); o1.connect(f); f.connect(g).connect(a.destination);
+      // boost: filtered noise, swept up while it's on
+      const n = noise(a), bf = a.createBiquadFilter(), bg = a.createGain(); bf.type = "bandpass"; bf.Q.value = 1.2; bf.frequency.value = 900; bg.gain.value = 0;
+      n.connect(bf).connect(bg).connect(a.destination); n.start();
+      // other cars: one soft triangle hum, louder the closer they are
+      const oo = a.createOscillator(), of = a.createBiquadFilter(), og = a.createGain(); oo.type = "triangle"; of.type = "lowpass"; of.frequency.value = 700; og.gain.value = 0;
+      oo.connect(of).connect(og).connect(a.destination);
+      o1.start(); o2.start(); oo.start();
+      engine = { o1, o2, f, g, bf, bg, oo, og, wasBoost: false };
     }
     if (!engine) return;
-    const t = a.currentTime;
-    engine.o.frequency.setTargetAtTime(55 + Math.max(0, speed) * 0.22, t, 0.08);
-    engine.g.gain.setTargetAtTime(want ? 0.035 * fxVol() : 0, t, 0.15);
+    const t = a.currentTime, v = Math.max(0, speed);
+    // 5 "gears": the pitch climbs within each one, then drops a little at the shift
+    const gear = Math.min(4, Math.floor(v / 190)), inGear = (v - gear * 190) / 190;
+    const base = 48 + gear * 14 + inGear * (70 - gear * 6) + (boost ? 12 : 0);
+    engine.o1.frequency.setTargetAtTime(base, t, 0.06); engine.o2.frequency.setTargetAtTime(base / 2, t, 0.06);
+    engine.f.frequency.setTargetAtTime(350 + v * 1.4 + (boost ? 500 : 0), t, 0.1);
+    engine.g.gain.setTargetAtTime(want ? (0.03 + 0.03 * Math.min(1, v / 600)) * fxVol() : 0, t, 0.12);
+    engine.bf.frequency.setTargetAtTime(boost ? 1400 + v * 1.6 : 700, t, 0.15);
+    engine.bg.gain.setTargetAtTime(want && boost ? 0.075 * fxVol() : 0, t, boost ? 0.05 : 0.25);
+    if (want && boost && !engine.wasBoost) { tone(180, 0.35, "sawtooth", 0.12, 520); tone(90, 0.25, "square", 0.1, -40); }   // the kick when it lights
+    engine.wasBoost = want && boost;
+    const nv = near ? Math.min(1, near.k) : 0;
+    engine.oo.frequency.setTargetAtTime(52 + (near ? near.speed : 0) * 0.16, t, 0.12);
+    engine.og.gain.setTargetAtTime(want ? 0.03 * nv * fxVol() : 0, t, 0.2);
   }
   window.addEventListener("pointerdown", () => audio(), { once: true });
 
@@ -511,6 +534,11 @@
       case "paw": c.fillStyle = "#2b2118"; c.beginPath(); c.ellipse(-1, 0, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill(); for (const [px, py] of [[2.6, -3.6], [3.6, -1.2], [3.6, 1.2], [2.6, 3.6]]) { c.beginPath(); c.arc(px, py, 1.2, 0, Math.PI * 2); c.fill(); } break;
       case "rocket": c.fillStyle = "#f5f5f5"; c.strokeStyle = "#1b1f26"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(6, 0); c.quadraticCurveTo(2, -3, -4, -2); c.lineTo(-4, 2); c.quadraticCurveTo(2, 3, 6, 0); c.fill(); c.stroke(); c.fillStyle = "#e53935"; c.beginPath(); c.moveTo(-3, -2); c.lineTo(-6, -4); c.lineTo(-5, -1.5); c.fill(); c.beginPath(); c.moveTo(-3, 2); c.lineTo(-6, 4); c.lineTo(-5, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.beginPath(); c.arc(1.5, 0, 1.2, 0, Math.PI * 2); c.fill(); c.fillStyle = "#ffb020"; c.beginPath(); c.moveTo(-4, -1.2); c.lineTo(-7.5, 0); c.lineTo(-4, 1.2); c.fill(); break;
       case "hoodflame": for (const [col, s2] of [["#ff5722", 1], ["#ffca28", 0.6]]) { c.fillStyle = col; c.beginPath(); c.moveTo(7, -6 * s2); for (let k = 0; k <= 6; k++) c.lineTo(7 - (k % 2 ? 12 : 5) * s2, -6 * s2 + (k / 6) * 12 * s2); c.lineTo(7, 6 * s2); c.closePath(); c.fill(); } break;
+      case "skull": c.fillStyle = "#f2f2f2"; c.beginPath(); c.arc(1, 0, 4.4, 0, Math.PI * 2); c.fill(); c.fillRect(-4.6, -2.6, 3, 5.2);
+        c.fillStyle = "#111"; c.beginPath(); c.arc(2, -1.7, 1.2, 0, Math.PI * 2); c.arc(2, 1.7, 1.2, 0, Math.PI * 2); c.fill(); c.fillRect(-4, -1.6, 0.8, 0.8); c.fillRect(-4, 0.8, 0.8, 0.8); break;
+      case "stripes": c.fillStyle = "rgba(255,255,255,0.92)"; c.fillRect(-L * 0.6, -3.2, L * 0.75, 2); c.fillRect(-L * 0.6, 1.2, L * 0.75, 2); break;
+      case "dice": for (const [dx, dy, rot] of [[-2.5, -2.5, 0.3], [2.5, 2.5, -0.4]]) { c.save(); c.translate(dx, dy); c.rotate(rot); c.fillStyle = "#f5f5f5"; c.fillRect(-2.6, -2.6, 5.2, 5.2); c.fillStyle = "#e53935";
+          for (const [px, py] of [[-1.3, -1.3], [0, 0], [1.3, 1.3]]) { c.beginPath(); c.arc(px, py, 0.6, 0, Math.PI * 2); c.fill(); } c.restore(); } break;
       case "smiley": c.fillStyle = "#ffd21f"; c.beginPath(); c.arc(0, 0, 4.8, 0, Math.PI * 2); c.fill(); c.fillStyle = "#111"; c.beginPath(); c.arc(1.6, -1.7, 0.8, 0, Math.PI * 2); c.arc(1.6, 1.7, 0.8, 0, Math.PI * 2); c.fill(); c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); c.arc(0, 0, 3, -1.1, 1.1); c.stroke(); break;
       case "wings": c.fillStyle = "rgba(255,255,255,0.92)"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(0, sg * 1); c.quadraticCurveTo(-7, sg * 9, -12, sg * 10); c.quadraticCurveTo(-7, sg * 5, -4, sg * 1); c.fill(); } break;
     }
@@ -607,6 +635,9 @@
       const hue = (performance.now() / 4 + k * 90) % 360; c.strokeStyle = `hsl(${hue},100%,65%)`; c.lineWidth = 2.2; c.shadowColor = c.strokeStyle; c.shadowBlur = 8; c.rotate(k * 0.4);
       c.beginPath(); c.moveTo(-r * 2, 0); c.lineTo(r * 2, 0); c.stroke(); c.fillStyle = "#fff"; c.beginPath(); c.arc(r * 2, 0, 1.4, 0, Math.PI * 2); c.fill();
     }
+    else if (kind === "confetti") { c.fillStyle = ["#ff4f7b", "#ffe066", "#22e6ff", "#7dff8a", "#b25cff"][k % 5]; c.rotate(k * 0.9); c.fillRect(-r * 0.55, -r * 0.25, r * 1.1, r * 0.5); }
+    else if (kind === "embers") { c.fillStyle = ["#ffb020", "#ff6a1f", "#ffe066"][k % 3]; c.shadowColor = "#ff6a1f"; c.shadowBlur = r; c.beginPath(); c.arc(0, 0, r * 0.38, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "checkers") { const q = r * 0.42; for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#fff"; c.fillRect(-q + i * q, -q + j * q, q, q); } }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
     c.restore();
@@ -1659,6 +1690,16 @@
     const d = document.createElement("div"); d.textContent = `${r.icon} ${r.name} pulled a ${T.label} card: ${r.card}!`; d.style.color = T.color; d.style.fontWeight = "800";
     const feed = $("feed"); feed.prepend(d); while (feed.children.length > 6) feed.lastChild.remove();
     setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 400); }, 9000);
+  });
+  // someone in ANOTHER room (or game) pulled a super rare card: everyone on the server hears about it
+  socket.on("rareCardGlobal", (r) => {
+    const T = RARE_TIER[r.tier] || RARE_TIER.epic;
+    const d = document.createElement("div"); d.className = "world-toast"; d.style.setProperty("--wc", T.color); d.setAttribute("role", "status");
+    const b = document.createElement("b"); b.textContent = `${r.icon} ${T.label} CARD!`;
+    const sm = document.createElement("span"); sm.textContent = `${r.name} just pulled ${r.card} (${T.odds}) in another race`;
+    d.append(b, sm); document.body.appendChild(d); sfx("card");
+    const all = document.querySelectorAll(".world-toast"); if (all.length > 3) all[0].remove();
+    setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 500); }, 6500);
   });
   socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => tut("done"), 1600); });
   // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
@@ -4299,7 +4340,10 @@
     if (!S.hudAt || now - S.hudAt > 100) { S.hudAt = now; updateHud(now); }
     updateBoost();
     const mine = S.cars.get(S.myCar);
-    engineSound(mine ? mine.speed : 0, S.screen === "race" && S.phase === "race" && !!mine);
+    // the cars around you hum too (nearest few, louder when close)
+    let near = null;
+    if (mine) { let k = 0, sp = 0; for (const c of S.cars.values()) { if (c === mine || c.x === undefined) continue; const d = Math.hypot(c.x - mine.x, c.y - mine.y); if (d < 650) { const w = 1 - d / 650; k += w; if (w > 0.3) sp = Math.max(sp, c.speed || 0); } } near = { k, speed: sp }; }
+    engineSound(mine ? mine.speed : 0, S.screen === "race" && S.phase === "race" && !!mine && !S.photoOn, !!(mine && mine.nitroOn), near);
   }
   // store: tyre smoke colour (rainbow cycles, stardust sparkles gold and white)
   function smokeCol(s) {
@@ -4345,7 +4389,7 @@
   $("drsGo").addEventListener("pointerdown", (e) => { e.preventDefault(); openDrs(); });
   socket.on("drsReady", () => { sfx("tick"); if (!S.drsTold) { S.drsTold = true; popup(`🟩 DRS available! Press ${keyName(KEY("drs"))} (or the DRS button) to open it. (Settings > Assists can open it for you.)`); } });
   socket.on("drsOn", () => {
-    sfx("level"); banner("DRS OPEN", "#3ee06a"); S.drsFlash = performance.now();
+    sfx("drs"); banner("DRS OPEN", "#3ee06a"); S.drsFlash = performance.now();
   });
   const boostBtn = $("boostBtn");
   boostBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); boostBtn.setPointerCapture(e.pointerId); if (!S.reacted && !$("lights").classList.contains("hidden")) react(); else setNitro(true); });
@@ -4914,6 +4958,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-12", title: "Your finish replays, world news, new sounds and a shop drop", items: [
+      "👥 Team ranked AI now race in teams the size of yours: two of you means every AI team has 2 cars.",
+      "🌍 When anyone anywhere pulls a super rare upgrade card, every player in every race hears about it.",
+      "🏁 Watch YOUR finish: after the flag, rewatch your own run to the line. Your last 3 finishes stay in 🎬 Replays.",
+      "🛍️ 29 new shop items: glows, flames, rims, helmets, smoke, Confetti/Ember/Checkered trails, Skull/Stripes/Dice decals and 8 new badges.",
+      "🔊 New engine sound with gears, a boost kick and whoosh, a DRS whoosh, and you can hear the cars around you.",
+    ] },
     { v: "2026-10-11", title: "Team ranked, Undo everything, and part-width roads", items: [
       "👥 Team ranked: get 2-4 signed-in friends in a room and the host presses Team ranked. You race as one team against the AI, with your own team rating.",
       "↩️ Undo now undoes anything you do to the track in the lobby: drawing, deleting, rotating, flipping, resizing, random tracks, clearing, DRS... (Ctrl+Z works too).",
@@ -5091,13 +5142,14 @@
 
   // ======================= Replays: save, share, load =======================
   const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name", "drs"];
-  function buildReplay() {
-    if (RP.buf.length < 30 || !S.track || !S.race) return null;
+  function buildReplay(opts = {}) {
+    const buf = opts.from ? RP.buf.filter((m) => m.at >= opts.from) : RP.buf;
+    if (buf.length < 30 || !S.track || !S.race) return null;
     const track = {}; for (const k of TRACK_KEYS) track[k] = S.track[k];
-    const winner = S.lastResults?.rows?.[0]?.name || "";
+    const winner = opts.focus || S.lastResults?.rows?.[0]?.name || "";
     const cars = [...S.race.info.values()].map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, design: c.design || null, extras: c.extras || null }));
-    return { v: 1, title: `${S.track.name || "Scribble track"}${winner ? ` · ${winner} won` : ""}`, speed: S.race.speed || 1, fog: !!S.race.fog, winner, track, cars,
-      frames: RP.buf.map((m) => ({ t: m.st.t, s: m.st.standings, c: m.st.cars, w: Math.round((m.st.weather?.wet || 0) * 100) / 100, r: m.st.weather?.raining ? 1 : 0 })) };
+    return { v: 1, title: opts.title || `${S.track.name || "Scribble track"}${winner ? ` · ${winner} won` : ""}`, speed: S.race.speed || 1, fog: !!S.race.fog, winner, track, cars,
+      frames: buf.map((m) => ({ t: m.st.t, s: m.st.standings, c: m.st.cars, w: Math.round((m.st.weather?.wet || 0) * 100) / 100, r: m.st.weather?.raining ? 1 : 0 })) };
   }
   // make it smaller: fewer frames per second, and only the cars at the front (plus yours)
   function slimReplay(rec, step, maxCars) {
@@ -5173,7 +5225,52 @@
       bs.append(w, sh, del); row.append(el("span", "fdot on"), tx, bs); box.appendChild(row);
     }
   }
-  $("replaysBtn").addEventListener("click", () => { $("replayBox").classList.remove("hidden"); $("replayNote").textContent = "Save the end of a race from the results screen (💾), or watch one a friend shared with you."; renderReplayList(); });
+  // ---- YOUR finish, from your last 3 races: kept automatically, camera on you ----
+  const myFinishes = () => { try { return JSON.parse(localStorage.getItem("tb-finishes") || "[]"); } catch (e) { return []; } };
+  socket.on("race", () => { S.myFinAt = 0; S.myFinDone = false; $("myFinishBtn").classList.add("hidden"); });
+  socket.on("state", (st) => {
+    if (S.replaying || !S.myCar || S.myFinAt || S.race?.quali) return;
+    const a = st.cars.find((x) => x[0] === S.myCar);
+    if (a && a[10]) { S.myFinAt = performance.now(); S.myFinPos = st.standings.indexOf(S.myCar) + 1; setTimeout(captureMyFinish, 4000); }
+  });
+  socket.on("results", (r) => {
+    // (finished last? the race ended on the same update: take your finish from the results)
+    if (!S.myFinAt && S.myCar && !S.race?.quali && !S.replaying) {
+      const i = (r?.rows || []).findIndex((x) => x.owner === S.me);
+      if (i >= 0 && r.rows[i].finished) { S.myFinAt = performance.now(); S.myFinPos = i + 1; }
+    }
+    if (S.myFinAt && !S.myFinDone) captureMyFinish();
+  });
+  async function captureMyFinish() {
+    if (S.myFinDone || !S.myFinAt) return; S.myFinDone = true;
+    const me = S.race?.info.get(S.myCar); if (!me) return;
+    const pos = S.myFinPos || 0, tn = S.track?.name || "Scribble track";
+    const rec = buildReplay({ from: S.myFinAt - 18000, focus: me.name, title: `Your finish · P${pos} · ${tn}` });
+    if (!rec) return;
+    S.lastMyFinish = rec; $("myFinishBtn").classList.remove("hidden");
+    try {
+      const bytes = await packReplay(rec, 450e3);
+      let list = [{ id: Date.now().toString(36), title: rec.title, at: Date.now(), pos, cars: rec.cars.length, size: bytes.length, data: b64(bytes) }, ...myFinishes()].slice(0, 3);
+      for (;;) { try { localStorage.setItem("tb-finishes", JSON.stringify(list)); break; } catch (e) { if (list.length <= 1) break; list = list.slice(0, -1); } }
+    } catch (e) {}
+  }
+  $("myFinishBtn").addEventListener("click", () => { if (S.lastMyFinish) playReplay(S.lastMyFinish); });
+  function renderMyFinishes() {
+    const box = $("myFinishList"); box.textContent = "";
+    const list = myFinishes(); if (!list.length) return;
+    box.appendChild(el("h3", "hub-h", "🏁 Your last 3 finishes"));
+    for (const r of list) {
+      const row = el("div", "friend"), tx = el("div");
+      tx.append(el("b", "", r.title || "Your finish"), el("small", "", `${new Date(r.at).toLocaleString()} · ${r.cars} cars`));
+      const bs = el("div", "sec-row");
+      const w = el("button", "btn go", "Watch"); w.type = "button"; w.addEventListener("click", () => { $("replayBox").classList.add("hidden"); openSavedBytes(unb64(r.data)); });
+      const sv = el("button", "btn", "💾 Keep"); sv.type = "button"; sv.title = "Keep it in your saved replays for good";
+      sv.addEventListener("click", async () => { try { saveReplay(JSON.parse(await gunzip(unb64(r.data)))); renderReplayList(); } catch (e) { popup("Couldn't open it", true); } });
+      bs.append(w, sv); row.append(el("span", "fdot on"), tx, bs); box.appendChild(row);
+    }
+    box.appendChild(el("h3", "hub-h", "💾 Saved replays"));
+  }
+  $("replaysBtn").addEventListener("click", () => { renderMyFinishes(); $("replayBox").classList.remove("hidden"); $("replayNote").textContent = "Save the end of a race from the results screen (💾), or watch one a friend shared with you."; renderReplayList(); });
   $("replayBoxClose").addEventListener("click", () => $("replayBox").classList.add("hidden"));
   $("replayBox").addEventListener("click", (e) => { if (e.target.id === "replayBox") $("replayBox").classList.add("hidden"); });
   $("replayCodeForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("replayCodeIn").value.trim().toUpperCase(); if (v.length < 6) return; $("replayNote").textContent = "Loading..."; socket.emit("replay:get", v); });

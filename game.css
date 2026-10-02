@@ -1212,3 +1212,13 @@ body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile 
   /* player rows: the host's Make host / Kick buttons drop to their own line instead of squeezing the name away */
   .plist li { flex-wrap: wrap; }
   .plist .nm { min-width: 6rem; }
+
+  /* server-wide news: someone somewhere pulled a super rare card */
+  .world-toast { position: fixed; z-index: 70; left: 50%; top: calc(0.6rem + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+    padding: 0.5rem 1rem; border-radius: 0.9rem; background: var(--panel-solid); border: 2px solid var(--wc); box-shadow: 0 0 24px color-mix(in srgb, var(--wc) 55%, transparent); text-align: center; max-width: calc(100vw - 2rem);
+    animation: wtIn 420ms cubic-bezier(.2,.9,.3,1.4) both; pointer-events: none; }
+  .world-toast b { color: var(--wc); font-family: "Russo One", sans-serif; font-weight: 400; letter-spacing: 0.05em; }
+  .world-toast span { font-size: 0.85rem; font-weight: 600; }
+  .world-toast + .world-toast { top: calc(4.4rem + env(safe-area-inset-top, 0px)); }
+  .world-toast.out { opacity: 0; transform: translate(-50%, -1rem); transition: 400ms ease; }
+  @keyframes wtIn { from { opacity: 0; transform: translate(-50%, -1.5rem) scale(0.9); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
