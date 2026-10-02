@@ -722,3 +722,42 @@ test("safety car: cars at the back sprint up to the pack, then slow down behind 
   assert.ok(lim(300) < lim(800) && lim(300) > 378, "slowing down as they get close");
   assert.ok(lim(60) < 378, "in the pack: a touch under safety car pace");
 });
+
+test("pit stop minigame: hit 6 arrows in order; fast and clean beats the AI crews, wrong keys cost time", { timeout: 60000 }, () => {
+  const r = new game.Room("PITGAME", false); r.setF1Track("it-1922");
+  const p = { id: "s-pg", name: "Me", up: {}, level: 1, xp: 0, assist: { pitGame: true } }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 1, quali: 0, laps: 6, weather: "sunny" }); r.ensureRoster(1);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const c = r.cars.find((x) => x.owner === p.id); c.st = r.stats(c);
+  const sent = []; const realTo = game.io.to.bind(game.io);
+  game.io.to = (id) => (id === p.id ? { emit: (ev, d) => sent.push([ev, d]) } : realTo(id));
+  try {
+    r.startPitGame(c, p);
+    const seq = sent.find(([ev]) => ev === "pitGame")[1].seq;
+    assert.equal(seq.length, 6); assert.ok(seq.every((d) => d >= 0 && d <= 3));
+    for (let n = 0; n < 30; n++) r.step(1 / 60);
+    assert.ok(c.pitGame && c.pitting > 50, "the car waits in the box while you play");
+    r.endPitGame(c, seq);                                      // a perfect, instant run
+    const good = sent.find(([ev]) => ev === "pitGameResult")[1];
+    assert.ok(good.done && good.misses === 0 && good.stop < good.ai, `a fast clean stop beats the AI crews (${good.stop}s vs ${good.ai}s)`);
+    r.startPitGame(c, p); const seq2 = sent.filter(([ev]) => ev === "pitGame")[1][1].seq;
+    const wrong = seq2.map((d) => (d + 1) % 4);
+    r.endPitGame(c, [wrong[0], wrong[1], wrong[2], ...seq2]);   // 3 wrong keys first
+    const meh = sent.filter(([ev]) => ev === "pitGameResult")[1][1];
+    assert.equal(meh.misses, 3); assert.ok(meh.stop > good.stop + 0.4 && meh.stop >= 0.5 + 3 * 0.45 - 0.01, "wrong keys cost time (0.45s each)");
+    r.startPitGame(c, p); r.endPitGame(c, null);               // gave up / timed out
+    const slow = sent.filter(([ev]) => ev === "pitGameResult")[2][1];
+    assert.ok(!slow.done && slow.stop > good.ai, "not finishing is slower than an AI crew");
+  } finally { game.io.to = realTo; }
+});
+
+test("commentary clips: every line and name the game asks for exists", () => {
+  const fs = require("fs"), path = require("path"), dir = path.join(__dirname, ROOT === "." ? "" : "..", "public", "commentary");
+  const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+  for (const k of ["start", "crash", "crashBig", "crashN", "win", "winYou", "photo", "lastLap", "scOut", "scIn", "rain", "lead", "leadYou", "elim", "elimYou", "standing", "classWin", "puncture", "fastest", "pitGood", "pitBad"]) {
+    assert.ok(man.lines[k] > 0, "lines for " + k);
+    for (let i = 0; i < man.lines[k]; i++) assert.ok(fs.existsSync(path.join(dir, `l_${k}_${i}.mp3`)), `l_${k}_${i}.mp3`);
+  }
+  for (const slug of Object.values(man.names)) assert.ok(fs.existsSync(path.join(dir, `n_${slug}.mp3`)), slug);
+  for (let i = 0; i < 100; i++) assert.ok(fs.existsSync(path.join(dir, `c_${i}.mp3`)), "number " + i);
+});

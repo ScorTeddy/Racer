@@ -174,6 +174,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Measured on very wonky and real tracks: off-track time 1.9% to about 0.7% with no upgrades, and about 0.15% while
   racing with Grip and Brakes maxed. Lap times are unchanged.
 
+## Pit stop minigame
+When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
+picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
+(`#pitGame`; arrow keys / WASD / buttons on touch) and sends the keys pressed. `endPitGame` replays them against the
+sequence and times it on the server: stop = (0.5 + 0.75 × seconds taken + 0.45 per wrong key) × crew (Pro Pit Crew,
+punctures), at least 1.3 s. Giving up, or 8 s (`PIT_GAME_MAX`), means a slow stop. AI crews take 2.8 s.
+
+## Race commentator
+Recorded clips in `public/commentary/` (2.5 MB of MP3s), made offline with the Kokoro neural TTS model (voice
+`bm_george`, a British male): `l_<event>_<n>.mp3` lines, `n_<name>.mp3` for every built-in AI name, and
+`c_<0-99>.mp3` ("Number seven") for players and renamed AI. `manifest.json` lists them. The client (`COMM`, `say`)
+plays a name clip and then a line, one at a time with priorities. Old news gets dropped and the music ducks while it
+talks. It's triggered by `lightsOut`, `feed` events (crash, winner, classWin, photo, lastLap, scOut/scIn, rain,
+puncture, fastest, elim), leader changes and pit stop results. To add lines, add them to the generator script
+(same voice) and the manifest.
+
 ## Elimination races
 - `settings.mode = "elim"` (a third Game mode card). `startRace` sets `this.elim = { per, round }`: `per` cars are
   knocked out each lap (`ceil((cars - 1) / 12)`, so 1 a lap up to 13 cars and never more than 12 laps). The race is

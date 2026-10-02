@@ -378,6 +378,13 @@
     <div class="panel"><div class="meter-label"><span id="lvlText">Team Lv 1</span><span id="xpText">0 / 100</span></div><div class="meter"><div id="xpFill"></div></div></div>
   </div>
   <div class="garage panel" id="garage"></div>
+  <div class="pit-game hidden" id="pitGame" role="dialog" aria-label="Pit stop minigame">
+    <div class="pg-title">🔧 PIT STOP! <span>Hit the arrows in order</span></div>
+    <div class="pg-row" id="pgRow"></div>
+    <div class="pg-info"><span id="pgTime">0.00s</span><span id="pgMiss"></span></div>
+    <div class="pg-res hidden" id="pgRes"></div>
+    <div class="pg-pad" id="pgPad"><button type="button" data-d="0" aria-label="Left"></button><button type="button" data-d="1" aria-label="Down"></button><button type="button" data-d="2" aria-label="Up"></button><button type="button" data-d="3" aria-label="Right"></button></div>
+  </div>
 </div>
 
 <!-- upgrade cards live outside the race HUD so they can wait for you (race, podium or lobby) -->

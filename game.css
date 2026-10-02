@@ -1276,3 +1276,30 @@ body.rm .class-flag.danger { animation: none; }
 .elim-note { margin: 0; padding: 0.4rem 0.6rem; border-radius: 0.6rem; background: rgba(255,107,97,0.12); border: 1px solid rgba(255,107,97,0.4); font-size: 0.82rem; font-weight: 700; }
 .mode-cards { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .class-flag.warn { background: rgba(180,110,10,0.92); }
+
+/* ---- pit stop minigame (FNF-style arrows) ---- */
+.pit-game { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 0.55rem; padding: 0.9rem 1.1rem 1rem; border-radius: 1rem; background: rgba(10,12,20,0.97); border: 2px solid #ffcc1f; box-shadow: 0 10px 40px rgba(0,0,0,0.6); max-width: calc(100vw - 2rem); animation: pgIn 160ms ease-out both; }
+@keyframes pgIn { from { transform: translate(-50%, -50%) scale(0.85); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+.pg-title { font-family: "Russo One", sans-serif; font-size: 1.25rem; color: #ffcc1f; letter-spacing: 0.04em; text-align: center; }
+.pg-title span { display: block; font-family: inherit; font-size: 0.75rem; color: #cfd6e4; letter-spacing: 0; }
+.pg-row { display: flex; gap: 0.45rem; }
+.pg-row.shake { animation: pgShake 0.25s; }
+@keyframes pgShake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.pg-a { width: 3.4rem; height: 3.4rem; display: grid; place-items: center; border-radius: 0.6rem; background: rgba(255,255,255,0.05); opacity: 0.55; transition: transform 90ms, opacity 90ms; }
+.pg-a svg, .pg-pad svg { width: 82%; height: 82%; }
+.pg-a svg path, .pg-pad svg path { stroke: #0b0d14; stroke-width: 6; stroke-linejoin: round; }
+.d0 svg path { fill: #c24b99; } .d1 svg path { fill: #00e5ff; } .d2 svg path { fill: #12fa05; } .d3 svg path { fill: #f9393f; }
+.pg-a.now { opacity: 1; transform: scale(1.18); background: rgba(255,255,255,0.14); box-shadow: 0 0 14px rgba(255,255,255,0.35); }
+.pg-a.hit { opacity: 0.25; transform: scale(0.85); }
+.pg-a.hit svg path { fill: #3a3f4b; }
+.pg-info { display: flex; gap: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #e8edf6; }
+.pg-info #pgMiss { color: #ff8a80; }
+.pg-res { font-weight: 800; font-size: 1rem; text-align: center; color: #fff; }
+.pg-res.good { color: #3ee06a; } .pg-res.bad { color: #ff8a80; }
+.pit-game.done .pg-row { opacity: 0.6; }
+.pg-pad { display: none; gap: 0.5rem; }
+.pg-pad button { width: 3.6rem; height: 3.6rem; border-radius: 0.8rem; border: 2px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08); display: grid; place-items: center; touch-action: none; cursor: pointer; }
+.pg-pad button:active { background: rgba(255,255,255,0.3); transform: scale(0.94); }
+body.touch .pg-pad { display: flex; }
+@media (max-width: 520px) { .pg-a { width: 2.7rem; height: 2.7rem; } .pg-pad button { width: 4rem; height: 4rem; } }
+@media (max-height: 520px) and (orientation: landscape) { .pit-game { top: 50%; padding: 0.5rem 0.8rem; gap: 0.35rem; } .pg-a { width: 2.6rem; height: 2.6rem; } .pg-pad button { width: 3.2rem; height: 3.2rem; } }

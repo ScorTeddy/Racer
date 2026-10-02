@@ -32,7 +32,8 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 // Defend mode: switching it on costs 10% boost, then it burns 8% a second (and boost doesn't recharge meanwhile)
 const DEFEND_START = 0.1, DEFEND_DRAIN = 0.08;
-const SC_CATCH_DEC = 650;       // safety car: how hard the stragglers plan to brake when they reach the pack
+const SC_CATCH_DEC = 650;
+const PIT_GAME_LEN = 6, PIT_GAME_MAX = 8;      // pit stop minigame: arrows to hit, seconds before the crew gives up waiting       // safety car: how hard the stragglers plan to brake when they reach the pack
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
@@ -1952,7 +1953,8 @@ class Room {
             const box = lanePoint(t, c.laneKey), bi = (pl.entry + Math.round(c.laneKey)) % N;
             c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
             c.pitting = st.pitTime * (c.punct ? 1.4 : 1); c.aiMode = "pitting";
-            if (Math.random() < PIT_MISTAKE_CHANCE) {          // the crew fumbles a wheel nut
+            if (p && p.assist?.pitGame === true && !this.qualifying) this.startPitGame(c, p);   // players: the arrow-key pit stop
+            else if (Math.random() < PIT_MISTAKE_CHANCE) {     // the crew fumbles a wheel nut
               c.pitting += PIT_MISTAKE_TIME;
               this.emit("feed", { t: "pitSlow", name: c.name, id: c.id });
               if (p) io.to(p.id).emit("toast", "Pit crew fumbled a wheel! +1 second");
@@ -2158,7 +2160,9 @@ class Room {
     const fx = Math.cos(c.heading), fy = Math.sin(c.heading);
     let vF = c.vx * fx + c.vy * fy, vS = -c.vx * fy + c.vy * fx;
     if (c.pitting > 0) {
-      c.vx = c.vy = 0; c.pitting -= dt; c.nitroOn = false;
+      c.vx = c.vy = 0; c.nitroOn = false;
+      if (c.pitGame) { if (!c.owner || Date.now() - c.pitGame.t0 > PIT_GAME_MAX * 1000) this.endPitGame(c, null); }   // (gave up, or left)
+      else c.pitting -= dt;
       if (c.pitting <= 0) {
         const p = c.owner && this.players.get(c.owner);
         if (!p || p.assist?.pit) this.aiPlan(c);
@@ -2357,6 +2361,27 @@ class Room {
       if (this.finishDeadline === Infinity) { this.finishDeadline = this.time + 30; this.emit("feed", { t: "winner", name: c.name, cls: this.multi ? c.cls : null }); }
       else if (this.multi && !this.cars.some((o) => o !== c && o.finished && o.cls === c.cls)) this.emit("feed", { t: "classWin", name: c.name, cls: c.cls });
     }
+  }
+
+  // ---- the pit stop minigame: 6 arrows to hit in order (like a rhythm game). The car waits in the box
+  // while you play; the stop takes as long as you did (a little less), plus time for wrong keys.
+  startPitGame(c, p) {
+    const seq = Array.from({ length: PIT_GAME_LEN }, () => Math.floor(Math.random() * 4));
+    c.pitGame = { seq, t0: Date.now(), raceT0: this.time }; c.pitting = 99; c.pitTotal = 99;
+    io.to(p.id).emit("pitGame", { seq, max: PIT_GAME_MAX });
+  }
+  endPitGame(c, keys) {
+    const G = c.pitGame; if (!G) return;
+    c.pitGame = null;
+    const crew = (c.st?.pitTime || PIT_TIME) / PIT_TIME * (c.punct ? 1.4 : 1);   // Pro Pit Crew still helps, punctures take longer
+    let i = 0, misses = 0;
+    for (const k of Array.isArray(keys) ? keys.slice(0, 40) : []) { if (i >= G.seq.length) break; if (k === G.seq[i]) i++; else misses++; }
+    const wall = Math.min(PIT_GAME_MAX, (Date.now() - G.t0) / 1000), done = i >= G.seq.length;
+    const stop = done ? Math.max(1.3, (0.5 + wall * 0.75 + misses * 0.45) * crew) : (PIT_TIME * 1.6 + 1) * crew;
+    const held = this.time - G.raceT0;
+    c.pitting = Math.max(0.25, stop - held); c.pitTotal = c.pitting;
+    const p = c.owner && this.players.get(c.owner);
+    if (p) io.to(p.id).emit("pitGameResult", { stop: Math.round(Math.max(stop, held) * 100) / 100, misses, done, ai: Math.round(PIT_TIME * crew * 100) / 100 });
   }
 
   // elimination: knocked out. The car turns into a ghost and cruises, its race is over.
@@ -3650,8 +3675,9 @@ io.on("connection", (socket) => {
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
   socket.on("defend", (on) => { const p = me(); if (p) p.defendOn = on === true; });
+  socket.on("pitGame", (keys) => { const r = room(), p = me(); if (!r || !p || !r.cars) return; const c = r.carOf(p.id); if (c && c.pitGame) r.endPitGame(c, Array.isArray(keys) ? keys.map((k) => Number(k) | 0) : null); });
   // assists (Settings > Assists): pit stops, boost and DRS done for you
-  socket.on("assists", (d) => { const a = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true, defend: d?.defend === true }; const p = me(); if (p) p.assist = a; else socket.data.assist = a; });
+  socket.on("assists", (d) => { const a = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true, defend: d?.defend === true, pitGame: d?.pitGame === true }; const p = me(); if (p) p.assist = a; else socket.data.assist = a; });
   socket.on("drs", () => { const r = room(), p = me(); if (r && p && r.cars && r.openDrs(p)) socket.emit("drsOn"); });
   socket.on("box", () => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "race") return;

@@ -51,6 +51,7 @@
     { key: "vMaster", label: "🔊 Master volume", hint: "Everything at once", def: 80, range: true },
     { key: "vMusic", label: "🎵 Music", hint: "", def: 45, range: true },
     { key: "vFx", label: "💥 Sound effects", hint: "Lights, engines, overtakes...", def: 70, range: true },
+    { key: "vComm", label: "🎙️ Commentator", hint: "The race commentator: starts, crashes, overtakes for the lead, wins. 0 = off", def: 80, range: true },
     { key: "track", label: "Soundtrack", hint: "Auto: calmer songs in the menus, fast ones in the race. Music by Kevin MacLeod (incompetech.com), CC BY 3.0", def: "auto", opts: [["auto", "Auto"], ["shuffle", "Shuffle all"], ["race", "Race songs only"]] },
     { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "units", label: "Speed units", def: "kmh", opts: [["kmh", "km/h"], ["mph", "mph"]] },
@@ -70,6 +71,7 @@
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asBoost", label: "⚡ Boost assist", hint: "Fires your boost for you on the straights, saving some for fights. Holding the boost key still works too.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
+    { tab: "assists", key: "asPitGame", label: "🎮 Pit stop minigame", hint: "When your car stops in the pits, hit 6 arrows in order (arrow keys or WASD) as fast as you can. Fast and clean beats the AI crews; off = a normal stop.", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asDefend", label: "🛡️ Defend assist", hint: "Turns on Defend for you in the last 2 laps when someone's right behind (it uses your boost, like pressing it yourself).", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asDrs", label: "🟩 DRS assist", hint: "Opens DRS the moment it's available, so you never miss it.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
   ];
@@ -1949,6 +1951,7 @@
   function onState(st) {
     S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.sc = st.sc || null; S.standings = st.standings; S.gaps = st.gaps || [];
     S.ql = st.ql ?? -1;
+    commLeader(st);
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
     for (const a of st.cars) {
@@ -4754,9 +4757,120 @@
     $("boostBtn").classList.toggle("on", on);
   }
   // ---- assists: tell the server (it does the pit calls / boost / DRS) ----
-  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on", defend: settings.asDefend === "on" }); }
+  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on", defend: settings.asDefend === "on", pitGame: settings.asPitGame !== "off" }); }
   socket.on("connect", sendAssists); socket.on("joined", sendAssists); socket.on("race", sendAssists);
   keyHints();
+  // ======================= Commentator =======================
+  // Real recorded lines (a neural voice, Kokoro "George", made ahead of time: public/commentary). Names are
+  // separate clips (every built-in AI driver, plus "Number 0-99" for everyone else), played before the line.
+  const COMM = { man: null, cache: new Map(), queue: [], busy: false, last: {}, leader: null, at: {} };
+  fetch("commentary/manifest.json").then((r) => (r.ok ? r.json() : null)).then((m) => { COMM.man = m; }).catch(() => {});
+  const commVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vComm ?? 80) / 100);
+  function commClip(file) {
+    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch("commentary/" + file).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
+    return COMM.cache.get(file);
+  }
+  function commName(name) {
+    const base = String(name || "").replace(/ \d+$/, ""), slug = COMM.man?.names?.[base];
+    if (slug) return `n_${slug}.mp3`;
+    const car = [...S.cars.values()].find((c) => c.name === name), n = Number(car?.number);
+    return Number.isInteger(n) && n >= 0 && n < 100 ? `c_${n}.mp3` : null;
+  }
+  function commLine(key) {
+    const n = COMM.man?.lines?.[key]; if (!n) return null;
+    let i = Math.floor(Math.random() * n); if (n > 1 && COMM.last[key] === i) i = (i + 1) % n; COMM.last[key] = i;
+    return `l_${key}_${i}.mp3`;
+  }
+  // say: a line (with a name in front, if given). prio: 3 = wins, 2 = big moments, 1 = normal, 0 = filler
+  function say(key, name, prio = 1, gap = 0) {
+    if (!COMM.man || commVol() <= 0 || S.replaying || S.ql >= 0) return;
+    const now = performance.now();
+    if (gap && now - (COMM.at[key] || 0) < gap) return; COMM.at[key] = now;
+    const parts = [name ? commName(name) : null, commLine(key)].filter(Boolean);
+    if (!parts.length || (name && parts.length < 2)) return;
+    parts.forEach(commClip);                         // start loading straight away
+    COMM.queue.push({ parts, prio, at: now }); COMM.queue.sort((a, b) => b.prio - a.prio);
+    if (COMM.queue.length > 3) COMM.queue.length = 3;
+    commNext();
+  }
+  async function commNext() {
+    if (COMM.busy) return;
+    const it = COMM.queue.shift(); if (!it) return;
+    if (performance.now() - it.at > (it.prio >= 3 ? 9000 : 4500)) return commNext();   // old news: skip it
+    COMM.busy = true;
+    const bufs = (await Promise.all(it.parts.map(commClip))).filter(Boolean), a = audio();
+    if (!bufs.length || !a) { COMM.busy = false; return commNext(); }
+    const g = a.createGain(); g.gain.value = Math.min(1.4, commVol() * 1.3); g.connect(a.destination);
+    if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol() * 0.35)); if (MUS.syn) MUS.syn.out.gain.value = Math.min(1, musicVol()) * 0.2;   // duck the music
+    let t = a.currentTime + 0.05;
+    for (const b of bufs) { const src = a.createBufferSource(); src.buffer = b; src.connect(g); src.start(t); t += b.duration + 0.06; }
+    setTimeout(() => { COMM.busy = false; setMusicVolume(); setTimeout(commNext, 200); }, (t - a.currentTime) * 1000 + 50);
+  }
+  socket.on("lightsOut", () => { COMM.leader = null; if (!S.race?.quali) say("start", null, 2); });
+  socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
+  socket.on("feed", (f) => {
+    const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
+    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 5000); else if (Math.random() < 0.5) say("crash", null, 1, 6000); else say("crashN", f.name, 1, 6000); }
+    else if (f.t === "winner") say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
+    else if (f.t === "classWin" && !mine(f.name)) say("classWin", f.name, 3);
+    else if (f.t === "photo") say("photo", null, 2);
+    else if (f.t === "lastLap") say("lastLap", null, 1);
+    else if (f.t === "scOut") say("scOut", null, 2);
+    else if (f.t === "scIn") say("scIn", null, 2);
+    else if (f.t === "rain") say("rain", null, 1);
+    else if (f.t === "puncture") say("puncture", f.name, 1, 8000);
+    else if (f.t === "fastest") say("fastest", f.name, 0, 20000);
+    else if (f.t === "elim") say(mine(f.name) ? "elimYou" : "elim", mine(f.name) ? null : f.name, 2);
+  });
+  // new leader (from the race state): "Bolt takes the lead!"
+  function commLeader(st) {
+    if (!S.race || S.race.quali || st.phase !== "race") return;
+    const lead = st.standings?.[0], c = S.cars.get(lead);
+    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, 1, 9000);
+    COMM.leader = lead;
+  }
+
+  // ======================= Pit stop minigame =======================
+  // Your car stops in the box: hit the 6 arrows in order (arrow keys / WASD / the buttons). The stop takes as long as
+  // you do (a bit less), and wrong keys cost time. The server times it.
+  const PG = { on: false, seq: [], i: 0, keys: [], t0: 0, misses: 0, timer: 0 };
+  const PG_KEYS = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3, KeyA: 0, KeyS: 1, KeyW: 2, KeyD: 3 };
+  const pgArrow = (d) => `<svg viewBox="0 0 100 100" aria-hidden="true" style="transform:rotate(${[-90, 180, 0, 90][d]}deg)"><path d="M50 8 L92 52 L66 52 L66 92 L34 92 L34 52 L8 52 Z"/></svg>`;
+  document.querySelectorAll("#pgPad button").forEach((b) => { b.innerHTML = pgArrow(Number(b.dataset.d)); b.classList.add("d" + b.dataset.d); b.addEventListener("pointerdown", (e) => { e.preventDefault(); pgPress(Number(b.dataset.d)); }); });
+  function pgRender() {
+    const row = $("pgRow"); row.textContent = "";
+    PG.seq.forEach((d, k) => { const s2 = document.createElement("span"); s2.className = `pg-a d${d}` + (k < PG.i ? " hit" : k === PG.i ? " now" : ""); s2.innerHTML = pgArrow(d); row.appendChild(s2); });
+    $("pgMiss").textContent = PG.misses ? `❌ ${PG.misses} wrong (+${(PG.misses * 0.45).toFixed(1)}s)` : "";
+  }
+  socket.on("pitGame", (d) => {
+    Object.assign(PG, { on: true, seq: d.seq, i: 0, keys: [], misses: 0, t0: performance.now(), max: d.max || 8 });
+    $("pgRes").classList.add("hidden"); $("pitGame").classList.remove("hidden", "done"); pgRender(); sfx("tick");
+    clearInterval(PG.timer); PG.timer = setInterval(() => { if (PG.on) $("pgTime").textContent = ((performance.now() - PG.t0) / 1000).toFixed(2) + "s"; }, 50);
+  });
+  function pgPress(d) {
+    if (!PG.on) return;
+    PG.keys.push(d);
+    if (d === PG.seq[PG.i]) { PG.i++; tone(440 * Math.pow(1.122, PG.i), 0.07, "square", 0.12); }
+    else { PG.misses++; tone(110, 0.15, "sawtooth", 0.15); const row = $("pgRow"); row.classList.remove("shake"); void row.offsetWidth; row.classList.add("shake"); }
+    pgRender();
+    if (PG.i >= PG.seq.length) { PG.on = false; clearInterval(PG.timer); $("pitGame").classList.add("done"); socket.emit("pitGame", PG.keys); }
+  }
+  socket.on("pitGameResult", (r) => {
+    PG.on = false; clearInterval(PG.timer);
+    const good = r.done && r.stop <= r.ai * 0.9, bad = !r.done || r.stop > r.ai * 1.2;
+    const res = $("pgRes"); res.classList.remove("hidden"); res.className = "pg-res " + (good ? "good" : bad ? "bad" : "");
+    res.textContent = !r.done ? `😬 Too slow! The crew finished without you: ${r.stop.toFixed(2)}s` : `${good ? "⚡ PERFECT STOP" : bad ? "🐢 Slow stop" : "✅ Good stop"}: ${r.stop.toFixed(2)}s (AI crews: ${r.ai.toFixed(1)}s)`;
+    if (good) say("pitGood", null, 1); else if (bad) say("pitBad", null, 1);
+    sfx(good ? "level" : "tick");
+    setTimeout(() => $("pitGame").classList.add("hidden"), 1800);
+  });
+  socket.on("race", () => { PG.on = false; clearInterval(PG.timer); $("pitGame").classList.add("hidden"); });
+  // arrow keys / WASD go to the pit crew while the minigame is up (and nothing else: D won't open DRS)
+  window.addEventListener("keydown", (e) => {
+    if (!PG.on || !(e.code in PG_KEYS)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) pgPress(PG_KEYS[e.code]);
+  }, { capture: true });
+
   // ---- Defend: costs 10% boost to switch on, then 8% a second. Your driver covers the car behind. ----
   function setDefendUi(on) { S.defendOn = on; const b = $("defendBtn"); b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
   function toggleDefend() {
@@ -5389,6 +5503,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-16", title: "Pit stop minigame and a race commentator", items: [
+      "🎮 Pit stop minigame: when your car stops in the box, hit the 6 arrows in order (arrow keys, WASD, or tap them on a phone). Fast and clean beats the AI crews; wrong keys cost time. Turn it off in Settings > Assists.",
+      "🎙️ A race commentator calls the start, crashes, new leaders, final laps, safety cars, knock-outs, pit stops and the win, in a proper British commentator voice. Volume (or off) in Settings > Sound.",
+    ] },
     { v: "2026-10-15", title: "Elimination races, a faster safety car restart, and GT3s", items: [
       "💥 New game mode: Elimination (Race settings, next to Multiclass). Last place is knocked out every lap until one car is left. The HUD warns you when you're in the knock-out zone.",
       "🚨 Safety car: cars stuck at the back now sprint up to the pack at nearly full speed, then slow down and slot in behind it.",
