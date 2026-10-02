@@ -650,3 +650,12 @@ test("multiclass: you pick your class, Hypers start ahead and are faster, each c
   // ranked never uses multiclass
   assert.equal(r.settings.mode, "multi");
 });
+
+test("the Motion pack: animated items in the store, every id unique", () => {
+  const store = accounts.STORE, ids = store.map((x) => x.id);
+  assert.equal(new Set(ids).size, ids.length, "no duplicate item ids");
+  const anim = store.filter((x) => /animated/.test(x.name));
+  assert.ok(anim.length >= 45, `lots of animated items (${anim.length})`);
+  for (const slot of ["glow", "flame", "helmet", "num", "rims", "smoke", "trail", "decal", "wing", "livery"]) assert.ok(anim.some((x) => x.slot === slot), "animated " + slot);
+  assert.ok(store.find((x) => x.id === "liv_hyperdrive").rarity === "mythic");
+});

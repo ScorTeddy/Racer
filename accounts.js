@@ -745,6 +745,38 @@ const PASS_SLOTS = [
 for (const T of PASS_THEMES) for (const [slot, word, rarity] of PASS_SLOTS)
   STORE.push({ id: `bp_${T.key}_${slot}`, slot, name: `${T.name} ${word}`, look: T[slot], loot: true, rarity, box: "pass", pass: T.key });
 // rarity: set on the item, or from its store price
+// ---- the Motion pack: everything here moves ----
+STORE.push(
+  { id: "glow_heartbeat", slot: "glow", name: "Heartbeat underglow (animated)", look: "heartbeat", price: 190 },
+  { id: "glow_ocean", slot: "glow", name: "Ocean wave underglow (animated)", look: "ocean", price: 180 },
+  { id: "glow_lightning", slot: "glow", name: "Lightning underglow (animated)", look: "lightning", price: 260 },
+  { id: "glow_wildfire", slot: "glow", name: "Wildfire underglow (animated)", look: "wildfire", price: 280 },
+  { id: "glow_disco", slot: "glow", name: "Disco underglow (animated)", look: "disco", price: 320 },
+  { id: "flame_toxic", slot: "flame", name: "Toxic boost flame (animated)", look: "toxic", price: 170 },
+  { id: "flame_ghost", slot: "flame", name: "Ghost boost flame (animated)", look: "ghost", price: 190 },
+  { id: "flame_hellfire", slot: "flame", name: "Hellfire boost flame (animated)", look: "hellfire", price: 300 },
+  { id: "helmet_pulse", slot: "helmet", name: "Neon pulse helmet (animated)", look: "pulse", price: 150 },
+  { id: "helmet_galaxy", slot: "helmet", name: "Galaxy helmet (animated)", look: "galaxyH", price: 250 },
+  { id: "num_disco", slot: "num", name: "Disco number plate (animated)", look: "disco", price: 200 },
+  { id: "num_fire", slot: "num", name: "Flaming number plate (animated)", look: "fire", price: 240 },
+  { id: "rims_neonpulse", slot: "rims", name: "Neon pulse rims (animated)", look: "neonpulse", price: 170 },
+  { id: "rims_rainbow", slot: "rims", name: "Rainbow rims (animated)", look: "rainbow", price: 220 },
+  { id: "smoke_spooky", slot: "smoke", name: "Spooky tyre smoke (animated)", look: "spooky", price: 190 },
+  { id: "smoke_neon", slot: "smoke", name: "Neon tyre smoke (animated)", look: "neon", price: 240 },
+  { id: "smoke_fire", slot: "smoke", name: "Fire tyre smoke (animated)", look: "fire", price: 280 },
+  { id: "trail_beat", slot: "trail", name: "Beating hearts trail (animated)", look: "beat", price: 200 },
+  { id: "trail_zap", slot: "trail", name: "Crackling zap trail (animated)", look: "zap", price: 260 },
+  { id: "trail_galaxy", slot: "trail", name: "Galaxy dust trail (animated)", look: "galaxyT", price: 380 },
+  { id: "decal_eye", slot: "decal", name: "Watching eye decal (animated)", look: "eye", price: 180 },
+  { id: "decal_eq", slot: "decal", name: "Equalizer decal (animated)", look: "eq", price: 220 },
+  { id: "decal_radar", slot: "decal", name: "Radar sweep decal (animated)", look: "radar", price: 250 },
+  { id: "wing_led", slot: "wing", name: "LED light-bar wing (animated)", look: "led", price: 280 },
+  { id: "liv_oceanwave", slot: "livery", name: "Rolling Surf livery (animated)", look: "oceanL", loot: true, rarity: "epic" },
+  { id: "liv_ecg", slot: "livery", name: "Heart Monitor livery (animated)", look: "ecg", loot: true, rarity: "epic" },
+  { id: "liv_storm", slot: "livery", name: "Thunderstorm livery (animated)", look: "storm", loot: true, rarity: "legendary" },
+  { id: "liv_disco", slot: "livery", name: "Disco Floor livery (animated)", look: "discoL", loot: true, rarity: "legendary" },
+  { id: "liv_hyperdrive", slot: "livery", name: "Hyperdrive livery (animated)", look: "hyperdrive", loot: true, rarity: "mythic", box: "legend" },
+);
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
 STORE_COUNT = STORE.filter((x) => !x.pass).length;

@@ -153,10 +153,25 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Server-wide rare cards**: a super rare upgrade pick also goes to every other room (`rareCardGlobal`, `.world-toast`).
 - **Watch YOUR finish**: the client spots your car's finish, then builds a replay from 18 s before it with the camera
   on you (`captureMyFinish`). The last 3 are kept in localStorage (`tb-finishes`) and listed at the top of 🎬 Replays.
+- **The Motion pack** (accounts.js): 29 animated items. Their looks are drawn by `glowLook`, `flameLook`, `rimLook`,
+  `helmetLook`, the `num` plate table, `smokeCol`, `trailShape`, `drawDecal` and `drawLivery`. Any item with
+  "(animated)" in its name keeps moving in the store preview (`LIVE`, `livePreviews`, ~20 fps, only while shown).
 - **Sounds**: `engineSound` has two detuned saws through a filter with gears, a boost kick and noise whoosh, and a
   hum from cars within 650 px; `sfx("drs")` plays when DRS opens.
 - **Photo mode** (📷 or **K** in a race or replay): freezes the view, drag/scroll/pinch to move and zoom, tilt,
   names on/off, 📸 saves a PNG. Racing alone as host, the race really pauses while you're in it.
+
+## Multiclass racing
+- **Game mode** (top of Race settings, host): `settings.mode` is `"normal"` or `"multi"`, plus `settings.mix`
+  (share of AI in GTs: 0.33 / 0.5 / 0.67; which AI are GTs: `aiIsGt`). Ranked always runs normal.
+- **Classes** (`CAR_CLASSES` in server.js, applied in `stats()` on top of upgrades): Hyper = the normal car.
+  GT = 85% top speed, 80% acceleration, 90% cornering, 92% grip, 88% brakes, but 65% tyre wear, 80% pit time,
+  130% boost refill and 60% crash damage. Hyper best laps come out about 12-15% quicker.
+- Every player picks their class (`pickClass`, `p.cls`, shown in the lobby). Hypers line up ahead of GTs.
+  No slipstream from the other class. Points, class win banners (`classWin` feed), results (`cls`, `cpos`) and
+  account stats/coins are per class (`recordStats` scores you in your class if it has 3+ cars).
+- Client: `CLASSES` (names, colours, stat bars), `drawClassKit` (GT: green panels, mirrors, big wing; Hyper: red
+  LED strips, splitter, fin), `classPos`, `classFlag` (blue flag / GT traffic warning).
 
 ## Render's free plan (worth knowing)
 It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 seconds) and has very little CPU

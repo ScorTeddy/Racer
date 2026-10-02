@@ -456,6 +456,44 @@
     if (designCache.size > 60) designCache.delete(designCache.keys().next().value);
     designCache.set(str, cv); return cv;
   }
+  // ---- animated store looks (underglow, flames, helmets, rims, number plates) ----
+  const DISCO = ["#ff2bd6", "#22e6ff", "#ffe066", "#39ff88", "#ff6a1f"];
+  function glowLook(g, t, hue) {
+    switch (g) {
+      case "rainbow": return [`hsl(${hue},100%,60%)`, 0.55];
+      case "galaxy": return [`hsl(${250 + 40 * Math.sin(t * 1.5)},95%,62%)`, 0.55];
+      case "aurora": return [`hsl(${150 + 60 * Math.sin(t)},95%,58%)`, 0.55];
+      case "heartbeat": { const ph = t % 1.1, b = Math.exp(-((ph - 0.1) ** 2) / 0.003) + 0.8 * Math.exp(-((ph - 0.32) ** 2) / 0.003); return ["#ff2050", 0.2 + 0.65 * b]; }
+      case "lightning": { const f = Math.sin(t * 37) > 0.93 || Math.sin(t * 23 + 1) > 0.97; return [f ? "#ffffff" : "#4f8cff", f ? 0.95 : 0.4]; }
+      case "ocean": return [`hsl(${190 + 22 * Math.sin(t * 2)},90%,${50 + 8 * Math.sin(t * 3.1)}%)`, 0.5 + 0.1 * Math.sin(t * 2)];
+      case "disco": return [DISCO[Math.floor(t * 4) % DISCO.length], 0.6];
+      case "wildfire": return [`hsl(${12 + 26 * Math.abs(Math.sin(t * 13))},100%,55%)`, 0.5 + 0.2 * Math.abs(Math.sin(t * 17))];
+      default: return [g, 0.55];
+    }
+  }
+  function flameLook(f, hue) {
+    const t = performance.now() / 1000;
+    switch (f) {
+      case "rainbow": return `hsl(${hue},100%,58%)`;
+      case "plasma": return `hsl(${Math.random() < 0.5 ? 285 : 190},100%,62%)`;
+      case "ghost": return `rgba(215,240,255,${0.3 + 0.35 * Math.random()})`;
+      case "toxic": return `hsl(${85 + 25 * Math.sin(t * 11)},100%,55%)`;
+      case "hellfire": return Math.random() < 0.5 ? "#ff2a00" : "#ffc400";
+      default: return f || "#3aa0ff";
+    }
+  }
+  function rimLook(r, hue) {
+    if (r === "rainbow") return `hsl(${(hue * 2) % 360},100%,60%)`;
+    if (r === "neonpulse") return `hsl(305,100%,${50 + 22 * Math.sin(performance.now() / 160)}%)`;
+    return r;
+  }
+  function helmetLook(h, hue) {
+    const t = performance.now() / 1000;
+    if (h === "rainbow") return `hsl(${hue},90%,60%)`;
+    if (h === "pulse") return `hsl(190,100%,${45 + 22 * Math.sin(t * 5)}%)`;
+    if (h === "galaxyH") return `hsl(${260 + 40 * Math.sin(t * 1.5)},85%,${50 + 10 * Math.sin(t * 3)}%)`;
+    return h || "#f5f5f5";
+  }
   // Multiclass racing: the two kinds of car (the server has the real numbers, in CAR_CLASSES)
   const CLASSES = {
     hyper: { name: "Hyper", icon: "🔴", col: "#ff2d55", short: "HY", note: "Much faster everywhere: top speed, cornering, braking. Normal tyre wear and pit stops.",
@@ -499,15 +537,15 @@
       c.restore();
     } else if (X.glow) {                     // store: underglow
       const t = performance.now() / 1000;
-      const col = X.glow === "rainbow" ? `hsl(${hueNow},100%,60%)` : X.glow === "galaxy" ? `hsl(${250 + 40 * Math.sin(t * 1.5)},95%,62%)` : X.glow === "aurora" ? `hsl(${150 + 60 * Math.sin(t)},95%,58%)` : X.glow;
-      c.save(); c.globalAlpha = 0.55; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
+      const [col, ga] = glowLook(X.glow, t, hueNow);
+      c.save(); c.globalAlpha = ga; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
       rrect(c, -L / 2 - 2, -Wd / 2 - 3, L + 4, Wd + 6, 9); c.fill(); c.restore();
     }
     c.fillStyle = "rgba(0,0,0,0.3)"; c.save(); c.translate(3, 4); bodyPath(c, X.body, L, Wd); c.fill(); c.restore();
     if (opts.trailPreview && X.trail) { for (let k = 0; k < 4; k++) trailShape(c, X.trail, -L / 2 - 10 - k * 11, (k % 2 ? 4 : -4), 4.5 - k * 0.6, 1 - k * 0.2, k); }
     if (opts.nitro || opts.flamePreview) {   // nitro boost: a long flame (blue, or the store colour)
       const fl = opts.flamePreview ? 30 : 22 + Math.random() * 16;
-      c.fillStyle = X.flame === "rainbow" ? `hsl(${hueNow},100%,58%)` : X.flame === "plasma" ? `hsl(${Math.random() < 0.5 ? 285 : 190},100%,62%)` : X.flame || "#3aa0ff";
+      c.fillStyle = flameLook(X.flame, hueNow);
       c.beginPath(); c.moveTo(-L / 2, -7); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 7); c.fill();
       c.fillStyle = "#d8f3ff"; c.beginPath(); c.moveTo(-L / 2, -3.5); c.lineTo(-L / 2 - fl * 0.55, 0); c.lineTo(-L / 2, 3.5); c.fill();
     }
@@ -520,13 +558,13 @@
     if (!open) {
       c.fillStyle = "#16171a";
       for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 6, wy * (Wd / 2) - 4, 12, 8);
-      if (X.rims) { c.fillStyle = X.rims; for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 3, wy * (Wd / 2) - 2.2, 6, 4.4); }
+      if (X.rims) { c.fillStyle = rimLook(X.rims, hueNow); for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 3, wy * (Wd / 2) - 2.2, 6, 4.4); }
     } else {
       // open-wheel cars: big wheels out in the air
       const wl = B === "f1" ? [[L * 0.33, Wd / 2 - 1, 11, 7], [-L * 0.32, Wd / 2 - 1, 12, 8]] : [[L * 0.24, Wd * 0.4, 8, 6], [-L * 0.24, Wd * 0.4, 8, 6]];
       for (const [wx, wy, ww, wh] of wl) for (const sg of [-1, 1]) {
         c.fillStyle = "#141518"; rrect(c, wx - ww / 2, sg * wy - wh / 2, ww, wh, 2); c.fill();
-        c.fillStyle = X.rims || "#7b818a"; c.fillRect(wx - ww * 0.22, sg * wy - wh * 0.28, ww * 0.44, wh * 0.56);
+        c.fillStyle = rimLook(X.rims, hueNow) || "#7b818a"; c.fillRect(wx - ww * 0.22, sg * wy - wh * 0.28, ww * 0.44, wh * 0.56);
       }
       if (B === "f1") { c.fillStyle = "#2a2c31"; c.fillRect(L * 0.33 - 1, -Wd / 2 + 4, 2, Wd - 8); c.fillRect(-L * 0.32 - 1, -Wd / 2 + 4, 2, Wd - 8); }   // suspension arms
     }
@@ -556,7 +594,7 @@
     }
     bodyExtras(c, B, car, X, L, Wd);
     if (car.cls) drawClassKit(c, car, X, L, Wd, open);
-    if (X.helmet || open) { const hc = X.helmet === "rainbow" ? `hsl(${hueNow},90%,60%)` : X.helmet || "#f5f5f5"; c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
+    if (X.helmet || open) { const hc = helmetLook(X.helmet, hueNow); c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
     if (X.wing && !open) {                    // store: rear wing
       const wc = darken(car.color, 0.45);
       if (X.wing === "card") { c.save(); c.rotate(0.12); c.fillStyle = "#b08850"; c.fillRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.strokeStyle = "#7c5c32"; c.lineWidth = 0.8; c.strokeRect(-L / 2 - 5, -Wd / 2 - 1, 6, Wd + 2); c.restore(); }
@@ -566,6 +604,11 @@
         if (X.wing === "gold") { const gg = c.createLinearGradient(0, -Wd / 2 - 3, 0, Wd / 2 + 3); gg.addColorStop(0, "#8a6212"); gg.addColorStop(0.5, "#fff1b8"); gg.addColorStop(1, "#b8860b"); c.fillStyle = gg; c.fillRect(-L / 2 - 3, -Wd / 2 - 3, 4.5, Wd + 6); }
         else { for (let j = 0; j < Wd + 6; j += 1.5) { c.fillStyle = Math.floor(j / 1.5) % 2 ? "#26292e" : "#131417"; c.fillRect(-L / 2 - 3, -Wd / 2 - 3 + j, 4.5, 1.5); } c.fillStyle = "#e11d48"; c.fillRect(-L / 2 - 3, -1, 4.5, 2); }
       }
+      else if (X.wing === "led") {             // light-bar wing: a light chases along it
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5); c.fillRect(-L / 2 - 3, -Wd / 2 - 3, 4, Wd + 6);
+        const n = 8, at = Math.floor(performance.now() / 70) % (n * 2), k0 = at < n ? at : n * 2 - 1 - at;
+        for (let k = 0; k < n; k++) { const on = Math.abs(k - k0) <= 1; c.fillStyle = on ? "#ff3355" : "rgba(255,51,85,0.25)"; if (on) { c.shadowColor = "#ff3355"; c.shadowBlur = 6; } c.fillRect(-L / 2 - 2.6, -Wd / 2 - 2.5 + k * ((Wd + 5) / n), 3.2, (Wd + 5) / n - 0.6); c.shadowBlur = 0; }
+      }
       else if (X.wing === "duck") { c.fillStyle = wc; rrect(c, -L / 2 - 1, -Wd / 2 + 2, 4, Wd - 4, 2); c.fill(); }
       else {
         const decks = X.wing === "twin" ? [-L / 2 - 3, -L / 2 + 2] : [-L / 2 - 2];
@@ -574,7 +617,7 @@
       }
     }
     // number
-    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"] }[X.num] || ["#fff", "#111"];
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"], disco: [DISCO[Math.floor(performance.now() / 250) % DISCO.length], "#111"], fire: [`hsl(${20 + 22 * Math.sin(performance.now() / 70)},100%,52%)`, "#fff"] }[X.num] || ["#fff", "#111"];
     const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
     c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
     if (car.cls && X.num !== "neon") { c.strokeStyle = CLASSES[car.cls]?.col || "#fff"; c.lineWidth = 1.8; c.stroke(); }
@@ -669,6 +712,26 @@
           for (const [px, py] of [[-1.3, -1.3], [0, 0], [1.3, 1.3]]) { c.beginPath(); c.arc(px, py, 0.6, 0, Math.PI * 2); c.fill(); } c.restore(); } break;
       case "smiley": c.fillStyle = "#ffd21f"; c.beginPath(); c.arc(0, 0, 4.8, 0, Math.PI * 2); c.fill(); c.fillStyle = "#111"; c.beginPath(); c.arc(1.6, -1.7, 0.8, 0, Math.PI * 2); c.arc(1.6, 1.7, 0.8, 0, Math.PI * 2); c.fill(); c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); c.arc(0, 0, 3, -1.1, 1.1); c.stroke(); break;
       case "wings": c.fillStyle = "rgba(255,255,255,0.92)"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(0, sg * 1); c.quadraticCurveTo(-7, sg * 9, -12, sg * 10); c.quadraticCurveTo(-7, sg * 5, -4, sg * 1); c.fill(); } break;
+      case "eye": {   // animated: an eye that looks around and blinks
+        const t = performance.now() / 1000, blink = (t % 3.2) < 0.14 ? 0.12 : 1;
+        c.fillStyle = "#f8fafc"; c.beginPath(); c.ellipse(0, 0, 3.6, 5.6 * blink, 0, 0, Math.PI * 2); c.fill();
+        if (blink > 0.5) { c.fillStyle = "#16a34a"; c.beginPath(); c.arc(Math.sin(t * 1.3) * 1.2, Math.sin(t * 0.9) * 2.4, 2.2, 0, Math.PI * 2); c.fill(); c.fillStyle = "#0b0b0b"; c.beginPath(); c.arc(Math.sin(t * 1.3) * 1.2, Math.sin(t * 0.9) * 2.4, 1, 0, Math.PI * 2); c.fill(); }
+        c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); c.ellipse(0, 0, 3.6, 5.6 * blink, 0, 0, Math.PI * 2); c.stroke(); break;
+      }
+      case "radar": {   // animated: a sweeping radar screen with blips
+        const t = performance.now() / 1000, a = t * 3;
+        c.fillStyle = "#04210f"; c.beginPath(); c.arc(0, 0, 5.5, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = "rgba(57,255,136,0.45)"; c.lineWidth = 0.5; c.beginPath(); c.arc(0, 0, 3.4, 0, Math.PI * 2); c.moveTo(-5.5, 0); c.lineTo(5.5, 0); c.moveTo(0, -5.5); c.lineTo(0, 5.5); c.stroke();
+        c.fillStyle = "rgba(57,255,136,0.35)"; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 5.5, a - 0.7, a); c.closePath(); c.fill();
+        c.strokeStyle = "#39ff88"; c.lineWidth = 0.9; c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a) * 5.5, Math.sin(a) * 5.5); c.stroke();
+        for (const [bx, by] of [[2.2, -2.5], [-3, 1.4]]) { const d = ((a - Math.atan2(by, bx)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2); c.fillStyle = `rgba(160,255,190,${Math.max(0, 1 - d / 3)})`; c.fillRect(bx - 0.6, by - 0.6, 1.2, 1.2); }
+        break;
+      }
+      case "eq": {      // animated: equalizer bars bouncing to the beat
+        const t = performance.now() / 1000;
+        for (let k = 0; k < 5; k++) { const h = 1.5 + 4 * Math.abs(Math.sin(t * (5 + k * 1.7) + k)); c.fillStyle = `hsl(${120 - h * 20},100%,55%)`; c.fillRect(-h / 2 - 0.5, -6 + k * 2.5, h + 1, 1.8); }
+        break;
+      }
     }
     c.restore();
   }
@@ -735,6 +798,42 @@
         c.strokeStyle = "rgba(255,236,160,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
         break;
       }
+      case "storm": {   // animated: dark clouds, rain streaks and lightning flashes
+        const t = performance.now() / 1000, flash = Math.sin(t * 2.3) > 0.985 || Math.sin(t * 5.1 + 2) > 0.995;
+        c.fillStyle = flash ? "#c7d2fe" : lin(["#1e2235", "#363c58", "#1e2235"], true); c.fillRect(x0, y0, L, Wd);
+        c.strokeStyle = "rgba(170,190,255,0.5)"; c.lineWidth = 0.6;
+        for (let k = 0; k < 14; k++) { const x = x0 + ((k * 7.3 + t * 60) % L), y = y0 + ((k * 5.1) % Wd); c.beginPath(); c.moveTo(x, y); c.lineTo(x - 3, y + 2); c.stroke(); }
+        if (flash || (t * 3) % 2 < 0.15) { c.strokeStyle = "#fffbe6"; c.lineWidth = 1.2; c.shadowColor = "#fff"; c.shadowBlur = 8; c.beginPath(); c.moveTo(x0 + L * 0.7, y0); c.lineTo(x0 + L * 0.55, -1); c.lineTo(x0 + L * 0.62, 1); c.lineTo(x0 + L * 0.45, -y0); c.stroke(); c.shadowBlur = 0; }
+        break;
+      }
+      case "oceanL": {  // animated: rolling waves
+        const t = performance.now() / 1000;
+        c.fillStyle = lin(["#0369a1", "#0ea5e9", "#0369a1"], true); c.fillRect(x0, y0, L, Wd);
+        for (let w = 0; w < 3; w++) { c.strokeStyle = w === 1 ? "rgba(255,255,255,0.85)" : "rgba(186,230,253,0.6)"; c.lineWidth = 1; c.beginPath(); for (let x = 0; x <= L; x += 2) { const yy = y0 + 3 + w * (Wd - 6) / 2 + Math.sin(x * 0.35 + t * 3 + w) * 1.5; x ? c.lineTo(x0 + x, yy) : c.moveTo(x0 + x, yy); } c.stroke(); }
+        break;
+      }
+      case "discoL": {  // animated: a dance floor
+        const t = performance.now() / 1000, n = Math.floor(t * 3);
+        for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) { c.fillStyle = DISCO[(i * 3 + j * 2 + n) % DISCO.length]; c.fillRect(x0 + i * (L / 6), y0 + j * (Wd / 4), L / 6 + 0.3, Wd / 4 + 0.3); }
+        c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(x0, y0, L, Wd / 4);
+        break;
+      }
+      case "ecg": {     // animated: a heart monitor trace running down the car
+        const t = performance.now() / 1000;
+        c.fillStyle = "#041b12"; c.fillRect(x0, y0, L, Wd);
+        c.strokeStyle = "rgba(57,255,136,0.18)"; c.lineWidth = 0.4; for (let x = 0; x < L; x += 4) { c.beginPath(); c.moveTo(x0 + x, y0); c.lineTo(x0 + x, -y0); c.stroke(); }
+        c.strokeStyle = "#39ff88"; c.lineWidth = 1.1; c.shadowColor = "#39ff88"; c.shadowBlur = 5; c.beginPath();
+        for (let x = 0; x <= L; x += 1) { const ph = ((x / L) * 2 - t * 1.2) % 1, p2 = ph < 0 ? ph + 1 : ph; const yy = p2 > 0.4 && p2 < 0.45 ? -5 : p2 > 0.45 && p2 < 0.5 ? 4 : p2 > 0.5 && p2 < 0.53 ? -2 : 0; x ? c.lineTo(x0 + x, yy) : c.moveTo(x0 + x, yy); }
+        c.stroke(); c.shadowBlur = 0;
+        break;
+      }
+      case "hyperdrive": {   // MYTHIC, animated: stars streaking past at warp speed
+        const t = performance.now() / 1000;
+        c.fillStyle = lin(["#020617", "#1e1b4b", "#020617"], true); c.fillRect(x0, y0, L, Wd);
+        for (let k = 0; k < 16; k++) { const sp = 40 + (k % 5) * 25, x = -x0 - ((k * 13.7 + t * sp) % (L + 12)), y = y0 + 1 + ((k * 7.9) % (Wd - 2)), len = 3 + (k % 4) * 2.5; const g = c.createLinearGradient(x, 0, x + len, 0); g.addColorStop(0, "#fff"); g.addColorStop(1, `hsla(${(hue + k * 25) % 360},100%,70%,0)`); c.fillStyle = g; c.fillRect(x, y, len, 0.9); }
+        c.fillStyle = `hsla(${hue},100%,70%,0.25)`; c.fillRect(x0, -0.8, L, 1.6);
+        break;
+      }
       case "midnight": c.fillStyle = lin(["#0b1026", "#1e2a5a", "#0b1026"], true); c.fillRect(x0, y0, L, Wd); c.fillStyle = "#e2e8f0"; c.beginPath(); c.moveTo(-x0, -1.5); c.lineTo(x0 + L * 0.3, -3.5); c.lineTo(x0 + L * 0.3, 3.5); c.lineTo(-x0, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.fillRect(x0 + L * 0.25, -1, L * 0.5, 2); break;
     }
   }
@@ -766,6 +865,18 @@
     else if (kind === "confetti") { c.fillStyle = ["#ff4f7b", "#ffe066", "#22e6ff", "#7dff8a", "#b25cff"][k % 5]; c.rotate(k * 0.9); c.fillRect(-r * 0.55, -r * 0.25, r * 1.1, r * 0.5); }
     else if (kind === "embers") { c.fillStyle = ["#ffb020", "#ff6a1f", "#ffe066"][k % 3]; c.shadowColor = "#ff6a1f"; c.shadowBlur = r; c.beginPath(); c.arc(0, 0, r * 0.38, 0, Math.PI * 2); c.fill(); }
     else if (kind === "checkers") { const q = r * 0.42; for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? "#111" : "#fff"; c.fillRect(-q + i * q, -q + j * q, q, q); } }
+    else if (kind === "zap") {   // animated: a crackling lightning bolt
+      c.strokeStyle = Math.random() < 0.3 ? "#ffffff" : "#7dd3fc"; c.lineWidth = 1.6; c.shadowColor = "#38bdf8"; c.shadowBlur = 8; c.beginPath(); c.moveTo(-r * 1.4, 0);
+      for (let s2 = 1; s2 <= 4; s2++) c.lineTo(-r * 1.4 + s2 * r * 0.7, (Math.random() - 0.5) * r * 1.4); c.stroke();
+    }
+    else if (kind === "beat") {  // animated: hearts that beat
+      const sc = 0.75 + 0.35 * Math.max(0, Math.sin(performance.now() / 90 + k)); c.scale(sc, sc);
+      c.fillStyle = "#ff2050"; c.beginPath(); c.moveTo(0, r * 0.9); c.bezierCurveTo(-r * 1.4, -r * 0.2, -r * 0.6, -r * 1.2, 0, -r * 0.4); c.bezierCurveTo(r * 0.6, -r * 1.2, r * 1.4, -r * 0.2, 0, r * 0.9); c.fill();
+    }
+    else if (kind === "galaxyT") {   // animated: twinkling star dust
+      const tw = 0.5 + 0.5 * Math.sin(performance.now() / 120 + k * 2.1); c.fillStyle = `hsl(${(250 + k * 40 + performance.now() / 20) % 360},100%,${65 + 20 * tw}%)`; c.shadowColor = c.fillStyle; c.shadowBlur = 6 * tw;
+      c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, rr = i % 2 ? r * 0.2 : r * (0.5 + 0.4 * tw); c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill();
+    }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
     c.restore();
@@ -1154,12 +1265,28 @@
   const RARE_TIER = { epic: { label: "EPIC", odds: "0.1%", color: "#c77dff", icon: "💎" }, legendary: { label: "LEGENDARY", odds: "0.01%", color: "#ffc21f", icon: "👑" }, mythic: { label: "MYTHIC", odds: "0.001%", color: "#ff3b8a", icon: "🌈" } };
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
   const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"] };
+  // store previews: animated items keep moving in the store (redrawn ~20 times a second while on screen)
+  const LIVE = new Set();
+  function livePreviews() {
+    if (LIVE.running) return; LIVE.running = true; let last = 0;
+    const tick = (t) => {
+      for (const cv of LIVE) if (!cv.isConnected && t - cv._born > 3000) LIVE.delete(cv);
+      if (!LIVE.size) { LIVE.running = false; return; }
+      if (t - last > 50 && !document.hidden) { last = t; for (const cv of LIVE) if (cv.isConnected && cv.offsetParent) cv._draw(); }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
   function itemPreview(it, w = 200, h = 110) {
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.setAttribute("role", "img"); cv.setAttribute("aria-label", `Preview of your car with the ${it.name}`);
-    drawCar(cv.getContext("2d"), { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: it.onlyBody ? { body: it.onlyBody, [it.slot]: it.look } : { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
-    const c2 = cv.getContext("2d");
-    if (it.slot === "smoke") { for (let k = 0; k < 5; k++) { c2.globalAlpha = 0.85 - k * 0.12; c2.fillStyle = it.look === "rainbow" ? `hsl(${k * 70},95%,65%)` : it.look === "stardust" ? ["#ffe278", "#fff", "#be8cff"][k % 3] : it.look; c2.beginPath(); c2.arc(w * 0.26 - k * 9, h / 2 + (k % 2 ? 8 : -8), 8 + k * 2, 0, Math.PI * 2); c2.fill(); } c2.globalAlpha = 1; }
-    if (it.slot === "badge") { c2.font = `${Math.round(h * 0.3)}px sans-serif`; c2.textAlign = "center"; c2.textBaseline = "middle"; c2.fillText(it.look, w / 2, h * 0.16); }
+    const draw = () => {
+      const c2 = cv.getContext("2d"); c2.clearRect(0, 0, w, h);
+      drawCar(c2, { color: prof.color, livery: prof.livery, number: prof.number, design: it.slot === "livery" ? null : prof.design, extras: it.onlyBody ? { body: it.onlyBody, [it.slot]: it.look } : { [it.slot]: it.look } }, it.slot === "trail" || it.slot === "flame" ? w * 0.59 : w / 2, h / 2, 0, 2.3 * (w / 200), { trailPreview: it.slot === "trail", flamePreview: it.slot === "flame" });
+      if (it.slot === "smoke") { for (let k = 0; k < 5; k++) { c2.globalAlpha = 0.85 - k * 0.12; c2.fillStyle = it.look === "rainbow" ? `hsl(${k * 70 + performance.now() / 6},95%,65%)` : it.look === "stardust" ? ["#ffe278", "#fff", "#be8cff"][k % 3] : it.look.startsWith("#") ? it.look : smokeCol(it.look); c2.beginPath(); c2.arc(w * 0.26 - k * 9, h / 2 + (k % 2 ? 8 : -8), 8 + k * 2, 0, Math.PI * 2); c2.fill(); } c2.globalAlpha = 1; }
+      if (it.slot === "badge") { c2.font = `${Math.round(h * 0.3)}px sans-serif`; c2.textAlign = "center"; c2.textBaseline = "middle"; c2.fillText(it.look, w / 2, h * 0.16); }
+    };
+    draw();
+    if (/animated/i.test(it.name) && !reducedMotion) { cv._draw = draw; cv._born = performance.now(); LIVE.add(cv); livePreviews(); }
     return cv;
   }
   function renderBoxes(box, u) {
@@ -4563,6 +4690,9 @@
   function smokeCol(s) {
     if (!s) return "rgba(230,230,230,0.5)";
     if (s === "rainbow") return `hsla(${(performance.now() / 6) % 360},95%,65%,0.6)`;
+    if (s === "neon") return Math.floor(performance.now() / 300) % 2 ? "rgba(34,230,255,0.6)" : "rgba(255,43,214,0.6)";
+    if (s === "fire") return `hsla(${10 + Math.random() * 35},100%,${50 + Math.random() * 15}%,0.65)`;
+    if (s === "spooky") return Math.random() < 0.6 ? "rgba(190,255,215,0.45)" : "rgba(160,110,255,0.45)";
     if (s === "stardust") return Math.random() < 0.5 ? "rgba(255,226,120,0.85)" : Math.random() < 0.5 ? "rgba(255,255,255,0.9)" : "rgba(190,140,255,0.8)";
     return s + "aa";
   }
@@ -5196,6 +5326,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-13", title: "Multiclass racing and the Motion pack", items: [
+      "🏎️ New game mode: Multiclass! The host picks it at the top of the Race settings. Fast 🔴 Hypers and slower 🟢 GTs share the track, and each class races for its own win and points.",
+      "🚦 Pick your class in the lobby: Hypers are much faster; GTs are tougher, go way longer on a set of tyres, pit quicker and refill boost faster. The host sets how the AI is split.",
+      "🔵 Blue flags: in a GT you get a warning when a faster Hyper is right behind you, and Hypers get a heads-up about GT traffic ahead.",
+      "📊 Class positions everywhere: your HUD, the standings (HY / GT tags), name tags, class-win banners and class winners on the results.",
+      "✨ The Motion pack: 29 new animated items (underglows, boost flames, helmets, rims, number plates, smoke, trails, decals, an LED wing and 5 chest-only liveries). Animated items now move in the store preview too!",
+    ] },
     { v: "2026-10-12", title: "Your finish replays, world news, new sounds and a shop drop", items: [
       "👥 Team ranked AI now race in teams the size of yours: two of you means every AI team has 2 cars.",
       "🌍 When anyone anywhere pulls a super rare upgrade card, every player in every race hears about it.",
