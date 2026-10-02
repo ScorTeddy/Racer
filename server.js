@@ -3519,11 +3519,11 @@ io.on("connection", (socket) => {
   };
   socket.on("store:buy", (id) => storeAction((u) => accounts.buy(u, String(id))));
   socket.on("store:sell", (id) => storeAction((u) => { const r = accounts.sell(u, String(id)); if (r.ok) socket.emit("toast", `💰 Sold ${r.item.name} for ${r.value.toLocaleString()} coins`); return r; }));
-  // plinko: coins only, 10-1000 a ball, at most 6 balls a second
+  // plinko: coins only, 10-1000 a ball, at most 12 balls a second (the game sends about 6)
   let plinkoAt = [];
   socket.on("plinko:play", async (d) => {
     // (always answer, even "too fast", so the game never thinks a ball is still on its way)
-    const now = Date.now(); plinkoAt = plinkoAt.filter((t) => now - t < 1000); if (plinkoAt.length >= 8) return socket.emit("plinkoResult", { error: "Slow down a little", id: d?.id }); plinkoAt.push(now);
+    const now = Date.now(); plinkoAt = plinkoAt.filter((t) => now - t < 1000); if (plinkoAt.length >= 12) return socket.emit("plinkoResult", { error: "Slow down a little", id: d?.id }); plinkoAt.push(now);
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("plinkoResult", { error: "Sign in to play", id: d?.id });
     const res = accounts.plinko(u, d?.bet, String(d?.risk || ""));

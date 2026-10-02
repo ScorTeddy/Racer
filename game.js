@@ -1625,7 +1625,7 @@
   // The server rolls every ball's path; this just animates it and keeps score. Built once and kept, so a
   // coins update (which redraws the hub) never cuts a falling ball short.
   // balance on screen = the server's last number - bets still waiting for an answer - wins still falling
-  const PL = { root: null, balls: [], risk: "medium", bet: 50, base: null, pend: new Map(), net: 0, hist: [], id: 0, raf: 0 };
+  const PL = { root: null, balls: [], risk: "medium", bet: 50, base: null, pend: new Map(), queue: [], net: 0, hist: [], id: 0, raf: 0 };
   const plShown = () => (PL.base ?? 0) - [...PL.pend.values()].reduce((t, x) => t + x.bet, 0) - PL.balls.reduce((t, b) => t + (b.landed ? 0 : b.win), 0);
   try { const v = JSON.parse(localStorage.getItem("tb-plinko") || "null"); if (v) { PL.risk = v.risk || PL.risk; PL.bet = v.bet || PL.bet; } } catch (e) {}
   const plSave = () => { try { localStorage.setItem("tb-plinko", JSON.stringify({ risk: PL.risk, bet: PL.bet })); } catch (e) {} };
@@ -1649,7 +1649,7 @@
     PL.balls = PL.balls.filter((bl) => {
       if (!bl.path || now < bl.at) {
         const k = Math.min(1, (now - bl.made) / lead), y = k < 1 ? -8 + (G.top - 6) * k * k : G.top - 14 - Math.abs(Math.sin((now - bl.made - lead) / 120)) * 6;
-        c.fillStyle = "#ffcc1f"; c.shadowColor = "#ffcc1f"; c.shadowBlur = 8; c.beginPath(); c.arc(G.W / 2, y, 6, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
+        c.fillStyle = "#ffcc1f"; c.shadowColor = "#ffcc1f"; c.shadowBlur = 8; c.beginPath(); c.arc(G.W / 2 + ((bl.lane || 0) - 2) * 4, y, 6, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
         return true;
       }
       const k = Math.min(1, (now - bl.at) / dur), tt = k * G.rows, i = Math.min(G.rows - 1, Math.floor(tt)), f = tt - i;
@@ -1673,7 +1673,8 @@
   function plStatus() {
     if (!PL.root) return;
     PL.root.querySelector(".pl-bal").textContent = `🪙 ${Math.max(0, Math.round(plShown())).toLocaleString()}`;
-    const n = PL.root.querySelector(".pl-net"); n.textContent = `This session: ${PL.net >= 0 ? "+" : ""}${PL.net.toLocaleString()}`; n.className = "pl-net " + (PL.net > 0 ? "up" : PL.net < 0 ? "down" : "");
+    if (A.user && PL.base != null) $("hubCoins").textContent = `🪙 ${Math.max(0, Math.round(plShown()))}`;     // (the coin badge up top agrees with the board)
+    const n = PL.root.querySelector(".pl-net"); n.textContent = `This session: ${PL.net >= 0 ? "+" : ""}${PL.net.toLocaleString()}${PL.queue.length ? ` · ${PL.queue.length} more to drop` : ""}`; n.className = "pl-net " + (PL.net > 0 ? "up" : PL.net < 0 ? "down" : "");
     const h = PL.root.querySelector(".pl-hist"); h.textContent = "";
     for (const m of PL.hist) { const sp = el("span", "", m + "x"); sp.style.background = plCol(m); h.appendChild(sp); }
   }
@@ -1682,14 +1683,28 @@
     const bet = Math.floor(Number(PL.root.querySelector(".pl-bet").value) || 0), min = A.catalog?.plinko?.min || 10, max = A.catalog?.plinko?.max || 1000;
     if (bet < min || bet > max) return popup(`Bets are ${min} to ${max} coins`, true);
     PL.bet = bet; plSave();
-    for (let k = 0; k < n; k++) setTimeout(() => {
-      if (plShown() < bet) { if (!PL.toldPoor) { PL.toldPoor = true; popup("Not enough coins", true); setTimeout(() => (PL.toldPoor = false), 1500); } return; }
-      const id = ++PL.id;
-      PL.pend.set(id, { bet, at: Date.now() }); socket.emit("plinko:play", { bet, risk: PL.risk, id });
-      PL.balls.push({ id, path: null, win: 0, bet, made: performance.now() }); plStatus();
-      if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
-      setTimeout(() => { if (PL.pend.delete(id)) { plDropBall(id); plStatus(); } }, 8000);       // (no answer at all: give the bet back on screen)
-    }, k * 160);
+    // one queue for every click: balls go out one at a time at a steady pace (the server allows 8 a second),
+    // so spamming Drop 10 never gets balls turned away or stuck waiting on the top peg
+    const room = 40 - PL.queue.length - PL.pend.size;
+    if (room <= 0) return;
+    for (let k = 0; k < Math.min(n, room); k++) PL.queue.push(bet);
+    plStatus(); plPump();
+  }
+  function plPump() {
+    if (PL.pumping) return;
+    const bet = PL.queue[0]; if (bet === undefined) return;
+    if (!A.user || plShown() < bet) {
+      PL.queue.length = 0; plStatus();
+      if (A.user && !PL.toldPoor) { PL.toldPoor = true; popup("Not enough coins", true); setTimeout(() => (PL.toldPoor = false), 1500); }
+      return;
+    }
+    PL.queue.shift();
+    const id = ++PL.id;
+    PL.pend.set(id, { bet, at: Date.now() }); socket.emit("plinko:play", { bet, risk: PL.risk, id });
+    PL.balls.push({ id, path: null, win: 0, bet, made: performance.now(), lane: id % 5 }); plStatus();
+    if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
+    setTimeout(() => { if (PL.pend.delete(id)) { plDropBall(id); plStatus(); } }, 6000);       // (no answer at all: give the bet back on screen)
+    PL.pumping = true; setTimeout(() => { PL.pumping = false; plPump(); }, 170);
   }
   const plDropBall = (id) => { PL.balls = PL.balls.filter((b) => b.id !== id || b.path); };
   socket.on("plinkoResult", (r) => {
@@ -5836,6 +5851,7 @@
       "👻 When the safety car comes out, every car is a ghost for 2 seconds so the crash doesn't turn into a pile-up.",
       "🚗 In multiclass races, GT3s move over and lift a little to let the faster Hypers through.",
       "🎰 Plinko feels instant: the ball drops the moment you click, and each drop is quicker.",
+      "🎰 Spamming Drop 10 in Plinko works now: balls line up and drop one after another (up to 40 waiting), never get stuck on the top peg, and your coins stay right.",
     ] },
     { v: "2026-10-22", title: "Less lag, Plinko fixed, more commentary", items: [
       "⚡ Less lag: big races (9+ cars) send half as much data, which was choking the server and slow connections.",
