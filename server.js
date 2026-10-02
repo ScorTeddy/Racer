@@ -2602,8 +2602,9 @@ function rankedTrack(r, F) {
   if (err) r.setRandomTrack(F.maps[0], "little");
 }
 // Team ranked: a normal room's host takes the room (2-4 signed-in players) into ranked together. Everyone races as
-// one team against an AI field picked by the team's average team rating; every player's team rating moves by how
-// the TEAM did (its average place). After the podium the room is a normal room again.
+// one team against an AI field set by the HIGHEST rank on the team (anyone's solo or team rating, whichever is higher),
+// so a strong player can't drag a team into easy races; every player's team rating moves by how the TEAM did (its
+// average place). After the podium the room is a normal room again.
 const TEAM_RANKED_MIN = 2, TEAM_RANKED_MAX = 4;
 async function startTeamRanked(r, socket) {
   const humans = [...r.players.values()].filter((p) => !p.spectator);
@@ -2612,8 +2613,8 @@ async function startTeamRanked(r, socket) {
   const users = await Promise.all(humans.map((p) => accounts.getUser(p.uid)));
   if (users.some((u) => !u)) return "Couldn't load everyone's account, try again";
   if (r.phase !== "lobby" || r.ranked) return "The room is busy";
-  const avg = users.reduce((a, u) => a + accounts.rankedPublic(u, "team").sr, 0) / users.length;
-  const F = accounts.rankedField(avg), rank = accounts.rankOf(avg);
+  const top = Math.max(...users.map((u) => Math.max(accounts.rankedPublic(u, "team").sr, accounts.rankedPublic(u).sr)));
+  const F = accounts.rankedField(top), rank = accounts.rankOf(top);
   r.ranked = true; r.teamRanked = true; r.rankedTier = `${rank.label} team`;
   r.preRanked = { settings: { ...r.settings, points: r.settings.points.slice() }, public: r.public };
   r.public = false;
@@ -2623,7 +2624,7 @@ async function startTeamRanked(r, socket) {
   Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);
-  r.emit("toast", `🏆 Team ranked: ${rank.label} (team average) · ${humans.length} of you vs ${ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
+  r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
   r.sendLobby();
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.teamRanked && r.players.size) r.startRace(); }, 5000);
   return null;

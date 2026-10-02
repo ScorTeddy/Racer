@@ -98,8 +98,9 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   automatic zones again), 🚫 No DRS. Zones are kept in share codes, saved tracks (`drs` as board points) and on Smooth on/off.
   Sockets: `drs:add {a, b}`, `drs:set [[ax, ay, bx, by]...]`, `drs:clear`, `drs:auto`.
 - **Team ranked** (👥 Team ranked in the room footer, host only): 2-4 signed-in drivers race ranked together as one team
-  (`startTeamRanked` in server.js). The field comes from the team's average **team rating** (`u.rankedTeam`, separate
-  from solo `u.ranked`) with 2 extra AI per extra player. Everyone's team rating moves by the team's average place
+  (`startTeamRanked` in server.js). The field (AI, laps, track) is the **highest rank on the team**: the top
+  of everyone's solo and team ratings (team rating `u.rankedTeam` is separate from solo `u.ranked`), with 2 extra AI per
+  extra player. Everyone's team rating moves by the team's average place
   (anyone who leaves counts as last; leaving costs only them). After the podium the room is normal again, settings
   and all (`preRanked`). Team ranked leaderboard (`rankedTeam`).
 - **Undo anything** (↩️ Undo in every track-tools section, Ctrl+Z): every message that changes the track

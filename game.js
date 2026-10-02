@@ -4559,7 +4559,7 @@
       tb.appendChild(rankBadge(T.rank, true));
       const tt = el("div", "rank-tx");
       tt.append(el("b", "", `👥 Team ranked · ${T.sr} SR`), el("small", "", `${T.games} team races · ${T.wins} won by your team · peak ${T.peakRank.label}`),
-        el("small", "", "Get 2-4 signed-in friends in a room, then the host presses 👥 Team ranked. You race as one team against the AI (picked by your team's average rating), and everyone's team rating moves by how the team did on average. Ranking up pays coins here too."));
+        el("small", "", "Get 2-4 signed-in friends in a room, then the host presses 👥 Team ranked. You race as one team against the AI, at the difficulty of the highest rank on the team (anyone's solo or team rank), and everyone's team rating moves by how the team did on average. Ranking up pays coins here too."));
       tb.appendChild(tt); box.appendChild(tb);
     }
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });

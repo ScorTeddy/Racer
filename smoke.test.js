@@ -564,9 +564,11 @@ test("team ranked: friends race ranked together, then the room is normal again",
   await new Promise((ok) => setTimeout(ok, 600));
   const r = game.rooms.get(j.code);
   r.settings.laps = 3;                                          // (the room's own settings come back afterwards)
+  (await accounts.getUser("u_teamtwo")).ranked = { sr: 1300, peak: 1300, games: 0, wins: 0 };   // TeamTwo is Platinum in solo
   a.emit("teamRanked:start");
   await new Promise((ok) => setTimeout(ok, 800));
   assert.ok(r.ranked && r.teamRanked, "the room went ranked");
+  assert.equal(r.settings.aiLevel, "overdrive", "the field is set by the highest rank on the team (Platinum), not the average");
   assert.ok(r.settings.teams && [...r.players.values()].every((p) => p.team === [...r.players.values()][0].team), "one team");
   r.settings.laps = 1; r.settings.speed = 3;                    // (quick test race)
   for (const s of [a, b]) { s.on("tirePick", () => s.emit("compound", "fast")); s.on("lightsOut", () => s.emit("react", 250)); }
@@ -576,6 +578,7 @@ test("team ranked: friends race ranked together, then the room is normal again",
   const ua = await accounts.getUser("u_teamone");
   assert.equal(ua.rankedTeam.games, 1, "team rating, not solo");
   assert.ok(!ua.ranked || !ua.ranked.games, "solo ranked untouched");
+  assert.equal((await accounts.getUser("u_teamtwo")).ranked.sr, 1300, "solo rating untouched");
   await new Promise((ok) => setTimeout(ok, 13000));
   assert.ok(!r.ranked && !r.teamRanked, "a normal room again after the podium");
   assert.equal(r.settings.laps, 3, "with its own settings back");
