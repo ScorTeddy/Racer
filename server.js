@@ -33,7 +33,9 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // Defend mode: switching it on costs 10% boost, then it burns 8% a second (and boost doesn't recharge meanwhile)
 const DEFEND_START = 0.1, DEFEND_DRAIN = 0.08;
 const SC_CATCH_DEC = 650;
-const PIT_GAME_LEN = 6, PIT_GAME_MAX = 8;      // pit stop minigame: arrows to hit, seconds before the crew gives up waiting       // safety car: how hard the stragglers plan to brake when they reach the pack
+const PIT_GAME_LEN = 6, PIT_GAME_MAX = 8;
+const KO_LEN = [120, 90, 90];                  // knockout qualifying: Q1 / Q2 / Q3 seconds
+const PRACTICE_LEN = 60 * 60;                  // practice: up to an hour, end it whenever you like      // pit stop minigame: arrows to hit, seconds before the crew gives up waiting       // safety car: how hard the stragglers plan to brake when they reach the pack
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
@@ -1412,14 +1414,17 @@ class Room {
     const t = this.track, s = this.settings;
     // qualifying first? (a timed session, fastest lap = pole). The race after it uses that grid.
     const grid = this.qualiGrid; this.qualiGrid = null;
-    this.qualifying = s.quali > 0 && !grid;
+    // practice: no AI, a long timed session (it runs on the qualifying machinery: ghost cars, timed laps)
+    const practice = s.mode === "practice" && !this.ranked;
+    this.practice = practice;
+    this.qualifying = practice || ((s.quali > 0 || s.quali === "ko") && !grid);
     this.paused = false;
     const humans = [...this.players.values()].filter((p) => !p.spectator);   // spectators just watch
     for (const h of humans) {
       h.level = 1; h.xp = 0; h.up = blankUp(); h.rare = null; h.pendingPicks = 0; h.offer = null; h.offered = null; h.nitroHeld = false;
       io.to(h.id).emit("offerCleared");
     }
-    const aiCount = clamp(s.ai, 0, MAX_AI);
+    const aiCount = practice ? 0 : clamp(s.ai, 0, MAX_AI);
     this.ensureRoster(aiCount);
     const total = humans.length + aiCount;
     if (!this.qualifying) this.raceNo++;
@@ -1507,6 +1512,7 @@ class Room {
         else Object.assign(c, paint[c.team]);
       }
     }
+    this.bestSec = null;
     this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false;
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
@@ -1531,14 +1537,16 @@ class Room {
     }
     if (this.qualifying) {
       this.realLaps = s.laps; s.laps = 999;       // nobody "finishes" a qualifying session
-      this.qualiEnd = s.quali * 60;
+      // knockout qualifying (4+ cars): Q1, Q2, Q3, the slowest knocked out after Q1 and Q2
+      this.qualiKO = !practice && s.quali === "ko" && this.cars.length >= 4 ? { stage: 1 } : null;
+      this.qualiEnd = practice ? PRACTICE_LEN : this.qualiKO ? KO_LEN[0] : s.quali === "ko" ? 180 : s.quali * 60;
     }
     this.phase = "tires";
     this.tiresUntil = Date.now() + TIRE_PICK_TIME;
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -1548,6 +1556,7 @@ class Room {
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: this.weatherSetting(), compounds: COMPOUNDS, perLap: this.perLapAll() });
+    for (const c of this.cars) if (c.owner) io.to(c.owner).emit("strategy", this.strategy(c));
     this.sendLobby();
   }
   // Rivals: from the 3rd race of a season on, every player gets the driver closest to them in the
@@ -1645,6 +1654,26 @@ class Room {
   }
   perLapAll() { return Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.perLap(k) * 1000) / 1000])); }
   // How many laps a tire set lasts for this car (real driving wears a bit extra).
+  sectorDone(c, k, t) {
+    if (!this.bestSec) this.bestSec = [Infinity, Infinity, Infinity];
+    if (!c.bestSec) { c.bestSec = [Infinity, Infinity, Infinity]; c.curSec = [null, null, null]; c.secCol = [null, null, null]; }
+    if (k === 0) { c.curSec = [null, null, null]; c.secCol = [null, null, null]; }
+    const col = t < this.bestSec[k] ? "purple" : t < c.bestSec[k] ? "green" : "yellow";
+    c.curSec[k] = Math.round(t * 1000) / 1000; c.secCol[k] = col;
+    if (t < c.bestSec[k]) c.bestSec[k] = t;
+    if (t < this.bestSec[k]) this.bestSec[k] = t;
+  }
+  // the strategist's plan for a player, shown before the start: the same maths the AI teams use (aiPlan)
+  strategy(c) {
+    const laps = this.settings.laps;
+    if (this.wet > 0.45) return { laps, rain: true, start: "wet", stops: 0 };
+    if (!c.st) c.st = this.stats(c);
+    this.aiPlan(c);
+    const stops = c.stopsLeft || 0, box = stops ? c.stintEnd : null;
+    let next = null;
+    if (stops) { const per = Math.ceil((laps - c.stintEnd) / stops); next = ["fast", "inter", "durable"].find((k) => this.safeLaps(c, k) >= per) || "durable"; }
+    return { laps, start: c.planComp, stops, box, next, life: Object.fromEntries(["fast", "inter", "durable"].map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) };
+  }
   lifeLaps(c, k) {
     const C = COMPOUNDS[k], wear = k === "wet" && this.wet < 0.3 ? C.dryWear : C.wear;
     return 1 / (this.wearPerLap * WEAR_LEVELS[this.settings.wear] * wear * (c.st ? c.st.wear : 1) * 1.12);
@@ -1775,7 +1804,7 @@ class Room {
       }
       p.lastPos = pos;
     }
-    if (this.qualifying) { if (this.time >= this.qualiEnd) this.endQuali(); return; }
+    if (this.qualifying) { if (this.time >= this.qualiEnd) { if (this.qualiKO && this.qualiKO.stage < 3) this.koNext(); else this.endQuali(); } return; }
     // (with only spectators in the room, the race runs until the AI have all finished)
     const humansLeft = this.cars.some((c) => c.owner) && !this.elim ? this.cars.some((c) => c.owner && !c.finished) : !this.cars.every((c) => c.finished);
     if (!humansLeft || this.time > this.finishDeadline) this.endRace();
@@ -1833,11 +1862,38 @@ class Room {
     this.paused = !!on;
     this.emit("paused", { on: this.paused, by: this.players.get(this.hostId)?.name || "Host" });
   }
+  // ---- practice over: show the lap times, back to the lobby (no race, no stats) ----
+  endPractice(rows) {
+    this.qualifying = false; this.practice = false; this.paused = false;
+    this.settings.laps = this.realLaps ?? this.settings.laps; this.realLaps = null;
+    this.phase = "qualiResults"; this.cars = null;
+    for (const p of this.players.values()) { p.offer = null; p.pendingPicks = 0; p.must = null; io.to(p.id).emit("offerCleared"); }
+    this.emit("qualiResults", { rows, hold: 7000, practice: true });
+    this.sendLobby();
+    setTimeout(() => { if (this.phase === "qualiResults") { this.phase = "lobby"; this.sendLobby(); } }, 7000);
+  }
+  // ---- knockout qualifying: end of Q1 / Q2. The slowest are out (their grid spots are set), times reset ----
+  koNext() {
+    const K = this.qualiKO, n = this.cars.length;
+    const run = this.cars.filter((c) => !c.out).sort((a, b) => (a.bestLap - b.bestLap) || (b.progress - a.progress));
+    const keep = Math.min(run.length - 1, K.stage === 1 ? Math.max(3, Math.ceil(n * 2 / 3)) : Math.max(2, Math.ceil(n / 3)));
+    const outs = run.slice(keep);
+    outs.forEach((c, i) => {
+      c.out = true; c.qOutStage = K.stage; c.qBest = c.bestLap; c.aiMode = c.aiMode === "race" ? "race" : c.aiMode;
+      const p = c.owner && this.players.get(c.owner);
+      if (p) io.to(p.id).emit("qualiOut", { stage: K.stage, pos: keep + i + 1 });
+    });
+    for (const c of run.slice(0, keep)) { c.qPrev = c.bestLap; c.bestLap = Infinity; }
+    K.stage++; this.fastest = Infinity; this.qualiEnd = this.time + KO_LEN[K.stage - 1];
+    this.emit("feed", { t: "qko", stage: K.stage, out: outs.map((c) => c.name) });
+  }
   // ---- qualifying over: fastest lap first, the race grid is set ----
   endQuali() {
     const order = this.standings();
     const pole = order[0] && isFinite(order[0].bestLap) ? order[0].bestLap : 0;
-    const rows = order.map((c) => ({ name: c.name, team: this.settings.teams ? c.team : "", color: c.color, owner: c.owner || null, best: isFinite(c.bestLap) ? c.bestLap : null, gap: isFinite(c.bestLap) && pole ? c.bestLap - pole : null }));
+    const best = (c) => (c.out ? c.qBest : c.bestLap);
+    const rows = order.map((c) => ({ name: c.name, team: this.settings.teams ? c.team : "", color: c.color, owner: c.owner || null, best: isFinite(best(c)) ? best(c) : null, gap: isFinite(best(c)) && pole ? best(c) - pole : null, q: this.qualiKO ? (c.out ? "Q" + c.qOutStage : "Q3") : null }));
+    if (this.practice) return this.endPractice(rows);
     this.qualiGrid = order.map((c) => c.slotKey);
     const poleP = order[0]?.owner && this.players.get(order[0].owner);
     if (poleP?.uid && order.length >= 3) accounts.getUser(poleP.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "poles"); io.to(poleP.id).emit("account", accounts.publicUser(u)); for (const a of got) io.to(poleP.id).emit("achievement", a); }).catch(() => {});
@@ -1953,7 +2009,7 @@ class Room {
             const box = lanePoint(t, c.laneKey), bi = (pl.entry + Math.round(c.laneKey)) % N;
             c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
             c.pitting = st.pitTime * (c.punct ? 1.4 : 1); c.aiMode = "pitting";
-            if (p && p.assist?.pitGame === true && !this.qualifying) this.startPitGame(c, p);   // players: the arrow-key pit stop
+            if (p && p.assist?.pitGame === true && (!this.qualifying || this.practice)) this.startPitGame(c, p);   // players: the arrow-key pit stop
             else if (Math.random() < PIT_MISTAKE_CHANCE) {     // the crew fumbles a wheel nut
               c.pitting += PIT_MISTAKE_TIME;
               this.emit("feed", { t: "pitSlow", name: c.name, id: c.id });
@@ -1971,7 +2027,7 @@ class Room {
       const i = (c.idx + look) % N;
       const lvl = this.level(c);
       const calm = !c.finished && c.lapsDone <= 0 && (c.lapsDone < 0 || c.idx < this.calmEnd) && this.time < 25;
-      const cooldown = c.finished;
+      const cooldown = c.finished || c.out;
       const myLat = c.lat;
       // the next corner (its tightest point) and which side is the inside
       let apex = c.idx, av = Infinity;
@@ -2268,7 +2324,7 @@ class Room {
     const C = COMPOUNDS[c.compound];
     wear *= c.compound === "wet" ? C.dryWear + (C.wear - C.dryWear) * clamp(this.wet * 1.6, 0, 1) : C.wear;
     if (c.surface === 3) wear *= 2;
-    if (this.qualifying) wear = 0;
+    if (this.qualifying && !this.practice) wear = 0;
     const before = c.tire;
     if (!c.finished) c.tire = Math.max(0, c.tire - wear * st.wear);       // no wear on the cool-down lap
     if (c.tire <= 0 && before > 0 && !c.punct) {
@@ -2298,6 +2354,15 @@ class Room {
     if (delta < -N / 2) { c.lapsDone++; if (c.lapsDone > (c.maxLaps ?? -1)) { c.maxLaps = c.lapsDone; this.onLap(c); } }
     else if (delta > N / 2) c.lapsDone--;
     c.idx = best;
+    // sector times: the lap in thirds. A sector only counts if the car went into it from the one before.
+    if (!c.finished && !c.out && (this.phase === "race")) {
+      const sec = Math.min(2, Math.floor((best * 3) / N));
+      if (c.sec === undefined) { c.sec = sec; c.secAt = null; }
+      else if (sec !== c.sec) {
+        if (sec === (c.sec + 1) % 3 && c.secAt != null) this.sectorDone(c, c.sec, this.time - c.secAt);
+        c.secAt = sec === (c.sec + 1) % 3 ? this.time : null; c.sec = sec;
+      }
+    }
     const rx = c.x - t.pts[best].x, ry = c.y - t.pts[best].y;
     const lat = rx * t.nor[best].x + ry * t.nor[best].y, al = Math.abs(lat), hw = t.hw[best];
     c.lat = lat; c.tOff = rx * t.tan[best].x + ry * t.tan[best].y;
@@ -2323,7 +2388,7 @@ class Room {
   onLap(c) {
     const p = c.owner && this.players.get(c.owner);
     if (!this.qualifying && !this.drsOn && c.lapsDone >= DRS_FROM_LAP && this.settings.drs !== false && this.track.drs?.length) { this.drsOn = true; this.emit("feed", { t: "drs" }); }
-    if (c.lapsDone >= 1) {
+    if (c.lapsDone >= 1 && !c.out) {
       const lt = this.time - c.lapStart;
       if (lt < c.bestLap) c.bestLap = lt;
       if (lt < this.fastest) {
@@ -2499,7 +2564,7 @@ class Room {
   }
 
   standings() {
-    if (this.qualifying) return [...this.cars].sort((a, b) => (a.bestLap - b.bestLap) || (b.progress - a.progress));
+    if (this.qualifying) return [...this.cars].sort((a, b) => (!!a.out - !!b.out) || (a.out ? (b.qOutStage - a.qOutStage) || (a.qBest - b.qBest) || 0 : (a.bestLap - b.bestLap) || (b.progress - a.progress)));
     return [...this.cars].sort((a, b) => {
       if (a.out || b.out) { if (a.out && b.out) return (b.finishTime - a.finishTime) || (b.progress - a.progress); return a.out ? 1 : -1; }   // knocked out: behind everyone still in, last out first
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
@@ -2639,19 +2704,21 @@ class Room {
       });
     }
     this.sendLobby();
-    setTimeout(() => {
-      if (this.phase === "results") {
-        this.phase = "lobby"; this.cars = null;
-        if (this.teamRanked) {
-          this.ranked = false; this.teamRanked = false; this.rankedTier = null;
-          this.aiTeamSize = null;
-          if (this.preRanked) { Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public; this.preRanked = null; this.ensureRoster(this.settings.ai); }
-          this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
-        }
-        if (seasonOver) { this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
-        this.sendLobby();
-      }
-    }, seasonOver ? 40000 : 12000);
+    this.seasonJustOver = seasonOver; this.rematchVotes = null;
+    setTimeout(() => this.backToLobby(), seasonOver ? 40000 : 12000);
+  }
+  // results over (on a timer, or the host pressed Rematch)
+  backToLobby() {
+    if (this.phase !== "results") return;
+    this.phase = "lobby"; this.cars = null; this.rematchVotes = null;
+    if (this.teamRanked) {
+      this.ranked = false; this.teamRanked = false; this.rankedTier = null;
+      this.aiTeamSize = null;
+      if (this.preRanked) { Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public; this.preRanked = null; this.ensureRoster(this.settings.ai); }
+      this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
+    }
+    if (this.seasonJustOver) { this.seasonJustOver = false; this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
+    this.sendLobby();
   }
 
   // save everyone's stats to their account (signed-in players only) and hand out achievements
@@ -2727,11 +2794,12 @@ class Room {
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
-    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, paused: !!this.paused, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
+    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
       if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, defend: !!p.defendOn, xpRate: this.settings.xpRate,
+        sec: c.curSec ? { t: c.curSec, col: c.secCol, best: c.bestSec.map((x) => (isFinite(x) ? Math.round(x * 1000) / 1000 : null)), now: c.sec, at: c.secAt != null ? r2(c.secAt) : null } : { now: c.sec ?? 0, at: c.secAt != null ? r2(c.secAt) : null },
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
   }
@@ -3099,7 +3167,7 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const S = r.settings;
     if (s?.laps !== undefined && Number.isFinite(Number(s.laps))) S.laps = clamp(Math.round(Number(s.laps)), 1, 99);   // any number of laps
-    if ([0, 1, 2, 3, 5].includes(Number(s?.quali))) S.quali = Number(s.quali);
+    if (s?.quali === "ko") S.quali = "ko"; else if ([0, 1, 2, 3, 5].includes(Number(s?.quali))) S.quali = Number(s.quali);
     if (AI_LEVELS[s?.aiLevel] && !AI_LEVELS[s.aiLevel].rankedOnly) S.aiLevel = s.aiLevel;                                       // qualifying minutes (0 = off)
     if (s?.ai !== undefined && Number.isFinite(Number(s.ai))) { S.ai = clamp(Math.round(Number(s.ai)), 0, MAX_AI); r.ensureRoster(S.ai); }
     if (s?.points !== undefined) { const p = parsePoints(s.points); if (p.length) S.points = p; }
@@ -3109,7 +3177,7 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
-    if (["normal", "multi", "elim"].includes(s?.mode)) S.mode = s.mode;
+    if (["normal", "multi", "elim", "practice"].includes(s?.mode)) S.mode = s.mode;
     if (CLASS_MIXES.includes(Number(s?.mix))) S.mix = Number(s.mix);
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
@@ -3617,6 +3685,7 @@ io.on("connection", (socket) => {
     socket.emit("trackResult", { error: null, drs: fr ? "real" : "auto", zones: r.track.drs.length });
   });
   socket.on("compound", (k) => { const r = room(), p = me(); if (r && p && r.cars) r.pickCompound(p, k); });
+  socket.on("nextCompound", (k) => { const r = room(), p = me(); if (r && p && r.cars && COMPOUNDS[k]) p.nextCompound = k; });
   socket.on("kick", (id) => {
     const r = room(); if (!r || !isHost() || id === socket.id || !r.players.has(id)) return;
     const name = r.players.get(id).name;
@@ -3675,6 +3744,13 @@ io.on("connection", (socket) => {
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
   socket.on("defend", (on) => { const p = me(); if (p) p.defendOn = on === true; });
+  socket.on("endPractice", () => { const r = room(); if (r && isHost() && r.practice && r.qualifying && r.cars) r.endQuali(); });
+  // rematch: the host starts the next race straight from the results (same track, same settings)
+  socket.on("rematch", () => {
+    const r = room(), p = me(); if (!r || !p || r.phase !== "results" || r.ranked) return;
+    if (!isHost()) { r.rematchVotes = r.rematchVotes || new Set(); r.rematchVotes.add(p.id); r.emit("rematchVotes", { n: r.rematchVotes.size, of: r.players.size, by: p.name }); return; }
+    r.backToLobby(); if (r.track && r.phase === "lobby") r.startRace();
+  });
   socket.on("pitGame", (keys) => { const r = room(), p = me(); if (!r || !p || !r.cars) return; const c = r.carOf(p.id); if (c && c.pitGame) r.endPitGame(c, Array.isArray(keys) ? keys.map((k) => Number(k) | 0) : null); });
   // assists (Settings > Assists): pit stops, boost and DRS done for you
   socket.on("assists", (d) => { const a = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true, defend: d?.defend === true, pitGame: d?.pitGame === true }; const p = me(); if (p) p.assist = a; else socket.data.assist = a; });

@@ -1303,3 +1303,16 @@ body.rm .class-flag.danger { animation: none; }
 body.touch .pg-pad { display: flex; }
 @media (max-width: 520px) { .pg-a { width: 2.7rem; height: 2.7rem; } .pg-pad button { width: 4rem; height: 4rem; } }
 @media (max-height: 520px) and (orientation: landscape) { .pit-game { top: 50%; padding: 0.5rem 0.8rem; gap: 0.35rem; } .pg-a { width: 2.6rem; height: 2.6rem; } .pg-pad button { width: 3.2rem; height: 3.2rem; } }
+
+/* ---- sector times ---- */
+.sectors { display: flex; gap: 0.25rem; margin-top: 0.15rem; font-size: 0.68rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sectors span { padding: 0.02rem 0.3rem; border-radius: 0.3rem; background: rgba(255,255,255,0.08); color: #c9d1de; white-space: nowrap; }
+.sectors .purple { background: #7c3aed; color: #fff; }
+.sectors .green { background: #16a34a; color: #fff; }
+.sectors .yellow { background: #ca8a04; color: #1b1300; }
+.sectors .live { background: rgba(255,255,255,0.16); color: #fff; }
+@media (max-width: 860px) { .sectors { font-size: 0.58rem; } .sectors span { padding: 0 0.2rem; } }
+/* ---- strategy preview, knockout quali tags ---- */
+.tp-strat { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.4rem 0.8rem; margin-top: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 0.7rem; background: rgba(255,204,31,0.1); border: 1px solid rgba(255,204,31,0.45); font-weight: 700; font-size: 0.88rem; text-align: center; }
+.tp-strat .btn { min-height: 2rem; padding: 0.25rem 0.8rem; font-size: 0.85rem; }
+.q-tag { font-size: 0.68rem; font-weight: 800; padding: 0 0.35rem; border-radius: 0.3rem; background: rgba(255,255,255,0.14); }

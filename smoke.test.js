@@ -761,3 +761,50 @@ test("commentary clips: every line and name the game asks for exists", () => {
   for (const slug of Object.values(man.names)) assert.ok(fs.existsSync(path.join(dir, `n_${slug}.mp3`)), slug);
   for (let i = 0; i < 100; i++) assert.ok(fs.existsSync(path.join(dir, `c_${i}.mp3`)), "number " + i);
 });
+
+test("knockout qualifying: Q1, Q2, Q3 with the slowest knocked out, and the grid in that order", { timeout: 180000 }, () => {
+  const r = new game.Room("KOQUALI", false); r.setRandomTrack("normal", "regular");
+  r.players.set("q", { id: "q", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 9, quali: "ko", laps: 5, weather: "sunny" }); r.ensureRoster(9);
+  const feed = []; let res = null; const emit = r.emit.bind(r);
+  r.emit = (ev, d) => { if (ev === "feed" && d.t === "qko") feed.push(d); if (ev === "qualiResults") res = d; return emit(ev, d); };
+  r.startRace();
+  assert.ok(r.qualifying && r.qualiKO && r.qualiEnd === 120, "Q1 is 2 minutes");
+  r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 320 && r.qualifying; n++) r.step(1 / 60);
+  assert.deepEqual(feed.map((f) => [f.stage, f.out.length]), [[2, 3], [3, 3]], "3 out after Q1, 3 more after Q2");
+  assert.ok(res && res.rows.length === 10);
+  assert.deepEqual(res.rows.map((x) => x.q), [...Array(4).fill("Q3"), ...Array(3).fill("Q2"), ...Array(3).fill("Q1")], "grid: Q3 runners, then Q2 and Q1 knock-outs");
+  assert.ok(!feed[0].out.some((nm) => res.rows.slice(0, 7).map((x) => x.name).includes(nm)), "Q1 knock-outs start at the back");
+  assert.equal(r.settings.laps, 5);
+});
+
+test("practice: no AI, sector times, end it any time, no race afterwards", { timeout: 60000 }, () => {
+  const r = new game.Room("PRACT", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "pr", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 6, quali: 0, laps: 5, mode: "practice", weather: "sunny" }); r.ensureRoster(6);
+  let res = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "qualiResults") res = d; return emit(ev, d); };
+  r.startRace();
+  assert.equal(r.cars.length, 1, "just you"); assert.ok(r.qualifying && r.practice && r.qualiEnd >= 3600);
+  r.startLights(); r.phase = "race"; r.launchCars(); r.cars[0].launchAt = 0;
+  for (let n = 0; n < 60 * 70; n++) r.step(1 / 60);
+  const c = r.cars[0];
+  assert.ok(c.bestSec && c.bestSec.every((x) => x > 0 && isFinite(x)), "every sector has been timed");
+  assert.ok(c.secCol.every((x) => x === null || ["purple", "green", "yellow"].includes(x)));
+  assert.ok(isFinite(c.bestLap), "a timed lap");
+  r.endQuali();
+  assert.ok(res && res.practice && res.rows.length === 1 && res.rows[0].best > 0, "practice times shown");
+  assert.equal(r.phase, "qualiResults"); assert.equal(r.cars, null); assert.equal(r.settings.laps, 5);
+});
+
+test("strategy preview and rematch", { timeout: 60000 }, () => {
+  const r = new game.Room("STRAT", false); r.setRandomTrack("normal", "regular");
+  r.players.set("st", { id: "st", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 3, quali: 0, laps: 10, weather: "sunny", wear: "normal" }); r.ensureRoster(3);
+  r.startRace();
+  const g = r.strategy(r.cars.find((c) => c.owner));
+  assert.ok(["fast", "inter", "durable"].includes(g.start) && g.stops >= 1 && g.box >= 1 && g.box < 10 && ["fast", "inter", "durable"].includes(g.next), JSON.stringify(g));
+  // rematch: from the results straight into the next race
+  r.phase = "results"; r.backToLobby(); assert.equal(r.phase, "lobby");
+  r.startRace(); assert.equal(r.phase, "tires", "the next race starts");
+});

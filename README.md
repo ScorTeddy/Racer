@@ -174,6 +174,24 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Measured on very wonky and real tracks: off-track time 1.9% to about 0.7% with no upgrades, and about 0.15% while
   racing with Grip and Brakes maxed. Lap times are unchanged.
 
+## Practice, knockout qualifying, sectors, strategy, rematch
+- **Practice** (`settings.mode = "practice"`): `startRace` makes no AI and runs a 1-hour session on the qualifying
+  machinery (`this.practice` + `this.qualifying`: ghost cars, timed laps), but with tyre wear and the pit stop
+  minigame on. The host ends it (`endPractice` socket → `endQuali` → `endPractice()`): lap times, then back to the
+  lobby. No race, stats or coins.
+- **Knockout qualifying** (`settings.quali = "ko"`, 4+ cars): Q1 120 s, Q2 90 s, Q3 90 s (`KO_LEN`). `koNext()`
+  knocks out the slowest (Q1 keeps 2/3 of the field, at least 3; Q2 keeps 1/3, at least 2), saves their time
+  (`qBest`), resets the rest. `standings()` in qualifying puts the knocked-out cars behind, by session then time.
+  State `qs` = session number. Fewer than 4 cars: one 3-minute session.
+- **Sector times**: the lap is split in thirds by track point (`trackPos` → `sectorDone`). A sector only counts
+  if the car entered it from the previous one. Colours: purple (best of anyone this race), green (your best),
+  yellow. Sent in the `me` message (`sec`).
+- **Strategy preview**: `strategy(c)` runs the AI strategist (`aiPlan`) for each player at the tyre pick and sends
+  `strategy` {start, stops, box, next}. "Use this plan" sets the start tyre (`compound`) and the next tyre
+  (`nextCompound`), and the client reminds you to box on that lap.
+- **Rematch**: the results timeout is now `backToLobby()`. The host's `rematch` calls it and starts the race
+  straight away. Other players' presses are votes (`rematchVotes`). Not in ranked.
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style

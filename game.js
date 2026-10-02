@@ -470,6 +470,7 @@
       case "lightning": { const f = Math.sin(t * 37) > 0.93 || Math.sin(t * 23 + 1) > 0.97; return [f ? "#ffffff" : "#4f8cff", f ? 0.95 : 0.4]; }
       case "ocean": return [`hsl(${190 + 22 * Math.sin(t * 2)},90%,${50 + 8 * Math.sin(t * 3.1)}%)`, 0.5 + 0.1 * Math.sin(t * 2)];
       case "disco": return [DISCO[Math.floor(t * 4) % DISCO.length], 0.6];
+      case "sunsetG": return [`hsl(${(330 + 60 * (0.5 + 0.5 * Math.sin(t * 1.2))) % 360},100%,58%)`, 0.55];
       case "wildfire": return [`hsl(${12 + 26 * Math.abs(Math.sin(t * 13))},100%,55%)`, 0.5 + 0.2 * Math.abs(Math.sin(t * 17))];
       default: return [g, 0.55];
     }
@@ -617,7 +618,7 @@
       }
     }
     // number
-    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"], disco: [DISCO[Math.floor(performance.now() / 250) % DISCO.length], "#111"], fire: [`hsl(${20 + 22 * Math.sin(performance.now() / 70)},100%,52%)`, "#fff"] }[X.num] || ["#fff", "#111"];
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"], disco: [DISCO[Math.floor(performance.now() / 250) % DISCO.length], "#111"], carbon: ["#1f2328", "#e5e7eb"], papaya: ["#ff8000", "#111"], green: ["#0b6e3a", "#fff"], fire: [`hsl(${20 + 22 * Math.sin(performance.now() / 70)},100%,52%)`, "#fff"] }[X.num] || ["#fff", "#111"];
     const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
     c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
     if (car.cls && X.num !== "neon") { c.strokeStyle = CLASSES[car.cls]?.col || "#fff"; c.lineWidth = 1.8; c.stroke(); }
@@ -729,6 +730,9 @@
           for (const [px, py] of [[-1.3, -1.3], [0, 0], [1.3, 1.3]]) { c.beginPath(); c.arc(px, py, 0.6, 0, Math.PI * 2); c.fill(); } c.restore(); } break;
       case "smiley": c.fillStyle = "#ffd21f"; c.beginPath(); c.arc(0, 0, 4.8, 0, Math.PI * 2); c.fill(); c.fillStyle = "#111"; c.beginPath(); c.arc(1.6, -1.7, 0.8, 0, Math.PI * 2); c.arc(1.6, 1.7, 0.8, 0, Math.PI * 2); c.fill(); c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); c.arc(0, 0, 3, -1.1, 1.1); c.stroke(); break;
       case "wings": c.fillStyle = "rgba(255,255,255,0.92)"; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(0, sg * 1); c.quadraticCurveTo(-7, sg * 9, -12, sg * 10); c.quadraticCurveTo(-7, sg * 5, -4, sg * 1); c.fill(); } break;
+      case "barcode": { c.fillStyle = "#f8fafc"; c.fillRect(-4, -5.5, 8, 11); c.fillStyle = "#111"; for (const [y, h] of [[-4.6, 0.6], [-3.6, 1], [-2.2, 0.5], [-1.3, 1.2], [0.3, 0.5], [1.2, 0.9], [2.6, 0.5], [3.5, 1]]) c.fillRect(-3.2, y, 6.4, h); break; }
+      case "laurel": c.strokeStyle = "#2f8f46"; c.fillStyle = "#3fb35a"; c.lineWidth = 0.9; for (const sg of [-1, 1]) { c.beginPath(); c.arc(0, 0, 5, sg > 0 ? 0.3 : Math.PI + 0.3, sg > 0 ? Math.PI - 0.3 : 2 * Math.PI - 0.3); c.stroke(); for (let i = 0; i < 4; i++) { const a = (sg > 0 ? 0.55 : Math.PI + 0.55) + i * 0.6; c.beginPath(); c.ellipse(Math.cos(a) * 5, Math.sin(a) * 5, 1.6, 0.8, a + Math.PI / 2, 0, Math.PI * 2); c.fill(); } } c.fillStyle = "#ffd24a"; c.font = "800 5px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.save(); c.rotate(Math.PI / 2); c.fillText("1", 0, 0.4); c.restore(); break;
+      case "comet": { const g = c.createLinearGradient(-9, 0, 3, 0); g.addColorStop(0, "rgba(125,211,252,0)"); g.addColorStop(1, "rgba(186,230,253,0.95)"); c.fillStyle = g; c.beginPath(); c.moveTo(-9, -1); c.lineTo(2, -2.6); c.lineTo(2, 2.6); c.lineTo(-9, 1); c.fill(); c.fillStyle = "#fff"; c.beginPath(); c.arc(2.5, 0, 2.6, 0, Math.PI * 2); c.fill(); break; }
       case "eye": {   // animated: an eye that looks around and blinks
         const t = performance.now() / 1000, blink = (t % 3.2) < 0.14 ? 0.12 : 1;
         c.fillStyle = "#f8fafc"; c.beginPath(); c.ellipse(0, 0, 3.6, 5.6 * blink, 0, 0, Math.PI * 2); c.fill();
@@ -894,6 +898,9 @@
       const tw = 0.5 + 0.5 * Math.sin(performance.now() / 120 + k * 2.1); c.fillStyle = `hsl(${(250 + k * 40 + performance.now() / 20) % 360},100%,${65 + 20 * tw}%)`; c.shadowColor = c.fillStyle; c.shadowBlur = 6 * tw;
       c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, rr = i % 2 ? r * 0.2 : r * (0.5 + 0.4 * tw); c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill();
     }
+    else if (kind === "rings") { c.strokeStyle = `rgba(150,220,255,${0.9 - (k % 3) * 0.2})`; c.lineWidth = 1.6; c.beginPath(); c.arc(0, 0, r * (0.45 + 0.3 * (k % 3)), 0, Math.PI * 2); c.stroke(); }
+    else if (kind === "cash") { c.rotate(k * 0.6); c.fillStyle = "#1f9d55"; c.fillRect(-r * 0.75, -r * 0.42, r * 1.5, r * 0.84); c.strokeStyle = "#c7f9d4"; c.lineWidth = 0.7; c.strokeRect(-r * 0.6, -r * 0.3, r * 1.2, r * 0.6); c.fillStyle = "#eafff1"; c.font = `800 ${Math.round(r * 0.75)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("$", 0, 0.5); }
+    else if (kind === "hex") { c.fillStyle = k % 2 ? "#f5b800" : "#ffd84d"; c.strokeStyle = "#8a6200"; c.lineWidth = 0.8; c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; c.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7); } c.closePath(); c.fill(); c.stroke(); }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
     c.restore();
@@ -1802,7 +1809,9 @@
     if (S.replaying) stopReplay();
     if (S.photoOn) photoMode(false);
     RP.buf = []; S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
-    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null };
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null, practice: !!r.practice, ko: !!r.ko };
+    $("endPracticeBtn").classList.toggle("hidden", !(r.practice && S.host));
+    S.sec = null;
     if (r.elim && !r.quali) setTimeout(() => popup(`💥 ELIMINATION: the last ${r.elim.per === 1 ? "car is" : r.elim.per + " cars are"} knocked out every lap. Stay out of the bottom!`), 900);
     if (r.multi) { const mc = r.cars.find((c) => c.owner === S.me)?.cls; if (mc) setTimeout(() => popup(`${CLASSES[mc].icon} You're racing in the ${CLASSES[mc].name} class. Win your class!`), 900); }
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
@@ -1950,7 +1959,7 @@
   }
   function onState(st) {
     S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.sc = st.sc || null; S.standings = st.standings; S.gaps = st.gaps || [];
-    S.ql = st.ql ?? -1;
+    S.ql = st.ql ?? -1; S.qs = st.qs || 0;
     commLeader(st);
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
@@ -1975,7 +1984,7 @@
   // my own team's numbers (XP, upgrades, tires, boost)
   socket.on("me", (m) => {
 
-    S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound;
+    S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound; S.sec = m.sec || null;
     if (!!m.defend !== !!S.defendOn && performance.now() - (S.defendAt || 0) > 600) setDefendUi(!!m.defend);
     if ((m.rare || null) !== (S.myRare || null)) { S.myRare = m.rare || null; renderGarage(); }
     renderPitPick(m);
@@ -1986,6 +1995,7 @@
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "qko") banner(`Q${f.stage}!`, "#ffcc1f");
     if (f.t === "elim" && f.id !== S.myCar) { banner(`💥 ${f.name} OUT!`, "#ff6b61"); sfx("jump"); }
     if (f.t === "classWin" && CLASSES[f.cls]) { setTimeout(() => banner(`🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!`, CLASSES[f.cls].col), 600); sfx("level"); }
     if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
@@ -1995,7 +2005,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -2256,8 +2266,9 @@
     const multi = s.mode === "multi" && !l.ranked, mode = l.ranked ? "normal" : s.mode || "normal";
     document.querySelectorAll(".mode-card").forEach((b) => { b.setAttribute("aria-checked", String(b.dataset.mode === mode)); b.disabled = !S.host || l.phase !== "lobby"; });
     { const n = l.players.filter((p) => !p.spectator).length + (s.ai || 0), per = Math.max(1, Math.ceil((n - 1) / 12)), en = $("elimNote");
-      en.classList.toggle("hidden", mode !== "elim");
-      if (mode === "elim") en.textContent = n < 2 ? "💥 Elimination needs at least 2 cars (add some AI)." : `💥 ${n} cars: ${per === 1 ? "the last car is" : `the last ${per} cars are`} knocked out every lap, so the race is ${Math.ceil((n - 1) / per)} laps (the Laps setting is ignored).`; }
+      en.classList.toggle("hidden", mode !== "elim" && mode !== "practice");
+      if (mode === "practice") en.textContent = "🏋️ Practice: no AI (the AI drivers setting is ignored) and no stats or coins. Sector times, your ghost and the pit stop minigame are all on. The host ends it from the race screen.";
+      else if (mode === "elim") en.textContent = n < 2 ? "💥 Elimination needs at least 2 cars (add some AI)." : `💥 ${n} cars: ${per === 1 ? "the last car is" : `the last ${per} cars are`} knocked out every lap, so the race is ${Math.ceil((n - 1) / per)} laps (the Laps setting is ignored).`; }
     $("modePick").classList.toggle("hidden", !!l.ranked);
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
@@ -3212,12 +3223,17 @@
       const pp = document.createElement("span"); pp.className = "pp"; pp.textContent = i === 0 ? "POLE" : "P" + (i + 1);
       const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = r.color;
       const nm = document.createElement("span"); nm.textContent = r.name + (r.team ? ` · ${r.team}` : "");
-      const tm = document.createElement("span"); tm.textContent = r.best === null ? "no lap" : i === 0 ? fmt3(r.best) : `+${r.gap.toFixed(3)}`;
+      const tm = document.createElement("span"); tm.textContent = r.best === null ? "no lap" : i === 0 || q.practice ? fmt3(r.best) : `+${r.gap.toFixed(3)}`;
+      if (r.q) { const qt = document.createElement("small"); qt.className = "q-tag"; qt.textContent = r.q; nm.append(" ", qt); }
+      if (q.practice) pp.textContent = "P" + (i + 1);
       li.append(pp, dot, nm, tm); ol.appendChild(li);
     });
+    $("qualiTitle").textContent = q.practice ? "🏋️ Practice times" : "🏁 Qualifying results";
+    $("qualiSub").textContent = q.practice ? "Best laps from this session. Back to the lobby in a few seconds." : "This is the starting grid. The race starts in a few seconds.";
+    if (q.practice) setTimeout(() => { $("qualiBox").classList.add("hidden"); if (S.screen === "race") show("lobby"); }, q.hold || 7000);
     $("qualiBox").classList.remove("hidden"); $("mustPit").classList.add("hidden"); setPausedUi(false);
     const mine = q.rows.findIndex((r) => r.owner === S.me);
-    if (mine === 0) { banner("POLE POSITION!", "#ffcc1f"); sfx("win"); }
+    if (mine === 0 && !q.practice) { banner("POLE POSITION!", "#ffcc1f"); sfx("win"); }
   });
   const fmt3 = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(3).padStart(6, "0")}`; };
   $("spectateBtn").addEventListener("click", () => { socket.emit("spectate", !S.spectating); sfx("tick"); });
@@ -3700,6 +3716,7 @@
   });
   function showResults(r) {
     S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
+    { const rb = $("rematchBtn"); rb.classList.toggle("hidden", !!S.race?.ranked); rb.disabled = false; rb.textContent = S.host ? "🔁 Rematch now" : "🔁 Vote for a rematch"; }
     $("replaySaveRes").classList.toggle("hidden", RP.buf.length < 30); $("replayShareRes").classList.toggle("hidden", RP.buf.length < 30 || !A.user);
     renderRankedRes();
     renderTeamResults(r);
@@ -4881,6 +4898,25 @@
     if (on && !S.defendTold) { S.defendTold = true; popup("🛡️ Defending! Your driver covers the car behind and they get no slipstream. Costs 10% boost, then 8% a second."); }
   }
   $("defendBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleDefend(); });
+  $("endPracticeBtn").addEventListener("click", () => socket.emit("endPractice"));
+  socket.on("qualiOut", (d) => { banner(`KNOCKED OUT IN Q${d.stage}`, "#ff6b61"); popup(`Out in Q${d.stage}: you start P${d.pos}. Keep lapping or just watch.`, true); });
+  // strategy preview (before the start): the strategist's plan, one tap to use it
+  socket.on("strategy", (g) => {
+    S.strat = g; const T = (k) => TIRES[k]?.name || k;
+    $("tpStratText").textContent = g.rain ? "📋 Strategist: it's wet. Start on Wets and watch for it drying out." : g.stops ? `📋 Strategist: ${g.stops} stop${g.stops > 1 ? "s" : ""} · start on ${T(g.start)} · box at the end of lap ${g.box} · then ${T(g.next)}` : `📋 Strategist: no stops! ${T(g.start)} tyres go all ${g.laps} laps`;
+    $("tpStrat").classList.remove("hidden");
+  });
+  $("tpStratUse").addEventListener("click", () => {
+    const g = S.strat; if (!g) return;
+    S.startPick = g.start; socket.emit("compound", g.start); markPick();
+    if (g.next) { socket.emit("nextCompound", g.next); S.nextComp = g.next; renderNextTires(); }
+    if (g.box) S.stratBox = g.box;
+    popup(g.next ? `📋 Plan set: ${TIRES[g.start]?.name} now, ${TIRES[g.next]?.name} at the stop. Box at the end of lap ${g.box}!` : `📋 Plan set: ${TIRES[g.start]?.name} tyres`); sfx("tick");
+  });
+  socket.on("race", () => { $("tpStrat").classList.add("hidden"); S.strat = null; S.stratBox = null; });
+  // rematch
+  $("rematchBtn").addEventListener("click", () => { socket.emit("rematch"); if (!S.host) { $("rematchBtn").textContent = "🔁 Voted for a rematch"; $("rematchBtn").disabled = true; } });
+  socket.on("rematchVotes", (v) => { if (S.host) { $("rematchBtn").textContent = `🔁 Rematch now (${v.n} want it)`; popup(`🔁 ${v.by} wants a rematch!`); } });
   socket.on("eliminated", (d) => {
     banner(`💥 YOU'RE OUT! P${d.pos}`, "#ff6b61"); sfx("jump"); addShake(10);
     popup(`Knocked out in P${d.pos} of ${d.of}. Watch who's the last car standing!`, true);
@@ -4939,6 +4975,18 @@
     pick.style.bottom = `calc(${Math.round(rH + bH + 18)}px + env(safe-area-inset-bottom, 0px))`;
   }
   window.addEventListener("resize", () => { if (S.screen === "race") layoutHud(); });
+  // sector times: purple = fastest of anyone, green = your best, yellow = slower. The sector you're in counts up live.
+  function renderSectors(me) {
+    const box = $("sectors"), X = S.sec;
+    box.classList.toggle("hidden", !X || me.id !== S.myCar || me.fin || me.out);
+    if (!X || me.id !== S.myCar) return;
+    [...box.children].forEach((el, k) => {
+      const live = k === X.now && X.at != null, t = live ? Math.max(0, S.t - X.at) : X.t?.[k];
+      el.textContent = t == null ? `S${k + 1} --` : `S${k + 1} ${t.toFixed(live ? 1 : 2)}`;
+      el.className = live ? "live" : X.col?.[k] || "";
+      el.title = X.best?.[k] ? `Your best S${k + 1}: ${X.best[k].toFixed(3)}s` : "";
+    });
+  }
   // multiclass: positions inside your own class
   const clsOf = (id) => S.cars.get(id)?.cls || S.race?.info.get(id)?.cls || null;
   function classPos(id) { const k = clsOf(id); let n = 0; for (const i of S.standings) { if (clsOf(i) === k) n++; if (i === id) return n; } return 0; }
@@ -4983,9 +5031,11 @@
     } else { $("posText").append("P" + pos); const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm); }
     classFlag(me); elimFlag(me);
     { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
-    $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
+    $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);
+    renderSectors(me);
+    if (S.stratBox && me.id === S.myCar && me.laps + 1 === S.stratBox && !S.box && !me.fin && S.stratTold !== S.stratBox) { S.stratTold = S.stratBox; popup(`📋 The plan says: box this lap! Press ${keyName(KEY("box"))}.`); sfx("tick"); }
     const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
     $("speedText").textContent = `${Math.round(spd)} ${settings.units === "mph" ? "mph" : "km/h"}`;
     $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
@@ -5503,6 +5553,14 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-17", title: "Practice, knockout qualifying, sector times, strategy and rematches", items: [
+      "🏋️ Practice mode (Race settings > Game mode): just you on the track, no AI, as long as you like. Learn the track, chase sector times, practise pit stops. The host ends it.",
+      "🏁 Knockout qualifying (Qualifying > Knockout): Q1, Q2 and Q3. The slowest are knocked out after Q1 and Q2, and the last few fight for pole in Q3.",
+      "⏱️ Sector times under your lap time: purple = fastest of anyone, green = your best, yellow = slower. The sector you're in counts up live.",
+      "📋 Before the start, your strategist suggests a plan (stops, tyres, which lap to box). One tap uses it, and you get a reminder on the lap to box.",
+      "🔁 Rematch: race again straight from the results, same track and settings. Players who aren't the host can vote for one.",
+      "🛍️ The Paddock drop: 31 new shop items: Sunset fade underglow, Cash / Ripple ring / Honeycomb trails, Barcode / Laurel / Comet decals, new plates, rims, helmets, smoke and 10 badges.",
+    ] },
     { v: "2026-10-16", title: "Pit stop minigame and a race commentator", items: [
       "🎮 Pit stop minigame: when your car stops in the box, hit the 6 arrows in order (arrow keys, WASD, or tap them on a phone). Fast and clean beats the AI crews; wrong keys cost time. Turn it off in Settings > Assists.",
       "🎙️ A race commentator calls the start, crashes, new leaders, final laps, safety cars, knock-outs, pit stops and the win, in a proper British commentator voice. Volume (or off) in Settings > Sound.",

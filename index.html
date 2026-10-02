@@ -154,6 +154,7 @@
               <button type="button" class="mode-card" data-mode="normal" role="radio"><b>🏁 Normal</b><small>Everyone drives the same kind of car.</small></button>
               <button type="button" class="mode-card" data-mode="multi" role="radio"><b>🏎️ Multiclass</b><small>Fast Hypers and slower GT3s share the track. Each class races for its own win and points.</small></button>
               <button type="button" class="mode-card" data-mode="elim" role="radio"><b>💥 Elimination</b><small>Last place is knocked out every lap. Last car standing wins!</small></button>
+              <button type="button" class="mode-card" data-mode="practice" role="radio"><b>🏋️ Practice</b><small>No AI, no pressure: learn the track, chase sector times, practise pit stops. End it when you like.</small></button>
             </div>
             <p class="elim-note hidden" id="elimNote" role="status"></p>
             <div class="multi-opts hidden" id="multiOpts">
@@ -165,7 +166,7 @@
           <button type="button" class="btn wide" id="setPresetBtn">💾 Setting presets: save or load all of these</button>
           <label class="f">Laps (1-99) <input type="number" id="sLaps" min="1" max="99" step="1" value="5" inputmode="numeric"></label>
           <label class="f">AI difficulty <select id="sAiLevel"><option value="easy">😌 Easy</option><option value="medium">🙂 Medium</option><option value="hard">😤 Hard</option><option value="extreme">💀 EXTREME</option></select></label>
-          <label class="f">Qualifying <select id="sQuali"><option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option><option value="3">3 min</option><option value="5">5 min</option></select></label>
+          <label class="f">Qualifying <select id="sQuali"><option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option><option value="3">3 min</option><option value="5">5 min</option><option value="ko">🏁 Knockout: Q1, Q2, Q3</option></select></label>
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
           <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
@@ -310,7 +311,7 @@
 <!-- ============ Race HUD ============ -->
 <div id="hud" class="hidden">
   <div class="flash" id="flash"></div>
-  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span></div><div class="lap-delta hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best</small><b id="lapDeltaVal">--</b></div></div>
+  <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span><span class="sectors" id="sectors"><span></span><span></span><span></span></span></div><div class="lap-delta hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best</small><b id="lapDeltaVal">--</b></div></div>
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel" role="img" aria-label="Mini map of the track with every car's position"></canvas>
   <div class="feed" id="feed" aria-live="polite"></div>
@@ -321,6 +322,7 @@
     <div class="tp-bar"><b id="tpBar"></b></div>
     <div class="tp-row" id="tpRow"></div>
     <div class="hint" id="tpHint" style="min-height:0"></div>
+    <div class="tp-strat hidden" id="tpStrat"><span id="tpStratText"></span><button type="button" class="btn go" id="tpStratUse">Use this plan</button></div>
   </div>
   <div class="lights panel hidden" id="lights">
     <div class="bulbs"><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div></div>
@@ -349,7 +351,7 @@
   <div class="quali-box hidden" id="qualiBox" role="dialog" aria-labelledby="qualiTitle">
     <div class="panel">
       <h2 id="qualiTitle">🏁 Qualifying results</h2>
-      <p class="qb-sub">This is the starting grid. The race starts in a few seconds.</p>
+      <p class="qb-sub" id="qualiSub">This is the starting grid. The race starts in a few seconds.</p>
       <ol class="qb-list" id="qualiList"></ol>
     </div>
   </div>
@@ -363,6 +365,7 @@
     <div class="next-tires" id="nextTires"><span>Next tires:</span></div>
     <button type="button" class="rbtn" id="boxBtn"><kbd>B</kbd> Box this lap</button>
     <div class="emote-row" aria-label="Quick emotes"><button type="button" class="emo" data-emote="👍" aria-label="Emote 👍">👍</button><button type="button" class="emo" data-emote="😂" aria-label="Emote 😂">😂</button><button type="button" class="emo" data-emote="😮" aria-label="Emote 😮">😮</button><button type="button" class="emo" data-emote="😡" aria-label="Emote 😡">😡</button><button type="button" class="emo" data-emote="🔥" aria-label="Emote 🔥">🔥</button><button type="button" class="emo" data-emote="GG" aria-label="Emote GG">GG</button><button type="button" class="emo" data-emote="🏁" aria-label="Emote 🏁">🏁</button><button type="button" class="emo" data-emote="😭" aria-label="Emote 😭">😭</button></div>
+    <button type="button" class="rbtn hidden" id="endPracticeBtn">🏁 End practice</button>
     <button type="button" class="rbtn" id="photoBtn" title="Photo mode: freeze the view, move the camera, take a picture (K)"><kbd>K</kbd> 📷 Photo mode</button>
     <button type="button" class="rbtn hidden" id="pauseBtn" title="Host only: freeze the race for everyone (P)"><kbd>P</kbd> Pause race</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
@@ -403,7 +406,7 @@
     <table class="res"><tbody id="resTeams"></tbody></table></div>
     <div id="seasonBox"></div>
     <div class="ranked-res hidden" id="rankedRes" role="status"></div>
-    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button></div>
+    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button><button type="button" class="btn go hidden" id="rematchBtn">🔁 Rematch</button></div>
     <div class="back" id="backText">Back to the garage in 12s</div>
   </div>
 </div>

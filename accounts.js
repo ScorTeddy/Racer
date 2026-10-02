@@ -777,6 +777,40 @@ STORE.push(
   { id: "liv_disco", slot: "livery", name: "Disco Floor livery (animated)", look: "discoL", loot: true, rarity: "legendary" },
   { id: "liv_hyperdrive", slot: "livery", name: "Hyperdrive livery (animated)", look: "hyperdrive", loot: true, rarity: "mythic", box: "legend" },
 );
+// ---- the Paddock drop ----
+STORE.push(
+  { id: "glow_violet", slot: "glow", name: "Deep violet underglow", look: "#6d28d9", price: 100 },
+  { id: "glow_iceblue", slot: "glow", name: "Ice blue underglow", look: "#7dd3fc", price: 100 },
+  { id: "glow_sunset", slot: "glow", name: "Sunset fade underglow (animated)", look: "sunsetG", price: 230 },
+  { id: "trail_rings", slot: "trail", name: "Ripple ring trail", look: "rings", price: 150 },
+  { id: "trail_cash", slot: "trail", name: "Cash trail", look: "cash", price: 220 },
+  { id: "trail_hex", slot: "trail", name: "Honeycomb trail", look: "hex", price: 140 },
+  { id: "decal_barcode", slot: "decal", name: "Barcode decal", look: "barcode", price: 70 },
+  { id: "decal_laurel", slot: "decal", name: "Victory laurel decal", look: "laurel", price: 190 },
+  { id: "decal_comet", slot: "decal", name: "Comet decal", look: "comet", price: 120 },
+  { id: "num_carbon", slot: "num", name: "Carbon number plate", look: "carbon", price: 90 },
+  { id: "num_papaya", slot: "num", name: "Papaya number plate", look: "papaya", price: 70 },
+  { id: "num_green", slot: "num", name: "Racing green number plate", look: "green", price: 70 },
+  { id: "rims_rosegold", slot: "rims", name: "Rose gold rims", look: "#e8b4a0", price: 130 },
+  { id: "rims_gunmetal", slot: "rims", name: "Gunmetal rims", look: "#4b5563", price: 60 },
+  { id: "rims_ice", slot: "rims", name: "Ice blue rims", look: "#7dd3fc", price: 80 },
+  { id: "helmet_racinggreen", slot: "helmet", name: "Racing green helmet", look: "#0b6e3a", price: 50 },
+  { id: "helmet_goldleaf", slot: "helmet", name: "Gold leaf helmet", look: "#d4af37", price: 160 },
+  { id: "helmet_magenta", slot: "helmet", name: "Magenta helmet", look: "#be185d", price: 50 },
+  { id: "smoke_red", slot: "smoke", name: "Red tyre smoke", look: "#ef4444", price: 60 },
+  { id: "smoke_teal", slot: "smoke", name: "Teal tyre smoke", look: "#2dd4bf", price: 60 },
+  { id: "flame_mint", slot: "flame", name: "Mint boost flame", look: "#00ffa3", price: 110 },
+  { id: "badge_lion", slot: "badge", name: "Lion badge", look: "🦁", price: 90 },
+  { id: "badge_wolf", slot: "badge", name: "Wolf badge", look: "🐺", price: 90 },
+  { id: "badge_eagle", slot: "badge", name: "Eagle badge", look: "🦅", price: 90 },
+  { id: "badge_shark", slot: "badge", name: "Shark badge", look: "🦈", price: 100 },
+  { id: "badge_bee", slot: "badge", name: "Bee badge", look: "🐝", price: 60 },
+  { id: "badge_ice", slot: "badge", name: "Ice cube badge", look: "🧊", price: 60 },
+  { id: "badge_tornado", slot: "badge", name: "Tornado badge", look: "🌪️", price: 110 },
+  { id: "badge_gamepad", slot: "badge", name: "Gamer badge", look: "🎮", price: 70 },
+  { id: "badge_gear", slot: "badge", name: "Engineer badge", look: "⚙️", price: 70 },
+  { id: "badge_pizza", slot: "badge", name: "Pizza badge", look: "🍕", price: 50 },
+);
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));
 STORE_COUNT = STORE.filter((x) => !x.pass).length;
