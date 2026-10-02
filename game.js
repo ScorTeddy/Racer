@@ -1263,43 +1263,97 @@
     so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
     box.appendChild(msg);
   }
-  const SLOT_NAMES = { body: "Car bodies (Legendary chest only!)", livery: "Liveries (chest only)", decal: "Decals", glow: "Underglow", wing: "Rear wing", flame: "Boost flame", rims: "Rims", helmet: "Helmet", num: "Number plate", trail: "Trail", smoke: "Tyre smoke", badge: "Name badge (shows next to your name in races)" };
+  const SLOT_NAMES = { body: "Car bodies", livery: "Liveries", decal: "Decals", num: "Number plates", wing: "Rear wings", rims: "Rims", glow: "Underglow", flame: "Boost flames", trail: "Trails", smoke: "Tyre smoke", helmet: "Helmets", badge: "Name badges" };
+  const SLOT_TIPS = { body: "Legendary chest only", livery: "Chest only", badge: "Shows next to your name in races" };
+  // the store's sections: chests first, then items grouped by where they go on the car
+  const STORE_TABS = [
+    ["chests", "📦 Chests", null],
+    ["car", "🚗 Car & paint", ["body", "livery", "decal", "num"]],
+    ["parts", "🛞 Wheels & wing", ["rims", "wing"]],
+    ["fx", "✨ Effects", ["glow", "flame", "trail", "smoke"]],
+    ["driver", "🧑 Driver", ["helmet", "badge"]],
+  ];
+  const RARITY_ORDER = ["common", "rare", "epic", "legendary", "mythic"];
+  const SHOP = { tab: "chests", show: "all", sort: "price" };
+  try { const v = JSON.parse(localStorage.getItem("tb-shop") || "null"); if (v) Object.assign(SHOP, v); } catch (e) {}
+  if (!STORE_TABS.some((t) => t[0] === SHOP.tab)) SHOP.tab = "chests";
+  const saveShop = () => { try { localStorage.setItem("tb-shop", JSON.stringify(SHOP)); } catch (e) {} };
+  function storeCard(it, u) {
+    const slot = it.slot, owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
+    const card = el("div", "item" + (on ? " on" : ""));
+    const rt = el("span", "rtag", RARITY[it.rarity]?.[0] || ""); rt.style.color = RARITY[it.rarity]?.[1];
+    card.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
+    card.append(itemPreview(it), rt, el("b", "", it.name));
+    const row = el("div", "item-row");
+    if (!owned && it.loot) {
+      row.appendChild(el("span", "price", "📦 Chest only"));
+    } else if (!owned) {
+      row.appendChild(el("span", "price", `🪙 ${it.price}`));
+      const b = el("button", "btn go", "Buy"); b.type = "button";
+      b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
+      b.addEventListener("click", () => socket.emit("store:buy", it.id));
+      row.appendChild(b);
+    } else {
+      row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
+      const b = el("button", "btn", on ? "Take off" : "Equip"); b.type = "button";
+      b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on ? null : it.id }));
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+    return card;
+  }
   function renderStore(u) {
     const box = $("hubStore"); box.textContent = "";
     if (!A.catalog) { box.textContent = "Loading..."; return; }
     box.appendChild(el("p", "hub-h", u ? `You have 🪙 ${u.coins}. Earn more by unlocking achievements. Items show up on your car in every race.` : "Earn coins from achievements and spend them here. Items show up on your car in every race."));
-    renderBoxes(box, u);
-    const order = ["body", "livery"], rank = (x) => (order.indexOf(x) === -1 ? 99 : order.indexOf(x));
-    const slots = [...new Set(A.catalog.store.filter((x) => !x.pass).map((x) => x.slot))].sort((a, b) => rank(a) - rank(b));
-    for (const slot of slots) {
-      const sec = el("section", "store-slot"); sec.appendChild(el("h3", "hub-h", SLOT_NAMES[slot] || slot));
-      const g = el("div", "store-grid");
-      for (const it of A.catalog.store.filter((x) => x.slot === slot && (!x.pass || u?.owned.includes(x.id)))) {
-        const owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
-        const card = el("div", "item" + (on ? " on" : ""));
-        const cv = itemPreview(it);
-        const rt = el("span", "rtag", RARITY[it.rarity]?.[0] || ""); rt.style.color = RARITY[it.rarity]?.[1];
-        card.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
-        card.append(cv, rt, el("b", "", it.name));
-        const row = el("div"); row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:.3rem";
-        if (!owned && it.loot) {
-          row.appendChild(el("span", "price", "📦 Chest only"));
-        } else if (!owned) {
-          row.appendChild(el("span", "price", `🪙 ${it.price}`));
-          const b = el("button", "btn go", "Buy"); b.type = "button";
-          b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
-          b.addEventListener("click", () => socket.emit("store:buy", it.id));
-          row.appendChild(b);
-        } else {
-          row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
-          const b = el("button", "btn", on ? "Take off" : "Equip"); b.type = "button";
-          b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on ? null : it.id }));
-          row.appendChild(b);
-        }
-        card.appendChild(row); g.appendChild(card);
+    const items = A.catalog.store.filter((x) => !x.pass || u?.owned.includes(x.id));
+    // section tabs, with how many you own in each
+    const tabs = el("div", "store-tabs"); tabs.setAttribute("role", "tablist");
+    for (const [id, label, slots] of STORE_TABS) {
+      const b = el("button", "store-tab", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(SHOP.tab === id));
+      if (slots && u) { const all = items.filter((x) => slots.includes(x.slot)); b.appendChild(el("small", "", ` ${all.filter((x) => u.owned.includes(x.id)).length}/${all.length}`)); }
+      b.addEventListener("click", () => { SHOP.tab = id; saveShop(); renderStore(u); });
+      tabs.appendChild(b);
+    }
+    box.appendChild(tabs);
+    const tab = STORE_TABS.find((t) => t[0] === SHOP.tab);
+    if (!tab[2]) { renderBoxes(box, u); return; }
+    // filter + sort
+    const bar = el("div", "store-bar");
+    const chips = (opts, key) => {
+      const c = el("div", "chips");
+      for (const [v, label] of opts) {
+        const b = el("button", "chip", label); b.type = "button"; b.setAttribute("aria-pressed", String(SHOP[key] === v));
+        b.addEventListener("click", () => { SHOP[key] = v; saveShop(); renderStore(u); });
+        c.appendChild(b);
       }
+      return c;
+    };
+    bar.append(chips([["all", "All"], ["buy", "Can buy"], ["owned", "Owned"]], "show"), chips([["price", "🪙 Cheapest"], ["rarity", "💎 Rarity"], ["name", "🔤 A-Z"]], "sort"));
+    box.appendChild(bar);
+    const rk = (x) => RARITY_ORDER.indexOf(x.rarity);
+    const cmp = SHOP.sort === "rarity" ? (a, b) => rk(a) - rk(b) || a.price - b.price || a.name.localeCompare(b.name)
+      : SHOP.sort === "name" ? (a, b) => a.name.localeCompare(b.name)
+      : (a, b) => !!a.loot - !!b.loot || a.price - b.price || rk(a) - rk(b) || a.name.localeCompare(b.name);
+    const keep = (x) => SHOP.show === "owned" ? u?.owned.includes(x.id) : SHOP.show === "buy" ? !u?.owned.includes(x.id) && !x.loot : true;
+    let shown = 0;
+    for (const slot of tab[2]) {
+      const all = items.filter((x) => x.slot === slot); if (!all.length) continue;
+      const list = all.filter(keep).sort(cmp);
+      // whatever you have on goes first, so it's easy to find
+      const eq = u?.equipped?.[slot]; const at = list.findIndex((x) => x.id === eq); if (at > 0) list.unshift(...list.splice(at, 1));
+      if (!list.length) continue;
+      shown += list.length;
+      const sec = el("section", "store-slot");
+      const h = el("h3", "hub-h", SLOT_NAMES[slot] || slot);
+      if (u) h.appendChild(el("small", "store-count", ` ${all.filter((x) => u.owned.includes(x.id)).length}/${all.length} owned`));
+      if (SLOT_TIPS[slot]) h.appendChild(el("small", "store-tip", ` · ${SLOT_TIPS[slot]}`));
+      sec.appendChild(h);
+      const g = el("div", "store-grid");
+      for (const it of list) g.appendChild(storeCard(it, u));
       sec.appendChild(g); box.appendChild(sec);
     }
+    if (!shown) box.appendChild(el("p", "preset-note", SHOP.show === "owned" ? "You don't own anything here yet." : SHOP.show === "buy" ? "Nothing left to buy here. You've got it all! 🎉" : "Nothing here."));
   }
   function renderMenuInfo() {
     const m = S.menu; if (!m) return;
@@ -4963,6 +5017,7 @@
       "🌍 When anyone anywhere pulls a super rare upgrade card, every player in every race hears about it.",
       "🏁 Watch YOUR finish: after the flag, rewatch your own run to the line. Your last 3 finishes stay in 🎬 Replays.",
       "🛍️ 29 new shop items: glows, flames, rims, helmets, smoke, Confetti/Ember/Checkered trails, Skull/Stripes/Dice decals and 8 new badges.",
+      "🛒 The store is organized now: tabs for Chests, Car & paint, Wheels & wing, Effects and Driver, plus Can buy / Owned filters and sorting by price, rarity or name.",
       "🔊 New engine sound with gears, a boost kick and whoosh, a DRS whoosh, and you can hear the cars around you.",
     ] },
     { v: "2026-10-11", title: "Team ranked, Undo everything, and part-width roads", items: [

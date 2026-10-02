@@ -862,6 +862,15 @@
   .ach.got { border-color: rgba(255,204,31,0.55); background: linear-gradient(100deg, rgba(255,204,31,0.12), rgba(255,204,31,0.02)); }
   .ach.got .ic { filter: none; opacity: 1; } .ach.got .rw { color: var(--green); }
   .store-slot { margin-bottom: 0.9rem; }
+  .store-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.2rem 0 0.6rem; }
+  .store-tab { cursor: pointer; flex-shrink: 0; border: 1.5px solid var(--edge); background: var(--panel-2); color: var(--ink); border-radius: 0.7rem; padding: 0.45rem 0.8rem; font-weight: 800; font-size: 0.88rem; white-space: nowrap; }
+  .store-tab small { color: var(--soft); font-weight: 700; font-size: 0.72rem; }
+  .store-tab[aria-selected="true"] { background: var(--yellow); border-color: var(--yellow); color: #1b1b1b; }
+  .store-tab[aria-selected="true"] small { color: #1b1b1b; opacity: 0.7; }
+  .store-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem 1rem; margin-bottom: 0.7rem; }
+  .store-count { color: var(--soft); font-weight: 700; font-size: 0.75rem; }
+  .store-tip { color: var(--soft); font-weight: 600; font-size: 0.72rem; }
+  .item-row { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; margin-top: auto; }
   .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.5rem; }
   .item { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem; border-radius: 0.8rem; background: var(--panel-2); border: 1.5px solid var(--edge); }
   .item canvas { width: 100%; height: auto; border-radius: 0.5rem; background: rgba(0,0,0,0.25); }
