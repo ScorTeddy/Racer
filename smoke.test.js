@@ -984,3 +984,76 @@ test("1v1 bets: both stake the same, the one ahead takes both, unraced bets are 
   assert.equal(a.coins, 800); assert.equal(b.coins, 700, "refunded");
   assert.ok(accounts.dmThread(a, b.id).some((m) => m.bet), "bets show in the chat");
 });
+
+test("daily wheel: one free spin a day, extra spins from the season pass", async () => {
+  const { u } = await accounts.signUp("Spinner", "Turbo-Fox-Lane-42");
+  assert.ok(accounts.publicUser(u).wheel.free);
+  const c0 = u.coins, r = accounts.spinWheel(u);
+  assert.ok(r.ok && r.seg >= 0 && r.seg < accounts.WHEEL.length && r.label);
+  assert.ok(!r.wheel.free, "the free spin is used up");
+  if (accounts.WHEEL[r.seg].coins) assert.equal(u.coins, c0 + accounts.WHEEL[r.seg].coins);
+  u.spins = 0;
+  assert.ok(accounts.spinWheel(u).error, "no spins left");
+  accounts.passXp(u, 250 * 7);                                   // free track tier 7 = a spin
+  assert.ok(u.spins >= 1, "season pass tier 7 gives a wheel spin");
+  assert.ok(accounts.spinWheel(u).ok);
+});
+
+test("season pass: 60 tiers with wheel spins on both tracks", async () => {
+  const { u } = await accounts.signUp("PassSixty", "Turbo-Fox-Lane-42");
+  const P = accounts.publicUser(u).pass;
+  assert.equal(P.tiers, 60); assert.equal(P.rewards.free.length, 60); assert.equal(P.rewards.prem.length, 60);
+  assert.ok(P.rewards.free.filter((x) => x.spins).length >= 5 && P.rewards.prem.filter((x) => x.spins).length >= 8, "spins on both tracks");
+  accounts.passXp(u, 250 * 40);
+  assert.equal(accounts.publicUser(u).pass.tier, 40, "goes past 30 now");
+  assert.ok(accounts.prestige(u).error, "prestige needs tier 60");
+});
+
+test("slots and blackjack: server-rolled, fair payouts, coins add up", async () => {
+  const { u } = await accounts.signUp("Gambler", "Turbo-Fox-Lane-42");
+  u.coins = 1e7;
+  // slots: about 97% back over lots of spins
+  let paid = 0; const N = 40000;
+  for (let i = 0; i < N; i++) { const r = accounts.slots(u, 10); assert.ok(r.ok); paid += r.win; }
+  const rtp = paid / (N * 10); assert.ok(rtp > 0.9 && rtp < 1.04, `slots pay back ~97% (${(rtp * 100).toFixed(1)}%)`);
+  assert.ok(accounts.slots(u, 5).error && accounts.slots(u, 5000).error, "bet limits");
+  // blackjack: a full hand, coins match the result
+  for (let k = 0; k < 200; k++) {
+    const before = u.coins, d = accounts.bjDeal(u, 100); assert.ok(d.ok);
+    if (!d.hand.done) { assert.ok(accounts.bjDeal(u, 100).error, "one hand at a time"); assert.equal(d.hand.dealer[1], null, "the dealer's second card stays hidden"); }
+    let h = d.hand; while (!h.done) h = accounts.bjAct(u, h.total < 15 ? "hit" : "stand").hand;
+    assert.equal(u.coins, before - h.bet + h.paid, "coins add up");
+    if (h.result === "bust") assert.ok(h.total > 21);
+    if (h.result === "win" && h.dealerTotal <= 21) assert.ok(h.total > h.dealerTotal);
+    if (h.result === "blackjack") assert.equal(h.paid, 250);
+  }
+  // doubling: twice the bet, exactly one more card
+  let d; do { d = accounts.bjDeal(u, 100); } while (d.hand.done);
+  const h = accounts.bjAct(u, "double").hand;
+  assert.ok(h.done && h.bet === 200 && h.player.length === 3);
+});
+
+test("notifications: things that happen while you're offline wait for you", async () => {
+  const a = (await accounts.signUp("NoteA", "Turbo-Fox-Lane-42")).u;
+  accounts.addNote(a, { icon: "🎁", title: "Bo sent you a gift", text: "🪙 50" });
+  accounts.addNote(a, { icon: "💬", title: "Message from Bo", text: "hi", key: "dm_x" });
+  accounts.addNote(a, { icon: "💬", title: "Message from Bo", text: "hello?", key: "dm_x" });
+  const n = accounts.takeNotes(a);
+  assert.equal(n.length, 2, "messages from one friend collapse into one");
+  assert.equal(n[1].text, "hello?");
+  assert.equal(accounts.takeNotes(a).length, 0, "shown once");
+});
+
+test("overtake of the race: real passes are spotted and the best one is in the results", { timeout: 120000 }, () => {
+  const r = new game.Room("BESTPASS", false); r.setRandomTrack("normal", "regular");
+  r.players.set("o", { id: "o", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 9, quali: 0, laps: 3, weather: "sunny" }); r.ensureRoster(9);
+  let res = null; const passes = []; const emit = r.emit.bind(r);
+  r.emit = (ev, d) => { if (ev === "results") res = d; if (ev === "bestPass") passes.push(d); return emit(ev, d); };
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 240 && r.phase === "race"; n++) r.step(1 / 60);
+  if (r.phase === "race") r.endRace();
+  assert.ok(passes.length >= 1, "at least one pass was spotted");
+  assert.ok(res.bestPass && res.bestPass.an && res.bestPass.bn && res.bestPass.pos >= 1);
+  assert.deepEqual([res.bestPass.an, res.bestPass.bn], [passes[passes.length - 1].an, passes[passes.length - 1].bn], "the results name the best one");
+});

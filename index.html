@@ -405,12 +405,13 @@
     <canvas id="podium" aria-hidden="true"></canvas>
     <p class="class-wins hidden" id="classWinLine"></p>
     <p class="dotd hidden" id="dotdLine"></p>
+    <p class="dotd hidden" id="bestPassLine"></p>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
     <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>
     <div id="seasonBox"></div>
     <div class="ranked-res hidden" id="rankedRes" role="status"></div>
-    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button><button type="button" class="btn go hidden" id="rematchBtn">🔁 Rematch</button></div>
+    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn replay-btn hidden" id="bestPassBtn">🏎️ Watch the overtake of the race</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button><button type="button" class="btn go hidden" id="rematchBtn">🔁 Rematch</button></div>
     <div class="back" id="backText">Back to the garage in 12s</div>
   </div>
 </div>
@@ -544,7 +545,7 @@
       <button type="button" role="tab" data-ht="custom" aria-selected="false">🎨 Customize</button>
       <button type="button" role="tab" data-ht="pass" aria-selected="false">🎟️ Season pass</button>
       <button type="button" role="tab" data-ht="ranked" aria-selected="false">🏆 Ranked</button>
-      <button type="button" role="tab" data-ht="plinko" aria-selected="false">🎰 Plinko</button>
+      <button type="button" role="tab" data-ht="plinko" aria-selected="false">🎰 Casino</button>
       <button type="button" role="tab" data-ht="friends" aria-selected="false">👥 Friends</button>
       <button type="button" role="tab" data-ht="lb" aria-selected="false">🏆 Leaderboards</button>
       <button type="button" role="tab" data-ht="sec" aria-selected="false">🔒 Security</button>
