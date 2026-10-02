@@ -689,3 +689,36 @@ test("Sticky Setup and Carbon Brakes are much stronger now", () => {
   assert.ok(s1.brake / s0.brake >= 2.49, "braking x2.5");
   assert.ok(s1.planBrake / s1.brake < s0.planBrake / s0.brake, "and the driver brakes with more margin");
 });
+
+test("elimination: the last car is knocked out every lap, the last car standing wins", { timeout: 120000 }, () => {
+  const r = new game.Room("ELIMIN", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "s-el", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 9, mode: "elim", weather: "sunny" }); r.ensureRoster(5);
+  const outs = []; let res = null; const emit = r.emit.bind(r);
+  r.emit = (ev, d) => { if (ev === "feed" && d.t === "elim") outs.push(d); if (ev === "results") res = d; return emit(ev, d); };
+  r.startRace();
+  assert.equal(r.settings.laps, 5, "6 cars = 5 laps, whatever the Laps setting says");
+  r.startLights(); r.phase = "race"; r.launchCars(); r.cars.find((c) => c.owner).launchAt = 0;
+  for (let n = 0; n < 60 * 400 && r.phase === "race"; n++) r.step(1 / 60);
+  assert.equal(r.phase, "results", "the race ended when one car was left (even after the player was knocked out)");
+  assert.deepEqual(outs.map((o) => o.left), [5, 4, 3, 2, 1], "one car out per lap");
+  const order = res.rows.map((x) => x.name), outNames = outs.map((o) => o.name);
+  assert.deepEqual(order.slice(1), outNames.reverse(), "the results go in reverse order of knock-outs");
+  assert.ok(!outNames.includes(order[0]), "the winner was never knocked out");
+  assert.equal(r.settings.laps, 9, "the Laps setting is back afterwards");
+  // big grids knock out more than one a lap, so it never goes past 12 laps
+  const r2 = new game.Room("ELIMI2", false); r2.setRandomTrack("normal", "regular");
+  r2.players.set("x", { id: "x", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r2.settings, { ai: 29, quali: 0, laps: 5, mode: "elim" }); r2.ensureRoster(29); r2.startRace();
+  assert.equal(r2.elim.per, 3); assert.equal(r2.settings.laps, 10);
+});
+
+test("safety car: cars at the back sprint up to the pack, then slow down behind it", () => {
+  const r = new game.Room("SCCATCH", false); r.setRandomTrack("normal", "regular");
+  r.sc = { since: 0 };
+  const sp = r.track.spacing, ahead = { progress: 1000, finished: false };
+  const lim = (gapPx) => r.scLimit({ ahead, progress: 1000 - gapPx / sp, finished: false, inPit: false, aiMode: "race" });
+  assert.ok(lim(1500) > 800, "far back: nearly race speed");
+  assert.ok(lim(300) < lim(800) && lim(300) > 378, "slowing down as they get close");
+  assert.ok(lim(60) < 378, "in the pack: a touch under safety car pace");
+});

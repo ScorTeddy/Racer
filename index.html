@@ -152,8 +152,10 @@
             <div class="sect">Game mode</div>
             <div class="mode-cards" role="radiogroup" aria-label="Game mode">
               <button type="button" class="mode-card" data-mode="normal" role="radio"><b>🏁 Normal</b><small>Everyone drives the same kind of car.</small></button>
-              <button type="button" class="mode-card" data-mode="multi" role="radio"><b>🏎️ Multiclass</b><small>Fast Hypers and slower GTs share the track. Each class races for its own win and points.</small></button>
+              <button type="button" class="mode-card" data-mode="multi" role="radio"><b>🏎️ Multiclass</b><small>Fast Hypers and slower GT3s share the track. Each class races for its own win and points.</small></button>
+              <button type="button" class="mode-card" data-mode="elim" role="radio"><b>💥 Elimination</b><small>Last place is knocked out every lap. Last car standing wins!</small></button>
             </div>
+            <p class="elim-note hidden" id="elimNote" role="status"></p>
             <div class="multi-opts hidden" id="multiOpts">
               <div class="sect">Your class <small>(everyone picks their own)</small></div>
               <div class="class-cards" id="classCards" role="radiogroup" aria-label="Your class"></div>

@@ -499,16 +499,13 @@
   const CLASSES = {
     hyper: { name: "Hyper", icon: "🔴", col: "#ff2d55", short: "HY", note: "Much faster everywhere: top speed, cornering, braking. Normal tyre wear and pit stops.",
       bars: [["Top speed", 1], ["Cornering", 1], ["Tyre life", 0.55], ["Pit stops", 0.55], ["Toughness", 0.45]] },
-    gt: { name: "GT", icon: "🟢", col: "#22c55e", short: "GT", note: "Slower, but tough: tyres last much longer, quicker pit stops, boost refills faster. Watch your mirrors!",
-      bars: [["Top speed", 0.7], ["Cornering", 0.75], ["Tyre life", 0.95], ["Pit stops", 0.85], ["Toughness", 0.95]] },
+    gt: { name: "GT3", icon: "🟢", col: "#22c55e", short: "GT3", note: "A boxy GT3 racer: a lot slower, but tough, its tyres last longer, quicker pit stops, boost refills faster. Watch your mirrors!",
+      bars: [["Top speed", 0.6], ["Cornering", 0.65], ["Tyre life", 0.9], ["Pit stops", 0.8], ["Toughness", 0.95]] },
   };
   function drawClassKit(c, car, X, L, Wd, open) {          // class markings, so you can tell them apart at a glance
     if (car.cls === "gt") {
       c.fillStyle = "#22c55e"; c.fillRect(-L * 0.2, -Wd / 2, 10, 2.4); c.fillRect(-L * 0.2, Wd / 2 - 2.4, 10, 2.4);   // green door panels
-      if (!open) {
-        c.fillStyle = darken(car.color, 0.5); c.fillRect(3, -Wd / 2 - 2, 3, 2.2); c.fillRect(3, Wd / 2 - 0.2, 3, 2.2);    // mirrors
-        if (!X.wing) { c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5); c.fillStyle = "#1f8f47"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 4, Wd + 6); c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(-L / 2 - 3.5, -Wd / 2 - 2.5, 1, Wd + 5); }   // big GT wing
-      }
+      if (!open) { c.fillStyle = darken(car.color, 0.5); c.fillRect(3, -Wd / 2 - 3, 3, 2.2); c.fillRect(3, Wd / 2 + 0.8, 3, 2.2); }    // mirrors
     } else if (car.cls === "hyper") {
       c.save(); c.shadowColor = "#ff2d55"; c.shadowBlur = 6; c.fillStyle = "#ff2d55";
       c.fillRect(-L * 0.4, -Wd / 2 + 0.5, L * 0.66, 1.5); c.fillRect(-L * 0.4, Wd / 2 - 2, L * 0.66, 1.5);              // glowing LED strips
@@ -542,7 +539,8 @@
       c.save(); c.globalAlpha = ga; c.shadowColor = col; c.shadowBlur = 16; c.fillStyle = col;
       rrect(c, -L / 2 - 2, -Wd / 2 - 3, L + 4, Wd + 6, 9); c.fill(); c.restore();
     }
-    c.fillStyle = "rgba(0,0,0,0.3)"; c.save(); c.translate(3, 4); bodyPath(c, X.body, L, Wd); c.fill(); c.restore();
+    const B = X.body || (car.cls === "gt" ? "gt3" : null), open = B === "f1" || B === "kart";   // GT3 class cars get the boxy GT3 body
+    c.fillStyle = "rgba(0,0,0,0.3)"; c.save(); c.translate(3, 4); bodyPath(c, B, L, Wd); c.fill(); c.restore();
     if (opts.trailPreview && X.trail) { for (let k = 0; k < 4; k++) trailShape(c, X.trail, -L / 2 - 10 - k * 11, (k % 2 ? 4 : -4), 4.5 - k * 0.6, 1 - k * 0.2, k); }
     if (opts.nitro || opts.flamePreview) {   // nitro boost: a long flame (blue, or the store colour)
       const fl = opts.flamePreview ? 30 : 22 + Math.random() * 16;
@@ -555,7 +553,6 @@
       c.fillStyle = "#ffb74d"; c.beginPath(); c.moveTo(-L / 2, -6); c.lineTo(-L / 2 - fl, 0); c.lineTo(-L / 2, 6); c.fill();
       c.fillStyle = "#fff"; c.beginPath(); c.moveTo(-L / 2, -3); c.lineTo(-L / 2 - fl * 0.5, 0); c.lineTo(-L / 2, 3); c.fill();
     }
-    const B = X.body, open = B === "f1" || B === "kart";
     if (!open) {
       c.fillStyle = "#16171a";
       for (const wx of [-L * 0.3, L * 0.28]) for (const wy of [-1, 1]) c.fillRect(wx - 6, wy * (Wd / 2) - 4, 12, 8);
@@ -626,7 +623,7 @@
     c.save(); c.translate(nx, 0); c.rotate(Math.PI / 2); if (open) c.scale(0.75, 0.75);
     c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
     c.restore();
-    if (car.dmg > 0.08) drawDamage(c, car.dmg, car.id || 1, L, Wd, X.body);
+    if (car.dmg > 0.08) drawDamage(c, car.dmg, car.id || 1, L, Wd, B);
     if (opts.glow) { c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 2.5; rrect(c, -L / 2 - 4, -Wd / 2 - 4, L + 8, Wd + 8, 10); c.stroke(); }
     c.restore();
   }
@@ -663,7 +660,13 @@
     } else if (B === "kart") { const x = -L * 0.3, w = L * 0.6, y = -Wd * 0.3, hh = Wd * 0.6, r = 4; c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + hh, r); c.arcTo(x + w, y + hh, x, y + hh, r); c.arcTo(x, y + hh, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
     else if (B === "muscle") { const x = -L / 2 - 2, w = L + 4, r = 3; c.moveTo(x + r, -h); c.arcTo(x + w, -h, x + w, h, r); c.arcTo(x + w, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + w, -h, r); c.closePath(); }
     else if (B === "rally") { const x = -L / 2 + 4, w = L - 5, r = 6; c.moveTo(x + r, -h); c.arcTo(x + w, -h, x + w, h, r); c.arcTo(x + w, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + w, -h, r); c.closePath(); }
-    else if (B === "lmp") {   // endurance prototype: long pointed nose, big front fenders, wide tail
+    else if (B === "gt3") {   // GT3 racer: square nose and tail, big flared wheel arches
+      const fx = L * 0.28, rx = -L * 0.3, aw = 7.5, fl = 2.6;
+      c.moveTo(L / 2 - 2, -h + 0.5); c.lineTo(fx + aw, -h); c.lineTo(fx + aw - 2.5, -h - fl); c.lineTo(fx - aw + 2.5, -h - fl); c.lineTo(fx - aw, -h);
+      c.lineTo(rx + aw, -h); c.lineTo(rx + aw - 2.5, -h - fl); c.lineTo(rx - aw + 2.5, -h - fl); c.lineTo(rx - aw, -h); c.lineTo(-L / 2 - 1, -h + 1);
+      c.lineTo(-L / 2 - 1, h - 1); c.lineTo(rx - aw, h); c.lineTo(rx - aw + 2.5, h + fl); c.lineTo(rx + aw - 2.5, h + fl); c.lineTo(rx + aw, h);
+      c.lineTo(fx - aw, h); c.lineTo(fx - aw + 2.5, h + fl); c.lineTo(fx + aw - 2.5, h + fl); c.lineTo(fx + aw, h); c.lineTo(L / 2 - 2, h - 0.5); c.lineTo(L / 2 + 1, h - 3); c.lineTo(L / 2 + 1, -h + 3); c.closePath();
+    } else if (B === "lmp") {   // endurance prototype: long pointed nose, big front fenders, wide tail
       c.moveTo(L / 2 + 4, -3); c.quadraticCurveTo(L * 0.42, -h - 1, L * 0.22, -h); c.lineTo(L * 0.02, -h + 3); c.lineTo(-L * 0.2, -h + 2); c.lineTo(-L / 2, -h);
       c.lineTo(-L / 2, h); c.lineTo(-L * 0.2, h - 2); c.lineTo(L * 0.02, h - 3); c.lineTo(L * 0.22, h); c.quadraticCurveTo(L * 0.42, h + 1, L / 2 + 4, 3); c.closePath();
     } else { const x = -L / 2, r = 7; c.moveTo(x + r, -h); c.arcTo(x + L, -h, x + L, h, r); c.arcTo(x + L, h, x, h, r); c.arcTo(x, h, x, -h, r); c.arcTo(x, -h, x + L, -h, r); c.closePath(); }
@@ -685,6 +688,17 @@
     } else if (B === "rally") {
       c.fillStyle = "#fff6c2"; for (const y of [-7, -2.5, 2.5, 7]) { c.beginPath(); c.arc(L / 2 - 3, y, 1.8, 0, Math.PI * 2); c.fill(); }   // light pod
       c.strokeStyle = "rgba(0,0,0,0.5)"; c.lineWidth = 1; for (const x of [-10, -6, -2]) { c.beginPath(); c.moveTo(x, -7); c.lineTo(x, 7); c.stroke(); }   // roof rack
+    } else if (B === "gt3") {
+      c.fillStyle = "#ffe14a"; c.fillRect(L / 2 - 3.5, -Wd / 2 + 1.5, 3, 4); c.fillRect(L / 2 - 3.5, Wd / 2 - 5.5, 3, 4);   // yellow endurance headlights
+      c.fillStyle = "rgba(10,12,16,0.85)"; for (const y of [-4, 2]) c.fillRect(L * 0.2, y, 6, 2);                           // bonnet vents
+      c.fillStyle = "rgba(10,12,16,0.9)"; c.fillRect(-9, -2, 4, 4);                                                           // roof scoop
+      c.fillStyle = "#e11d48"; c.fillRect(-L / 2 - 1, -Wd / 2 + 1, 1.6, 3); c.fillRect(-L / 2 - 1, Wd / 2 - 4, 1.6, 3);      // rain light / tail lights
+      if (!X.wing) {   // a big swan-neck GT3 wing, wider than the car
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 + 1, -5, 2, 2.5); c.fillRect(-L / 2 + 1, 2.5, 2, 2.5);
+        c.fillStyle = "#1b1d22"; c.fillRect(-L / 2 - 5, -Wd / 2 - 4, 4.5, Wd + 8);
+        c.fillStyle = "#22c55e"; c.fillRect(-L / 2 - 5.5, -Wd / 2 - 4.5, 5.5, 1.6); c.fillRect(-L / 2 - 5.5, Wd / 2 + 2.9, 5.5, 1.6);   // green endplates
+        c.fillStyle = "rgba(255,255,255,0.25)"; c.fillRect(-L / 2 - 4.5, -Wd / 2 - 3.5, 1, Wd + 7);
+      }
     } else if (B === "lmp") {
       c.fillStyle = "rgba(20,24,32,0.9)"; c.beginPath(); c.ellipse(4, 0, 8, 5, 0, 0, Math.PI * 2); c.fill();   // bubble canopy
       c.strokeStyle = dk; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-4, 0); c.lineTo(-L / 2, 0); c.stroke();   // shark fin
@@ -1786,7 +1800,8 @@
     if (S.replaying) stopReplay();
     if (S.photoOn) photoMode(false);
     RP.buf = []; S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
-    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi };
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null };
+    if (r.elim && !r.quali) setTimeout(() => popup(`💥 ELIMINATION: the last ${r.elim.per === 1 ? "car is" : r.elim.per + " cars are"} knocked out every lap. Stay out of the bottom!`), 900);
     if (r.multi) { const mc = r.cars.find((c) => c.owner === S.me)?.cls; if (mc) setTimeout(() => popup(`${CLASSES[mc].icon} You're racing in the ${CLASSES[mc].name} class. Win your class!`), 900); }
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
     S.ghost = null; if (r.quali) setTimeout(() => { S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
@@ -1937,10 +1952,10 @@
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
     for (const a of st.cars) {
-      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs, def] = a;
+      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs, def, out] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1, def: def === 1 });
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1, def: def === 1, out: out === 1 });
     }
     lapDelta();
     if (S.tutorial) {            // tutorial hints that depend on your car
@@ -1968,6 +1983,7 @@
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "elim" && f.id !== S.myCar) { banner(`💥 ${f.name} OUT!`, "#ff6b61"); sfx("jump"); }
     if (f.t === "classWin" && CLASSES[f.cls]) { setTimeout(() => banner(`🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!`, CLASSES[f.cls].col), 600); sfx("level"); }
     if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
     if (f.t === "scIn") { banner("🟢 GREEN FLAG!", "#3ecf6a"); sfx("level"); }
@@ -1976,7 +1992,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -2020,7 +2036,7 @@
   socket.on("feed", (f) => {
     if (f.t !== "winner") return;
     const w = [...S.cars.values()].find((c) => c.name === f.name);
-    banner(f.cls && CLASSES[f.cls] ? `🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!` : `🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
+    banner(S.race?.elim ? `🏆 ${f.name}: LAST CAR STANDING!` : f.cls && CLASSES[f.cls] ? `🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!` : `🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
     if (w) {
       S.camTarget = w.id; S.winnerCamUntil = performance.now() + 4000;
       if (!reducedMotion) for (let k = 0; k < 5; k++) setTimeout(() => fireworks.push({ x: w.x + (Math.random() - 0.5) * 300, y: w.y + (Math.random() - 0.5) * 220, t: performance.now(), hue: Math.floor(Math.random() * 360) }), k * 450);
@@ -2234,8 +2250,11 @@
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
-    const multi = s.mode === "multi" && !l.ranked;
-    document.querySelectorAll(".mode-card").forEach((b) => { b.setAttribute("aria-checked", String((b.dataset.mode === "multi") === multi)); b.disabled = !S.host || l.phase !== "lobby"; });
+    const multi = s.mode === "multi" && !l.ranked, mode = l.ranked ? "normal" : s.mode || "normal";
+    document.querySelectorAll(".mode-card").forEach((b) => { b.setAttribute("aria-checked", String(b.dataset.mode === mode)); b.disabled = !S.host || l.phase !== "lobby"; });
+    { const n = l.players.filter((p) => !p.spectator).length + (s.ai || 0), per = Math.max(1, Math.ceil((n - 1) / 12)), en = $("elimNote");
+      en.classList.toggle("hidden", mode !== "elim");
+      if (mode === "elim") en.textContent = n < 2 ? "💥 Elimination needs at least 2 cars (add some AI)." : `💥 ${n} cars: ${per === 1 ? "the last car is" : `the last ${per} cars are`} knocked out every lap, so the race is ${Math.ceil((n - 1) / per)} laps (the Laps setting is ignored).`; }
     $("modePick").classList.toggle("hidden", !!l.ranked);
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
@@ -4598,7 +4617,10 @@
         ctx.beginPath(); ctx.arc(bx, by, 30, c.h + Math.PI - 1.05, c.h + Math.PI + 1.05); ctx.stroke(); ctx.restore();
       }
       ctx.globalAlpha = 1;
-      if (c.fin) {
+      if (c.out) {                              // elimination: knocked out
+        ctx.save(); ctx.font = "15px 'Russo One', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.fillStyle = "#ff6b61";
+        ctx.strokeText("💀 OUT", c.x, c.y - 44); ctx.fillText("💀 OUT", c.x, c.y - 44); ctx.restore();
+      } else if (c.fin) {
         if (!c.finPos) {
           c.finPos = [...S.cars.values()].filter((o) => o.finPos).length + 1;
           if (c.id === S.myCar) { banner(c.finPos === 1 ? "YOU WIN!" : `P${c.finPos}!`, "#ffcc1f"); addShake(6); }
@@ -4745,6 +4767,11 @@
     if (on && !S.defendTold) { S.defendTold = true; popup("🛡️ Defending! Your driver covers the car behind and they get no slipstream. Costs 10% boost, then 8% a second."); }
   }
   $("defendBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleDefend(); });
+  socket.on("eliminated", (d) => {
+    banner(`💥 YOU'RE OUT! P${d.pos}`, "#ff6b61"); sfx("jump"); addShake(10);
+    popup(`Knocked out in P${d.pos} of ${d.of}. Watch who's the last car standing!`, true);
+    setNitro(false); setDefendUi(false); S.camTarget = S.standings.find((i) => !S.cars.get(i)?.out) ?? null;
+  });
   socket.on("defendMsg", (m) => { setDefendUi(false); if (m) popup(m, true); });
   socket.on("race", () => setDefendUi(false));
   // ---- DRS: in a zone with DRS available, press D (or the DRS button) to open the flap ----
@@ -4817,6 +4844,16 @@
     if (kind === "blue" && !S.blueAt) { S.blueAt = 1; tone(880, 0.08, "square", 0.08); tone(880, 0.08, "square", 0.08, 0, 0.14); }
     if (kind !== "blue") S.blueAt = 0;
   }
+  // elimination: warn when you're in the knock-out spots
+  function elimFlag(me) {
+    if (!S.race?.elim) return;
+    const f = $("classFlag");
+    if (me.id !== S.myCar || me.out || me.fin || S.ql >= 0) { if (!S.race.multi) f.classList.add("hidden"); return; }
+    const live = S.standings.filter((i) => !S.cars.get(i)?.out), at = live.indexOf(me.id), cut = live.length - S.race.elim.per;
+    const danger = at >= cut, close = !danger && at >= cut - 1;
+    const msg = danger ? "💀 DANGER: you're in the knock-out zone! Pass someone before the leader crosses the line!" : close ? "⚠ One place above the knock-out zone. Don't let them by!" : "";
+    f.className = "class-flag " + (danger ? "danger" : close ? "warn" : "") + (msg ? "" : " hidden"); if (msg && f.textContent !== msg) f.textContent = msg;
+  }
   function updateHud(now) {
     layoutHud();
     const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
@@ -4826,10 +4863,13 @@
     if (S.race?.multi && me.cls) {
       const K = CLASSES[me.cls]; $("posText").append("P" + classPos(me.id));
       const sm = document.createElement("small"); sm.textContent = `/${classCount(me.cls)} ${K.name} · P${pos} overall`; sm.style.color = K.col; $("posText").append(sm);
+    } else if (S.race?.elim) {
+      const live = S.standings.filter((i) => !S.cars.get(i)?.out).length;
+      $("posText").append(me.out ? "OUT" : "P" + pos); const sm = document.createElement("small"); sm.textContent = me.out ? ` · P${pos}` : `/${live} left`; $("posText").append(sm);
     } else { $("posText").append("P" + pos); const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm); }
-    classFlag(me);
+    classFlag(me); elimFlag(me);
     { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
-    $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
+    $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);
     const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
@@ -4891,11 +4931,12 @@
         const p = document.createElement("span"); p.className = "p"; p.textContent = S.race?.multi && c.cls ? classPos(id) : i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
         const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + c.name;
-        if (S.race?.multi && c.cls) { const ct = document.createElement("span"); ct.className = "cls-tag sm"; ct.style.background = CLASSES[c.cls].col; ct.textContent = CLASSES[c.cls].short; n.prepend(ct); p.style.color = CLASSES[c.cls].col; }
+        if (S.race?.multi && c.cls) { d.style.boxShadow = `0 0 0 2px ${CLASSES[c.cls].col}`; d.title = CLASSES[c.cls].name; p.style.color = CLASSES[c.cls].col; }   // (class: a ring + coloured position, so names keep their room)
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
         g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);
-        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : c.dmg > 0.3 ? "DMG" : `${Math.round(c.tire * 100)}%`;
+        if (S.race?.elim && c.out) li.className += " out";
+        const x = document.createElement("span"); x.className = "tw"; x.textContent = c.out ? "OUT" : c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : c.dmg > 0.3 ? "DMG" : `${Math.round(c.tire * 100)}%`;
         if (c.punct) x.style.color = "#ff8a80";
         li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
@@ -5348,6 +5389,11 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-15", title: "Elimination races, a faster safety car restart, and GT3s", items: [
+      "💥 New game mode: Elimination (Race settings, next to Multiclass). Last place is knocked out every lap until one car is left. The HUD warns you when you're in the knock-out zone.",
+      "🚨 Safety car: cars stuck at the back now sprint up to the pack at nearly full speed, then slow down and slot in behind it.",
+      "🟢 GTs are now GT3s: boxy bodies with flared wheel arches, yellow headlights, bonnet vents and a huge swan-neck wing. They're also slower than before.",
+    ] },
     { v: "2026-10-14", title: "Defend mode, and grip and brakes that really work", items: [
       "🛡️ Defend (V, or the DEFEND button): your driver covers the car behind, blocks their moves and kills their slipstream. Costs 10% boost to switch on, then 8% a second. It turns off when the boost runs out.",
       "🤝 New Defend assist in Settings > Assists, and the Hard / EXTREME AI now defend too on the last two laps.",

@@ -174,12 +174,27 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Measured on very wonky and real tracks: off-track time 1.9% to about 0.7% with no upgrades, and about 0.15% while
   racing with Grip and Brakes maxed. Lap times are unchanged.
 
+## Elimination races
+- `settings.mode = "elim"` (a third Game mode card). `startRace` sets `this.elim = { per, round }`: `per` cars are
+  knocked out each lap (`ceil((cars - 1) / 12)`, so 1 a lap up to 13 cars and never more than 12 laps). The race is
+  `ceil((cars - 1) / per)` laps. The host's Laps setting is parked in `elimRealLaps` and put back in `endRace`.
+- `onLap`: the first car to finish each lap knocks out the last `per` cars still running (on the final lap,
+  everyone but the leader). `knockOut` makes the car `out` + `finished` (a ghost that cruises). `standings()`
+  puts knocked-out cars behind the runners, the last one out first. The race keeps going after the players are
+  out, until one car is left. State index 32 = out; the client shows OUT, a 💀 tag, and a danger-zone warning.
+
+## Safety car catch-up
+`scLimit`: a car far behind the car ahead may go up to 97% of top speed, but only as fast as it can still brake
+(`SC_CATCH_DEC`) down to just under safety car pace by the time it's 70 px behind. Stragglers sprint up, then
+tuck in behind the pack.
+
 ## Multiclass racing
 - **Game mode** (top of Race settings, host): `settings.mode` is `"normal"` or `"multi"`, plus `settings.mix`
   (share of AI in GTs: 0.33 / 0.5 / 0.67; which AI are GTs: `aiIsGt`). Ranked always runs normal.
 - **Classes** (`CAR_CLASSES` in server.js, applied in `stats()` on top of upgrades): Hyper = the normal car.
-  GT = 85% top speed, 80% acceleration, 90% cornering, 92% grip, 88% brakes, but 65% tyre wear, 80% pit time,
-  130% boost refill and 60% crash damage. Hyper best laps come out about 12-15% quicker.
+  GT3 = 82% top speed, 74% acceleration, 87% cornering, 90% grip, 85% brakes, but 70% tyre wear, 85% pit time,
+  120% boost refill and 60% crash damage. GT3 cars without a chest body use the boxy `gt3` body (flared arches,
+  yellow headlights, swan-neck wing).
 - Every player picks their class (`pickClass`, `p.cls`, shown in the lobby). Hypers line up ahead of GTs.
   No slipstream from the other class. Points, class win banners (`classWin` feed), results (`cls`, `cpos`) and
   account stats/coins are per class (`recordStats` scores you in your class if it has 3+ cars).

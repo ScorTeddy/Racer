@@ -32,6 +32,7 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 // Defend mode: switching it on costs 10% boost, then it burns 8% a second (and boost doesn't recharge meanwhile)
 const DEFEND_START = 0.1, DEFEND_DRAIN = 0.08;
+const SC_CATCH_DEC = 650;       // safety car: how hard the stragglers plan to brake when they reach the pack
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
@@ -83,7 +84,7 @@ const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
 // refill their boost faster. (Hypers wear tyres like a normal car: any more and short races cost them a stop.)
 const CAR_CLASSES = {
   hyper: { name: "Hyper", speed: 1, accel: 1, corner: 1, grip: 1, brake: 1, wear: 1, pit: 1, refill: 1, dmg: 1 },
-  gt:    { name: "GT", speed: 0.85, accel: 0.8, corner: 0.9, grip: 0.92, brake: 0.88, wear: 0.65, pit: 0.8, refill: 1.3, dmg: 0.6 },
+  gt:    { name: "GT3", speed: 0.82, accel: 0.74, corner: 0.87, grip: 0.9, brake: 0.85, wear: 0.7, pit: 0.85, refill: 1.2, dmg: 0.6 },
 };
 const CLASS_MIXES = [0.33, 0.5, 0.67];        // share of the AI in GT cars
 // which AI cars are GTs: spread evenly through the roster so both classes get a mix of drivers
@@ -1518,6 +1519,15 @@ class Room {
     assignBoxes(t.pitLane, this.cars.map((c) => c.team));
     this.emit("track", this.trackMsg());
     this.initWeather();
+    // Elimination: the last car is knocked out every lap until one is left (more per lap on big grids,
+    // so it never runs past 12 laps). The race is as many laps as it takes.
+    this.elim = null;
+    if (this.elimRealLaps != null) { s.laps = this.elimRealLaps; this.elimRealLaps = null; }
+    if (s.mode === "elim" && !this.ranked && !this.qualifying && this.cars.length >= 2) {
+      const per = Math.max(1, Math.ceil((this.cars.length - 1) / 12));
+      this.elim = { per, round: 0 }; this.elimRealLaps = s.laps; s.laps = Math.ceil((this.cars.length - 1) / per);
+      this.wearPerLap = 1 / tireLifeLaps(s.laps);
+    }
     if (this.qualifying) {
       this.realLaps = s.laps; s.laps = 999;       // nobody "finishes" a qualifying session
       this.qualiEnd = s.quali * 60;
@@ -1527,7 +1537,7 @@ class Room {
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -1766,7 +1776,7 @@ class Room {
     }
     if (this.qualifying) { if (this.time >= this.qualiEnd) this.endQuali(); return; }
     // (with only spectators in the room, the race runs until the AI have all finished)
-    const humansLeft = this.cars.some((c) => c.owner) ? this.cars.some((c) => c.owner && !c.finished) : !this.cars.every((c) => c.finished);
+    const humansLeft = this.cars.some((c) => c.owner) && !this.elim ? this.cars.some((c) => c.owner && !c.finished) : !this.cars.every((c) => c.finished);
     if (!humansLeft || this.time > this.finishDeadline) this.endRace();
   }
   // ---- weather: a hidden rain strength that drifts around, with the odd shower or cloudburst ----
@@ -2330,6 +2340,13 @@ class Room {
     }
     if (c.tireAtLap !== undefined && c.tire < c.tireAtLap && c.pitting <= 0) { const w = c.tireAtLap - c.tire; c.lapWearMeas = c.lapWearMeas ? c.lapWearMeas * 0.5 + w * 0.5 : w; }
     c.tireAtLap = c.tire;
+    // elimination: the first car to finish each lap sets off the knockout of the last car(s)
+    if (this.elim && !c.out && c.lapsDone >= 1 && c.lapsDone > this.elim.round) {
+      this.elim.round = c.lapsDone;
+      const running = this.standings().filter((o) => !o.finished && !o.out && o !== c);
+      const n = c.lapsDone >= this.settings.laps ? running.length : Math.min(this.elim.per, running.length);
+      for (const o of running.slice(running.length - n).reverse()) this.knockOut(o, running.length - n + 1);
+    }
     // the leader starts the last lap: everyone gets the call
     if (!this.qualifying && !this.lastLapCalled && this.settings.laps > 1 && c.lapsDone === this.settings.laps - 1) { this.lastLapCalled = true; this.emit("feed", { t: "lastLap", name: c.name }); }
     if (c.lapsDone >= this.settings.laps && !c.finished) {
@@ -2340,6 +2357,14 @@ class Room {
       if (this.finishDeadline === Infinity) { this.finishDeadline = this.time + 30; this.emit("feed", { t: "winner", name: c.name, cls: this.multi ? c.cls : null }); }
       else if (this.multi && !this.cars.some((o) => o !== c && o.finished && o.cls === c.cls)) this.emit("feed", { t: "classWin", name: c.name, cls: c.cls });
     }
+  }
+
+  // elimination: knocked out. The car turns into a ghost and cruises, its race is over.
+  knockOut(c, left) {
+    c.out = true; c.finished = true; c.finishTime = this.time; c.nitroOn = c.aiNitro = false; c.defending = false; c.aiDefend = false;
+    this.emit("feed", { t: "elim", name: c.name, id: c.id, left });
+    const p = c.owner && this.players.get(c.owner);
+    if (p) { p.nitroHeld = false; p.defendOn = false; io.to(p.id).emit("eliminated", { pos: left + 1, of: this.cars.length }); }
   }
 
   // Cars are boxes. Two boxes overlap if there's no gap along any of their 4 edge directions.
@@ -2443,12 +2468,15 @@ class Room {
     const SC = MAX_SPEED * 0.44, ah = c.ahead;
     if (!ah || ah.finished) return SC;
     const gap = (ah.progress - c.progress) * this.track.spacing;
-    return gap > 200 ? SC * 1.5 : gap > 90 ? SC * 1.15 : SC * 0.9;
+    // stragglers sprint up to the pack (almost race speed), braking just in time to slot in behind the last car
+    const tail = SC * 0.9;
+    return Math.min(MAX_SPEED * 0.97, Math.sqrt(tail * tail + 2 * SC_CATCH_DEC * Math.max(0, gap - 70)));
   }
 
   standings() {
     if (this.qualifying) return [...this.cars].sort((a, b) => (a.bestLap - b.bestLap) || (b.progress - a.progress));
     return [...this.cars].sort((a, b) => {
+      if (a.out || b.out) { if (a.out && b.out) return (b.finishTime - a.finishTime) || (b.progress - a.progress); return a.out ? 1 : -1; }   // knocked out: behind everyone still in, last out first
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
       if (a.finished) return -1; if (b.finished) return 1;
       return b.progress - a.progress;
@@ -2567,6 +2595,7 @@ class Room {
     this.dotd = dotd && dotd.car;
     this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
+    if (this.elimRealLaps != null) { this.settings.laps = this.elimRealLaps; this.elimRealLaps = null; }
     if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
     if (this.ranked && this.rankedEntries?.length) {
       const entries = this.rankedEntries; this.rankedEntries = null;
@@ -2669,7 +2698,7 @@ class Room {
       c.pits, c.pitting > 0 ? r2(1 - c.pitting / (c.pitTotal || 1)) : -1, c.mistakeT > 0 ? 1 : 0, c.finished ? 1 : 0,
       c.slide > 70 && c.onTrack ? 1 : 0, c.onTrack ? 1 : 0, c.boosting ? 1 : 0, Math.round(c.progress), isFinite(c.bestLap) ? r2(c.bestLap) : 0,
       COMPOUNDS[c.compound].short, c.punct ? 1 : 0, c.surface, c.inPit ? 1 : 0, r2(c.damage), c.crashT > 0 ? 1 : 0, r2(this.track.elev[c.idx] || 0),
-      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0, c.defending ? 1 : 0,
+      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0, c.defending ? 1 : 0, c.out ? 1 : 0,
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
@@ -3055,7 +3084,7 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
-    if (s?.mode === "normal" || s?.mode === "multi") S.mode = s.mode;
+    if (["normal", "multi", "elim"].includes(s?.mode)) S.mode = s.mode;
     if (CLASS_MIXES.includes(Number(s?.mix))) S.mix = Number(s.mix);
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
@@ -3779,7 +3808,7 @@ setInterval(() => {
   for (const r of rooms.values()) {
     if (!r.track) continue;
     try { r.tick(); r.sendState(); }
-    catch (e) { console.error("room", r.code, e); r.phase = "lobby"; r.cars = null; r.sendLobby(); r.emit("toast", "Something went wrong in that race. Back to the lobby."); }
+    catch (e) { console.error("room", r.code, e); r.phase = "lobby"; r.cars = null; if (r.elimRealLaps != null) { r.settings.laps = r.elimRealLaps; r.elimRealLaps = null; } r.sendLobby(); r.emit("toast", "Something went wrong in that race. Back to the lobby."); }
   }
 }, 1000 / 30);
 

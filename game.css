@@ -1268,3 +1268,11 @@ body.rm .class-flag.blue { animation: none; }
 #defendBtn.on.active { animation: defPulse 0.8s ease-in-out infinite alternate; }
 @keyframes defPulse { from { box-shadow: 0 0 8px rgba(90,176,255,0.5); } to { box-shadow: 0 0 22px rgba(90,176,255,0.95); } }
 body.rm #defendBtn.on.active { animation: none; }
+
+/* ---- elimination ---- */
+.class-flag.danger { background: rgba(185,28,28,0.92); box-shadow: 0 0 18px rgba(239,68,68,0.75); animation: bluePulse 0.6s ease-in-out infinite alternate; }
+body.rm .class-flag.danger { animation: none; }
+.standings li.out { opacity: 0.45; text-decoration: line-through; }
+.elim-note { margin: 0; padding: 0.4rem 0.6rem; border-radius: 0.6rem; background: rgba(255,107,97,0.12); border: 1px solid rgba(255,107,97,0.4); font-size: 0.82rem; font-weight: 700; }
+.mode-cards { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+.class-flag.warn { background: rgba(180,110,10,0.92); }
