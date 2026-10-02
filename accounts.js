@@ -1011,6 +1011,91 @@ function plinko(u, bet, risk) {
   return { ok: true, path, bucket, mult, win, bet, risk, coins: u.coins, got };
 }
 
+// ======================= Daily wheel, slots and blackjack =======================
+// All rolled here on the server. The wheel: one free spin a day, more from the season pass. 12 equal slices.
+const WHEEL = [{ coins: 50 }, { coins: 100 }, { xp: 250 }, { coins: 50 }, { coins: 200 }, { spins: 1 }, { coins: 100 }, { crate: 1 }, { coins: 50 }, { coins: 500 }, { xp: 250 }, { coins: 1000 }];
+function wheelPublic(u) { return { free: u.spinDay !== dayNo(), spins: u.spins || 0, next: (dayNo() + 1) * 86400000 }; }
+function spinWheel(u) {
+  const free = u.spinDay !== dayNo();
+  if (!free && !(u.spins > 0)) return { error: "No spins left. You get a free one every day (and more from the season pass)." };
+  if (free) u.spinDay = dayNo(); else u.spins--;
+  const seg = crypto.randomInt(WHEEL.length), w = WHEEL[seg];
+  let label = "", got = [];
+  if (w.coins) { u.coins += w.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + w.coins; label = `🪙 ${w.coins} coins`; }
+  else if (w.xp) { got = passXp(u, w.xp); label = `⭐ ${w.xp} season pass XP`; }
+  else if (w.spins) { u.spins = (u.spins || 0) + w.spins; label = "🎡 Another spin!"; }
+  else if (w.crate) { const T = monthTheme(); u.crates = u.crates || {}; u.crates[T.key] = (u.crates[T.key] || 0) + 1; label = `🎁 A ${T.name} crate`; }
+  u.stats.wheelSpins = (u.stats.wheelSpins || 0) + 1;
+  saveSoon(u);
+  return { ok: true, seg, label, got, coins: u.coins, wheel: wheelPublic(u) };
+}
+// slots: 3 reels, about 97% paid back on average, a win roughly 1 spin in 4.5
+const SLOT_SYMS = [["🍒", 6], ["🍋", 5], ["🔔", 4], ["⭐", 3], ["🏁", 2], ["7️⃣", 1]];
+const SLOT_PAY = { "🍒": 5, "🍋": 10, "🔔": 20, "⭐": 40, "🏁": 90, "7️⃣": 300 }, SLOT_TWO_CHERRY = 2;
+const CASINO_MIN = 10, CASINO_MAX = 1000;
+const slotSym = () => { let r = crypto.randomInt(21); for (const [s, w] of SLOT_SYMS) { if (r < w) return s; r -= w; } return "🍒"; };
+function slots(u, bet) {
+  bet = Math.floor(Number(bet));
+  if (!(bet >= CASINO_MIN && bet <= CASINO_MAX)) return { error: `Bets are ${CASINO_MIN} to ${CASINO_MAX} coins` };
+  if (u.coins < bet) return { error: "Not enough coins" };
+  const reels = [slotSym(), slotSym(), slotSym()];
+  const mult = reels[0] === reels[1] && reels[1] === reels[2] ? SLOT_PAY[reels[0]] : reels.filter((x) => x === "🍒").length === 2 ? SLOT_TWO_CHERRY : 0;
+  const win = bet * mult;
+  u.coins += win - bet;
+  const st = u.stats; st.slotSpins = (st.slotSpins || 0) + 1; st.slotBest = Math.max(st.slotBest || 0, mult);
+  saveSoon(u);
+  return { ok: true, reels, mult, win, bet, coins: u.coins };
+}
+// blackjack: one hand at a time, kept on your account (so a refresh doesn't lose it). Dealer stands on 17,
+// blackjack pays 3 to 2, you can double on your first two cards. No splitting.
+const BJ_MAX = 2000;
+const bjCard = () => ({ r: 1 + crypto.randomInt(13), s: crypto.randomInt(4) });
+function bjTotal(cards) { let t = 0, aces = 0; for (const c of cards) { t += c.r === 1 ? 11 : Math.min(10, c.r); if (c.r === 1) aces++; } while (t > 21 && aces) { t -= 10; aces--; } return t; }
+const bjNatural = (cards) => cards.length === 2 && bjTotal(cards) === 21;
+function bjPublic(u) {
+  const h = u.bj; if (!h) return null;
+  const dealer = h.done ? h.dealer : [h.dealer[0], null];
+  return { player: h.player, dealer, bet: h.bet, done: !!h.done, result: h.result || null, paid: h.paid || 0, total: bjTotal(h.player), dealerTotal: h.done ? bjTotal(h.dealer) : bjTotal([h.dealer[0]]), canDouble: !h.done && h.player.length === 2 && u.coins >= h.bet };
+}
+function bjFinish(u, result) {
+  const h = u.bj; h.done = true; h.result = result;
+  h.paid = result === "blackjack" ? Math.floor(h.bet * 2.5) : result === "win" ? h.bet * 2 : result === "push" ? h.bet : 0;
+  u.coins += h.paid;
+  const st = u.stats; st.bjHands = (st.bjHands || 0) + 1; if (h.paid > h.bet) st.bjWins = (st.bjWins || 0) + 1;
+}
+function bjDeal(u, bet) {
+  if (u.bj && !u.bj.done) return { error: "Finish this hand first" };
+  bet = Math.floor(Number(bet));
+  if (!(bet >= CASINO_MIN && bet <= BJ_MAX)) return { error: `Bets are ${CASINO_MIN} to ${BJ_MAX} coins` };
+  if (u.coins < bet) return { error: "Not enough coins" };
+  u.coins -= bet;
+  u.bj = { bet, player: [bjCard(), bjCard()], dealer: [bjCard(), bjCard()], done: false };
+  const pn = bjNatural(u.bj.player), dn = bjNatural(u.bj.dealer);
+  if (pn || dn) bjFinish(u, pn && dn ? "push" : pn ? "blackjack" : "lose");
+  saveSoon(u);
+  return { ok: true, hand: bjPublic(u), coins: u.coins };
+}
+function bjAct(u, act) {
+  const h = u.bj; if (!h || h.done) return { error: "Deal a new hand first" };
+  if (act === "double") {
+    if (h.player.length !== 2) return { error: "You can only double on your first two cards" };
+    if (u.coins < h.bet) return { error: "Not enough coins to double" };
+    u.coins -= h.bet; h.bet *= 2; h.player.push(bjCard());
+    if (bjTotal(h.player) > 21) bjFinish(u, "bust"); else act = "stand";
+  } else if (act === "hit") {
+    h.player.push(bjCard());
+    const t = bjTotal(h.player);
+    if (t > 21) bjFinish(u, "bust"); else if (t === 21) act = "stand";
+  } else if (act !== "stand") return { error: "Hit, stand or double" };
+  if (act === "stand" && !h.done) {
+    while (bjTotal(h.dealer) < 17) h.dealer.push(bjCard());
+    const p = bjTotal(h.player), d = bjTotal(h.dealer);
+    bjFinish(u, d > 21 || p > d ? "win" : p === d ? "push" : "lose");
+  }
+  saveSoon(u);
+  return { ok: true, hand: bjPublic(u), coins: u.coins };
+}
+
 // what gets sent to other players' screens: { slot: look }
 function extrasOf(u) {
   if (!u) return null;
@@ -1343,7 +1428,7 @@ function dailyPublic(u) {
 // One a month (UTC), each with its own theme, items and themed crate. Race to earn pass XP, and every
 // tier pays out on the FREE track. The PREMIUM track costs 2,000 coins and adds the themed items and
 // crates (bought late? you get everything you already reached straight away).
-const PASS_TIERS = 30, PASS_TIER_XP = 250, PASS_PRICE = 2000;
+const PASS_TIERS = 60, PASS_TIER_XP = 250, PASS_PRICE = 2000;
 const PASS_XP = { daily: 150, weekly: 300 };
 const RIVAL_PASS_XP = 100;   // bonus season pass XP for beating your rival (on top of the 100 coins)
 const monthKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
@@ -1354,10 +1439,12 @@ const passItem = (T, slot) => `bp_${T.key}_${slot}`;
 function passRewards(T = monthTheme()) {
   const free = [], prem = [];
   for (let t = 1; t <= PASS_TIERS; t++) {
-    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 ? { crate: T.key } : t % 5 === 0 ? { coins: 250 } : { coins: 60 + t * 3 });
+    // 60 tiers: themed items up to 30, then crates, coins and wheel spins all the way to 60
+    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 || t === 45 || t === 60 ? { crate: T.key } : t % 10 === 7 ? { spins: 1 }
+      : t % 5 === 0 ? { coins: 250 } : { coins: 60 + Math.min(t, 30) * 3 });
     prem.push(t === 1 ? { item: passItem(T, "helmet") } : t === 5 ? { item: passItem(T, "glow") } : t === 10 ? { item: passItem(T, "smoke") }
       : t === 20 ? { item: passItem(T, "flame") } : t === 25 ? { item: passItem(T, "trail") } : t === 30 ? { item: passItem(T, "badge") }
-      : t % 4 === 3 ? { crate: T.key } : { coins: 120 + t * 4 });
+      : t === 60 ? { spins: 5 } : t % 6 === 0 ? { spins: 2 } : t % 4 === 3 ? { crate: T.key } : { coins: 120 + Math.min(t, 30) * 4 });
   }
   return { free, prem };
 }
@@ -1368,6 +1455,7 @@ function passState(u) {
 }
 function grant(u, rw, why) {
   if (rw.coins) { u.coins += rw.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + rw.coins; return `+${rw.coins} coins`; }
+  if (rw.spins) { u.spins = (u.spins || 0) + rw.spins; return `${rw.spins} wheel spin${rw.spins > 1 ? "s" : ""}`; }
   if (rw.crate) { u.crates = u.crates || {}; u.crates[rw.crate] = (u.crates[rw.crate] || 0) + 1; return `a ${PASS_THEMES.find((x) => x.key === rw.crate)?.name || ""} crate`; }
   if (rw.item) { const it = STORE_BY_ID.get(rw.item); if (!it) return ""; if (!u.owned.includes(it.id)) u.owned.push(it.id); else { u.coins += 150; return `+150 coins (you had the ${it.name})`; } return it.name; }
   return "";
@@ -1607,6 +1695,14 @@ function sendDm(u, o, text) {
   return { ok: true, m };
 }
 function dmThread(u, id) { return (u.dms || {})[id] || []; }
+// ---- notifications for when you're offline: shown at the top of the screen the next time you sign in ----
+function addNote(u, n) {
+  u.notes = (u.notes || []).filter((x) => !n.key || x.key !== n.key);      // (one "new messages from X" at a time)
+  u.notes.push({ icon: String(n.icon || "🔔"), title: String(n.title || "").slice(0, 80), text: String(n.text || "").slice(0, 120), key: n.key || null, t: Date.now() });
+  if (u.notes.length > 20) u.notes = u.notes.slice(-20);
+  saveSoon(u);
+}
+function takeNotes(u) { const n = (u.notes || []).filter((x) => Date.now() - x.t < 14 * 86400000); if (u.notes?.length) { u.notes = []; saveSoon(u); } return n; }
 // ---- 1v1 bets: both put the same coins in, the next race you're both in decides it ----
 // offer -> (they accept) -> both stakes are taken and held -> whoever finishes ahead gets both.
 // Nobody raced each other within 3 days? Everyone gets their stake back.
@@ -1809,7 +1905,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -1893,7 +1989,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  offerBet, answerBet, settleBets, BET_MIN, BET_MAX,
+  offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,

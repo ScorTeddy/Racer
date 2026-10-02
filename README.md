@@ -51,7 +51,7 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   the points pane under Settings); the profile has 5 tabs (Achievements sit inside "Me", Leaderboards inside
   Ranked, Security behind the 🔒 button); the menu's account bar has one Profile button. All the CSS for it is at
   the end of game.css. New buttons go in `DOCK_SECS` or they show in every section.
-- **Prestige** (season pass): at tier 30, "Prestige" resets the pass to tier 0 (premium stays) for `PRESTIGE_COINS`
+- **Prestige** (season pass): at tier 60, "Prestige" resets the pass to tier 0 (premium stays) for `PRESTIGE_COINS`
   (1,000) and a 🎖️N badge (`u.prestige`, lifetime count) shown before your name in rooms and races (`extras.prest`).
   The tiers pay out again on the way back up (items you own turn into coins, as always).
 - **Weekend events** (`EVENTS` in server.js): every Saturday + Sunday (UTC) one is on, a different one each week:
@@ -134,7 +134,7 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
-  Festive), 30 tiers of 250 XP. Free track: coins, a themed item (tier 15) and a themed crate (tier 30). Premium
+  Festive), 60 tiers of 250 XP. Free track: coins, wheel spins, a themed item (tier 15) and themed crates (tiers 30, 45, 60). Premium
   (2,000 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)
   and themed crates (`crate:open`) only come from the pass. XP: races, dailies (+150), weeklies (+300).
 - **Gifts, trades and chat with friends** (Profile › Friends › 💬 🎁 🤝): friends only, one gift/offer a minute,
@@ -223,6 +223,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Safety car**: `deploySafetyCar` ghosts every car for 2 seconds.
 - **GT3s yield** (`drive`, `c.yielding`): a GT with a Hyper closing in behind moves to the other side and lifts 5%.
 - **Plinko**: the ball spawns on click and sits on the top peg until the server's path arrives.
+
+## Casino, daily wheel, notifications, overtake of the race
+
+- **Casino** (Profile › 🎰 Casino; the hub tab is still `data-ht="plinko"`): daily wheel, Plinko, slots and blackjack.
+  Everything is rolled on the server (accounts.js). The client only animates it.
+  - **Daily wheel** (`WHEEL`, `spinWheel`, `wheel:spin`): 12 equal slices, one free spin a UTC day (`u.spinDay`),
+    plus extra `u.spins` from the season pass. The account update is held back 4.2s so it doesn't spoil the prize.
+  - **Slots** (`slots`, `slots:play`): 3 reels with weighted symbols, about 97% paid back on average (checked in the tests).
+  - **Blackjack** (`bjDeal` / `bjAct`, `bj:deal` / `bj:act`): the hand is kept in `u.bj`; the dealer's second card
+    is hidden until the hand is over. Dealer stands on 17, blackjack pays 3:2, double on 2 cards, no split.
+- **Season pass**: `PASS_TIERS = 60`. `{ spins: n }` rewards on both tracks (free: tiers 7, 17...; premium: every 6th, 5 at 60).
+- **Notifications** (`notifyUid` in server.js, `notify` on the client): gifts, trades, bets, messages, friend
+  requests. Offline? They're kept in `u.notes` (`addNote` / `takeNotes`) and shown at the next sign-in.
+- **Overtake of the race** (`spotPasses`): a pass counts if the car was behind for 1.5s and is still ahead 1.5s
+  later, with neither car in the pits or crashed. Higher places, players and later laps score more. The client keeps
+  the clip (4s before to 2s after, in race time) for the "Watch the overtake of the race" button.
 
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server

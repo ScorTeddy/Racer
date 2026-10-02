@@ -1174,6 +1174,20 @@
     if (authMode === "reset") { if (!code) return authMsg("Type an authenticator code or a backup code"); return send("auth:reset", { username, code, password }); }
     send(authMode === "signup" ? "auth:signup" : "auth:login", { username, password, backup: backupFor("u_" + username.toLowerCase()) });
   });
+  // notifications at the top: gifts, trades, bets, messages, friend requests (and what you missed while offline)
+  function notify(n, missed) {
+    if (n.key && n.key === "dm_" + FR.who?.id && !$("friendBox").classList.contains("hidden")) return;   // (already chatting with them)
+    const d = document.createElement("div"); d.className = "ach-pop note"; d.setAttribute("role", "status");
+    const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = n.icon || "🔔";
+    const tx = document.createElement("div"); const sm = document.createElement("small"); sm.textContent = missed ? "While you were away" : "Notification";
+    const b = document.createElement("b"); b.textContent = n.title || ""; tx.append(sm, b);
+    if (n.text) { const t = document.createElement("span"); t.className = "note-tx"; t.textContent = n.text; tx.appendChild(t); }
+    d.append(ic, tx); d.title = "Open Friends";
+    d.addEventListener("click", () => { d.remove(); if (A.user) openHub(n.tab || "friends"); });
+    A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("tick"); setTimeout(() => { d.remove(); res(); }, 3600); }));
+  }
+  socket.on("notify", (n) => notify(n));
+  socket.on("notifyMany", (list) => { for (const n of (list || []).slice(-6)) notify(n, true); if ((list || []).length > 6) popup(`🔔 ${list.length - 6} more while you were away (Profile › Friends)`); });
   socket.on("achievement", (a) => {
     const d = document.createElement("div"); d.className = "ach-pop"; d.setAttribute("role", "status");
     const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = a.icon;
@@ -1229,7 +1243,7 @@
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
-    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderPlinko(u); else if (A.tab === "custom") renderCustom(u);
+    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderCasino(u); else if (A.tab === "custom") renderCustom(u);
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
@@ -1717,11 +1731,10 @@
     plStatus();
     if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
   });
-  function renderPlinko(u) {
-    const box = $("hubPlinko");
+  function renderPlinko(u, box) {
     if (!PL.root) {
       const R = PL.root = el("div", "plinko");
-      R.innerHTML = `<p class="hub-h">🎰 The gambling room: drop a ball, win up to 170x. <b>Coins only, just for fun.</b> On average every drop pays back about 99%, so the house wins in the end.</p>
+      R.innerHTML = `<p class="hub-h">🎰 Plinko: drop a ball, win up to 170x. <b>Coins only, just for fun.</b> On average every drop pays back about 99%, so the house wins in the end.</p>
         <div class="pl-top"><span class="pl-bal"></span><span class="pl-net"></span></div>
         <div class="pl-main"><canvas class="pl-board" width="520" height="440" role="img" aria-label="Plinko board"></canvas>
         <div class="pl-side"><label class="f">Bet (10-1000) <input class="pl-bet" type="number" min="10" max="1000" step="10" inputmode="numeric"></label>
@@ -1745,6 +1758,177 @@
     if (u && !PL.balls.length && !PL.pend.size) PL.base = u.coins;          // (nothing in the air: the account's number is the truth)
     plStatus(); if (!PL.raf) plDraw();
   }
+  // ======================= Casino: daily wheel, Plinko, slots, blackjack =======================
+  // Everything is rolled on the server; this only animates it. Each game is built once and kept.
+  const CZ = { root: null, game: "wheel", rot: 0, spinning: false, slotBusy: false, bjBusy: false, slotBet: 50, bjBet: 50, panes: {} };
+  try { const v = JSON.parse(localStorage.getItem("tb-casino") || "null"); if (v) { CZ.game = v.game || CZ.game; CZ.slotBet = v.slotBet || 50; CZ.bjBet = v.bjBet || 50; } } catch (e) {}
+  const czSave = () => { try { localStorage.setItem("tb-casino", JSON.stringify({ game: CZ.game, slotBet: CZ.slotBet, bjBet: CZ.bjBet })); } catch (e) {} };
+  const CZ_GAMES = [["wheel", "🎡 Daily wheel"], ["plinko", "🎰 Plinko"], ["slots", "🍒 Slots"], ["bj", "🃏 Blackjack"]];
+  function czCoins(n) { if (A.user && typeof n === "number") { A.user.coins = n; $("hubCoins").textContent = `🪙 ${n}`; } if (CZ.root) CZ.root.querySelectorAll(".cz-bal").forEach((b) => (b.textContent = `🪙 ${(A.user?.coins || 0).toLocaleString()}`)); }
+  function czBetRow(key, max) {
+    const row = el("div", "cz-betrow"), lab = el("label", "f", "Bet "), inp = document.createElement("input");
+    inp.type = "number"; inp.min = "10"; inp.max = String(max); inp.step = "10"; inp.inputMode = "numeric"; inp.className = "cz-bet"; inp.value = CZ[key];
+    inp.addEventListener("change", () => { CZ[key] = Math.max(10, Math.min(max, Math.floor(Number(inp.value) || 10))); inp.value = CZ[key]; czSave(); });
+    lab.appendChild(inp); row.appendChild(lab);
+    for (const [q, t] of [["half", "½"], ["double", "2x"], ["max", "Max"]]) {
+      const b = el("button", "btn", t); b.type = "button";
+      b.addEventListener("click", () => { const v = CZ[key], m = Math.min(max, Math.max(10, A.user?.coins || 10)); CZ[key] = Math.max(10, Math.min(m, q === "half" ? Math.floor(v / 2) : q === "double" ? v * 2 : m)); inp.value = CZ[key]; czSave(); });
+      row.appendChild(b);
+    }
+    return row;
+  }
+  function renderCasino(u) {
+    const box = $("hubPlinko");
+    if (!CZ.root) {
+      CZ.root = el("div", "casino");
+      const nav = el("div", "chips cz-nav");
+      for (const [g, t] of CZ_GAMES) { const b = el("button", "chip", t); b.type = "button"; b.dataset.g = g; b.addEventListener("click", () => { CZ.game = g; czSave(); renderCasino(A.user); }); nav.appendChild(b); }
+      CZ.root.appendChild(nav);
+      for (const [g] of CZ_GAMES) { const pn = el("div", "cz-pane"); pn.dataset.g = g; CZ.panes[g] = pn; CZ.root.appendChild(pn); }
+    }
+    if (CZ.root.parentNode !== box) { box.textContent = ""; box.appendChild(CZ.root); }
+    CZ.root.querySelectorAll(".cz-nav .chip").forEach((b) => { b.setAttribute("aria-pressed", String(b.dataset.g === CZ.game)); if (b.dataset.g === "wheel") b.textContent = "🎡 Daily wheel" + (u?.wheel?.free ? " • free spin!" : u?.wheel?.spins ? ` (${u.wheel.spins})` : ""); });
+    for (const [g, pn] of Object.entries(CZ.panes)) pn.classList.toggle("hidden", g !== CZ.game);
+    const pn = CZ.panes[CZ.game];
+    if (CZ.game === "plinko") renderPlinko(u, pn); else if (CZ.game === "wheel") renderWheel(u, pn); else if (CZ.game === "slots") renderSlots(u, pn); else renderBj(u, pn);
+  }
+  // ---- daily wheel ----
+  function wheelDraw() {
+    const cv = CZ.wcv; if (!cv) return;
+    const c = cv.getContext("2d"), W = cv.width, R = W / 2 - 8, segs = A.catalog?.wheel || [], n = segs.length || 12, step = (Math.PI * 2) / n;
+    const cols = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e", "#a855f7", "#ec4899"];
+    c.clearRect(0, 0, W, W); c.save(); c.translate(W / 2, W / 2);
+    for (let i = 0; i < n; i++) {
+      const a0 = CZ.rot + i * step - Math.PI / 2, w = segs[i] || {};
+      c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, R, a0, a0 + step); c.closePath(); c.fillStyle = w.coins >= 1000 ? "#ffcc1f" : cols[i % cols.length]; c.fill();
+      c.strokeStyle = "#0b0e1a"; c.lineWidth = 2; c.stroke();
+      c.save(); c.rotate(a0 + step / 2); c.textAlign = "right"; c.textBaseline = "middle"; c.fillStyle = w.coins >= 1000 ? "#1a1300" : "#fff"; c.font = "800 15px 'Chakra Petch', sans-serif";
+      c.fillText(w.coins ? `🪙${w.coins}` : w.xp ? `⭐${w.xp}XP` : w.spins ? "🎡 +1" : w.crate ? "🎁 crate" : "", R - 10, 0); c.restore();
+    }
+    c.beginPath(); c.arc(0, 0, 26, 0, Math.PI * 2); c.fillStyle = "#1a1d25"; c.fill(); c.strokeStyle = "#ffcc1f"; c.lineWidth = 3; c.stroke();
+    c.restore();
+    c.fillStyle = "#fff"; c.beginPath(); c.moveTo(W / 2 - 14, 2); c.lineTo(W / 2 + 14, 2); c.lineTo(W / 2, 30); c.closePath(); c.fill(); c.strokeStyle = "#0b0e1a"; c.stroke();   // the pointer
+  }
+  function wheelStatus(u) {
+    const P = CZ.panes.wheel, w = u?.wheel, b = P.querySelector(".cz-spin"), st = P.querySelector(".cz-wstat");
+    if (!u) { b.disabled = true; b.textContent = "Sign in to spin"; st.textContent = ""; return; }
+    b.disabled = CZ.spinning || !(w.free || w.spins > 0);
+    b.textContent = CZ.spinning ? "Spinning..." : w.free ? "🎡 Free daily spin!" : w.spins > 0 ? `🎡 Spin (${w.spins} left)` : "No spins left";
+    const h = Math.max(0, Math.ceil((w.next - Date.now()) / 3600000));
+    st.textContent = w.free ? "Your free spin for today is ready." : `Next free spin in about ${h} hour${h === 1 ? "" : "s"}.${w.spins ? ` You have ${w.spins} extra spin${w.spins === 1 ? "" : "s"} from the season pass.` : " Get extra spins from the season pass."}`;
+  }
+  function renderWheel(u, pn) {
+    if (!pn.firstChild) {
+      pn.innerHTML = `<p class="hub-h">🎡 One free spin every day, plus extra spins from the season pass. Every slice is a prize.</p>
+        <div class="cz-main"><canvas class="cz-wheel" width="340" height="340" role="img" aria-label="Prize wheel"></canvas>
+        <div class="cz-side"><span class="cz-bal"></span><button type="button" class="btn go cz-spin">🎡 Spin</button><p class="cz-wstat preset-note"></p><p class="cz-out" role="status"></p></div></div>`;
+      CZ.wcv = pn.querySelector(".cz-wheel");
+      pn.querySelector(".cz-spin").addEventListener("click", () => { if (CZ.spinning) return; CZ.spinning = true; pn.querySelector(".cz-out").textContent = ""; wheelStatus(A.user); socket.emit("wheel:spin"); });
+    }
+    czCoins(); wheelStatus(u); wheelDraw();
+  }
+  socket.on("wheel:spin:res", (r) => {
+    if (r.error) { CZ.spinning = false; popup(r.error, true); if (A.user) wheelStatus(A.user); return; }
+    const n = A.catalog?.wheel?.length || 12, step = (Math.PI * 2) / n;
+    // land the middle of the winning slice under the pointer, after a few full turns
+    const TAU = Math.PI * 2, target = -(r.seg + 0.5) * step, from = CZ.rot, cur = ((from % TAU) + TAU) % TAU;
+    const end = from + ((((target - cur) % TAU) + TAU) % TAU) + 5 * TAU + (Math.random() - 0.5) * step * 0.6, t0 = performance.now(), dur = 3600;
+    let lastTick = Math.floor(from / step);
+    const anim = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      CZ.rot = from + (end - from) * e; wheelDraw();
+      const tk = Math.floor(CZ.rot / step); if (tk !== lastTick) { lastTick = tk; tone(500 + Math.random() * 80, 0.02, "square", 0.03); }
+      if (k < 1) return requestAnimationFrame(anim);
+      CZ.spinning = false; czCoins(r.coins);
+      if (A.user) { A.user.wheel = r.wheel; wheelStatus(A.user); }
+      const out = CZ.panes.wheel.querySelector(".cz-out"); out.textContent = `You won ${r.label}!`;
+      sfx("win"); banner(`🎡 ${r.label}!`, "#ffcc1f");
+      if (A.tab === "plinko" && !$("hub").classList.contains("hidden")) renderCasino(A.user);
+    };
+    requestAnimationFrame(anim);
+  });
+  // ---- slots ----
+  function renderSlots(u, pn) {
+    if (!pn.firstChild) {
+      const C = A.catalog?.slots, pay = C ? Object.entries(C.pay).map(([s2, m]) => `${s2}${s2}${s2} ${m}x`).join(" · ") + ` · any two 🍒 ${C.twoCherry}x` : "";
+      pn.innerHTML = `<p class="hub-h">🍒 Slots: line up three of a kind. Pays back about 97% on average.</p>
+        <div class="cz-main"><div class="cz-reels" aria-live="polite"><span>🍒</span><span>⭐</span><span>7️⃣</span></div>
+        <div class="cz-side"><span class="cz-bal"></span><div class="cz-betslot"></div><button type="button" class="btn go cz-pull">🎰 Spin</button><p class="cz-out" role="status"></p></div></div>
+        <p class="preset-note cz-pay">${pay}</p>`;
+      pn.querySelector(".cz-betslot").appendChild(czBetRow("slotBet", C?.max || 1000));
+      pn.querySelector(".cz-pull").addEventListener("click", () => {
+        if (CZ.slotBusy || !A.user) return;
+        if (CZ.slotBet > A.user.coins) return popup("Not enough coins", true);
+        CZ.slotBusy = true; pn.querySelector(".cz-pull").disabled = true; pn.querySelector(".cz-out").textContent = "";
+        czCoins(A.user.coins - CZ.slotBet);
+        const syms = A.catalog?.slots?.syms || ["🍒", "🍋", "🔔", "⭐", "🏁", "7️⃣"], reels = [...pn.querySelectorAll(".cz-reels span")];
+        CZ.slotRoll = setInterval(() => reels.forEach((r, i) => { if (!r.dataset.stop) r.textContent = syms[Math.floor(Math.random() * syms.length)]; }), 70);
+        reels.forEach((r) => { delete r.dataset.stop; r.classList.add("rolling"); });
+        CZ.slotAt = performance.now(); socket.emit("slots:play", { bet: CZ.slotBet });
+      });
+    }
+    pn.querySelector(".cz-pull").disabled = !u || CZ.slotBusy;
+    czCoins();
+  }
+  socket.on("slots:play:res", (r) => {
+    const pn = CZ.panes.slots, reels = [...pn.querySelectorAll(".cz-reels span")], wait = Math.max(0, 500 - (performance.now() - (CZ.slotAt || 0)));
+    const done = () => { clearInterval(CZ.slotRoll); CZ.slotBusy = false; pn.querySelector(".cz-pull").disabled = !A.user; reels.forEach((x) => x.classList.remove("rolling")); };
+    if (r.error) { done(); popup(r.error, true); czCoins(r.coins ?? A.user?.coins); return; }
+    r.reels.forEach((sym, i) => setTimeout(() => { reels[i].dataset.stop = "1"; reels[i].textContent = sym; reels[i].classList.remove("rolling"); tone(300 + i * 120, 0.05, "triangle", 0.05); }, wait + i * 260));
+    setTimeout(() => {
+      done(); czCoins(r.coins);
+      const out = pn.querySelector(".cz-out");
+      if (r.win) { out.textContent = `+${r.win.toLocaleString()} (${r.mult}x)!`; out.className = "cz-out up"; if (r.mult >= 20) { sfx("win"); banner(`🎰 ${r.mult}x! +${r.win.toLocaleString()}`, "#ffcc1f"); } else sfx("tick"); }
+      else { out.textContent = "No win"; out.className = "cz-out down"; }
+    }, wait + 2 * 260 + 80);
+  });
+  // ---- blackjack ----
+  const SUITS = ["♠", "♥", "♦", "♣"], RANKS = ["", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  function bjCardEl(c) { if (!c) return el("span", "cz-card back", "🂠"); const d = el("span", "cz-card" + (c.s === 1 || c.s === 2 ? " red" : ""), RANKS[c.r] + SUITS[c.s]); return d; }
+  function renderBj(u, pn) {
+    if (!pn.firstChild) {
+      pn.innerHTML = `<p class="hub-h">🃏 Blackjack: get closer to 21 than the dealer without going over. Dealer stands on 17, blackjack pays 3 to 2, double on your first two cards.</p>
+        <div class="cz-table"><div class="cz-hand"><small>Dealer <b class="cz-dt"></b></small><div class="cz-cards cz-dealer"></div></div>
+        <div class="cz-hand"><small>You <b class="cz-pt"></b></small><div class="cz-cards cz-player"></div></div></div>
+        <p class="cz-out" role="status"></p>
+        <div class="cz-side cz-bjside"><span class="cz-bal"></span><div class="cz-betslot"></div>
+        <div class="cz-acts"><button type="button" class="btn go cz-deal">🃏 Deal</button><button type="button" class="btn cz-hit">Hit</button><button type="button" class="btn cz-stand">Stand</button><button type="button" class="btn cz-double">Double</button></div></div>`;
+      pn.querySelector(".cz-betslot").appendChild(czBetRow("bjBet", A.catalog?.bj?.max || 2000));
+      const send = (ev, d) => { if (CZ.bjBusy || !A.user) return; CZ.bjBusy = true; socket.emit(ev, d); };
+      pn.querySelector(".cz-deal").addEventListener("click", () => { if (CZ.bjBet > (A.user?.coins || 0)) return popup("Not enough coins", true); send("bj:deal", { bet: CZ.bjBet }); });
+      pn.querySelector(".cz-hit").addEventListener("click", () => send("bj:act", { act: "hit" }));
+      pn.querySelector(".cz-stand").addEventListener("click", () => send("bj:act", { act: "stand" }));
+      pn.querySelector(".cz-double").addEventListener("click", () => send("bj:act", { act: "double" }));
+    }
+    bjShow(u?.bj || null);
+    czCoins();
+  }
+  function bjShow(h) {
+    const pn = CZ.panes.bj; if (!pn.firstChild) return;
+    const live = !!h && !h.done, dl = pn.querySelector(".cz-dealer"), pl = pn.querySelector(".cz-player");
+    dl.textContent = ""; pl.textContent = "";
+    if (h) { h.dealer.forEach((c) => dl.appendChild(bjCardEl(c))); h.player.forEach((c) => pl.appendChild(bjCardEl(c))); }
+    pn.querySelector(".cz-dt").textContent = h ? (h.done ? h.dealerTotal : `${h.dealerTotal} + ?`) : "";
+    pn.querySelector(".cz-pt").textContent = h ? h.total : "";
+    const out = pn.querySelector(".cz-out");
+    const RES = { blackjack: ["🎉 Blackjack!", "up"], win: ["You win!", "up"], push: ["Push: your bet back", ""], lose: ["Dealer wins", "down"], bust: ["Bust!", "down"] };
+    if (h?.done) { const [t, k] = RES[h.result] || ["", ""]; out.textContent = `${t}${h.paid ? ` +${h.paid.toLocaleString()}` : ""}`; out.className = "cz-out " + k; }
+    else out.textContent = live ? `Bet: 🪙 ${h.bet.toLocaleString()}` : "";
+    const guest = !A.user;
+    pn.querySelector(".cz-deal").disabled = guest || live || CZ.bjBusy;
+    pn.querySelector(".cz-hit").disabled = !live || CZ.bjBusy; pn.querySelector(".cz-stand").disabled = !live || CZ.bjBusy;
+    pn.querySelector(".cz-double").disabled = !live || CZ.bjBusy || !h.canDouble;
+    pn.querySelector(".cz-betslot").classList.toggle("dim", live);
+  }
+  const bjRes = (r) => {
+    CZ.bjBusy = false;
+    if (r.error) { popup(r.error, true); bjShow(A.user?.bj || null); return; }
+    if (A.user) A.user.bj = r.hand;
+    czCoins(r.coins); bjShow(r.hand);
+    if (r.hand.done) { if (r.hand.result === "blackjack") { sfx("win"); banner("🃏 BLACKJACK!", "#ffcc1f"); } else if (r.hand.paid > r.hand.bet) sfx("tick"); else if (!r.hand.paid) tone(160, 0.12, "sawtooth", 0.06); }
+    else tone(420, 0.03, "triangle", 0.04);
+  };
+  socket.on("bj:deal:res", bjRes); socket.on("bj:act:res", bjRes);
   const SLOT_NAMES = { body: "Car bodies", livery: "Liveries", decal: "Decals", num: "Number plates", wing: "Rear wings", rims: "Rims", glow: "Underglow", flame: "Boost flames", trail: "Trails", smoke: "Tyre smoke", helmet: "Helmets", badge: "Name badges" };
   const SLOT_TIPS = { body: "Legendary chest only", livery: "Chest only", badge: "Shows next to your name in races" };
   // the store's sections: chests first, then items grouped by where they go on the car
@@ -2022,7 +2206,7 @@
   socket.on("race", (r) => {
     if (S.replaying) stopReplay();
     if (S.photoOn) photoMode(false);
-    RP.buf = []; S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
+    RP.buf = []; RP.best = null; RP.bestPend = null; clearTimeout(RP.bestT); S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
     S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null, practice: !!r.practice, ko: !!r.ko };
     $("endPracticeBtn").classList.toggle("hidden", !(r.practice && S.host));
     S.sec = null;
@@ -2136,6 +2320,17 @@
     if (st.phase === "race") { const now = performance.now(); RP.buf.push({ at: now, st }); while (RP.buf.length && now - RP.buf[0].at > 30000) RP.buf.shift(); }
     if (!S.replaying) onState(st);
   });
+  // Overtake of the race: the server says when a pass beats the best one so far; keep 4s before it and 2s after
+  function grabBestPass() {
+    const P = RP.bestPend; if (!P) return; RP.bestPend = null; clearTimeout(RP.bestT);
+    const clip = RP.buf.filter((m) => m.st.t >= P.d.t - 4 && m.st.t <= P.d.t + 2);    // (race time: 4s before the pass, 2s after)
+    if (clip.length > 20) RP.best = { clip: clip.map((m) => ({ at: m.at - clip[0].at, st: m.st })), d: P.d };
+  }
+  socket.on("bestPass", (d) => { clearTimeout(RP.bestT); RP.bestPend = { d }; RP.bestT = setTimeout(grabBestPass, 900 / (S.race?.speed || 1)); });      // (it arrives 1.5s after the pass: 2s after it is soon)
+  function startBestPass() {
+    if (!RP.best || !S.race) return;
+    runClip(RP.best.clip, RP.best.d.an, null, `🏎️ Overtake of the race: ${RP.best.d.an} on ${RP.best.d.bn}`);
+  }
   function startReplay() {
     if (RP.buf.length < 30 || !S.race) return;
     const t0 = RP.buf[0].at;
@@ -2143,11 +2338,11 @@
     runClip(RP.buf.map((m) => ({ at: m.at - t0, st: m.st })), S.lastResults?.rows?.[0]?.name, null);
   }
   // plays a list of {at: ms from the start, st: state} through the normal race view
-  function runClip(clip, winnerName, savedTitle) {
+  function runClip(clip, winnerName, savedTitle, title) {
     S.replaying = savedTitle ? "saved" : "live"; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.lapRef = null;
     document.body.classList.add("replaying", "spectating"); $("specBar").classList.add("hidden");
     show("race"); $("replayBar").classList.remove("hidden");
-    $("replayTitle").textContent = savedTitle ? `🎬 ${savedTitle}` : "🎬 Replay: the last 30 seconds";
+    $("replayTitle").textContent = title || (savedTitle ? `🎬 ${savedTitle}` : "🎬 Replay: the last 30 seconds");
     $("replaySave").classList.toggle("hidden", !!savedTitle);
     const w = winnerName && [...S.race.info.values()].find((c) => c.name === winnerName);
     S.camTarget = w ? w.id : null; $("replayCam").textContent = `Follow: ${w ? w.name : "leader"}`;
@@ -3925,6 +4120,7 @@
     });
   }
   $("replayBtn").addEventListener("click", startReplay);
+  $("bestPassBtn").addEventListener("click", startBestPass);
   $("replayExit").addEventListener("click", stopReplay);
   $("replayCam").addEventListener("click", () => {
     const ids = S.standings; if (!ids.length) return;
@@ -3979,6 +4175,10 @@
       body.appendChild(tr);
     });
     // Driver of the Day (most places gained)
+    grabBestPass();             // (a pass right before the flag: keep what we have of it)
+    { const bp = $("bestPassLine"), x = r.bestPass;
+      bp.textContent = x ? `🏎️ Overtake of the race: ${x.an} on ${x.bn} for P${x.pos} (lap ${x.lap})` : ""; bp.classList.toggle("hidden", !x);
+      $("bestPassBtn").classList.toggle("hidden", !(x && RP.best && RP.best.d.an === x.an && RP.best.d.bn === x.bn)); }
     const dd = $("dotdLine");
     if (dd) { dd.textContent = r.dotd ? `🏆 Driver of the Day: ${r.dotd.name}, up ${r.dotd.gained} place${r.dotd.gained === 1 ? "" : "s"} (P${r.dotd.grid} → P${r.dotd.pos})${r.dotd.coins ? ` · +${r.dotd.coins} coins` : ""}` : ""; dd.classList.toggle("hidden", !r.dotd); }
     if (r.dotd && r.rows.find((x) => x.name === r.dotd.name)?.owner === S.me) setTimeout(() => banner("🏆 DRIVER OF THE DAY!", "#ffcc1f"), 2200);
@@ -5581,6 +5781,7 @@
   function rewardText(rw) {
     if (rw.coins) return `🪙 ${rw.coins}`;
     if (rw.crate) return "🎁 Themed crate";
+    if (rw.spins) return `🎡 ${rw.spins} spin${rw.spins > 1 ? "s" : ""}`;
     if (rw.item) return A.catalog?.store.find((x) => x.id === rw.item)?.name || "Item";
     return "";
   }
@@ -5588,7 +5789,7 @@
     const d = el("div", "pr" + (locked ? " locked" : "") + (got ? " got" : "") + (rw.item ? " item" : rw.crate ? " crate" : ""));
     const it = rw.item && A.catalog?.store.find((x) => x.id === rw.item);
     if (it) { d.appendChild(itemPreview(it, 96, 54)); d.style.setProperty("--rc", RARITY[it.rarity]?.[1]); }
-    else d.appendChild(el("span", "pr-ic", rw.crate ? "🎁" : "🪙"));
+    else d.appendChild(el("span", "pr-ic", rw.crate ? "🎁" : rw.spins ? "🎡" : "🪙"));
     d.appendChild(el("small", "", rewardText(rw)));
     if (locked) d.appendChild(el("span", "pr-lock", "🔒"));
     else if (got) d.appendChild(el("span", "pr-lock", "✓"));
@@ -5621,7 +5822,7 @@
       } else pb.appendChild(el("small", "", "Max the pass again to prestige once more."));
       box.appendChild(pb);
     }
-    box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). The free track pays coins, a themed item and a crate. Premium adds this month's items and themed crates, which you can't get anywhere else."));
+    box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). 60 tiers. The free track pays coins, a themed item, crates and 🎡 wheel spins. Premium adds this month's items, themed crates you can't get anywhere else, and more wheel spins."));
     // crates you own
     const crates = Object.entries(u.crates || {}).filter(([, n]) => n > 0);
     if (crates.length) {
@@ -5678,8 +5879,7 @@
   socket.on("friendItems", (d) => { FR.items[d.id] = d.owned || []; if (FR.who?.id === d.id && FR.tab === "trade") renderFriend(); });
   socket.on("dm", (d) => {
     if (FR.who?.id === d.from && !$("friendBox").classList.contains("hidden")) return;
-    popup(d.gift ? `🎁 ${d.name} sent you ${d.gift}!` : d.trade ? `🤝 ${d.name} sent you a trade offer (Profile › Friends)` : d.bet ? `⚔️ ${d.name} challenged you to a 1v1 bet (Profile › Friends)` : d.betDone !== undefined ? `⚔️ ${d.name} ${d.betDone ? "accepted your bet: race them!" : "declined your bet"}` : d.tradeDone !== undefined ? `🤝 ${d.name} ${d.tradeDone ? "accepted" : "answered"} your trade` : `💬 ${d.name}: ${d.text}`);
-    sfx("tick");
+    // (the notification at the top comes from the server, so it works for things that happened while you were offline too)
   });
   const itemName = (id) => A.catalog?.store.find((x) => x.id === id)?.name || id;
   function itemSelect(ids, label, none) {
@@ -5861,6 +6061,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-25", title: "Casino, daily wheel, 60-tier pass, notifications", items: [
+      "🎡 Daily wheel: one free spin every day (Profile › 🎰 Casino). Coins, season pass XP, crates or another spin.",
+      "🎟️ The season pass has 60 tiers now (was 30), and both tracks hand out wheel spins.",
+      "🍒 Slots and 🃏 Blackjack in the Casino, next to Plinko.",
+      "🔔 Notifications at the top when someone gifts you, trades, bets, messages or friends you. Missed them while you were offline? They show when you come back.",
+      "🏎️ Overtake of the race: the best pass is named in the results, and you can watch it again.",
+    ] },
     { v: "2026-10-24", title: "Smoother races when the server hiccups", items: [
       "🧈 When updates arrive late, cars no longer stop turning, fly off the track and teleport back. The game keeps a slightly bigger cushion of updates after a hiccup and barely guesses ahead, so cars stay on the road.",
       "🌉 Cars under a bridge are hidden by it again (no more see-through ramps).",

@@ -1602,7 +1602,7 @@ class Room {
       }
     }
     this.bestSec = null;
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false;
+    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false; this.bestPass = null; this.passCands = [];
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -1875,6 +1875,7 @@ class Room {
       if (c.lastPos && i + 1 < c.lastPos && !order.slice(i + 1, c.lastPos).some((r) => r.pitting || r.inPit) && this.time > 5) { c.nitro = Math.min(1, c.nitro + OVERTAKE_BOOST * (c.lastPos - i - 1)); c.nitroLock = 0; }
       c.lastPos = i + 1;
     }
+    this.spotPasses(order);
     for (const p of this.players.values()) {
       const c = this.carOf(p.id); if (!c || c.finished || this.qualifying) continue;
       const pos = order.indexOf(c) + 1;
@@ -1983,6 +1984,34 @@ class Room {
     }
     K.stage++; this.fastest = Infinity; this.qualiEnd = this.time + KO_LEN[K.stage - 1];
     this.emit("feed", { t: "qko", stage: K.stage, out: outs.map((c) => c.name) });
+  }
+  // ---- Overtake of the race: every real on-track pass gets a score (higher places, players involved and late
+  // in the race score more). The best one so far is announced, so the game can keep a clip of it.
+  spotPasses(order) {
+    const live = !this.qualifying && this.time > 8 && !this.sc;
+    const racing = (x) => !x.finished && !x.out && !(x.pitting > 0) && !x.inPit && x.aiMode !== "pitLane" && x.aiMode !== "pitOut" && !(x.crashT > 0) && !x.punct;
+    const cands = (this.passCands = this.passCands || []);
+    for (let i = 0; i < order.length; i++) {
+      const c = order[i], was = c.otPos, since = c.otSince || 0;
+      if (was !== i + 1) { c.otPos = i + 1; c.otSince = this.time; }
+      // (it has to have been stuck behind for a bit: two cars side by side swap places back and forth for a moment)
+      if (!live || !was || i + 1 >= was || this.time - since < 1.5 || !racing(c)) continue;
+      const v = order[i + 1];
+      if (!v || !racing(v) || (this.multi && v.cls !== c.cls)) continue;
+      if (Math.abs(c.progress - v.progress) * this.track.spacing > 90) continue;      // (they were really side by side)
+      if (cands.some((k) => k.c === c && k.v === v)) continue;
+      const score = (i === 0 ? 30 : 0) + Math.max(0, 12 - i) * 2 + (c.owner || v.owner ? 25 : 0) + 15 * clamp(c.lapsDone / Math.max(1, this.settings.laps), 0, 1) + (c.drsOpen ? 0 : 4) + Math.random() * 3;
+      cands.push({ c, v, t: this.time, score, pos: i + 1, lap: Math.max(1, c.lapsDone + 1) });
+    }
+    // a pass only counts if it sticks: still ahead 1.5s later (no swapping straight back, no pit-lane shuffles)
+    for (let k = cands.length - 1; k >= 0; k--) {
+      const P = cands[k]; if (this.time - P.t < 1.5) continue;
+      cands.splice(k, 1);
+      if (!(order.indexOf(P.c) < order.indexOf(P.v)) || !racing(P.v) || (this.bestPass && P.score <= this.bestPass.score)) continue;
+      const c = P.c, v = P.v;
+      this.bestPass = { score: P.score, t: P.t, a: c.id, b: v.id, an: c.name, bn: v.name, pos: P.pos, lap: P.lap };
+      this.emit("bestPass", { t: Math.round(P.t * 1000) / 1000, a: c.id, b: v.id, an: c.name, bn: v.name, pos: P.pos, lap: P.lap });
+    }
   }
   // ---- qualifying over: fastest lap first, the race grid is set ----
   endQuali() {
@@ -2805,7 +2834,8 @@ class Room {
       io.to(p.id).emit("rivalResult", { name: p.rival, beat: p.beatRival, coins: p.beatRival && p.uid && !this.noCoinsWhy() ? RIVAL_COINS : 0, xp: p.beatRival && p.uid ? 100 : 0 });
     }
     this.dotd = dotd && dotd.car;
-    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
+    const bp = this.bestPass;
+    this.emit("results", { bestPass: bp ? { an: bp.an, bn: bp.bn, pos: bp.pos, lap: bp.lap } : null, rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
     if (this.elimRealLaps != null) { this.settings.laps = this.elimRealLaps; this.elimRealLaps = null; }
     if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
@@ -2893,7 +2923,8 @@ class Room {
     if (betters.length > 1) accounts.settleBets(betters).then(async (done) => {
       for (const b of done) for (const [uid, msg] of [[b.winner, `⚔️ You beat ${b.loserName} and won the bet: +${(b.amount * 2).toLocaleString()} coins!`], [b.loser, `⚔️ ${b.winnerName} beat you: you lost the ${b.amount.toLocaleString()} coin bet`]]) {
         const u = await accounts.getUser(uid); if (!u) continue;
-        for (const sid of online.get(uid) || []) { io.to(sid).emit("account", accounts.publicUser(u)); io.to(sid).emit("toast", msg); }
+        for (const sid of online.get(uid) || []) io.to(sid).emit("account", accounts.publicUser(u));
+        notifyUid(uid, { icon: "⚔️", title: uid === b.winner ? "You won the bet!" : "You lost the bet", text: msg.replace(/^⚔️ /, "") });
       }
     }).catch((e) => console.log("bet error", e.message));
   }
@@ -3070,6 +3101,12 @@ setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menu
 // ======================= Connections =======================
 // who's online (signed-in players): account id -> socket ids
 const online = new Map();
+// a notification at the top of someone's screen (gifts, trades, bets, friends...). Offline? It's kept for next time.
+async function notifyUid(uid, n) {
+  const socks = online.get(uid);
+  if (socks && socks.size) { for (const sid of socks) io.to(sid).emit("notify", n); return; }
+  const u = await accounts.getUser(uid); if (u) accounts.addNote(u, n);
+}
 function onlineInfo(uid) {
   const set = online.get(uid); if (!set || !set.size) return null;
   for (const sid of set) { const so = io.sockets.sockets.get(sid); const code = so?.data.room; if (code && rooms.get(code)) { const r = rooms.get(code); return { online: true, room: r.players.size < MAX_PLAYERS ? code : null, where: r.phase === "lobby" ? "in a room" : "racing" }; } }
@@ -3169,7 +3206,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3358,6 +3395,8 @@ io.on("connection", (socket) => {
   });
   // ---- accounts ----
   const daily = (u) => {
+    const notes = accounts.takeNotes(u); if (notes.length) setTimeout(() => socket.emit("notifyMany", notes), 1500);
+    if (accounts.wheelPublic(u).free && !socket.data.toldSpin) { socket.data.toldSpin = true; setTimeout(() => socket.emit("notify", { icon: "🎡", title: "Your free daily spin is ready!", text: "Profile › 🎰 Casino › Wheel", tab: "plinko" }), 2500); }
     // achievements you already qualify for (e.g. new ones added in an update) unlock right away
     if (u.pwLost) setTimeout(() => socket.emit("toast", "🔑 Your password needs to be set again (an old bug wiped it). Go to Profile > 🔒 Security and pick a new one, or you can't sign in on other devices."), 3000);
     const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
@@ -3506,7 +3545,7 @@ io.on("connection", (socket) => {
   });
   socket.on("setPresets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deleteSetPreset(u, String(name)); socket.emit("setPresets", u.setPresets); });
   socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
-  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, plinko: { pays: accounts.PLINKO, min: accounts.PLINKO_MIN, max: accounts.PLINKO_MAX }, passThemes: accounts.PASS_THEMES.map(({ key, name, icon, c }) => ({ key, name, icon, c })), tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
+  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, wheel: accounts.WHEEL, slots: { syms: accounts.SLOT_SYMS.map((x) => x[0]), pay: accounts.SLOT_PAY, twoCherry: accounts.SLOT_TWO_CHERRY, min: accounts.CASINO_MIN, max: accounts.CASINO_MAX }, bj: { min: accounts.CASINO_MIN, max: accounts.BJ_MAX }, plinko: { pays: accounts.PLINKO, min: accounts.PLINKO_MIN, max: accounts.PLINKO_MAX }, passThemes: accounts.PASS_THEMES.map(({ key, name, icon, c }) => ({ key, name, icon, c })), tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
   const storeAction = async (fn) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("toast", "Sign in to use the store");
@@ -3532,6 +3571,17 @@ io.on("connection", (socket) => {
     for (const a of res.got || []) socket.emit("achievement", a);
     clearTimeout(socket.data.plinkoSync); socket.data.plinkoSync = setTimeout(() => socket.emit("account", accounts.publicUser(u)), 1500);
   });
+  // daily wheel, slots, blackjack (all rolled on the server)
+  const casino = (ev, fn, syncMs = 1200) => socket.on(ev, async (d) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (!u) return socket.emit(ev + ":res", { error: "Sign in to play" });
+    const r = fn(u, d); socket.emit(ev + ":res", r);
+    if (r.ok) { for (const a of r.got || []) socket.emit("achievement", a); clearTimeout(socket.data.casinoSync); socket.data.casinoSync = setTimeout(() => socket.emit("account", accounts.publicUser(u)), syncMs); }
+  });
+  casino("wheel:spin", (u) => accounts.spinWheel(u), 4200);     // (after the wheel stops, so the prize isn't spoiled)
+  casino("slots:play", (u, d) => accounts.slots(u, d?.bet));
+  casino("bj:deal", (u, d) => accounts.bjDeal(u, d?.bet));
+  casino("bj:act", (u, d) => accounts.bjAct(u, String(d?.act || "")));
   socket.on("store:open", (id) => storeAction((u) => { const r = accounts.openBox(u, String(id)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
   socket.on("store:equip", (d) => storeAction((u) => accounts.equip(u, String(d?.slot || ""), d?.id == null ? null : String(d.id))));
   // quick emotes: shown over your car (race) or next to your name (lobby), max one every 1.5s
@@ -3685,30 +3735,30 @@ io.on("connection", (socket) => {
   socket.on("pass:buy", () => acctAction((u) => { const r = accounts.buyPass(u); if (r.ok) socket.emit("toast", r.msg); return r; }));
   socket.on("crate:open", (key) => acctAction((u) => { const r = accounts.openCrate(u, String(key)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
   // ---- gifts, trades and messages (friends only) ----
-  const tellOther = async (id, ev, data) => { const o = await accounts.getUser(id); if (!o) return; for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); } };
+  const tellOther = async (id, ev, data, note) => { const o = await accounts.getUser(id); if (!o) return; for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); } if (note) notifyUid(id, note); };
   socket.on("gift:send", (d) => acctAction(async (u) => {
     const r = await accounts.sendGift(u, String(d?.to || ""), { coins: d?.coins, item: d?.item, note: nameFilter.isBad(String(d?.note || "")) ? "" : d?.note });
-    if (r.ok) { socket.emit("toast", `🎁 Sent ${r.what} to ${r.name}!`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, gift: r.what }); }
+    if (r.ok) { socket.emit("toast", `🎁 Sent ${r.what} to ${r.name}!`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, gift: r.what }, { icon: "🎁", title: `${u.name} sent you a gift`, text: r.what }); }
     return r;
   }));
   socket.on("trade:offer", (d) => acctAction(async (u) => {
     const r = await accounts.offerTrade(u, String(d?.to || ""), d?.give, d?.want);
-    if (r.ok) { socket.emit("toast", `🤝 Trade offer sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, trade: true }); }
+    if (r.ok) { socket.emit("toast", `🤝 Trade offer sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, trade: true }, { icon: "🤝", title: `${u.name} sent you a trade offer`, text: "Profile › Friends to accept or decline" }); }
     return r;
   }));
   socket.on("trade:answer", (d) => acctAction(async (u) => {
     const r = await accounts.answerTrade(u, String(d?.id || ""), d?.yes === true);
-    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, tradeDone: d?.yes === true }); }
+    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, tradeDone: d?.yes === true }, { icon: "🤝", title: `${u.name} ${d?.yes === true ? "accepted" : "declined"} your trade`, text: d?.yes === true ? "The items and coins have been swapped" : "" }); }
     return r;
   }));
   socket.on("bet:offer", (d) => acctAction(async (u) => {
     const r = await accounts.offerBet(u, String(d?.to || ""), d?.amount);
-    if (r.ok) { socket.emit("toast", `⚔️ Bet sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, bet: true }); }
+    if (r.ok) { socket.emit("toast", `⚔️ Bet sent to ${r.name}`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, bet: true }, { icon: "⚔️", title: `${u.name} challenged you to a 1v1 bet`, text: "Profile › Friends to accept or decline" }); }
     return r;
   }));
   socket.on("bet:answer", (d) => acctAction(async (u) => {
     const r = await accounts.answerBet(u, String(d?.id || ""), d?.yes === true);
-    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, betDone: d?.yes === true }); }
+    if (r.ok) { socket.emit("toast", r.msg); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, betDone: d?.yes === true }, { icon: "⚔️", title: `${u.name} ${d?.yes === true ? "accepted your bet: race them!" : "declined your bet"}`, text: "" }); }
     return r;
   }));
   let dmAt = 0;
@@ -3722,6 +3772,7 @@ io.on("connection", (socket) => {
     const o = await accounts.getUser(String(d?.to || ""));
     const r = accounts.sendDm(u, o, text); if (r.error) return socket.emit("chatNote", r.error);
     socket.emit("dmThread", { with: o.id, list: accounts.dmThread(u, o.id) });
+    if (r.m) notifyUid(o.id, { icon: "💬", title: `Message from ${u.name}`, text: text.slice(0, 100), key: "dm_" + u.id });
     if (r.m) for (const sid of online.get(o.id) || []) { io.to(sid).emit("dm", { from: u.id, name: u.name, text }); io.to(sid).emit("dmThread", { with: u.id, list: accounts.dmThread(o, u.id) }); }
   });
   socket.on("friends:items", async (id) => {       // what a friend owns (for trade offers)
@@ -3738,7 +3789,7 @@ io.on("connection", (socket) => {
     const u = await myUser(); if (!u) return socket.emit("toast", "Sign in to add friends");
     const r = await accounts.friendAdd(u, q); if (r.error) return socket.emit("friendMsg", { error: r.error });
     socket.emit("friendMsg", { ok: `Friend request sent to ${r.name}!` }); sendFriends(u);
-    if (r.other) pingUser(r.other, "friendsChanged", { msg: `${u.name} wants to be friends` });
+    if (r.other) { pingUser(r.other, "friendsChanged", {}); notifyUid(r.other, { icon: "👥", title: `${u.name} wants to be friends`, text: "Profile › Friends to accept", key: "fr_" + u.id }); }
   });
   socket.on("friends:addPid", async (pid) => {      // "Add friend" on someone in your room
     const u = await myUser(), r = room(); const t = r?.players.get(String(pid || ""));
@@ -3746,9 +3797,9 @@ io.on("connection", (socket) => {
     if (!t?.uid) return socket.emit("toast", "They need to be signed in to be friends");
     const res = await accounts.friendAdd(u, accounts.friendCode(t.uid));
     socket.emit("toast", res.error || `Friend request sent to ${res.name}!`);
-    if (res.other) pingUser(res.other, "friendsChanged", { msg: `${u.name} wants to be friends` });
+    if (res.other) { pingUser(res.other, "friendsChanged", {}); notifyUid(res.other, { icon: "👥", title: `${u.name} wants to be friends`, text: "Profile › Friends to accept", key: "fr_" + u.id }); }
   });
-  socket.on("friends:accept", async (id) => { const u = await myUser(); if (!u) return; const r = await accounts.friendAccept(u, String(id)); if (r.error) return socket.emit("friendMsg", { error: r.error }); sendFriends(u); pingUser(r.other, "friendsChanged", { msg: `${u.name} accepted your friend request!` }); });
+  socket.on("friends:accept", async (id) => { const u = await myUser(); if (!u) return; const r = await accounts.friendAccept(u, String(id)); if (r.error) return socket.emit("friendMsg", { error: r.error }); sendFriends(u); pingUser(r.other, "friendsChanged", {}); notifyUid(r.other, { icon: "👥", title: `${u.name} accepted your friend request!`, text: "" }); });
   socket.on("friends:remove", async (id) => { const u = await myUser(); if (!u) return; await accounts.friendRemove(u, String(id)); sendFriends(u); pingUser(String(id), "friendsChanged", {}); });
   socket.on("friends:invite", async (id) => {
     const u = await myUser(), r = room(); if (!u || !r) return;
