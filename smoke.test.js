@@ -984,3 +984,20 @@ test("1v1 bets: both stake the same, the one ahead takes both, unraced bets are 
   assert.equal(a.coins, 800); assert.equal(b.coins, 700, "refunded");
   assert.ok(accounts.dmThread(a, b.id).some((m) => m.bet), "bets show in the chat");
 });
+
+test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
+  const urls = [];
+  const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => {
+    urls.push(req.url);
+    if (req.url.includes("LibVoice12345678")) { res.statusCode = 402; return res.end(JSON.stringify({ detail: { type: "payment_required", code: "paid_plan_required", message: "Free users cannot use library voices via the API." } })); }
+    res.setHeader("Content-Type", "audio/mpeg"); res.end(Buffer.from("GEORGE"));
+  }); });
+  await new Promise((ok) => fake.listen(0, ok));
+  Object.assign(process.env, { ELEVENLABS_URL: `http://localhost:${fake.address().port}`, ELEVENLABS_API_KEY: "test-key", COMMENTATOR_VOICE: "LibVoice12345678" });
+  try {
+    const r = await fetch(base + "/voice/s_win_n1.mp3");
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), "GEORGE", "the free voice speaks instead");
+    assert.ok(urls.some((u) => u.includes("JBFqnCBsd6RMkjVDRZzb")));
+    assert.match(await (await fetch(base + "/voice/status")).text(), /needs a paid ElevenLabs plan, so George/);
+  } finally { fake.close(); for (const k of ["ELEVENLABS_URL", "ELEVENLABS_API_KEY", "COMMENTATOR_VOICE"]) delete process.env[k]; }
+});

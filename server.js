@@ -400,7 +400,10 @@ function fetchSong(file) {
 // so it's only paid for once. Without them, or if ElevenLabs fails, the built-in recorded voice plays.
 const elKey = () => (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY || process.env.XI_API_KEY || "").trim();
 const DEFAULT_VOICE = "rNzVNTrvSffyxdrTbLKv";      // the owner's pick (a voice ID isn't secret; the API key is, and lives only on Render)
-const elVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || DEFAULT_VOICE).trim();
+const FREE_VOICE = "JBFqnCBsd6RMkjVDRZzb";        // George: one of ElevenLabs' own voices, which free accounts can use
+const voicePaidOnly = new Set();                    // voices ElevenLabs said need a paid plan: George is used instead
+const pickedVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || DEFAULT_VOICE).trim();
+const elVoice = () => (voicePaidOnly.has(pickedVoice()) ? FREE_VOICE : pickedVoice());
 const elModel = () => (process.env.COMMENTATOR_MODEL || "eleven_multilingual_v2").trim();
 const voiceOn = () => !!(elKey() && /^[A-Za-z0-9]{10,40}$/.test(elVoice()));
 let VOICE_LINES = {};
@@ -423,7 +426,16 @@ async function voiceClip(file) {
           method: "POST", signal: ctl.signal, headers: { "xi-api-key": EL_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" },
           body: JSON.stringify({ text: VOICE_LINES[file], model_id: EL_MODEL, voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.45, use_speaker_boost: true } }),
         });
-        if (!r.ok) throw new Error("ElevenLabs said " + r.status + ": " + (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300));
+        if (!r.ok) {
+          const msg = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+          // free plan + a Voice Library voice: switch to a free voice and try again straight away
+          if (r.status === 402 && /paid_plan_required|library voices/i.test(msg) && EL_VOICE !== FREE_VOICE) {
+            voicePaidOnly.add(EL_VOICE); voiceJobs.delete(key);
+            console.warn(`commentator voice ${EL_VOICE} needs a paid ElevenLabs plan: using George (free) instead`);
+            return await voiceClip(file);
+          }
+          throw new Error("ElevenLabs said " + r.status + ": " + msg);
+        }
         buf = Buffer.from(await r.arrayBuffer());
         voiceFails = 0; voiceStat.ok++; voiceStat.lastOk = Date.now();
         accounts.voiceSet(key, buf).catch((e) => console.log("voice save failed:", e.message));
@@ -449,6 +461,7 @@ app.get("/voice/status", async (req, res) => {
   const lines = [
     `API key (ELEVENLABS_API_KEY): ${k ? `found (${k.length} characters)` : "MISSING"}`,
     `Voice ID (COMMENTATOR_VOICE or COMMENTENTATOR_VOICE): ${v ? (/^[A-Za-z0-9]{10,40}$/.test(v) ? `found (${v.slice(0, 4)}...)` : `found, but it doesn't look like a voice ID: "${v.slice(0, 40)}"`) : "MISSING"}`,
+    voicePaidOnly.has(pickedVoice()) ? `Your voice (${pickedVoice().slice(0, 4)}...) needs a paid ElevenLabs plan, so George (a free ElevenLabs voice) is used instead` : "",
     `Model: ${elModel()}`,
     `Using ElevenLabs: ${voiceOn() ? "YES" : "NO (built-in voice)"}`,
     `Lines made so far: ${voiceStat.ok}${voiceStat.lastOk ? ` (last ${Math.round((Date.now() - voiceStat.lastOk) / 1000)} s ago)` : ""}`,
