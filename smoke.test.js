@@ -877,3 +877,22 @@ test("selling: half price for shop items, a set value for chest items, and chest
   }
   assert.ok(A.STORE.every((x) => x.sell > 0), "every item has a sell price");
 });
+
+test("commentator voice: built-in by default; with COMMENTATOR_VOICE + an API key, lines come from ElevenLabs (once each)", { timeout: 30000 }, async () => {
+  let cfg = await (await fetch(base + "/voice/config")).json();
+  assert.equal(cfg.eleven, false);
+  let r = await fetch(base + "/voice/l_start_0.mp3"); assert.equal(r.status, 200, "the built-in clip");
+  assert.equal((await fetch(base + "/voice/not_a_line.mp3")).status, 404, "only real lines");
+  // a pretend ElevenLabs
+  let calls = 0, body = null;
+  const fake = require("http").createServer((req, res) => { let d = ""; req.on("data", (c) => (d += c)); req.on("end", () => { calls++; body = { url: req.url, key: req.headers["xi-api-key"], json: JSON.parse(d) }; res.setHeader("Content-Type", "audio/mpeg"); res.end(Buffer.from("FAKEMP3")); }); });
+  await new Promise((ok) => fake.listen(0, ok));
+  Object.assign(process.env, { ELEVENLABS_URL: `http://localhost:${fake.address().port}`, ELEVENLABS_API_KEY: "test-key", COMMENTENTATOR_VOICE: "AbCdEf1234567890" });
+  try {
+    cfg = await (await fetch(base + "/voice/config")).json(); assert.equal(cfg.eleven, true);
+    r = await fetch(base + "/voice/s_win_bolt.mp3");
+    assert.equal(r.status, 200); assert.equal(Buffer.from(await r.arrayBuffer()).toString(), "FAKEMP3");
+    assert.ok(body.url.includes("/v1/text-to-speech/AbCdEf1234567890") && body.key === "test-key" && body.json.text === "Bolt wins the race! What a drive!");
+    await fetch(base + "/voice/s_win_bolt.mp3"); assert.equal(calls, 1, "kept: only made (and paid for) once");
+  } finally { fake.close(); for (const k of ["ELEVENLABS_URL", "ELEVENLABS_API_KEY", "COMMENTENTATOR_VOICE"]) delete process.env[k]; }
+});

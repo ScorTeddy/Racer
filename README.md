@@ -236,6 +236,20 @@ use `SELL_LOOT` by rarity (25 / 75 / 200 / 500 / 1,500). On average a chest's co
 it cost, so there's nothing to farm. Every item carries its `sell` price in the catalog. Selling takes the item
 off your car. Store cards and Customize both have a two-tap Sell button.
 
+### Your own commentator voice (ElevenLabs)
+Add two environment variables on Render (your service › **Environment**):
+- `ELEVENLABS_API_KEY`: your ElevenLabs API key (elevenlabs.io › profile › API keys). Keep it secret.
+- `COMMENTATOR_VOICE`: the voice ID from ElevenLabs (Voices › the voice › copy its ID). `COMMENTENTATOR_VOICE`
+  works too.
+- Optional: `COMMENTATOR_MODEL` (default `eleven_multilingual_v2`; `eleven_turbo_v2_5` is cheaper and faster).
+
+How it works: `/voice/config` tells the game a voice is set, and `/voice/<clip>.mp3` makes that line with
+ElevenLabs the first time it's needed (the texts are in `public/commentary/lines.json`). Each clip is kept in
+memory and in Upstash (or `data/voice/`), so it's only paid for once per voice. All 611 lines together are about
+20,000 characters, but only the lines that actually get said are made. If ElevenLabs errors (no credits, a wrong
+ID), the built-in clip plays instead, and after 3 failures in a row it pauses for 10 minutes. Change the voice ID
+and the new voice takes over (clips are kept per voice).
+
 ## Customize
 Profile › 🎨 Customize (`renderCustom`): a live preview of your car with everything equipped, then each slot
 with only the items you own (rarest first) and a "None" option. Tapping sends `store:equip`.

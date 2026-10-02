@@ -394,6 +394,56 @@ function fetchSong(file) {
   musicJobs.set(file, job);
   return job;
 }
+// ---- the commentator in your own ElevenLabs voice ----
+// Render env: ELEVENLABS_API_KEY = your ElevenLabs API key, COMMENTATOR_VOICE = the voice ID (COMMENTENTATOR_VOICE
+// works too). Each line is made the first time it's needed, then kept (memory, and Upstash or the data folder),
+// so it's only paid for once. Without them, or if ElevenLabs fails, the built-in recorded voice plays.
+const elKey = () => (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY || process.env.XI_API_KEY || "").trim();
+const elVoice = () => (process.env.COMMENTATOR_VOICE || process.env.COMMENTENTATOR_VOICE || "").trim();
+const elModel = () => (process.env.COMMENTATOR_MODEL || "eleven_multilingual_v2").trim();
+const voiceOn = () => !!(elKey() && /^[A-Za-z0-9]{10,40}$/.test(elVoice()));
+let VOICE_LINES = {};
+try { VOICE_LINES = JSON.parse(fs.readFileSync([path.join(__dirname, "public", "commentary", "lines.json"), path.join(__dirname, "commentary", "lines.json")].find((f) => fs.existsSync(f)) || "", "utf8")); } catch (e) {}
+const voiceMem = new Map(), voiceJobs = new Map();
+let voiceFails = 0, voiceOffUntil = 0;
+if (elVoice() && !elKey()) console.warn("COMMENTATOR_VOICE is set, but ELEVENLABS_API_KEY isn't: using the built-in commentator voice");
+async function voiceClip(file) {
+  const EL_VOICE = elVoice(), EL_MODEL = elModel(), EL_KEY = elKey(), key = `${EL_VOICE}_${EL_MODEL}_${file}`;
+  if (voiceMem.has(key)) return voiceMem.get(key);
+  if (voiceJobs.has(key)) return voiceJobs.get(key);
+  const job = (async () => {
+    let buf = await accounts.voiceGet(key).catch(() => null);
+    if (!buf) {
+      if (Date.now() < voiceOffUntil) throw new Error("ElevenLabs paused after errors");
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000);
+      try {
+        const r = await fetch(`${process.env.ELEVENLABS_URL || "https://api.elevenlabs.io"}/v1/text-to-speech/${encodeURIComponent(EL_VOICE)}?output_format=mp3_44100_64`, {
+          method: "POST", signal: ctl.signal, headers: { "xi-api-key": EL_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" },
+          body: JSON.stringify({ text: VOICE_LINES[file], model_id: EL_MODEL, voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.45, use_speaker_boost: true } }),
+        });
+        if (!r.ok) throw new Error("ElevenLabs " + r.status + " " + (await r.text().catch(() => "")).slice(0, 160));
+        buf = Buffer.from(await r.arrayBuffer());
+        voiceFails = 0;
+        accounts.voiceSet(key, buf).catch((e) => console.log("voice save failed:", e.message));
+      } catch (e) {
+        if (++voiceFails >= 3) { voiceOffUntil = Date.now() + 10 * 60e3; voiceFails = 0; console.warn("ElevenLabs keeps failing, built-in voice for 10 minutes:", e.message); }
+        throw e;
+      } finally { clearTimeout(timer); }
+    }
+    voiceMem.set(key, buf); if (voiceMem.size > 400) voiceMem.delete(voiceMem.keys().next().value);
+    return buf;
+  })();
+  voiceJobs.set(key, job); job.finally(() => voiceJobs.delete(key)).catch(() => {});
+  return job;
+}
+app.get("/voice/config", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.json({ eleven: voiceOn() }); });
+app.get("/voice/:file", (req, res) => {
+  const file = req.params.file;
+  if (!VOICE_LINES[file]) return res.status(404).send("Not found");
+  const builtIn = () => { const fp = pub(path.join("commentary", file)); if (fs.existsSync(fp)) return res.sendFile(fp); res.status(404).send("Not found"); };
+  if (!voiceOn()) return builtIn();
+  voiceClip(file).then((buf) => { res.setHeader("Cache-Control", "public, max-age=86400"); res.type("audio/mpeg").send(buf); }).catch(() => { if (!res.headersSent) builtIn(); });
+});
 app.get("/music/km/:file", (req, res) => {
   const file = req.params.file;
   if (!KM_SONGS.has(file)) return res.status(404).send("Not found");

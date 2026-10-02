@@ -4,10 +4,14 @@
 #   python3 commentary_gen.py 0 1        (or split the work: "0 3", "1 3", "2 3" in three terminals)
 # Voice: af_heart, Kokoro's best-rated voice. Lines with a driver's name are recorded as whole sentences
 # (the name inside the sentence) so they sound natural, for every built-in AI name and "Number 0-99".
-import sys, json, os, re, numpy as np, lameenc
-from kokoro_onnx import Kokoro
+#   python3 commentary_gen.py text      (just rewrite lines.json: the text of every clip, for ElevenLabs voices)
+import sys, json, os, re
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "commentary")
-k = Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin")
+TEXT_ONLY = len(sys.argv) > 1 and sys.argv[1] == "text"
+if not TEXT_ONLY:
+    import numpy as np, lameenc
+    from kokoro_onnx import Kokoro
+    k = Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOICE, LANG, SPEED = "af_heart", "en-us", 1.04
 LINES = {
   "start": ["And it's lights out, and away we go!", "Lights out, and we are racing!", "And they're away! Here we go!"],
@@ -55,6 +59,9 @@ for key, arr in LINES.items():
 subjects = [(slug(n), n) for n in NAMES] + [(f"n{i}", f"Number {words(i)}") for i in range(100)]
 for key, tpl in NAMED.items():
     for sl, spoken in subjects: jobs.append((tpl.replace("{N}", spoken), f"s_{key}_{sl}.mp3"))
+# every clip's text, so the server can have ElevenLabs say the same lines (COMMENTATOR_VOICE)
+json.dump({f: t for t, f in jobs}, open(os.path.join(OUT, "lines.json"), "w"), indent=0)
+if TEXT_ONLY: sys.exit(0)
 part, parts = int(sys.argv[1]), int(sys.argv[2])
 for j, (t, f) in enumerate(jobs):
     if j % parts == part: save(t, f)

@@ -4986,9 +4986,12 @@
   // and "Number 0-99" for players and renamed AI. Everything else is a general line.
   const COMM = { man: null, cache: new Map(), queue: [], busy: false, last: {}, leader: null, at: {} };
   fetch("commentary/manifest.json").then((r) => (r.ok ? r.json() : null)).then((m) => { COMM.man = m; }).catch(() => {});
+  // the server owner can give the commentator an ElevenLabs voice (COMMENTATOR_VOICE): then lines come from /voice/
+  COMM.base = "commentary/";
+  fetch("voice/config").then((r) => (r.ok ? r.json() : null)).then((c) => { if (c?.eleven) { COMM.base = "voice/"; COMM.cache.clear(); } }).catch(() => {});
   const commVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vComm ?? 80) / 100);
   function commClip(file) {
-    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch("commentary/" + file).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
+    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch(COMM.base + file).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
     return COMM.cache.get(file);
   }
   function commName(name) {

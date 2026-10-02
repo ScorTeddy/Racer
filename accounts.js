@@ -1795,6 +1795,16 @@ async function unstash(key) {     // read it once (and forget it)
   if (UP_URL) { const v = await redis(["GET", "tb:tmp:" + key]); if (v) redis(["DEL", "tb:tmp:" + key]).catch(() => {}); return v || null; }
   try { const o = JSON.parse(fs.readFileSync(tmpFile(key), "utf8")); fs.unlinkSync(tmpFile(key)); return o.until > Date.now() ? o.value : null; } catch (e) { return null; }
 }
+// ======================= Commentator voice clips (ElevenLabs), kept so each line is only paid for once =======================
+const VOICE_DIR = path.join(DATA_DIR, "voice");
+async function voiceGet(key) {
+  if (UP_URL) { const v = await redis(["GET", "tb:voice:" + key]); return v ? Buffer.from(v, "base64") : null; }
+  try { return fs.readFileSync(path.join(VOICE_DIR, key.replace(/[^\w.-]/g, "_"))); } catch (e) { return null; }
+}
+async function voiceSet(key, buf) {
+  if (UP_URL) return redis(["SET", "tb:voice:" + key, buf.toString("base64"), "EX", 60 * 60 * 24 * 365]);
+  fs.mkdirSync(VOICE_DIR, { recursive: true }); fs.writeFileSync(path.join(VOICE_DIR, key.replace(/[^\w.-]/g, "_")), buf);
+}
 // ======================= Community tracks (one small JSON document) =======================
 const COMM_FILE = path.join(DATA_DIR, "community.json");
 async function commLoad() {
@@ -1813,7 +1823,7 @@ module.exports = {
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
-  ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
+  ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
 };
