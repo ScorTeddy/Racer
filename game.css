@@ -501,7 +501,8 @@
     #boostBtn .bfill { top: auto; left: 0; right: 0; width: 100% !important; height: var(--boost, 100%); bottom: 0; transition: height 120ms linear; }
     #boostBtn .blabel { font-size: 0.85rem; text-align: center; line-height: 1.1; }
     #boostBtn .blabel b { display: block; font-size: 1.05rem; }
-    .slip-tag { left: auto; right: 0; transform: none; top: -1.6rem; font-size: 0.78rem; }
+    #boostPanel #defendBtn { position: absolute; right: 0; bottom: calc(100% + 0.4rem); width: 5.8rem; margin: 0; padding: 0.35rem 0.2rem; justify-content: center; font-size: 0.78rem; }
+    .slip-tag { left: auto; right: 0; transform: none; top: -4.4rem; font-size: 0.78rem; }
     .radio { left: 0.5rem; right: 6.6rem; width: auto; bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); padding: 0.4rem 0.5rem; gap: 0.3rem; flex-direction: row; flex-wrap: wrap; align-items: center; animation: none; }
     .radio .radio-top { width: 100%; }
     .radio .meter-label { font-size: 0.75rem; }
@@ -1196,6 +1197,8 @@ body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile 
     #boostBtn .blabel b { display: block; font-size: 1rem; }
     #boostBtn small { display: none; }
     #drsGo { position: absolute; right: calc(100% + 0.5rem); bottom: 0.4rem; width: 4.6rem; height: 4.6rem; margin: 0; border-radius: 50%; flex-direction: column; justify-content: center; padding: 0; font-size: 0.85rem; }
+    #boostPanel #defendBtn { position: absolute; right: calc(100% + 5.6rem); bottom: 0.4rem; width: 4.6rem; height: 4.6rem; margin: 0; padding: 0; border-radius: 50%; flex-direction: column; justify-content: center; font-size: 0.7rem; letter-spacing: 0.02em; }
+    #boostPanel #defendBtn .df-lab { text-align: center; line-height: 1.15; }
     .slip-tag { left: auto; right: 0; transform: none; top: -1.5rem; font-size: 0.72rem; }
     /* slim team radio along the bottom-left */
     .radio { left: 0.5rem; right: auto; width: min(26rem, 50vw); bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px)) !important; padding: 0.3rem 0.45rem; gap: 0.25rem; flex-direction: row; flex-wrap: wrap; align-items: center; animation: none; }
@@ -1257,3 +1260,11 @@ body.desk #signOutAllBtn { display: none !important; }   /* it lives in Profile 
 body.rm .class-flag.blue { animation: none; }
 .class-wins { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 1.2rem; font-weight: 800; margin: 0.2rem 0; }
 @media (max-width: 760px) { .class-flag { top: calc(7.2rem + env(safe-area-inset-top, 0px)); font-size: 0.75rem; } }
+
+/* ---- defend mode ---- */
+#defendBtn { margin-top: 0.4rem; width: 100%; cursor: pointer; border-radius: 0.65rem; border: 2px solid #5ab0ff; background: rgba(18,40,80,0.8); color: #e3f0ff; padding: 0.35rem 0.7rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; touch-action: none; font-family: "Russo One", sans-serif; font-size: 0.95rem; letter-spacing: 0.05em; }
+#defendBtn small { font-family: inherit; font-size: 0.72rem; color: #bcdcff; }
+#defendBtn.on { background: #2f7fe0; color: #fff; box-shadow: 0 0 16px rgba(90,176,255,0.7); }
+#defendBtn.on.active { animation: defPulse 0.8s ease-in-out infinite alternate; }
+@keyframes defPulse { from { box-shadow: 0 0 8px rgba(90,176,255,0.5); } to { box-shadow: 0 0 22px rgba(90,176,255,0.95); } }
+body.rm #defendBtn.on.active { animation: none; }

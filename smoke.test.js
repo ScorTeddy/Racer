@@ -659,3 +659,33 @@ test("the Motion pack: animated items in the store, every id unique", () => {
   for (const slot of ["glow", "flame", "helmet", "num", "rims", "smoke", "trail", "decal", "wing", "livery"]) assert.ok(anim.some((x) => x.slot === slot), "animated " + slot);
   assert.ok(store.find((x) => x.id === "liv_hyperdrive").rarity === "mythic");
 });
+
+test("defend mode: costs boost, no slipstream for the car behind, turns itself off when the boost runs out", { timeout: 60000 }, () => {
+  const r = new game.Room("DEFEND", false); r.setF1Track("it-1922");
+  const p = { id: "s-df", name: "Me", up: {}, level: 1, xp: 0, gridPos: 1 }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 1, quali: 0, laps: 6, weather: "sunny" }); r.ensureRoster(1);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const me = r.cars.find((c) => c.owner === p.id), ai = r.cars.find((c) => c.isAi);
+  me.launchAt = 0; ai.launchAt = 0.3; ai.power = 1.1;
+  for (let n = 0; n < 60 * 3; n++) r.step(1 / 60);
+  const before = me.nitro; p.defendOn = true;
+  let slipBehindDefender = 0;
+  for (let n = 0; n < 60 * 2; n++) { r.step(1 / 60); if (me.defending && ai.slip) slipBehindDefender++; }
+  assert.ok(me.defending, "defending");
+  assert.ok(Math.abs(before - me.nitro - (0.1 + 0.08 * 2)) < 0.03, `10% to switch on + 8%/s (used ${(before - me.nitro).toFixed(3)})`);
+  assert.equal(slipBehindDefender, 0, "no slipstream behind a defending car");
+  me.nitro = 0.01;
+  for (let n = 0; n < 30; n++) r.step(1 / 60);
+  assert.ok(!me.defending && !p.defendOn, "out of boost: defend switches off");
+  p.defendOn = true; for (let n = 0; n < 5; n++) r.step(1 / 60);
+  assert.ok(!me.defending && !p.defendOn, "can't switch it on with an empty tank");
+});
+
+test("Sticky Setup and Carbon Brakes are much stronger now", () => {
+  const r = new game.Room("UPGRD", false); r.setRandomTrack("normal", "regular");
+  const base = { engine: 0, corner: 0, turbo: 0, grip: 0, brakes: 0, late: 0, craft: 0, refill: 0, pitlane: 0, focus: 0, whisper: 0, pit: 0, enhance: 0, saver: 0 };
+  const s0 = r.stats({ up: base }), s1 = r.stats({ up: { ...base, grip: 4, brakes: 3 } });
+  assert.ok(s1.grip / s0.grip >= 2.19 && s1.gripMul / s0.gripMul >= 1.99, "grip x2.2, turning grip x2");
+  assert.ok(s1.brake / s0.brake >= 2.49, "braking x2.5");
+  assert.ok(s1.planBrake / s1.brake < s0.planBrake / s0.brake, "and the driver brakes with more margin");
+});

@@ -161,6 +161,19 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Photo mode** (📷 or **K** in a race or replay): freezes the view, drag/scroll/pinch to move and zoom, tilt,
   names on/off, 📸 saves a PNG. Racing alone as host, the race really pauses while you're in it.
 
+## Defend mode and staying on the road
+- **Defend** (`defend` socket, `p.defendOn`, key V / `#defendBtn`): `DEFEND_START` (10%) boost to switch on, then
+  `DEFEND_DRAIN` (8%/s), no boost recharge meanwhile. Off when the tank is empty, in the pits, under the safety car or
+  in qualifying. While defending (`c.defending`): the driver covers the car behind (`c.covering`: shuts the lane they
+  pulled out into, covers the inside before corners), the car behind gets no slipstream, attackers need to be much
+  closer / quicker to try a move, and a move blocked before they're alongside makes them wait 0.9 s (`passWait`).
+  Hard+ AI (`canDefend`) defend on the last two laps when pressured; players can get the same with Defend assist.
+- **Staying on track**: drivers catch slides at the road edge (`saving` in `drive()`), and in `trackPos()` the
+  tyres bite at the edge (outward speed damped; much stronger with Sticky Setup and Carbon Brakes). Sticky Setup is
+  +30% grip / +25% turning grip per level, Carbon Brakes +50% braking (the driver only plans on +38%: a margin).
+  Measured on very wonky and real tracks: off-track time 1.9% to about 0.7% with no upgrades, and about 0.15% while
+  racing with Grip and Brakes maxed. Lap times are unchanged.
+
 ## Multiclass racing
 - **Game mode** (top of Race settings, host): `settings.mode` is `"normal"` or `"multi"`, plus `settings.mix`
   (share of AI in GTs: 0.33 / 0.5 / 0.67; which AI are GTs: `aiIsGt`). Ranked always runs normal.

@@ -70,12 +70,13 @@
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asBoost", label: "⚡ Boost assist", hint: "Fires your boost for you on the straights, saving some for fights. Holding the boost key still works too.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
+    { tab: "assists", key: "asDefend", label: "🛡️ Defend assist", hint: "Turns on Defend for you in the last 2 laps when someone's right behind (it uses your boost, like pressing it yourself).", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asDrs", label: "🟩 DRS assist", hint: "Opens DRS the moment it's available, so you never miss it.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
   ];
   // ---- keybinds (Settings > Keybinds): every race key can be changed ----
   const KEY_ACTIONS = [
     ["boost", "⚡ Boost (hold) · start reaction", "Space"], ["boost2", "⚡ Boost, second key", "KeyN"], ["drs", "🟩 Open DRS", "KeyD"],
-    ["box", "🔧 Box this lap", "KeyB"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"],
+    ["box", "🔧 Box this lap", "KeyB"], ["defend", "🛡️ Defend on/off", "KeyV"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"],
     ["pause", "⏸ Pause race (host)", "KeyP"], ["spectate", "👀 Watch the next car", "Tab"], ["settings", "⚙ Settings", "KeyO"],
   ];
   const KEY_DEFAULTS = Object.fromEntries(KEY_ACTIONS.map(([a, , k]) => [a, k]));
@@ -189,7 +190,7 @@
   function keyHints() {
     const set = (sel, a) => document.querySelectorAll(sel).forEach((k) => (k.textContent = keyName(KEY(a))));
     const bk = document.querySelectorAll("#boostBtn small kbd"); if (bk[0]) bk[0].textContent = keyName(KEY("boost")); if (bk[1]) bk[1].textContent = keyName(KEY("boost2"));
-    set("#boxBtn kbd, #mustBox kbd", "box"); set("#photoBtn kbd", "photo"); set("#pauseBtn kbd", "pause"); set("#drsGo kbd", "drs"); set("#laterBtn kbd", "cards");
+    set("#boxBtn kbd, #mustBox kbd", "box"); set("#photoBtn kbd", "photo"); set("#pauseBtn kbd", "pause"); set("#drsGo kbd", "drs"); set("#defendBtn kbd", "defend"); set("#laterBtn kbd", "cards");
     const lp = $("lightsSay"); if (lp && lp.querySelector("kbd")) lp.querySelector("kbd").textContent = keyName(KEY("boost"));
   }
   const setEl = $("settings");
@@ -1936,10 +1937,10 @@
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
     for (const a of st.cars) {
-      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs] = a;
+      const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs, def] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1 });
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1, def: def === 1 });
     }
     lapDelta();
     if (S.tutorial) {            // tutorial hints that depend on your car
@@ -1957,6 +1958,7 @@
   socket.on("me", (m) => {
 
     S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound;
+    if (!!m.defend !== !!S.defendOn && performance.now() - (S.defendAt || 0) > 600) setDefendUi(!!m.defend);
     if ((m.rare || null) !== (S.myRare || null)) { S.myRare = m.rare || null; renderGarage(); }
     renderPitPick(m);
     if (S.nextComp !== m.next) { S.nextComp = m.next; renderNextTires(); }
@@ -4590,6 +4592,11 @@
         for (const s of [-1, 1]) { const ox = -fy * s * 14, oy = fx * s * 14, L = 30 + Math.random() * 20; ctx.beginPath(); ctx.moveTo(c.x + ox + fx * 18, c.y + oy + fy * 18); ctx.lineTo(c.x + ox - fx * L, c.y + oy - fy * L); ctx.stroke(); }
       }
       drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { boost: c.boost, nitro: c.nitroOn, glow: c.id === S.myCar, aura: S.rareCars?.get(c.id) });
+      if (c.def && !c.fin) {                    // defending: a blue shield across the back of the car
+        const pu = reducedMotion ? 0.7 : 0.55 + 0.3 * Math.sin(performance.now() / 120), bx = c.x - Math.cos(c.h) * 10, by = c.y - Math.sin(c.h) * 10;
+        ctx.save(); ctx.globalAlpha = pu; ctx.strokeStyle = "#5ab0ff"; ctx.shadowColor = "#5ab0ff"; ctx.shadowBlur = 12; ctx.lineWidth = 4; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.arc(bx, by, 30, c.h + Math.PI - 1.05, c.h + Math.PI + 1.05); ctx.stroke(); ctx.restore();
+      }
       ctx.globalAlpha = 1;
       if (c.fin) {
         if (!c.finPos) {
@@ -4725,9 +4732,21 @@
     $("boostBtn").classList.toggle("on", on);
   }
   // ---- assists: tell the server (it does the pit calls / boost / DRS) ----
-  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on" }); }
+  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on", defend: settings.asDefend === "on" }); }
   socket.on("connect", sendAssists); socket.on("joined", sendAssists); socket.on("race", sendAssists);
   keyHints();
+  // ---- Defend: costs 10% boost to switch on, then 8% a second. Your driver covers the car behind. ----
+  function setDefendUi(on) { S.defendOn = on; const b = $("defendBtn"); b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
+  function toggleDefend() {
+    const me = S.cars.get(S.myCar); if (!me || me.fin || S.ql >= 0) return;
+    const on = !S.defendOn;
+    if (on && (me.nitro ?? 0) < 10) { popup("🛡️ Defend needs at least 10% boost", true); return; }
+    S.defendAt = performance.now(); setDefendUi(on); socket.emit("defend", on); sfx("tick");
+    if (on && !S.defendTold) { S.defendTold = true; popup("🛡️ Defending! Your driver covers the car behind and they get no slipstream. Costs 10% boost, then 8% a second."); }
+  }
+  $("defendBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleDefend(); });
+  socket.on("defendMsg", (m) => { setDefendUi(false); if (m) popup(m, true); });
+  socket.on("race", () => setDefendUi(false));
   // ---- DRS: in a zone with DRS available, press D (or the DRS button) to open the flap ----
   function openDrs() { const me = S.cars.get(S.myCar); if (me && me.drsAvail) socket.emit("drs"); }
   $("drsGo").addEventListener("pointerdown", (e) => { e.preventDefault(); openDrs(); });
@@ -4746,12 +4765,14 @@
     const me = S.cars.get(S.myCar);
     $("boostPanel").classList.toggle("hidden", !me);
     if (!me) return;
-    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0) + (me.drs ? 1 : 0) + (me.drsAvail ? 1 : 0);
+    const pct = Math.round(me.nitro ?? 100), lock = (S.xp && S.xp.nitroLock) || 0, key = pct + "|" + lock + "|" + (me.slip ? 1 : 0) + (me.nitroOn ? 1 : 0) + (me.drs ? 1 : 0) + (me.drsAvail ? 1 : 0) + (me.def ? 1 : 0) + (me.fin ? 1 : 0) + (S.ql >= 0 ? 1 : 0);
     if (key === boostShown) return; boostShown = key;
     $("boostPct").textContent = lock > 0 ? `⏳${lock}s` : pct + "%";
     boostBtn.classList.toggle("locked", lock > 0); $("boostFill").style.width = pct + "%"; boostBtn.style.setProperty("--boost", pct + "%");
     boostBtn.classList.toggle("empty", pct < 3);
     const small = window.innerWidth <= 860, tags = [];
+    if (me.def) tags.push(small ? "🛡️ DEFENDING" : "🛡️ DEFENDING −8%/s");
+    $("defendBtn").classList.toggle("hidden", !!me.fin || S.ql >= 0); $("defendBtn").classList.toggle("active", !!me.def);
     if (me.slip) tags.push(small ? "💨 SLIP +30%" : "💨 SLIPSTREAM +30%");
     if (me.drs) tags.push(small ? "🟩 DRS OPEN" : "🟩 DRS OPEN +12%");
     else if (me.drsAvail) tags.push(small ? `🟩 DRS: press ${keyName(KEY("drs"))}` : `🟩 DRS AVAILABLE: press ${keyName(KEY("drs"))}`);
@@ -4903,6 +4924,7 @@
     if (e.code === KEY("boost2") && !e.repeat) { e.preventDefault(); setNitro(true); }
     if (e.code === KEY("box") && !e.repeat) { e.preventDefault(); socket.emit("box"); sfx("tick"); }
     if (e.code === KEY("drs") && !e.repeat) { e.preventDefault(); openDrs(); }
+    if (e.code === KEY("defend") && !e.repeat && S.screen === "race") { e.preventDefault(); toggleDefend(); }
     if (e.code === KEY("spectate")) {       // spectate: cycle who the camera follows
       e.preventDefault();
       const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);
@@ -5326,6 +5348,12 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-14", title: "Defend mode, and grip and brakes that really work", items: [
+      "🛡️ Defend (V, or the DEFEND button): your driver covers the car behind, blocks their moves and kills their slipstream. Costs 10% boost to switch on, then 8% a second. It turns off when the boost runs out.",
+      "🤝 New Defend assist in Settings > Assists, and the Hard / EXTREME AI now defend too on the last two laps.",
+      "🧲 Sticky Setup is now +30% grip per level (was 15%) and Carbon Brakes +50% (was 30%), and Carbon Brakes now stop with room to spare.",
+      "🏁 Drivers now catch slides at the edge of the road, and grippy cars hold the kerb. Cars run off far less, and a car with maxed Grip and Brakes almost never does.",
+    ] },
     { v: "2026-10-13", title: "Multiclass racing and the Motion pack", items: [
       "🏎️ New game mode: Multiclass! The host picks it at the top of the Race settings. Fast 🔴 Hypers and slower 🟢 GTs share the track, and each class races for its own win and points.",
       "🚦 Pick your class in the lobby: Hypers are much faster; GTs are tougher, go way longer on a set of tyres, pit quicker and refill boost faster. The host sets how the AI is split.",

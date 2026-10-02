@@ -30,6 +30,8 @@ const BRAKE_PLAN = 936;                // how hard drivers plan to brake before 
 const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahead: +30% top speed
 // Boost: +12% top speed while held. A full tank lasts 5s of race time; there's no slow refill any
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
+// Defend mode: switching it on costs 10% boost, then it burns 8% a second (and boost doesn't recharge meanwhile)
+const DEFEND_START = 0.1, DEFEND_DRAIN = 0.08;
 const NITRO_POWER = 0.12, NITRO_DRAIN = 0.2, NITRO_LAP_REFILL = 0.5, OVERTAKE_BOOST = 0.1, NITRO_REGEN = 0.02;   // +2% boost every second when not boosting
 const BOOST_XP_MULT = 1.5;   // upgrade XP multiplier while your boost is firing
 // winning a race pays coins by AI difficulty, but only with at least WIN_MIN_AI AI drivers in it
@@ -222,8 +224,8 @@ const UPGRADES = {
   whisper: { kind: "Driver", name: "Tire Whisperer", desc: "Wears tires 15% slower",                 max: 4, fx: (n) => `${pct(1 - Math.pow(0.85, n))}% less tire wear` },
   engine:  { kind: "Car",    name: "Big Engine",     desc: "+7% top speed per level",                max: 5, fx: (n) => `+${7 * n}% top speed` },
   turbo:   { kind: "Car",    name: "Turbo",          desc: "+25% acceleration per level",            max: 4, fx: (n) => `+${25 * n}% acceleration` },
-  grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+15% grip, +2% corner speed",            max: 4, fx: (n) => `+${15 * n}% grip` },
-  brakes:  { kind: "Car",    name: "Carbon Brakes",  desc: "+30% braking power",                     max: 3, fx: (n) => `+${30 * n}% braking` },
+  grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+30% grip, +2% corner speed, catches slides at the edge sooner", max: 4, fx: (n) => `+${30 * n}% grip` },
+  brakes:  { kind: "Car",    name: "Carbon Brakes",  desc: "+50% braking power, brakes with a safety margin", max: 3, fx: (n) => `+${50 * n}% braking` },
   pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
   refill:  { kind: "Car",    name: "Nitro Refill",   desc: "+5% boost back every lap",               max: 3, fx: (n) => `${pct(NITRO_LAP_REFILL + 0.05 * n)}% boost back per lap` },
   pitlane: { kind: "Car",    name: "Pit Lane Rocket", desc: "Drives 25% faster down the pit lane",   max: 3, fx: (n) => `+${25 * n}% pit lane speed` },
@@ -1476,7 +1478,7 @@ class Room {
         const h = slot.human;
         Object.assign(base, { owner: h.id, name: h.name, color: h.color, livery: h.livery, number: h.number, up: h.up, skill: 0.92, team: h.team, aggr: 1.1 });
         h.boxCall = false; h.reaction = null; h.jump = false; h.lastPos = total; h.passCd = new Map(); h.lostCd = new Map();
-        h.compound = null; h.nextCompound = null; h.passiveAt = 1; h.warned = 0;
+        h.compound = null; h.nextCompound = null; h.passiveAt = 1; h.warned = 0; h.defendOn = false;
       } else {
         const a = slot.ai, R = this.roster[a];
         Object.assign(base, {
@@ -1487,7 +1489,7 @@ class Room {
           skill: DL.skill[0] + Math.random() * (DL.skill[1] - DL.skill[0]) + Math.min(0.06, (this.raceNo - 1) * 0.006) + this.avgLevel() * 0.004,
           power: DL.power - 0.015 + Math.random() * 0.03 + Math.min(0.05, this.avgLevel() * 0.006),
           aiReaction: DL.react[0] + Math.random() * (DL.react[1] - DL.react[0]),
-          aggr: (0.8 + Math.random() * 0.5) * DL.aggr, aiMist: DL.mistakes,
+          aggr: (0.8 + Math.random() * 0.5) * DL.aggr, aiMist: DL.mistakes, canDefend: DL.mistakes <= 0.6,
           // AI teams level up during the race too (they don't get lap/pass bonuses, so a bit more per second)
           aiXp: 0, aiLvl: 1, aiXpAt: 1, aiXpMul: DL.xp * (0.87 + Math.random() * 0.26),
         });
@@ -1611,12 +1613,14 @@ class Room {
   }
   baseStats(c, u) {
     return {
-      maxSpeed: MAX_SPEED * (1 + 0.07 * u.engine) * (c.power || 1), accel: ACCEL * (1 + 0.25 * u.turbo), grip: GRIP * (1 + 0.15 * u.grip),
-      wear: Math.pow(0.85, u.whisper), brake: BRAKE * (1 + 0.3 * u.brakes),
+      maxSpeed: MAX_SPEED * (1 + 0.07 * u.engine) * (c.power || 1), accel: ACCEL * (1 + 0.25 * u.turbo), grip: GRIP * (1 + 0.3 * u.grip),
+      wear: Math.pow(0.85, u.whisper), brake: BRAKE * (1 + 0.5 * u.brakes),
       pitTime: PIT_TIME * Math.pow(0.75, u.pit),
       cornerPace: 1 + 0.06 * u.corner + 0.02 * u.late + 0.02 * u.grip,
-      gripMul: 1 + 0.15 * u.grip,
-      planBrake: BRAKE * (1 + 0.3 * u.brakes) * (0.72 + 0.055 * u.late),   // drivers plan to use 72% of the brakes (Late Braker: up to 94%)
+      gripMul: 1 + 0.25 * u.grip,
+      // drivers plan to use 72% of the brakes (Late Braker: up to 94%); Carbon Brakes add more power than
+      // the driver plans to use, so they also stop with room to spare
+      planBrake: BRAKE * (1 + 0.38 * u.brakes) * (0.72 + 0.055 * u.late),
       slipTime: SLIP_TIME + 0.1 * u.craft,
       nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN * (1 - 0.03 * (u.saver || 0)), nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
       pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane),
@@ -1726,7 +1730,7 @@ class Room {
       // drivers think 30 times a second (half the cars on each step), the car physics runs every step
       if (!c.input || ((this.stepNo + c.id) & 1) === 0) c.input = this.drive(c, c.input ? dt * 2 : dt);
       this.physics(c, c.input, dt);
-      this.trackPos(c);
+      this.trackPos(c, dt);
       if (c.owner && !c.onTrack && !c.inPit) c.cleanLap = false;
     }
     this.collide();
@@ -1986,10 +1990,12 @@ class Room {
       c.attack = !!alongside && c.passT > 0;
       // Overtaking: close enough (or much faster)? pull out and go for it. Inside of the next
       // corner first, the other side if that's blocked. Only into space that's actually free.
-      if (!calm && !cooldown && !c.punct && lead && c.passT <= 0.25) {
+      if (c.passWait > 0) c.passWait -= dt;
+      if (!calm && !cooldown && !c.punct && lead && c.passT <= 0.25 && !(c.passWait > 0)) {
         const theirV = lead.speed, closing = speed - theirV;
-        const reach = (0.45 + 0.12 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0) + (c.drsOpen ? DRS_REACH : 0);   // DRS open: go for it
-        if (gapT < reach || (closing > 60 && gapT < 1.1)) {
+        // (a defending car is much harder to get a run on: you need to be closer, and a lot quicker)
+        const reach = ((0.45 + 0.12 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0) + (c.drsOpen ? DRS_REACH : 0)) * (lead.defending ? 0.55 : 1);   // DRS open: go for it
+        if (gapT < reach || (closing > (lead.defending ? 110 : 60) && gapT < 1.1)) {
           const cornerNear = (apex - c.idx + N) % N * t.spacing < 500;
           const first = cornerNear ? inside : (lead.lat > 0 ? -1 : 1);
           for (const sd of [first, -first]) {
@@ -1998,6 +2004,30 @@ class Room {
             if (this.laneClear(c, near, want, lead)) { c.passOff = want; c.passT = 1.3 + 0.4 * c.aggr; c.passId = lead.id; break; }
           }
         }
+      }
+      // Defend mode: sit in front of the car behind to cover its line (mostly; the corners still need taking)
+      c.covering = false;
+      if (c.defending && !c.punct && !cooldown) {
+        let threat = null, tAlong = -Infinity;
+        for (let q = 0; q < near.length; q += 2) {
+          const o = near[q], along = near[q + 1];
+          if (along < -8 && along > -(speed * 0.8 + 60) && Math.abs(o.lat - myLat) < 90 && o.speed > 100 && along > tAlong) { threat = o; tAlong = along; }
+        }
+        if (threat) {
+          // they've pulled out to pass: shut that door. Otherwise cover the inside of the next corner
+          // (where they'll go first), or just sit in front of them on the straights.
+          const cornerSoon = (apex - c.idx + N) % N * t.spacing < 420;
+          const want = threat.passT > 0 ? threat.passOff : cornerSoon ? inside * lim * 0.6 : threat.lat;
+          off = off * 0.3 + clamp(want, -lim, lim) * 0.7; c.covering = true;
+          // got there first, before they're alongside: they have to back out and wait a moment
+          if (threat.passT > 0 && tAlong < -30 && Math.abs(myLat - threat.passOff) < 22) { threat.passT = 0; threat.passWait = 0.9; }
+        }
+      }
+      // AI defending: Hard and up, in the last two laps, with someone right on them and boost to spare
+      if (((!p && c.canDefend) || p?.assist?.defend) && !calm) {
+        const late = c.lapsDone >= laps - 2;
+        if (!c.aiDefend && late && pressure && c.nitro > 0.35 && !c.aiNitro) { c.aiDefend = true; c.defCalm = 0; }
+        if (c.aiDefend) { c.defCalm = pressure ? 0 : (c.defCalm || 0) + dt; if (c.defCalm > 1.5 || c.nitro < 0.12) c.aiDefend = false; }
       }
       // keep committing while side by side (don't bail out halfway through a move)
       if (c.passT > 0 && alongside && alongside.id === c.passId) c.passT = Math.max(c.passT, 0.7);
@@ -2012,12 +2042,18 @@ class Room {
         if (side < 0 && off < o.lat + 33) off = Math.min(Math.max(myLat, o.lat + 33), lim);
       }
       if (cooldown) off = t.line[i] > 0 ? -Math.min(44, lim) : Math.min(44, lim);
+      // saving it at the edge: sliding wide towards the edge of the road? turn back in and lift.
+      // Grippy, well-braked cars catch it sooner and harder.
+      const save = 1 + 0.3 * (c.up.grip || 0) + 0.25 * (c.up.brakes || 0);
+      const nrm = t.nor[c.idx], latV = c.vx * nrm.x + c.vy * nrm.y, room = hw - Math.abs(myLat), drift = Math.sign(myLat) * latV;
+      const saving = !cooldown && drift > 15 && room - drift * 0.12 < 12;    // (the racing line never goes closer than 24 to the edge: this is a real slide)
+      if (saving) off = myLat - Math.sign(myLat) * (12 + 4 * save);
       if (c.punct) off = pl.side * lim;                                            // limp along the edge, out of the way
       off = clamp(off, -lim, lim);
       tx = t.pts[i].x + t.nor[i].x * off; ty = t.pts[i].y + t.nor[i].y * off;
       // Target speed: look ahead and brake just in time for every corner coming up.
       // off the racing line (mid-overtake) the corner is tighter, so take it a little slower
-      const offLine = c.passT > 0 ? Math.abs(off - t.line[c.idx]) : 0;
+      const offLine = c.passT > 0 ? Math.abs(off - t.line[c.idx]) : c.covering ? Math.abs(off - t.line[c.idx]) * 0.4 : 0;
       const cp = st.cornerPace * c.skill * this.compoundSpeed(c) * (c.attack ? 1.03 : 1) * (1 - Math.min(0.12, offLine * 0.0016)) * Math.sqrt(this.tireGrip(c.tire) * this.weatherGrip(c) * (c.damage > 0 ? 1 - 0.1 * c.damage : 1));
       const dec = st.planBrake * (1 - 0.3 * this.wet * (dryTires ? 1 : 0.4)) * (c.attack ? 1.08 : 1);
       const K = Math.min(60, Math.ceil((speed * speed) / (2 * dec) / t.spacing) + 3);
@@ -2033,6 +2069,7 @@ class Room {
       targetSpeed = v;
       if (calm) targetSpeed = Math.min(targetSpeed, st.maxSpeed * 0.92);
       if (cooldown) targetSpeed = Math.min(targetSpeed, 240);
+      if (saving) targetSpeed = Math.min(targetSpeed, speed * 0.96);
       // don't drive into the back of someone: follow close, matching their speed
       if (lead) {
         const theirV = lead.speed;
@@ -2136,7 +2173,7 @@ class Room {
       const nn = this.around(c, Math.ceil(reach / t.spacing) + 1, 0);
       for (let q = 0; q < nn; q++) {
         const o = NEAR_O[q], along = NEAR_D[q];
-        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && (!this.multi || o.cls === c.cls)) { c.slip = true; break; }   // (multiclass: a Hyper is gone too fast to tow a GT)
+        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && (!this.multi || o.cls === c.cls) && !o.defending) { c.slip = true; break; }   // (multiclass: a Hyper is gone too fast to tow a GT)
       }
     }
     if (c.slip && !this.sc) maxSp *= 1 + SLIP_BONUS;
@@ -2146,12 +2183,25 @@ class Room {
     const p = c.owner && this.players.get(c.owner);
     const wantN = (p ? p.nitroHeld || (p.assist?.boost && c.aiNitro) : c.aiNitro) && !this.sc;      // (boost assist: fired for you)
     if (c.nitroLock > 0) c.nitroLock = Math.max(0, c.nitroLock - dt);
+    // Defend mode (players toggle it; Hard+ AI use it late in the race when someone's right behind)
+    const wantD = p ? !!p.defendOn || (!!p.assist?.defend && !!c.aiDefend) : !!c.aiDefend;      // (defend assist: the AI logic, for you)
+    const canDefend = !this.sc && !this.qualifying && !c.inPit && !c.punct && !c.finished && c.aiMode === "race" && !(c.nitroLock > 0);
+    if (p && p.defendOn && (c.aiMode !== "race" || c.finished)) { p.defendOn = false; io.to(p.id).emit("defendMsg", c.finished ? "" : "🛡️ Defend off: you're heading into the pits"); }
+    if (c.defending && (!wantD || !canDefend || c.nitro <= 0)) {
+      c.defending = false;
+      if (p && p.defendOn && c.nitro <= 0) { p.defendOn = false; io.to(p.id).emit("defendMsg", "🛡️ Out of boost: defend is off"); }
+    } else if (!c.defending && wantD && canDefend) {
+      if (c.nitro >= DEFEND_START) { c.nitro -= DEFEND_START; c.defending = true; }
+      else if (p && p.defendOn) { p.defendOn = false; io.to(p.id).emit("defendMsg", `🛡️ Defend needs at least ${Math.round(DEFEND_START * 100)}% boost`); }
+      else c.aiDefend = false;
+    }
+    if (c.defending) { c.nitro = Math.max(0, c.nitro - DEFEND_DRAIN * dt); if (c.rs) c.rs.defendSec = (c.rs.defendSec || 0) + dt; }
     c.nitroOn = !!wantN && c.nitro > 0 && !(c.nitroLock > 0) && !c.punct && !c.inPit && (c.aiMode === "race" || c.aiMode === "wantPit") && !c.finished;
     if (c.nitroOn) {
       maxSp *= 1 + st.nitroPow; accel *= 1.15 + st.nitroPow;
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
       if (c.nitro <= 0) { c.nitroLock = NITRO_LOCKOUT; if (p) io.to(p.id).emit("xp", { label: `⚡ Boost empty! ${NITRO_LOCKOUT}s to recharge` }); }
-    } else if (c.nitro < 1 && this.phase === "race" && !(c.nitroLock > 0)) c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
+    } else if (c.nitro < 1 && this.phase === "race" && !(c.nitroLock > 0) && !c.defending) c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
     if (this.sc) maxSp = Math.min(maxSp, this.scLimit(c));
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
@@ -2215,7 +2265,7 @@ class Room {
     c.slide = slide; c.speed = vF;
   }
 
-  trackPos(c) {
+  trackPos(c, dt = 1 / 60) {
     const t = this.track, N = t.N;
     let best = c.idx, bestD = Infinity;
     for (let o = -12; o <= 20; o++) {
@@ -2242,6 +2292,16 @@ class Room {
     c.surface = inLane ? 4 : al < hw ? 0 : al < hw + 16 ? 1 : (t.gravel[best] && Math.sign(lat) === t.gravel[best] && al < hw + 140) ? 3 : 2;
     c.inPit = c.surface === 4;
     c.onTrack = c.surface <= 1 || c.surface === 4;
+    // edge grip: sliding out at the edge of the road, the tyres bite on the kerb and pull the car back.
+    // Sticky Setup and Carbon Brakes make it much stronger: a fully upgraded car very rarely runs off.
+    if (!inLane && c.aiMode !== "pitLane" && c.aiMode !== "pitOut" && al > hw - 8 && al < hw + 30 && !c.punct && !(c.crashT > 0) && !(c.slipT > 0)) {
+      const vn = c.vx * t.nor[best].x + c.vy * t.nor[best].y;
+      if (vn * Math.sign(lat) > 0) {
+        const u = c.up || {}, hold = (1.5 + 1.6 * (u.grip || 0) + 1.1 * (u.brakes || 0)) * this.weatherGrip(c);
+        const cut = vn * (1 - Math.exp(-hold * dt));
+        c.vx -= t.nor[best].x * cut; c.vy -= t.nor[best].y * cut;
+      }
+    }
     c.progress = c.lapsDone * N + c.idx;
     if (c.cp) { const b = Math.floor(c.progress / this.bucket); if (!c.cp.has(b)) c.cp.set(b, this.time); }
   }
@@ -2609,7 +2669,7 @@ class Room {
       c.pits, c.pitting > 0 ? r2(1 - c.pitting / (c.pitTotal || 1)) : -1, c.mistakeT > 0 ? 1 : 0, c.finished ? 1 : 0,
       c.slide > 70 && c.onTrack ? 1 : 0, c.onTrack ? 1 : 0, c.boosting ? 1 : 0, Math.round(c.progress), isFinite(c.bestLap) ? r2(c.bestLap) : 0,
       COMPOUNDS[c.compound].short, c.punct ? 1 : 0, c.surface, c.inPit ? 1 : 0, r2(c.damage), c.crashT > 0 ? 1 : 0, r2(this.track.elev[c.idx] || 0),
-      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0,
+      Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0, c.defending ? 1 : 0,
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
@@ -2617,7 +2677,7 @@ class Room {
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
-      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, xpRate: this.settings.xpRate,
+      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, defend: !!p.defendOn, xpRate: this.settings.xpRate,
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
   }
@@ -3560,8 +3620,9 @@ io.on("connection", (socket) => {
   socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
+  socket.on("defend", (on) => { const p = me(); if (p) p.defendOn = on === true; });
   // assists (Settings > Assists): pit stops, boost and DRS done for you
-  socket.on("assists", (d) => { const p = me(); if (p) p.assist = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true }; else socket.data.assist = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true }; });
+  socket.on("assists", (d) => { const a = { pit: d?.pit === true, boost: d?.boost === true, drs: d?.drs === true, defend: d?.defend === true }; const p = me(); if (p) p.assist = a; else socket.data.assist = a; });
   socket.on("drs", () => { const r = room(), p = me(); if (r && p && r.cars && r.openDrs(p)) socket.emit("drsOn"); });
   socket.on("box", () => {
     const r = room(), p = me(); if (!r || !p || r.phase !== "race") return;
