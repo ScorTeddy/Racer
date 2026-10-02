@@ -4656,28 +4656,55 @@
   let rt = 0;
   // How uneven the connection is decides how far behind we show the race: a steady connection
   // gets a short delay (snappy), a jittery one (phones, free servers) a longer one (smooth).
-  let lastArrive = 0, jitter = 0.02, netDelay = 0.11;
+  let lastArrive = 0, jitter = 0.02, netDelay = 0.11, lateBuf = 0;
   function pushSnap(st) {
     const now = performance.now() / 1000, mul = S.race?.speed || 1;
     if (snaps.length && st.t < snaps[snaps.length - 1].t - 0.001) snaps.length = 0;
     if (snaps.length && lastArrive) {
       const gap = now - lastArrive, want = (st.t - snaps[snaps.length - 1].t) / mul;
       jitter += (Math.min(0.4, Math.abs(gap - want)) - jitter) * 0.08;
-      netDelay = clamp(0.07 + jitter * 2.8, 0.08, 0.35);
+      // a late update (the server or the connection hiccuped): show the race a bit further behind right
+      // away, so the next hiccup is covered by updates we already have instead of guessing
+      const late = gap - want;
+      if (late > 0.06) lateBuf = Math.min(0.45, Math.max(lateBuf, late * 1.1 + 0.03));
+      netDelay = clamp(Math.max(0.07 + jitter * 2.8, lateBuf), 0.08, 0.5);
     }
     lastArrive = now;
     const m = new Map(); for (const a of st.cars) m.set(a[0], a);
     snaps.push({ t: st.t, cars: m });
     if (snaps.length > 16) snaps.shift();
   }
+  // Updates late? Guess where a car is by carrying it on along the track (same speed, same distance from
+  // the middle) rather than in a straight line: a straight-line guess sends it off the road in a corner
+  // and then it snaps back. null = no good guess (going backwards, in the pits...): use the straight line.
+  function aheadOnTrack(t, q, e) {
+    const i0 = q[25]; if (!t || !t.pts || !t.nor || i0 === undefined || e <= 0) return null;
+    const N = t.N, P = t.pts[i0], n = t.nor[i0], tn = t.tan[i0];
+    const sp = Math.hypot(q[23], q[24]); if (sp < 30 || q[23] * tn.x + q[24] * tn.y < sp * 0.7) return null;
+    const lat = (q[1] - P.x) * n.x + (q[2] - P.y) * n.y;
+    let along = (q[1] - P.x) * tn.x + (q[2] - P.y) * tn.y + sp * e, i = i0;
+    for (let k = 0; k < 200; k++) {
+      const j = (i + 1) % N, L = Math.hypot(t.pts[j].x - t.pts[i].x, t.pts[j].y - t.pts[i].y) || 1;
+      if (along < L) {
+        const f = along / L, nx = t.nor[i].x + (t.nor[j].x - t.nor[i].x) * f, ny = t.nor[i].y + (t.nor[j].y - t.nor[i].y) * f;
+        const h0 = Math.atan2(t.tan[i].y, t.tan[i].x), h1 = h0 + wrapAngle(Math.atan2(t.tan[j].y, t.tan[j].x) - h0) * f;
+        return { x: t.pts[i].x + (t.pts[j].x - t.pts[i].x) * f + nx * lat, y: t.pts[i].y + (t.pts[j].y - t.pts[i].y) * f + ny * lat, h: q[3] + wrapAngle(h1 - Math.atan2(tn.y, tn.x)) };
+      }
+      along -= L; i = j;
+    }
+    return null;
+  }
   function interpCars(dt) {
     if (!snaps.length) return;
     const mul = S.race?.speed || 1, last = snaps[snaps.length - 1], t = S.track;
+    lateBuf = Math.max(0, lateBuf - dt * 0.02);                 // (and creeps back to snappy over ~10s once it's steady)
     const want = last.t - netDelay * mul;
     // the display clock drifts toward where it should be by at most 12% (never a visible lurch)
     if (Math.abs(rt - want) > 0.6 * mul) rt = want;
     else rt += dt * mul * (1 + clamp(((want - rt) / mul) * 3, -0.12, 0.12));
-    rt = Math.min(rt, last.t + 0.25 * mul);
+    // out of updates: only guess a moment ahead. When the server stalls the race itself stalls with it, so a
+    // long guess just puts cars where they won't be and they have to be pulled back (the "teleport")
+    rt = Math.min(rt, last.t + 0.1 * mul);
     let a = snaps[0], b = snaps[0];
     for (let i = snaps.length - 1; i >= 0; i--) if (snaps[i].t <= rt) { a = snaps[i]; b = snaps[Math.min(snaps.length - 1, i + 1)]; break; }
     const D = b.t - a.t;
@@ -4686,14 +4713,15 @@
       if (!Bq) continue;
       let x, y, teleport = false;
       if (!A || D < 1e-4) {
-        const e = Math.max(0, Math.min(0.25 * mul, rt - b.t));
-        x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; c.drawIdx = Bq[25];
+        const e = Math.max(0, Math.min(0.1 * mul, rt - b.t)), g = aheadOnTrack(t, Bq, e);
+        if (g) { x = g.x; y = g.y; c.h = g.h; } else { x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; }
+        c.drawIdx = Bq[25];
       } else {
         const u = (rt - a.t) / D;
         c.drawIdx = u < 0.5 ? A[25] : Bq[25];
         teleport = Math.hypot(Bq[1] - A[1], Bq[2] - A[2]) > (Math.hypot(A[23], A[24]) + Math.hypot(Bq[23], Bq[24])) * D * 0.75 + 60;
         if (teleport) { x = Bq[1]; y = Bq[2]; c.h = Bq[3]; }
-        else if (u >= 1) { const e = rt - b.t; x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; }
+        else if (u >= 1) { const e = rt - b.t, g = aheadOnTrack(t, Bq, e); if (g) { x = g.x; y = g.y; c.h = g.h; } else { x = Bq[1] + Bq[23] * e; y = Bq[2] + Bq[24] * e; c.h = Bq[3]; } }
         else {
           const u2 = u * u, u3 = u2 * u, h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = (u3 - 2 * u2 + u) * D, h4 = (u3 - u2) * D;
           x = h1 * A[1] + h2 * Bq[1] + h3 * A[23] + h4 * Bq[23];
@@ -4901,18 +4929,6 @@
     };
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
-    // see-through ramps: a car driving under a bridge shows through the deck as a ghost
-    if (G.bridges.length) {
-      const covered = (x, y, k) => {
-        for (let j = k + 1; j < G.bridges.length; j++) { const seg = G.bridges[j].seg; for (let q = 0; q < seg.length; q += 2) { const i = seg[q], P = t.pts[i], r = (Array.isArray(t.hw) ? t.hw[i] : t.hw || 40) + 10; if ((P.x - x) ** 2 + (P.y - y) ** 2 < r * r) return true; } }
-        return false;
-      };
-      ctx.save(); ctx.globalAlpha = 0.55;
-      const ghostOne = (c, k) => { if (visible(c) && covered(c.x, c.y, k)) drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { glow: c.id === S.myCar }); };
-      ground.forEach((c) => ghostOne(c, -1)); layers.forEach((L, k) => L.forEach((c) => ghostOne(c, k)));
-      ctx.restore();
-      if (scD && scK >= -1 && covered(scD.x, scD.y, scK)) drawSC(0.55);
-    }
     // fireworks (in the world, around the winner)
     fireworks = fireworks.filter((fw) => {
       const k = (now - fw.t) / 1300; if (k > 1) return false;
@@ -5845,6 +5861,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-24", title: "Smoother races when the server hiccups", items: [
+      "🧈 When updates arrive late, cars no longer stop turning, fly off the track and teleport back. The game keeps a slightly bigger cushion of updates after a hiccup and barely guesses ahead, so cars stay on the road.",
+      "🌉 Cars under a bridge are hidden by it again (no more see-through ramps).",
+    ] },
     { v: "2026-10-23", title: "1v1 bets, and GT3s let the Hypers by", items: [
       "⚔️ Bet a friend: Profile › Friends › ⚔️. You both put in the same coins (you both need to have them), and whoever finishes ahead in your next race together gets both. Leaving the race counts as losing; no race within 3 days and you both get your coins back.",
       "🏁 Multiclass knockout qualifying now knocks out the slowest of each class (Hypers and GT3s separately), not just the slowest overall.",
