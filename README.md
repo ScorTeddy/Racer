@@ -220,13 +220,19 @@ sequence and times it on the server: stop = (0.5 + 0.75 × seconds taken + 0.45 
 punctures), at least 1.3 s. Giving up, or 8 s (`PIT_GAME_MAX`), means a slow stop. AI crews take 2.8 s.
 
 ## Race commentator
-Recorded clips in `public/commentary/` (2.5 MB of MP3s), made offline with the Kokoro neural TTS model (voice
-`bm_george`, a British male): `l_<event>_<n>.mp3` lines, `n_<name>.mp3` for every built-in AI name, and
-`c_<0-99>.mp3` ("Number seven") for players and renamed AI. `manifest.json` lists them. The client (`COMM`, `say`)
-plays a name clip and then a line, one at a time with priorities. Old news gets dropped and the music ducks while it
-talks. It's triggered by `lightsOut`, `feed` events (crash, winner, classWin, photo, lastLap, scOut/scIn, rain,
-puncture, fastest, elim), leader changes and pit stop results. To add lines, add them to `tools/commentary_gen.py`
-(same voice) and run it again.
+Recorded clips in `public/commentary/`, made offline with the Kokoro neural TTS model (voice `af_heart`, its
+best-rated one) by `tools/commentary_gen.py`:
+- `l_<event>_<n>.mp3`: general lines.
+- `s_<event>_<who>.mp3`: whole sentences with a name in them ("Bolt wins the race!"), for `win`, `lead` and `elim`.
+  `<who>` is every built-in AI name, or `n0`-`n99` ("Number seven…") for players and renamed AI.
+
+`manifest.json` lists them. The client (`COMM`, `say`) plays one clip at a time with priorities, drops old news
+and ducks the music. It's triggered by `lightsOut`, `feed` events (crash, winner, classWin, photo, lastLap,
+scOut/scIn, rain, puncture, fastest, elim), leader changes and pit stop results.
+
+## Customize
+Profile › 🎨 Customize (`renderCustom`): a live preview of your car with everything equipped, then each slot
+with only the items you own (rarest first) and a "None" option. Tapping sends `store:equip`.
 
 ## Elimination races
 - `settings.mode = "elim"` (a third Game mode card). `startRace` sets `this.elim = { per, round }`: `per` cars are

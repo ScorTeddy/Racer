@@ -1331,3 +1331,15 @@ body.touch .pg-pad { display: flex; }
 /* ---- achievements search / paging ---- */
 .ach-search { flex: 1 1 14rem; min-width: 0; padding: 0.3rem 0.6rem; border-radius: 99px; border: 1.5px solid var(--edge); background: var(--panel-2); color: var(--ink); font: inherit; font-size: 0.85rem; }
 .ach-more { display: block; margin: 0.7rem auto 0; }
+
+/* ---- customize (just what you own) ---- */
+.cust-preview { display: block; width: 100%; max-width: 30rem; height: auto; margin: 0.2rem auto 0.8rem; border-radius: 1rem; background: radial-gradient(ellipse at center, #2a3150, #10131f 75%); border: 1.5px solid var(--edge); }
+.cust-slot { margin-bottom: 0.8rem; }
+.cust-row { display: flex; gap: 0.45rem; overflow-x: auto; padding-bottom: 0.3rem; scrollbar-width: thin; }
+.cust-item { flex: 0 0 auto; width: 8.6rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.35rem; border-radius: 0.7rem; background: var(--panel-2); border: 2px solid var(--edge); border-top: 3px solid var(--rc, var(--edge)); color: var(--ink); font: inherit; }
+.cust-item canvas { width: 100%; height: auto; border-radius: 0.45rem; background: rgba(0,0,0,0.25); }
+.cust-item small { font-size: 0.72rem; font-weight: 700; text-align: center; line-height: 1.2; }
+.cust-item.on { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow) inset; }
+.cust-item.none { width: 5.2rem; justify-content: center; }
+.cust-none { font-size: 2rem; color: var(--soft); line-height: 1; }
+.cust-empty { font-size: 0.85rem; }

@@ -754,12 +754,16 @@ test("pit stop minigame: hit 6 arrows in order; fast and clean beats the AI crew
 test("commentary clips: every line and name the game asks for exists", () => {
   const fs = require("fs"), path = require("path"), dir = path.join(__dirname, ROOT === "." ? "" : "..", "public", "commentary");
   const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
-  for (const k of ["start", "crash", "crashBig", "crashN", "win", "winYou", "photo", "lastLap", "scOut", "scIn", "rain", "lead", "leadYou", "elim", "elimYou", "standing", "classWin", "puncture", "fastest", "pitGood", "pitBad"]) {
+  for (const k of ["start", "crash", "crashBig", "win", "winYou", "photo", "lastLap", "scOut", "scIn", "rain", "lead", "leadYou", "elim", "elimYou", "standing", "classWin", "puncture", "fastest", "pitGood", "pitBad"]) {
     assert.ok(man.lines[k] > 0, "lines for " + k);
     for (let i = 0; i < man.lines[k]; i++) assert.ok(fs.existsSync(path.join(dir, `l_${k}_${i}.mp3`)), `l_${k}_${i}.mp3`);
   }
-  for (const slug of Object.values(man.names)) assert.ok(fs.existsSync(path.join(dir, `n_${slug}.mp3`)), slug);
-  for (let i = 0; i < 100; i++) assert.ok(fs.existsSync(path.join(dir, `c_${i}.mp3`)), "number " + i);
+  // whole sentences with the name in them, for every AI name and car number
+  assert.deepEqual(man.named, ["win", "lead", "elim"]);
+  for (const key of man.named) {
+    for (const slug of Object.values(man.names)) assert.ok(fs.existsSync(path.join(dir, `s_${key}_${slug}.mp3`)), `${key} ${slug}`);
+    for (let i = 0; i < 100; i++) assert.ok(fs.existsSync(path.join(dir, `s_${key}_n${i}.mp3`)), `${key} number ${i}`);
+  }
 });
 
 test("knockout qualifying: Q1, Q2, Q3 with the slowest knocked out, and the grid in that order", { timeout: 180000 }, () => {

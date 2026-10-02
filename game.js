@@ -1224,12 +1224,12 @@
     for (const [inner, outer] of [["hubAch", "hubStats"], ["hubLb", "hubRanked"]]) if ($(inner).parentElement === $(outer)) $(outer).after($(inner));
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
     $("hubSecBtn")?.setAttribute("aria-pressed", String(A.tab === "sec"));
-    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"], ["plinko", "hubPlinko"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"], ["plinko", "hubPlinko"], ["custom", "hubCustom"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
-    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderPlinko(u);
+    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderPlinko(u); else if (A.tab === "custom") renderCustom(u);
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
@@ -1569,6 +1569,56 @@
     const all = el("button", "btn ghost", "🔒 Sign out on every device"); all.type = "button"; all.addEventListener("click", () => $("signOutAllBtn").click());
     so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
     box.appendChild(msg);
+  }
+  // ======================= Customize: just the things you own =======================
+  // A big live preview of your car with everything you have on, then every slot with only YOUR items. Tap to put
+  // one on (or None to take it off). No hunting through the whole store.
+  const CUST_ORDER = ["body", "livery", "decal", "num", "wing", "rims", "glow", "flame", "trail", "smoke", "helmet", "badge"];
+  function myExtras(u) { const o = {}; for (const [slot, id] of Object.entries(u?.equipped || {})) { const it = A.catalog?.store.find((x) => x.id === id); if (it && u.owned.includes(id)) o[slot] = it.look; } return o; }
+  function renderCustom(u) {
+    const box = $("hubCustom"); box.textContent = "";
+    if (!A.catalog) { box.textContent = "Loading..."; return; }
+    if (!u) { box.appendChild(el("p", "preset-note", "Sign in to customize your car with the things you've bought and won.")); return; }
+    const owned = A.catalog.store.filter((x) => u.owned.includes(x.id));
+    box.appendChild(el("p", "hub-h", `Your garage: you own ${owned.length} of ${A.catalog.store.filter((x) => !x.pass || u.owned.includes(x.id)).length} items. Tap one to put it on.`));
+    // the big preview (animated items keep moving)
+    const pv = document.createElement("canvas"); pv.width = 420; pv.height = 200; pv.className = "cust-preview"; pv.setAttribute("role", "img"); pv.setAttribute("aria-label", "Your car with everything you have on");
+    const ex = myExtras(u);
+    const drawPv = () => { const c = pv.getContext("2d"); c.clearRect(0, 0, pv.width, pv.height); drawCar(c, { color: prof.color, livery: prof.livery, number: prof.number, design: ex.livery ? null : prof.design, extras: ex }, pv.width * 0.56, pv.height / 2, 0, 4.2, { trailPreview: !!ex.trail, flamePreview: !!ex.flame }); if (ex.badge) { c.font = "34px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(ex.badge, pv.width * 0.56, 22); } };
+    drawPv(); if (!reducedMotion) { pv._draw = drawPv; pv._born = performance.now(); LIVE.add(pv); livePreviews(); }
+    box.appendChild(pv);
+    const empty = CUST_ORDER.filter((slot) => !owned.some((x) => x.slot === slot));
+    for (const slot of CUST_ORDER.filter((x) => !empty.includes(x))) {
+      const mine = owned.filter((x) => x.slot === slot);
+      const sec = el("section", "cust-slot");
+      const on = u.equipped?.[slot];
+      const h = el("h3", "hub-h", SLOT_NAMES[slot] || slot); h.appendChild(el("small", "store-count", ` ${mine.length} owned`)); sec.appendChild(h);
+      const row = el("div", "cust-row");
+      if (!mine.length) {
+        const go = el("button", "btn ghost cust-empty", "Nothing here yet · 🛒 Shop"); go.type = "button";
+        go.addEventListener("click", () => { const t = STORE_TABS.find((x) => x[2]?.includes(slot)); SHOP.tab = t ? t[0] : "chests"; saveShop(); A.tab = "store"; renderHub(); });
+        row.appendChild(go);
+      } else {
+        const none = el("button", "cust-item none" + (!on ? " on" : "")); none.type = "button"; none.append(el("span", "cust-none", "∅"), el("small", "", "None"));
+        none.addEventListener("click", () => { if (on) socket.emit("store:equip", { slot, id: null }); });
+        row.appendChild(none);
+        for (const it of mine.sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || a.name.localeCompare(b.name))) {
+          const b = el("button", "cust-item" + (on === it.id ? " on" : "")); b.type = "button"; b.title = it.name;
+          b.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
+          b.append(itemPreview(it, 132, 72), el("small", "", it.name.replace(" (animated)", " ✨")));
+          b.addEventListener("click", () => socket.emit("store:equip", { slot, id: on === it.id ? null : it.id }));
+          row.appendChild(b);
+        }
+      }
+      sec.appendChild(row); box.appendChild(sec);
+    }
+    if (empty.length) {
+      const sec = el("section", "cust-slot cust-none-yet");
+      sec.append(el("p", "preset-note", `Nothing yet for: ${empty.map((x) => SLOT_NAMES[x] || x).join(", ")}.`));
+      const go = el("button", "btn ghost cust-empty", "🛒 Go to the store"); go.type = "button";
+      go.addEventListener("click", () => { A.tab = "store"; renderHub(); });
+      sec.appendChild(go); box.appendChild(sec);
+    }
   }
   // ======================= Plinko (the gambling room) =======================
   // The server rolls every ball's path; this just animates it and keeps score. Built once and kept, so a
@@ -4918,8 +4968,9 @@
   socket.on("connect", sendAssists); socket.on("joined", sendAssists); socket.on("race", sendAssists);
   keyHints();
   // ======================= Commentator =======================
-  // Real recorded lines (a neural voice, Kokoro "George", made ahead of time: public/commentary). Names are
-  // separate clips (every built-in AI driver, plus "Number 0-99" for everyone else), played before the line.
+  // Real recorded lines (Kokoro's best neural voice, "Heart", made ahead of time: public/commentary). Lines about a
+  // driver are whole recorded sentences with the name in them ("Bolt wins the race!"): every built-in AI name,
+  // and "Number 0-99" for players and renamed AI. Everything else is a general line.
   const COMM = { man: null, cache: new Map(), queue: [], busy: false, last: {}, leader: null, at: {} };
   fetch("commentary/manifest.json").then((r) => (r.ok ? r.json() : null)).then((m) => { COMM.man = m; }).catch(() => {});
   const commVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vComm ?? 80) / 100);
@@ -4929,9 +4980,9 @@
   }
   function commName(name) {
     const base = String(name || "").replace(/ \d+$/, ""), slug = COMM.man?.names?.[base];
-    if (slug) return `n_${slug}.mp3`;
+    if (slug) return slug;
     const car = [...S.cars.values()].find((c) => c.name === name), n = Number(car?.number);
-    return Number.isInteger(n) && n >= 0 && n < 100 ? `c_${n}.mp3` : null;
+    return Number.isInteger(n) && n >= 0 && n < 100 ? `n${n}` : null;
   }
   function commLine(key) {
     const n = COMM.man?.lines?.[key]; if (!n) return null;
@@ -4943,8 +4994,9 @@
     if (!COMM.man || commVol() <= 0 || S.replaying || S.ql >= 0) return;
     const now = performance.now();
     if (gap && now - (COMM.at[key] || 0) < gap) return; COMM.at[key] = now;
-    const parts = [name ? commName(name) : null, commLine(key)].filter(Boolean);
-    if (!parts.length || (name && parts.length < 2)) return;
+    const who = name && COMM.man.named?.includes(key) ? commName(name) : null;
+    const parts = [who ? `s_${key}_${who}.mp3` : commLine(key)].filter(Boolean);
+    if (!parts.length) return;
     parts.forEach(commClip);                         // start loading straight away
     COMM.queue.push({ parts, prio, at: now }); COMM.queue.sort((a, b) => b.prio - a.prio);
     if (COMM.queue.length > 3) COMM.queue.length = 3;
@@ -4967,7 +5019,7 @@
   socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
   socket.on("feed", (f) => {
     const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
-    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 5000); else if (Math.random() < 0.5) say("crash", null, 1, 6000); else say("crashN", f.name, 1, 6000); }
+    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 5000); else say("crash", null, 1, 6000); }
     else if (f.t === "winner") say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
     else if (f.t === "classWin" && !mine(f.name)) say("classWin", f.name, 3);
     else if (f.t === "photo") say("photo", null, 2);
@@ -5693,6 +5745,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-20", title: "Customize your car, and a much better commentator", items: [
+      "🎨 New Customize tab (menu, or Profile > Customize): a big live preview of your car and ONLY the things you own, slot by slot. Tap to put something on, ∅ to take it off.",
+      "🎙️ New commentator voice: the best voice the AI model has (not the old robot one), and lines about drivers are now whole sentences with the name in them (\"Bolt wins the race! What a drive!\") instead of a name glued onto a line.",
+    ] },
     { v: "2026-10-19", title: "Achievement rewards rebalanced", items: [
       "⚖️ The 1,300 new achievements paid far too much (long-time players got 50,000+ coins at once). Their rewards are now about a quarter, the brutal ones about 60%, and every account gave back half of what those achievements paid out (never below 0 coins).",
     ] },
