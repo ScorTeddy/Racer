@@ -152,7 +152,7 @@
         const np = document.createElement("div"); np.className = "set-row now-row";
         const t2 = document.createElement("div"); t2.id = "nowPlaying"; t2.textContent = MUS?.now ? `♪ ${MUS.now}` : "♪ Nothing playing yet (click anywhere to start)";
         const sk = document.createElement("button"); sk.type = "button"; sk.className = "btn"; sk.textContent = "⏭ Next song";
-        sk.addEventListener("click", () => { MUS.started = true; pickMusic(true); });
+        sk.addEventListener("click", () => { MUS.started = true; MUS.offline = false; MUS.bad = 0; audio(); pickMusic(true); });
         np.append(t2, sk); body.appendChild(np);
       }
     }
@@ -237,15 +237,83 @@
     if (!Array.isArray(list)) return;
     for (const x of list) if (x && x.file) MUS.list.push({ title: String(x.title || x.file), artist: String(x.artist || ""), license: String(x.license || ""), mood: x.mood || "any", url: "music/" + String(x.file).replace(/^\/+/, "") });
   }).catch(() => {});
-  function stopMusic() { if (MUS.el) { MUS.el.pause(); MUS.el = null; } MUS.cur = null; }
-  function setMusicVolume() { if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol())); if (musicVol() <= 0) stopMusic(); }
+  // ---- built-in soundtrack: made live in the browser, so there's music even when the songs can't
+  // stream (archive.org down or slow, or a school/work network that blocks it) ----
+  const SYN_MOODS = {
+    race: { bpm: 148, prog: [[0, 3], [-4, 3], [-7, 3], [-2, 3]], minor: true, drums: "race" },
+    menu: { bpm: 96, prog: [[0, 7], [5, 7], [-3, 3], [-5, 7]], minor: false, drums: "chill" },
+    results: { bpm: 118, prog: [[0, 4], [5, 4], [7, 4], [5, 4]], minor: false, drums: "party" },
+  };
+  function synthNoise(a) {
+    if (!MUS.noiseBuf) { const n = a.sampleRate * 0.5; MUS.noiseBuf = a.createBuffer(1, n, a.sampleRate); const d = MUS.noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
+    const s = a.createBufferSource(); s.buffer = MUS.noiseBuf; return s;
+  }
+  function synthNote(a, out, t, f, dur, type, vol, cut = 0) {
+    const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    if (cut) { const fl = a.createBiquadFilter(); fl.type = "lowpass"; fl.frequency.value = cut; o.connect(fl); fl.connect(g); } else o.connect(g);
+    g.connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function synthDrum(a, out, t, kind, vol) {
+    if (kind === "kick") { const o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.32); return; }
+    const n = synthNoise(a), f = a.createBiquadFilter(), g = a.createGain(), len = kind === "snare" ? 0.16 : 0.04;
+    f.type = kind === "snare" ? "bandpass" : "highpass"; f.frequency.value = kind === "snare" ? 1800 : 7000;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    n.connect(f); f.connect(g); g.connect(out); n.start(t, Math.random() * 0.3); n.stop(t + len + 0.02);
+  }
+  function stopSynth() { if (MUS.syn) { clearInterval(MUS.syn.timer); const g = MUS.syn.out; try { g.gain.setTargetAtTime(0, g.context.currentTime, 0.15); setTimeout(() => g.disconnect(), 800); } catch (e) {} MUS.syn = null; } }
+  function playSynth(mood) {
+    const a = audio(); if (!a) return;
+    if (MUS.syn && MUS.syn.mood === mood) return;
+    stopSynth();
+    const M = SYN_MOODS[mood] || SYN_MOODS.menu, out = a.createGain(); out.gain.value = Math.min(1, musicVol()) * 0.55; out.connect(a.destination);
+    const root = 45 + Math.floor(Math.random() * 7), hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+    const scale = M.minor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+    const arp = Array.from({ length: 4 }, () => Array.from({ length: 8 }, () => Math.floor(Math.random() * 5)));   // a few riffs per song
+    const syn = { mood, out, step: 0, next: a.currentTime + 0.1, stepLen: 60 / M.bpm / 4 };
+    syn.timer = setInterval(() => {
+      while (syn.next < a.currentTime + 0.25) {
+        const t = syn.next, st = syn.step, bar = Math.floor(st / 16), i = st % 16, [chord, third] = M.prog[bar % M.prog.length];
+        const r = root + chord, part = Math.floor(bar / 8) % 4;                 // the song moves through 4 parts
+        // drums
+        if (M.drums === "race") { if (i % 4 === 0) synthDrum(a, out, t, "kick", 0.9); if (i === 4 || i === 12) synthDrum(a, out, t, "snare", 0.35); if (i % 2 === 0) synthDrum(a, out, t, "hat", 0.12); }
+        else if (M.drums === "party") { if (i % 4 === 0) synthDrum(a, out, t, "kick", 0.8); if (i % 4 === 2) synthDrum(a, out, t, "hat", 0.16); if (i === 4 || i === 12) synthDrum(a, out, t, "snare", 0.25); }
+        else { if (i === 0 || i === 10) synthDrum(a, out, t, "kick", 0.6); if (i === 8) synthDrum(a, out, t, "snare", 0.18); if (i % 4 === 2) synthDrum(a, out, t, "hat", 0.07); }
+        // bass
+        if (M.drums === "race" ? i % 2 === 0 : i % 4 === 0 || (M.drums === "party" && i % 4 === 3)) synthNote(a, out, t, hz(r - 12 + (i % 8 === 6 ? 12 : 0)), syn.stepLen * 1.8, "sawtooth", 0.16, 700);
+        // pad on each bar
+        if (i === 0) for (const k of [0, third, 7]) synthNote(a, out, t, hz(r + 12 + k), syn.stepLen * 15, "triangle", 0.045);
+        // lead arpeggio (rests in the first part, so songs build up)
+        if (part > 0 && (M.drums === "race" || i % 2 === 0)) {
+          const deg = arp[(bar + part) % 4][(i >> (M.drums === "race" ? 0 : 1)) % 8], n = r + 24 + scale[(deg + (third === 3 ? 0 : 2)) % 7];
+          synthNote(a, out, t, hz(n), syn.stepLen * 0.9, "square", part === 2 ? 0.045 : 0.03, 2600);
+        }
+        syn.step++; syn.next += syn.stepLen;
+      }
+    }, 60);
+    MUS.syn = syn;
+    MUS.now = `Scribble GP built-in ${mood} beat`;
+    const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now + " (the online songs can't load right now)";
+  }
+  function stopMusic() { if (MUS.el) { MUS.el.pause(); MUS.el = null; } stopSynth(); MUS.cur = null; }
+  function setMusicVolume() { if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol())); if (MUS.syn) MUS.syn.out.gain.value = Math.min(1, musicVol()) * 0.55; if (musicVol() <= 0) stopMusic(); }
+  // a song failed: try another, and after 2 misses switch to the built-in soundtrack
+  function songFailed(el2) {
+    if (MUS.el !== el2) return;
+    MUS.bad = (MUS.bad || 0) + 1;
+    if (MUS.bad < 2) setTimeout(() => pickMusic(true), 600);
+    else { MUS.offline = true; MUS.el.pause(); MUS.el = null; pickMusic(true); }
+  }
   function playTrack(tr) {
     if (musicVol() <= 0) { stopMusic(); return; }
     stopMusic();
     const el2 = new Audio(); el2.preload = "auto"; el2.src = tr.url; el2.volume = Math.min(1, musicVol());
     el2.addEventListener("ended", () => { if (MUS.el === el2) pickMusic(true); });
-    el2.addEventListener("error", () => { if (MUS.el === el2) { MUS.bad = (MUS.bad || 0) + 1; if (MUS.bad < 4) setTimeout(() => pickMusic(true), 800); } });
-    el2.play().then(() => { MUS.bad = 0; }).catch(() => {});
+    el2.addEventListener("error", () => songFailed(el2));
+    // a song that hasn't started after 8 seconds counts as failed too
+    const slow = setTimeout(() => { if (MUS.el === el2 && el2.paused && !el2.ended) songFailed(el2); }, 8000);
+    el2.addEventListener("playing", () => { clearTimeout(slow); MUS.bad = 0; }, { once: true });
+    el2.play().catch((e) => { if (e && e.name === "NotAllowedError") { clearTimeout(slow); MUS.started = false; } });
     MUS.el = el2; MUS.cur = tr; MUS.now = `${tr.title} · ${tr.artist}${tr.license ? " (" + tr.license + ")" : ""}`;
     MUS.recent = [tr.url, ...MUS.recent].slice(0, 5);
     const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now;
@@ -258,6 +326,7 @@
     const mood = settings.track === "race" ? "race" : S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
     const pool = MUS.list.filter((x) => settings.track === "shuffle" || x.mood === mood || x.mood === "any");
     if (!force && MUS.cur && pool.includes(MUS.cur) && MUS.el && !MUS.el.paused) return;
+    if (MUS.offline) { playSynth(mood); return; }
     const fresh = pool.filter((x) => !MUS.recent.includes(x.url));
     const from = fresh.length ? fresh : pool;
     if (from.length) playTrack(from[Math.floor(Math.random() * from.length)]);
@@ -5017,6 +5086,7 @@
       "🌍 When anyone anywhere pulls a super rare upgrade card, every player in every race hears about it.",
       "🏁 Watch YOUR finish: after the flag, rewatch your own run to the line. Your last 3 finishes stay in 🎬 Replays.",
       "🛍️ 29 new shop items: glows, flames, rims, helmets, smoke, Confetti/Ember/Checkered trails, Skull/Stripes/Dice decals and 8 new badges.",
+      "🎵 No more silent games: if the online songs can't load (some school and work networks block them), a built-in soundtrack made right in your browser plays instead. ⏭ Next song tries the online songs again.",
       "🛒 The store is organized now: tabs for Chests, Car & paint, Wheels & wing, Effects and Driver, plus Can buy / Owned filters and sorting by price, rarity or name.",
       "🔊 New engine sound with gears, a boost kick and whoosh, a DRS whoosh, and you can hear the cars around you.",
     ] },

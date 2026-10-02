@@ -243,6 +243,10 @@ and the "now playing" pop-up). They stream from the Internet Archive's copy of h
 Change the list in `BUILTIN` (index.html). Settings: Master / Music / Sound effects sliders, Soundtrack
 (Auto, Shuffle all, Race songs only) and a Next song button.
 
+**When the songs can't stream** (archive.org down, slow, or blocked on a school/work network): after 2 songs fail
+or don't start within 8 s, the game switches to a built-in soundtrack synthesized with Web Audio (`playSynth`, a
+menu, race and results beat), so there's never silence. Settings › ⏭ Next song tries streaming again.
+
 **Your own songs:** put MP3s in `public/music/` and list them in `public/music/music.json`:
 ```json
 [ { "file": "my-song.mp3", "title": "Song Name", "artist": "Artist Name", "license": "CC BY 4.0", "mood": "race" } ]
