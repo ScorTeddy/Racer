@@ -14,26 +14,35 @@ if not TEXT_ONLY:
     k = Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin")
 VOICE, LANG, SPEED = "af_heart", "en-us", 1.04
 LINES = {
-  "start": ["And it's lights out, and away we go!", "Lights out, and we are racing!", "And they're away! Here we go!"],
-  "crash": ["Oh! Contact! That is a big moment!", "Oh, they've come together there!", "Ooh, a crash! That's going to leave a mark.", "Oh no, there's been a collision!"],
-  "crashBig": ["Oh my goodness! That is a huge accident!", "Wow! That is a massive crash!"],
-  "win": ["And there's the chequered flag! What a race!", "And that's the win! What a drive!"],
-  "winYou": ["And you've won it! What a drive! Absolutely sensational!", "Victory! You've done it! What a race!"],
-  "photo": ["It's a photo finish! Too close to call!", "Side by side to the line! What a finish!"],
-  "lastLap": ["Final lap! This is it!", "One lap to go! Everything is on the line now!", "Here comes the last lap!"],
-  "scOut": ["Safety car! The safety car is out!", "And that brings out the safety car."],
-  "scIn": ["The safety car is in, and we're back to green!", "Green flag! We are racing again!"],
-  "rain": ["And here comes the rain! This changes everything!", "It's starting to rain! Time to think about wet tyres."],
-  "lead": ["And we have a new leader!", "There's a change at the front!"],
-  "leadYou": ["And you're into the lead! Fantastic driving!", "You take the lead! Brilliant move!"],
-  "elim": ["And another car is knocked out!", "Knocked out! And the field gets smaller!"],
-  "elimYou": ["Oh, you're out! So unlucky!", "Knocked out! That's the end of your race."],
-  "standing": ["And that's the last car standing! What a finish!"],
-  "classWin": ["And that's the class win! Superb!"],
-  "puncture": ["Oh, a puncture! That's a disaster!", "Oh no, a flat tyre! That's going to hurt."],
-  "fastest": ["And that's the fastest lap of the race!"],
-  "pitGood": ["What a pit stop! Lightning fast!", "Brilliant stop from the crew!"],
-  "pitBad": ["Oh, a slow stop. That's cost some time.", "Trouble in the pits! A slow stop."],
+  "start": ["And it's lights out, and away we go!", "Lights out, and we are racing!", "And they're away! Here we go!", "Green light, and we're off!", "And the race is underway!"],
+  "crash": ["Oh! Contact! That is a big moment!", "Oh, they've come together there!", "Ooh, a crash! That's going to leave a mark.", "Oh no, there's been a collision!", "Big impact! That's going to cost them.", "Contact! Somebody's not happy about that!"],
+  "crashBig": ["Oh my goodness! That is a huge accident!", "Wow! That is a massive crash!", "That's a huge one! I hope everyone's okay!"],
+  "win": ["And there's the chequered flag! What a race!", "And that's the win! What a drive!", "The chequered flag is out! What a race that was!", "Across the line, and that's the victory!"],
+  "winYou": ["And you've won it! What a drive! Absolutely sensational!", "Victory! You've done it! What a race!", "Get in! You've won the race!"],
+  "photo": ["It's a photo finish! Too close to call!", "Side by side to the line! What a finish!", "Too close to call! We'll need the photo!"],
+  "lastLap": ["Final lap! This is it!", "One lap to go! Everything is on the line now!", "Here comes the last lap!", "Final lap! Hold on to your seats!", "Last lap! It's now or never!"],
+  "scOut": ["Safety car! The safety car is out!", "And that brings out the safety car.", "The safety car is deployed!"],
+  "scIn": ["The safety car is in, and we're back to green!", "Green flag! We are racing again!", "Safety car in this lap! Get ready for the restart!"],
+  "rain": ["And here comes the rain! This changes everything!", "It's starting to rain! Time to think about wet tyres.", "The heavens have opened! It's getting slippery out there!"],
+  "lead": ["And we have a new leader!", "There's a change at the front!", "A new race leader!", "And the lead changes hands!"],
+  "leadYou": ["And you're into the lead! Fantastic driving!", "You take the lead! Brilliant move!", "You're leading the race! Keep it up!"],
+  "elim": ["And another car is knocked out!", "Knocked out! And the field gets smaller!", "And another one bites the dust!"],
+  "elimYou": ["Oh, you're out! So unlucky!", "Knocked out! That's the end of your race.", "And you're knocked out! Better luck next time."],
+  "standing": ["And that's the last car standing! What a finish!", "Last car standing! What a survivor!"],
+  "classWin": ["And that's the class win! Superb!", "Class victory! Brilliant drive!"],
+  "puncture": ["Oh, a puncture! That's a disaster!", "Oh no, a flat tyre! That's going to hurt.", "Puncture! That's heartbreaking!"],
+  "fastest": ["And that's the fastest lap of the race!", "A purple lap! Fastest of the race!"],
+  "pitGood": ["What a pit stop! Lightning fast!", "Brilliant stop from the crew!", "Superb pit stop! They barely stopped at all!"],
+  "pitBad": ["Oh, a slow stop. That's cost some time.", "Trouble in the pits! A slow stop.", "A sluggish stop there. That's going to hurt."],
+  "drs": ["DRS is enabled!", "DRS enabled! Let the overtaking begin!"],
+  "jump": ["Oh, a jump start!", "Jumped the start! That will cost them!"],
+  "pitSlow": ["A wheel nut problem in the pits!", "Oh no, a fumble in the pit lane!"],
+  "mistake": ["Oh, wide! Off the track!", "A big moment there! Ran wide!", "Lost it! Back on the track now."],
+  "halfway": ["We're halfway through the race!", "Halfway, and it's all still to play for!"],
+  "battle": ["What a battle for the lead!", "They're side by side for the lead!", "Nothing between them at the front!"],
+  "qko": ["And that's the end of the session! The slowest are knocked out!", "Knock out time! On to the next session!"],
+  "pole": ["And that's pole position!", "Pole position! A brilliant lap!"],
+  "defend": ["Defending hard!", "Covering the inside! Great defending!"],
 }
 # whole sentences with a name in them: {N} = the driver
 NAMED = {
@@ -64,7 +73,7 @@ json.dump({f: t for t, f in jobs}, open(os.path.join(OUT, "lines.json"), "w"), i
 if TEXT_ONLY: sys.exit(0)
 part, parts = int(sys.argv[1]), int(sys.argv[2])
 for j, (t, f) in enumerate(jobs):
-    if j % parts == part: save(t, f)
+    if j % parts == part and (os.environ.get("FORCE") or not os.path.exists(os.path.join(OUT, f))): save(t, f)
 if part == 0:
     man = {"voice": f"Kokoro {VOICE}", "v": 2, "lines": {k2: len(v) for k2, v in LINES.items()}, "named": list(NAMED.keys()), "names": {n: slug(n) for n in NAMES}}
     json.dump(man, open(os.path.join(OUT, "manifest.json"), "w"))

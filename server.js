@@ -406,6 +406,7 @@ let VOICE_LINES = {};
 try { VOICE_LINES = JSON.parse(fs.readFileSync([path.join(__dirname, "public", "commentary", "lines.json"), path.join(__dirname, "commentary", "lines.json")].find((f) => fs.existsSync(f)) || "", "utf8")); } catch (e) {}
 const voiceMem = new Map(), voiceJobs = new Map();
 let voiceFails = 0, voiceOffUntil = 0;
+const voiceStat = { ok: 0, lastOk: 0, lastError: null, lastErrorAt: 0 };
 if (elVoice() && !elKey()) console.warn("COMMENTATOR_VOICE is set, but ELEVENLABS_API_KEY isn't: using the built-in commentator voice");
 async function voiceClip(file) {
   const EL_VOICE = elVoice(), EL_MODEL = elModel(), EL_KEY = elKey(), key = `${EL_VOICE}_${EL_MODEL}_${file}`;
@@ -421,11 +422,13 @@ async function voiceClip(file) {
           method: "POST", signal: ctl.signal, headers: { "xi-api-key": EL_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" },
           body: JSON.stringify({ text: VOICE_LINES[file], model_id: EL_MODEL, voice_settings: { stability: 0.35, similarity_boost: 0.8, style: 0.45, use_speaker_boost: true } }),
         });
-        if (!r.ok) throw new Error("ElevenLabs " + r.status + " " + (await r.text().catch(() => "")).slice(0, 160));
+        if (!r.ok) throw new Error("ElevenLabs said " + r.status + ": " + (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300));
         buf = Buffer.from(await r.arrayBuffer());
-        voiceFails = 0;
+        voiceFails = 0; voiceStat.ok++; voiceStat.lastOk = Date.now();
         accounts.voiceSet(key, buf).catch((e) => console.log("voice save failed:", e.message));
       } catch (e) {
+        voiceStat.lastError = e.name === "AbortError" ? "ElevenLabs took too long (15 s)" : e.message; voiceStat.lastErrorAt = Date.now();
+        console.warn("commentator voice:", voiceStat.lastError);
         if (++voiceFails >= 3) { voiceOffUntil = Date.now() + 10 * 60e3; voiceFails = 0; console.warn("ElevenLabs keeps failing, built-in voice for 10 minutes:", e.message); }
         throw e;
       } finally { clearTimeout(timer); }
@@ -437,12 +440,33 @@ async function voiceClip(file) {
   return job;
 }
 app.get("/voice/config", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.json({ eleven: voiceOn() }); });
+// a plain page for the owner: is the ElevenLabs voice set up, and if not, why (the key itself is never shown)
+app.get("/voice/status", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const v = elVoice(), k = elKey();
+  if (req.query.test === "1" && voiceOn()) { voiceFails = 0; voiceOffUntil = 0; await voiceClip("l_start_0.mp3").catch(() => {}); }
+  const lines = [
+    `API key (ELEVENLABS_API_KEY): ${k ? `found (${k.length} characters)` : "MISSING"}`,
+    `Voice ID (COMMENTATOR_VOICE or COMMENTENTATOR_VOICE): ${v ? (/^[A-Za-z0-9]{10,40}$/.test(v) ? `found (${v.slice(0, 4)}...)` : `found, but it doesn't look like a voice ID: "${v.slice(0, 40)}"`) : "MISSING"}`,
+    `Model: ${elModel()}`,
+    `Using ElevenLabs: ${voiceOn() ? "YES" : "NO (built-in voice)"}`,
+    `Lines made so far: ${voiceStat.ok}${voiceStat.lastOk ? ` (last ${Math.round((Date.now() - voiceStat.lastOk) / 1000)} s ago)` : ""}`,
+    `Last error: ${voiceStat.lastError ? `${voiceStat.lastError} (${Math.round((Date.now() - voiceStat.lastErrorAt) / 1000)} s ago)` : "none"}`,
+    Date.now() < voiceOffUntil ? `Paused after errors for ${Math.ceil((voiceOffUntil - Date.now()) / 60000)} more min` : "",
+    voiceOn() ? "Add ?test=1 to this address to try making one line right now." : "",
+  ].filter(Boolean);
+  res.type("text/plain").send(lines.join("\n"));
+});
 app.get("/voice/:file", (req, res) => {
   const file = req.params.file;
   if (!VOICE_LINES[file]) return res.status(404).send("Not found");
-  const builtIn = () => { const fp = pub(path.join("commentary", file)); if (fs.existsSync(fp)) return res.sendFile(fp); res.status(404).send("Not found"); };
+  const builtIn = () => { const fp = pub(path.join("commentary", file)); if (voiceOn()) res.setHeader("X-Voice", "built-in"); if (fs.existsSync(fp)) return res.sendFile(fp); res.status(404).send("Not found"); };
   if (!voiceOn()) return builtIn();
-  voiceClip(file).then((buf) => { res.setHeader("Cache-Control", "public, max-age=86400"); res.type("audio/mpeg").send(buf); }).catch(() => { if (!res.headersSent) builtIn(); });
+  // not ready within 1.5 s (ElevenLabs is slow making it): play the built-in line now, the custom one is ready next time
+  let done = false;
+  const slow = setTimeout(() => { if (!done) { done = true; res.setHeader("Cache-Control", "no-store"); builtIn(); } }, 1500);
+  voiceClip(file).then((buf) => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "public, max-age=86400"); res.type("audio/mpeg").send(buf); })
+    .catch(() => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "no-store"); builtIn(); });
 });
 app.get("/music/km/:file", (req, res) => {
   const file = req.params.file;
@@ -1470,6 +1494,7 @@ class Room {
     this.qualifying = practice || ((s.quali > 0 || s.quali === "ko") && !grid);
     this.paused = false;
     const humans = [...this.players.values()].filter((p) => !p.spectator);   // spectators just watch
+    this.hadHumans = humans.length > 0;
     for (const h of humans) {
       h.level = 1; h.xp = 0; h.up = blankUp(); h.rare = null; h.pendingPicks = 0; h.offer = null; h.offered = null; h.nitroHeld = false;
       io.to(h.id).emit("offerCleared");
@@ -1782,6 +1807,8 @@ class Room {
 
   tick() {
     if (this.frozen && !this.thaw()) return;
+    // everyone who was racing has left the race: stop it (no point running it for nobody)
+    if (this.cars && this.hadHumans && ["tires", "lights", "race"].includes(this.phase) && !this.cars.some((c) => c.owner) && !(this.gone && [...this.gone.values()].some((g) => g.until > Date.now()))) return this.stopRace("Everyone left the race, so it was stopped.");
     if (this.phase === "tires") { if (Date.now() >= this.tiresUntil) this.startLights(); return; }
     if (this.phase === "lights") {
       const now = Date.now();
@@ -2665,6 +2692,15 @@ class Room {
     if (p.offer) io.to(p.id).emit("offer", this.offerMsg(p));
     else if (p.pendingPicks > 0) this.makeOffer(p);
   }
+  // stop the race where it is and go back to the lobby (no results, no stats)
+  stopRace(msg) {
+    if (this.realLaps != null) { this.settings.laps = this.realLaps; this.realLaps = null; }
+    if (this.elimRealLaps != null) { this.settings.laps = this.elimRealLaps; this.elimRealLaps = null; }
+    this.phase = "lobby"; this.cars = null; this.qualifying = false; this.practice = false; this.paused = false; this.sc = null; this.elim = null; this.qualiKO = null;
+    for (const p of this.players.values()) { p.offer = null; p.pendingPicks = 0; p.must = null; p.nitroHeld = false; p.defendOn = false; io.to(p.id).emit("offerCleared"); }
+    this.emit("raceStopped", { msg });
+    this.sendLobby();
+  }
   retire(p) {
     const c = this.carOf(p.id);
     if (!c || this.phase === "lobby" || this.phase === "results") return;
@@ -3443,9 +3479,10 @@ io.on("connection", (socket) => {
   // plinko: coins only, 10-1000 a ball, at most 6 balls a second
   let plinkoAt = [];
   socket.on("plinko:play", async (d) => {
-    const now = Date.now(); plinkoAt = plinkoAt.filter((t) => now - t < 1000); if (plinkoAt.length >= 6) return; plinkoAt.push(now);
+    // (always answer, even "too fast", so the game never thinks a ball is still on its way)
+    const now = Date.now(); plinkoAt = plinkoAt.filter((t) => now - t < 1000); if (plinkoAt.length >= 8) return socket.emit("plinkoResult", { error: "Slow down a little", id: d?.id }); plinkoAt.push(now);
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
-    if (!u) return socket.emit("plinkoResult", { error: "Sign in to play" });
+    if (!u) return socket.emit("plinkoResult", { error: "Sign in to play", id: d?.id });
     const res = accounts.plinko(u, d?.bet, String(d?.risk || ""));
     if (res.error) return socket.emit("plinkoResult", { error: res.error, id: d?.id });
     socket.emit("plinkoResult", { id: d?.id, path: res.path, bucket: res.bucket, mult: res.mult, win: res.win, bet: res.bet, coins: res.coins, risk: res.risk });
@@ -3974,7 +4011,9 @@ setInterval(() => {
 setInterval(() => {
   for (const r of rooms.values()) {
     if (!r.track) continue;
-    try { r.tick(); r.sendState(); }
+    // (big grids: the race state goes out 15 times a second instead of 30. The game smooths between updates
+    // anyway, and it halves the work and the data, which is what made busy races lag on a small server)
+    try { r.tick(); r.sendTick = (r.sendTick || 0) + 1; if (!(r.cars && r.cars.length > 8 && r.sendTick % 2)) r.sendState(); }
     catch (e) { console.error("room", r.code, e); r.phase = "lobby"; r.cars = null; if (r.elimRealLaps != null) { r.settings.laps = r.elimRealLaps; r.elimRealLaps = null; } r.sendLobby(); r.emit("toast", "Something went wrong in that race. Back to the lobby."); }
   }
 }, 1000 / 30);

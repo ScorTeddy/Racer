@@ -249,6 +249,11 @@ memory and in Upstash (or `data/voice/`), so it's only paid for once per voice. 
 20,000 characters, but only the lines that actually get said are made. If ElevenLabs errors (no credits, a wrong
 ID), the built-in clip plays instead, and after 3 failures in a row it pauses for 10 minutes. Change the voice ID
 and the new voice takes over (clips are kept per voice).
+- If a line isn't ready within 1.5 s, the built-in clip plays (header `X-Voice: built-in`, so the game asks again
+  next time) while ElevenLabs finishes it for later.
+- **Not working? Open `https://<your site>/voice/status`**. It says whether the key and voice ID were found, how
+  many lines have been made, and the last error ElevenLabs gave (the key itself is never shown). Add `?test=1` to
+  try making a line right then.
 
 ## Customize
 Profile › 🎨 Customize (`renderCustom`): a live preview of your car with everything equipped, then each slot

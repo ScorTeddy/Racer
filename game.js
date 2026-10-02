@@ -1623,7 +1623,9 @@
   // ======================= Plinko (the gambling room) =======================
   // The server rolls every ball's path; this just animates it and keeps score. Built once and kept, so a
   // coins update (which redraws the hub) never cuts a falling ball short.
-  const PL = { root: null, balls: [], risk: "medium", bet: 50, shown: null, net: 0, hist: [], id: 0, raf: 0 };
+  // balance on screen = the server's last number - bets still waiting for an answer - wins still falling
+  const PL = { root: null, balls: [], risk: "medium", bet: 50, base: null, pend: new Map(), net: 0, hist: [], id: 0, raf: 0 };
+  const plShown = () => (PL.base ?? 0) - [...PL.pend.values()].reduce((t, x) => t + x.bet, 0) - PL.balls.reduce((t, b) => t + (b.landed ? 0 : b.win), 0);
   try { const v = JSON.parse(localStorage.getItem("tb-plinko") || "null"); if (v) { PL.risk = v.risk || PL.risk; PL.bet = v.bet || PL.bet; } } catch (e) {}
   const plSave = () => { try { localStorage.setItem("tb-plinko", JSON.stringify({ risk: PL.risk, bet: PL.bet })); } catch (e) {} };
   const plCol = (m) => (m >= 100 ? "#e11d48" : m >= 10 ? "#ef4444" : m >= 3 ? "#f97316" : m >= 1.5 ? "#f59e0b" : m >= 1 ? "#eab308" : "#475569");
@@ -1653,15 +1655,16 @@
     if (PL.balls.length || (PL.flash && now - PL.flash.at < 500)) PL.raf = requestAnimationFrame(plDraw); else PL.raf = 0;
   }
   function plLand(bl) {
+    bl.landed = true;
     PL.flash = { b: bl.bucket, at: performance.now() };
-    PL.shown += bl.win; PL.net += bl.win - bl.bet;
+    PL.net += bl.win - bl.bet;
     PL.hist.unshift(bl.mult); PL.hist.length = Math.min(PL.hist.length, 14);
     if (bl.mult >= 10) { sfx("win"); banner(`🎰 ${bl.mult}x! +${bl.win.toLocaleString()}`, plCol(bl.mult)); } else if (bl.mult >= 1) sfx("tick"); else tone(160, 0.12, "sawtooth", 0.06);
     plStatus();
   }
   function plStatus() {
     if (!PL.root) return;
-    PL.root.querySelector(".pl-bal").textContent = `🪙 ${Math.max(0, Math.round(PL.shown ?? 0)).toLocaleString()}`;
+    PL.root.querySelector(".pl-bal").textContent = `🪙 ${Math.max(0, Math.round(plShown())).toLocaleString()}`;
     const n = PL.root.querySelector(".pl-net"); n.textContent = `This session: ${PL.net >= 0 ? "+" : ""}${PL.net.toLocaleString()}`; n.className = "pl-net " + (PL.net > 0 ? "up" : PL.net < 0 ? "down" : "");
     const h = PL.root.querySelector(".pl-hist"); h.textContent = "";
     for (const m of PL.hist) { const sp = el("span", "", m + "x"); sp.style.background = plCol(m); h.appendChild(sp); }
@@ -1672,13 +1675,18 @@
     if (bet < min || bet > max) return popup(`Bets are ${min} to ${max} coins`, true);
     PL.bet = bet; plSave();
     for (let k = 0; k < n; k++) setTimeout(() => {
-      if ((PL.shown ?? 0) < bet) return popup("Not enough coins", true);
-      PL.shown -= bet; plStatus(); socket.emit("plinko:play", { bet, risk: PL.risk, id: ++PL.id });
-    }, k * 180);
+      if (plShown() < bet) { if (!PL.toldPoor) { PL.toldPoor = true; popup("Not enough coins", true); setTimeout(() => (PL.toldPoor = false), 1500); } return; }
+      const id = ++PL.id;
+      PL.pend.set(id, { bet, at: Date.now() }); plStatus(); socket.emit("plinko:play", { bet, risk: PL.risk, id });
+      setTimeout(() => { if (PL.pend.delete(id)) plStatus(); }, 8000);       // (no answer at all: give the bet back on screen)
+    }, k * 160);
   }
   socket.on("plinkoResult", (r) => {
-    if (r.error) { popup("🎰 " + r.error, true); if (A.user) { PL.shown = A.user.coins; plStatus(); } return; }
+    PL.pend.delete(r.id);
+    if (r.error) { if (!PL.toldErr) { PL.toldErr = true; popup("🎰 " + r.error, true); setTimeout(() => (PL.toldErr = false), 1500); } plStatus(); return; }
+    PL.base = r.coins;                     // the server's balance, win included (it's held back on screen until the ball lands)
     PL.balls.push({ path: r.path, bucket: r.bucket, mult: r.mult, win: r.win, bet: r.bet, at: performance.now() });
+    plStatus();
     if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
   });
   function renderPlinko(u) {
@@ -1698,7 +1706,7 @@
       R.querySelector(".pl-drop").addEventListener("click", () => plDrop(1));
       R.querySelector(".pl-drop10").addEventListener("click", () => plDrop(10));
       R.querySelectorAll(".pl-quick button").forEach((b) => b.addEventListener("click", () => {
-        const inp = R.querySelector(".pl-bet"), v = Number(inp.value) || 10, max = Math.min(A.catalog?.plinko?.max || 1000, Math.max(10, Math.floor(PL.shown ?? 0)));
+        const inp = R.querySelector(".pl-bet"), v = Number(inp.value) || 10, max = Math.min(A.catalog?.plinko?.max || 1000, Math.max(10, Math.floor(plShown())));
         inp.value = Math.max(10, Math.min(max, b.dataset.q === "half" ? Math.floor(v / 2) : b.dataset.q === "double" ? v * 2 : max));
       }));
       R.querySelectorAll(".pl-risk .chip").forEach((b) => b.addEventListener("click", () => { PL.risk = b.dataset.r; plSave(); R.querySelectorAll(".pl-risk .chip").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.r === PL.risk))); if (!PL.raf) plDraw(); }));
@@ -1706,7 +1714,7 @@
     if (PL.root.parentNode !== box) { box.textContent = ""; box.appendChild(PL.root); }
     PL.root.querySelectorAll(".pl-risk .chip").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.r === PL.risk)));
     const guest = !u; PL.root.querySelector(".pl-drop").disabled = guest; PL.root.querySelector(".pl-drop10").disabled = guest;
-    if (u && !PL.balls.length) PL.shown = u.coins;          // (no balls in the air: the server's number is the truth)
+    if (u && !PL.balls.length && !PL.pend.size) PL.base = u.coins;          // (nothing in the air: the account's number is the truth)
     plStatus(); if (!PL.raf) plDraw();
   }
   const SLOT_NAMES = { body: "Car bodies", livery: "Liveries", decal: "Decals", num: "Number plates", wing: "Rear wings", rims: "Rims", glow: "Underglow", flame: "Boost flames", trail: "Trails", smoke: "Tyre smoke", helmet: "Helmets", badge: "Name badges" };
@@ -3414,6 +3422,7 @@
     $("qualiBox").classList.remove("hidden"); $("mustPit").classList.add("hidden"); setPausedUi(false);
     const mine = q.rows.findIndex((r) => r.owner === S.me);
     if (mine === 0 && !q.practice) { banner("POLE POSITION!", "#ffcc1f"); sfx("win"); }
+    if (!q.practice) say("pole", null, 2);
   });
   const fmt3 = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(3).padStart(6, "0")}`; };
   $("spectateBtn").addEventListener("click", () => { socket.emit("spectate", !S.spectating); sfx("tick"); });
@@ -4991,7 +5000,7 @@
   fetch("voice/config").then((r) => (r.ok ? r.json() : null)).then((c) => { if (c?.eleven) { COMM.base = "voice/"; COMM.cache.clear(); } }).catch(() => {});
   const commVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vComm ?? 80) / 100);
   function commClip(file) {
-    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch(COMM.base + file).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
+    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch(COMM.base + file).then((r) => { if (r.headers.get("X-Voice") === "built-in") setTimeout(() => COMM.cache.delete(file), 0); return r.ok ? r.arrayBuffer() : null; }).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
     return COMM.cache.get(file);
   }
   function commName(name) {
@@ -5007,7 +5016,7 @@
   }
   // say: a line (with a name in front, if given). prio: 3 = wins, 2 = big moments, 1 = normal, 0 = filler
   function say(key, name, prio = 1, gap = 0) {
-    if (!COMM.man || commVol() <= 0 || S.replaying || S.ql >= 0) return;
+    if (!COMM.man || commVol() <= 0 || S.replaying || (S.ql >= 0 && key !== "qko" && key !== "pole")) return;
     const now = performance.now();
     if (gap && now - (COMM.at[key] || 0) < gap) return; COMM.at[key] = now;
     const who = name && COMM.man.named?.includes(key) ? commName(name) : null;
@@ -5032,7 +5041,7 @@
     setTimeout(() => { COMM.busy = false; setMusicVolume(); setTimeout(commNext, 200); }, (t - a.currentTime) * 1000 + 50);
   }
   socket.on("lightsOut", () => { COMM.leader = null; if (!S.race?.quali) say("start", null, 2); });
-  socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
+  socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; COMM.half = false; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
   socket.on("feed", (f) => {
     const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
     if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 5000); else say("crash", null, 1, 6000); }
@@ -5046,6 +5055,11 @@
     else if (f.t === "puncture") say("puncture", f.name, 1, 8000);
     else if (f.t === "fastest") say("fastest", f.name, 0, 20000);
     else if (f.t === "elim") say(mine(f.name) ? "elimYou" : "elim", mine(f.name) ? null : f.name, 2);
+    else if (f.t === "drs") say("drs", null, 1);
+    else if (f.t === "jump") say("jump", null, 1, 8000);
+    else if (f.t === "pitSlow") say("pitSlow", null, 0, 15000);
+    else if (f.t === "mistake") say("mistake", null, 0, 20000);
+    else if (f.t === "qko") say("qko", null, 2);
   });
   // new leader (from the race state): "Bolt takes the lead!"
   function commLeader(st) {
@@ -5053,6 +5067,10 @@
     const lead = st.standings?.[0], c = S.cars.get(lead);
     if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, 1, 9000);
     COMM.leader = lead;
+    // halfway, and a close fight for the lead
+    const laps = S.race.laps || 0;
+    if (c && laps >= 4 && !COMM.half && c.laps >= Math.floor(laps / 2) && !c.fin) { COMM.half = true; say("halfway", null, 0); }
+    if (S.t > 15 && st.gaps?.[1] !== undefined && st.gaps[1] >= 0 && st.gaps[1] < 0.35 && !c?.fin) say("battle", null, 0, 30000);
   }
 
   // ======================= Pit stop minigame =======================
@@ -5103,6 +5121,7 @@
     const on = !S.defendOn;
     if (on && (me.nitro ?? 0) < 10) { popup("🛡️ Defend needs at least 10% boost", true); return; }
     S.defendAt = performance.now(); setDefendUi(on); socket.emit("defend", on); sfx("tick");
+    if (on) say("defend", null, 0, 20000);
     if (on && !S.defendTold) { S.defendTold = true; popup("🛡️ Defending! Your driver covers the car behind and they get no slipstream. Costs 10% boost, then 8% a second."); }
   }
   $("defendBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleDefend(); });
@@ -5130,6 +5149,7 @@
     popup(`Knocked out in P${d.pos} of ${d.of}. Watch who's the last car standing!`, true);
     setNitro(false); setDefendUi(false); S.camTarget = S.standings.find((i) => !S.cars.get(i)?.out) ?? null;
   });
+  socket.on("raceStopped", (d) => { popup("🛑 " + (d?.msg || "The race was stopped."), true); if (S.screen === "race" || S.screen === "results") show("lobby"); });
   socket.on("defendMsg", (m) => { setDefendUi(false); if (m) popup(m, true); });
   socket.on("race", () => setDefendUi(false));
   // ---- DRS: in a zone with DRS available, press D (or the DRS button) to open the flap ----
@@ -5761,6 +5781,12 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-22", title: "Less lag, Plinko fixed, more commentary", items: [
+      "⚡ Less lag: big races (9+ cars) send half as much data, which was choking the server and slow connections.",
+      "🛑 If everyone racing leaves the race, it stops and goes back to the lobby instead of running on for nobody.",
+      "🎰 Plinko fixed: your balance never goes wrong when you drop lots of balls fast, and no ball gets lost.",
+      "🎙️ 45 new commentator lines: DRS, jump starts, slow stops, cars running wide, halfway, battles for the lead, Q1/Q2 knock-outs, pole position, defending, and more ways to call the old ones.",
+    ] },
     { v: "2026-10-21", title: "Sell your stuff, and a Mode tab", items: [
       "💰 Sell anything you own (in the Store or Customize): shop items sell for half what they cost, chest and pass items for a set price by rarity (Common 25 up to Mythic 1,500). Tap Sell, then again to confirm.",
       "🎮 The game mode picker (Normal, Multiclass, Elimination, Practice) has its own Mode tab in the room now, so no more scrolling.",

@@ -754,7 +754,7 @@ test("pit stop minigame: hit 6 arrows in order; fast and clean beats the AI crew
 test("commentary clips: every line and name the game asks for exists", () => {
   const fs = require("fs"), path = require("path"), dir = path.join(__dirname, ROOT === "." ? "" : "..", "public", "commentary");
   const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
-  for (const k of ["start", "crash", "crashBig", "win", "winYou", "photo", "lastLap", "scOut", "scIn", "rain", "lead", "leadYou", "elim", "elimYou", "standing", "classWin", "puncture", "fastest", "pitGood", "pitBad"]) {
+  for (const k of ["start", "crash", "crashBig", "win", "winYou", "photo", "lastLap", "scOut", "scIn", "rain", "lead", "leadYou", "elim", "elimYou", "standing", "classWin", "puncture", "fastest", "pitGood", "pitBad", "drs", "jump", "pitSlow", "mistake", "halfway", "battle", "qko", "pole", "defend"]) {
     assert.ok(man.lines[k] > 0, "lines for " + k);
     for (let i = 0; i < man.lines[k]; i++) assert.ok(fs.existsSync(path.join(dir, `l_${k}_${i}.mp3`)), `l_${k}_${i}.mp3`);
   }
@@ -895,4 +895,17 @@ test("commentator voice: built-in by default; with COMMENTATOR_VOICE + an API ke
     assert.ok(body.url.includes("/v1/text-to-speech/AbCdEf1234567890") && body.key === "test-key" && body.json.text === "Bolt wins the race! What a drive!");
     await fetch(base + "/voice/s_win_bolt.mp3"); assert.equal(calls, 1, "kept: only made (and paid for) once");
   } finally { fake.close(); for (const k of ["ELEVENLABS_URL", "ELEVENLABS_API_KEY", "COMMENTENTATOR_VOICE"]) delete process.env[k]; }
+});
+
+test("the race stops when everyone racing has left it", { timeout: 30000 }, () => {
+  const r = new game.Room("ALLGONE", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "lv", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 4, quali: 0, laps: 5 }); r.ensureRoster(4);
+  let stopped = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "raceStopped") stopped = d; return emit(ev, d); };
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60; n++) r.step(1 / 60);
+  r.tick(); assert.equal(r.phase, "race", "still racing while you're in it");
+  r.retire(p); r.tick();
+  assert.ok(stopped && r.phase === "lobby" && r.cars === null, "stopped and back to the lobby");
+  assert.equal(r.settings.laps, 5);
 });
