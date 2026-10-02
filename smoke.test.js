@@ -808,3 +808,40 @@ test("strategy preview and rematch", { timeout: 60000 }, () => {
   r.phase = "results"; r.backToLobby(); assert.equal(r.phase, "lobby");
   r.startRace(); assert.equal(r.phase, "tires", "the next race starts");
 });
+
+test("mythic chest, plinko, and the big achievement list", async () => {
+  const A = accounts;
+  const user = { coins: 20000, owned: [], equipped: {}, stats: { races: 0, wins: 0, podiums: 0, top5: 0, points: 0, laps: 0, km: 0, overtakes: 0, mostOvertakes: 0, pitStops: 0, fastestLaps: 0, cleanLaps: 0, crashes: 0, slips: 0, realTracks: [], raceSec: 0, boostSec: 0 }, ach: {} };
+  // the Mythic chest: 5,000 coins, never anything below epic
+  assert.ok(A.BOXES.find((b) => b.id === "mythic" && b.price === 5000));
+  for (let i = 0; i < 3; i++) { const r = A.openBox(user, "mythic"); assert.ok(r.ok && ["epic", "legendary", "mythic"].includes(r.rarity), r.rarity); }
+  assert.ok(A.STORE.filter((x) => x.box === "mythic").length >= 5, "mythic-chest exclusives");
+  // plinko: paths come from the server, payouts match the table, every risk pays back just under 100%
+  for (const [risk, pays] of Object.entries(A.PLINKO)) {
+    const P = [1, 12, 66, 220, 495, 792, 924, 792, 495, 220, 66, 12, 1].map((x) => x / 4096);
+    const ev = pays.reduce((t, m, k) => t + m * P[k], 0);
+    assert.ok(ev > 0.97 && ev < 1, `${risk} pays back ${ev.toFixed(3)}`);
+  }
+  user.coins = 1000;
+  const r = A.plinko(user, 100, "high");
+  assert.ok(r.ok && r.path.length === 12 && r.bucket === r.path.reduce((a, b) => a + b, 0) && r.win === Math.floor(100 * A.PLINKO.high[r.bucket]));
+  assert.equal(user.coins, 1000 - 100 + r.win);
+  assert.ok(A.plinko(user, 5, "low").error && A.plinko(user, 5000, "low").error && A.plinko({ ...user, coins: 50 }, 100, "low").error, "bet limits and no going below zero");
+  // achievements: 1,000+ new ones, all unique, with some brutal ones
+  const g = A.ACH.filter((a) => a.id.startsWith("g_"));
+  assert.ok(g.length >= 1000, `${g.length} new achievements`);
+  assert.equal(new Set(A.ACH.map((a) => a.id)).size, A.ACH.length); assert.equal(new Set(A.ACH.map((a) => a.name)).size, A.ACH.length);
+  assert.ok(A.ACH.filter((a) => a.coins >= 10000).length >= 20, "very hard ones");
+});
+
+test("the safety car knows which bit of track (and how high) it's on, so it's drawn over ramps", () => {
+  const r = new game.Room("SCRAMP", false); r.setRandomTrack("normal", "regular");
+  r.players.set("s", { id: "s", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 3, quali: 0, laps: 6, safetyCar: true }); r.ensureRoster(3);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 10; n++) r.step(1 / 60);
+  r.deploySafetyCar(); r.stepSafetyCar();
+  let st = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "state") st = d; return emit(ev, d); };
+  r.sendState();
+  assert.ok(Array.isArray(st.sc) && st.sc.length === 5 && Number.isInteger(st.sc[3]) && typeof st.sc[4] === "number", JSON.stringify(st.sc));
+});

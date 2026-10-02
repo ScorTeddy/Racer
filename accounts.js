@@ -484,6 +484,110 @@ ACH.push(
   cnt("ach_50", "🎯", "Achievement Hunter", "Unlock 50 achievements", 500, (s, u) => Object.keys(u.ach).length, 50),
   cnt("ach_100", "🏵️", "Completionist", "Unlock 100 achievements", 3000, (s, u) => Object.keys(u.ach).length, 100),
 );
+// ======================= The Grind: 1,000+ more achievements =======================
+// Tiered families (easy first tier, near-impossible last tier), every real track and theme, and a set of
+// brutal one-offs. Names get roman numerals; anything that repeats an older achievement is skipped.
+{
+  const ROMAN = (n) => { let out = ""; for (const [v, r] of [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]) while (n >= v) { out += r; n -= v; } return out; };
+  const nice = (x) => { const e = Math.pow(10, Math.floor(Math.log10(x))), m = x / e, steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 10]; const best = steps.reduce((a, b) => (Math.abs(b - m) < Math.abs(a - m) ? b : a)); return Math.max(1, Math.round(best * e)); };
+  const goals = (min, max, n) => { const out = []; for (let k = 0; k < n; k++) { const g = nice(min * Math.pow(max / min, k / (n - 1))); if (!out.includes(g)) out.push(g); } return out; };
+  const coinsFor = (k, n) => Math.round((40 + 6000 * Math.pow(k / Math.max(1, n - 1), 2.2)) / 10) * 10;
+  const seen = new Set(ACH.map((a) => a.desc));
+  const fmt = (n) => n.toLocaleString("en-US");
+  const add = (a) => { if (seen.has(a.desc) || ACH.some((b) => b.id === a.id)) return; seen.add(a.desc); ACH.push(a); };
+  const family = (id, icon, name, desc, key, min, max, n) => {
+    const gs = goals(min, max, n);
+    gs.forEach((g, k) => add(cnt(`g_${id}_${g}`, icon, `${name} ${ROMAN(k + 1)}`, desc(fmt(g), g), coinsFor(k, gs.length), key, g)));
+  };
+  const hours = (s) => (s.raceSec || 0) / 3600;
+  family("races", "🏁", "Race Day", (g) => `Race ${g} times`, "races", 5, 25000, 38);
+  family("wins", "🏆", "Victory Lane", (g) => `Win ${g} races`, "wins", 2, 10000, 36);
+  family("podiums", "🍾", "Podium Regular", (g) => `${g} podiums`, "podiums", 3, 15000, 34);
+  family("top5", "🎖️", "Points Finisher", (g) => `Finish in the top 5 ${g} times`, "top5", 5, 20000, 30);
+  family("points", "📊", "Points Machine", (g) => `Score ${g} championship points`, "points", 50, 500000, 34);
+  family("laps", "🔄", "Lap Counter", (g) => `Drive ${g} laps`, "laps", 50, 250000, 34);
+  family("km", "🛣️", "Road Warrior", (g) => `Drive ${g} km`, "km", 10, 100000, 34);
+  family("ot", "⚔️", "Overtaker", (g) => `${g} overtakes in total`, "overtakes", 25, 500000, 34);
+  family("pits", "🔧", "Pit Crew Pal", (g) => `Make ${g} pit stops`, "pitStops", 5, 50000, 30);
+  family("fl", "🟣", "Purple Patch", (g) => `${g} fastest laps`, "fastestLaps", 3, 5000, 28);
+  family("clean", "✨", "Clean Machine", (g) => `Drive ${g} clean laps`, "cleanLaps", 20, 100000, 30);
+  family("boost", "⚡", "Boost Junkie", (g) => `Boost for ${g} seconds in total`, "boostSec", 60, 1000000, 30);
+  family("beat", "🤝", "People Beater", (g) => `Finish ahead of ${g} other players`, "beatPlayers", 3, 20000, 28);
+  family("random", "🎲", "Dice Roller", (g) => `Race ${g} random tracks`, "randomRaces", 3, 10000, 20);
+  family("drawn", "✏️", "Track Artist", (g) => `Race ${g} times on tracks you drew`, "drawnRaces", 3, 10000, 20);
+  family("rain", "🌧", "Rain Dancer", (g) => `Race ${g} times in the rain`, "rainRaces", 3, 5000, 20);
+  family("rainw", "⛈️", "Storm Chaser", (g) => `Win ${g} races in the rain`, "rainWins", 2, 2000, 20);
+  family("night", "🌙", "Night Owl", (g) => `Finish ${g} night races`, "nightRaces", 3, 5000, 20);
+  family("ranked", "🏆", "Ranked Grinder", (g) => `Race ${g} ranked races`, "rankedRaces", 3, 10000, 20);
+  family("hard", "😤", "Tough Cookie", (g) => `Win ${g} races on Hard or EXTREME AI (6+ cars)`, "winsHard", 2, 5000, 22);
+  family("extreme", "💀", "EXTREME Slayer", (g) => `Win ${g} races on EXTREME AI (6+ cars)`, "winsExtreme", 2, 2500, 22);
+  family("dotd", "🌟", "Fan Favourite", (g) => `Be Driver of the Day ${g} times`, "dotd", 3, 2000, 18);
+  family("rival", "🎯", "Rivalry", (g) => `Beat your rival ${g} times`, "rivalWins", 3, 2000, 18);
+  family("boxes", "📦", "Unboxer", (g) => `Open ${g} chests`, "boxes", 3, 5000, 20);
+  family("coins", "💰", "Coin Collector", (g) => `Earn ${g} coins in total`, "coinsEarned", 1000, 10000000, 32);
+  family("hours", "⏳", "Time Served", (g) => `Race for ${g} hour${g === "1" ? "" : "s"}`, hours, 1, 2000, 20);
+  family("multi", "👥", "Social Racer", (g) => `Race ${g} times with other players`, "multiRaces", 3, 10000, 20);
+  family("streak", "🔥", "On Fire", (g) => `Win ${g} races in a row (3+ cars)`, "bestWinStreak", 2, 100, 16);
+  family("champ", "🏆", "Champion", (g) => `Win ${g} driver championships`, "champDriver", 1, 500, 15);
+  family("tchamp", "🏛️", "Team Principal", (g) => `Win ${g} team championships`, "champTeam", 1, 500, 15);
+  family("crash", "💥", "Crash Test Dummy", (g) => `Crash ${g} times (it happens)`, "crashes", 5, 20000, 15);
+  family("last", "🐌", "Back Marker", (g) => `Finish last ${g} times (4+ cars)`, "lastPlaces", 3, 1000, 12);
+  family("cards", "🃏", "Card Collector", (g) => `Pick ${g} upgrade cards`, "upgrades", 20, 200000, 20);
+  family("elim", "💥", "Last One Standing", (g) => `Win ${g} elimination races`, "elimWins", 1, 2000, 18);
+  family("class", "🏎️", "Class Act", (g) => `Win your class ${g} times in multiclass`, "classWins", 1, 2000, 18);
+  family("defend", "🛡️", "The Wall", (g) => `Defend for ${g} seconds in total`, "defendSec", 30, 200000, 18);
+  family("stops", "🎮", "Pit Perfect", (g) => `${g} perfect pit stops in the minigame`, "perfectStops", 1, 5000, 18);
+  family("plinko", "🎰", "High Roller", (g) => `Drop ${g} plinko balls`, "plinkoDrops", 10, 100000, 18);
+  family("plinkow", "🤑", "House Breaker", (g) => `Win ${g} coins at plinko`, "plinkoWon", 500, 5000000, 16);
+  family("poles", "🚦", "Pole Sitter", (g) => `Take ${g} pole positions`, "poles", 1, 3000, 20);
+  family("achs", "🏵️", "Trophy Cabinet", (g) => `Unlock ${g} achievements`, (s, u) => Object.keys(u.ach).length, 150, 1300, 12);
+  family("level", "📈", "Team Builder", (g) => `Reach team level ${g} in a race`, "maxLevel", 5, 60, 12);
+  family("comeback", "🔙", "Fightback", (g) => `Gain ${g} places in one race`, "bestComeback", 3, 39, 10);
+  family("otone", "🗡️", "Rampage", (g) => `${g} overtakes in one race`, "mostOvertakes", 5, 60, 10);
+  family("real", "✈️", "Circuit Tourist", (g) => `Race on ${g} different real tracks`, (s) => (s.realTracks || []).length, 3, 42, 9);
+  family("wager", "🎲", "Big Spender", (g) => `Bet ${g} coins at plinko in total`, "plinkoWagered", 1000, 10000000, 14);
+  family("jump", "🙈", "Itchy Foot", (g) => `Jump the start ${g} times`, "jumpStarts", 2, 500, 8);
+  family("slips", "🧊", "Slip 'n' Slide", (g) => `Slide ${g} times on a wet track`, "slips", 5, 5000, 8);
+  family("extstreak", "☠️", "Untouchable", (g) => `Win ${g} EXTREME races in a row (8+ cars)`, "bestExtremeStreak", 2, 50, 12);
+  // every real circuit: win there, podium there, win there 10 times; then all of them
+  let tracks = []; try { const T = require("./f1-tracks.json"); tracks = (Array.isArray(T) ? T : T.tracks || []).map((t) => ({ id: t.id, name: t.name })); } catch (e) {}
+  for (const t of tracks) {
+    add(one(`g_tw_${t.id}`, "🏁", `Conqueror: ${t.name}`, `Win at ${t.name}`, 150, (s) => (s.trackWins?.[t.id] || 0) >= 1));
+    add(one(`g_tp_${t.id}`, "🍾", `Podium: ${t.name}`, `Finish on the podium at ${t.name}`, 60, (s) => (s.trackPods?.[t.id] || 0) >= 1));
+    add(cnt(`g_tw10_${t.id}`, "👑", `Owner of ${t.name}`, `Win 10 times at ${t.name}`, 1000, (s) => s.trackWins?.[t.id] || 0, 10));
+    add(cnt(`g_tw5_${t.id}`, "🥇", `Regular at ${t.name}`, `Win 5 times at ${t.name}`, 400, (s) => s.trackWins?.[t.id] || 0, 5));
+    add(cnt(`g_tp10_${t.id}`, "🥂", `Podium Pro: ${t.name}`, `Finish on the podium 10 times at ${t.name}`, 600, (s) => s.trackPods?.[t.id] || 0, 10));
+    add(cnt(`g_tw50_${t.id}`, "🏰", `Landlord of ${t.name}`, `Win 50 times at ${t.name}`, 5000, (s) => s.trackWins?.[t.id] || 0, 50));
+  }
+  if (tracks.length) {
+    add(cnt("g_tw_all", "🌍", "World Champion Tour", `Win on every real circuit (${tracks.length})`, 25000, (s) => tracks.filter((t) => s.trackWins?.[t.id]).length, tracks.length));
+    add(cnt("g_tp_all", "🗺️", "Podium Everywhere", `Podium on every real circuit (${tracks.length})`, 10000, (s) => tracks.filter((t) => s.trackPods?.[t.id]).length, tracks.length));
+  }
+  // every theme and every AI level and every body
+  const THEMES = { night: "Night", grass: "Grass", desert: "Desert", snow: "Snow", autumn: "Autumn", beach: "Beach", city: "City streets", volcano: "Volcano", neon: "Neon night" };
+  for (const [k, nm] of Object.entries(THEMES)) for (const [g, c, w] of [[1, 80, "Win"], [10, 500, "Win 10 races"], [50, 2500, "Win 50 races"], [200, 9000, "Win 200 races"]]) add(cnt(`g_th_${k}_${g}`, "🎨", `${nm} ${g === 1 ? "Winner" : ROMAN([1, 10, 50, 200].indexOf(g) + 1)}`, `${w} on the ${nm} theme (4+ cars)`, c, (s) => s.themeWins?.[k] || 0, g));
+  for (const [k, nm] of Object.entries({ easy: "Easy", medium: "Medium", hard: "Hard", extreme: "EXTREME", overdrive: "Overdrive" })) for (const [g, c] of [[1, 60], [10, 400], [50, 2000], [250, 9000], [1000, 25000]]) add(cnt(`g_ai_${k}_${g}`, "🤖", `${nm} Hunter ${ROMAN([1, 10, 50, 250, 1000].indexOf(g) + 1)}`, `Win ${g === 1 ? "a race" : g + " races"} against ${nm} AI (4+ cars)`, k === "easy" ? Math.round(c / 3) : c, (s) => s.aiWins?.[k] || 0, g));
+  for (const [k, nm] of Object.entries({ standard: "the standard car", kart: "the go-kart", muscle: "the muscle car", rally: "the rally hatch", lmp: "the endurance prototype", f1: "the open-wheel racer" })) for (const [g, c] of [[10, 500], [50, 2500], [250, 10000]]) add(cnt(`g_body_${k}_${g}`, "🚗", `Loyal to ${nm.replace("the ", "")} ${ROMAN([10, 50, 250].indexOf(g) + 1)}`, `Win ${g} races in ${nm}`, c, (s) => s.bodyWins?.[k] || 0, g));
+  add(cnt("g_themes_all", "🌈", "Every Weather, Every World", "Win on every theme", 3000, (s) => Object.keys(THEMES).filter((k) => s.themeWins?.[k]).length, Object.keys(THEMES).length));
+  // the brutal ones
+  const ext = (r, n) => (r.aiLevel === "extreme" || r.aiLevel === "overdrive") && r.of - (r.humans || 1) >= n;
+  for (const [n, c] of [[10, 1500], [20, 4000], [30, 8000], [40, 15000], [59, 30000]]) add(one(`g_field_${n}`, "🏟️", `Giant Slayer ${ROMAN([10, 20, 30, 40, 59].indexOf(n) + 1)}`, `Win against ${n}+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && ext(r, n)));
+  for (const [m, c] of [[5, 500], [10, 1500], [20, 4000], [30, 8000], [45, 15000]]) add(one(`g_margin_${m}`, "📏", `Daylight ${ROMAN([5, 10, 20, 30, 45].indexOf(m) + 1)}`, `Win by ${m}+ seconds against 8+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && r.margin >= m && r.margin < 99 && ext(r, 8)));
+  for (const [l, c] of [[20, 2000], [30, 4000], [50, 9000], [75, 16000]]) add(one(`g_endure_${l}`, "🗿", `Iron Man ${ROMAN([20, 30, 50, 75].indexOf(l) + 1)}`, `Win a ${l}+ lap race against 10+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && r.laps >= l && ext(r, 10)));
+  add(one("g_back_20", "🚀", "Nowhere to Everywhere", "Start last and win against 20+ EXTREME AI", 12000, (s, r) => r.pos === 1 && r.finished && r.grid === r.of && ext(r, 20)));
+  add(one("g_nostop_ext", "🛞", "Iron Tyres", "Win a 10+ lap race against 10+ EXTREME AI without pitting", 6000, (s, r) => r.pos === 1 && r.finished && r.laps >= 10 && r.pits === 0 && ext(r, 10)));
+  add(one("g_noboost_ext", "🧘", "No Buttons Needed", "Win against 10+ EXTREME AI without using boost", 6000, (s, r) => r.pos === 1 && r.finished && r.boostSec === 0 && ext(r, 10)));
+  add(one("g_spotless_ext", "💎", "Flawless", "Win a 10+ lap race against 10+ EXTREME AI with every lap clean and no crashes", 9000, (s, r) => r.pos === 1 && r.finished && r.laps >= 10 && r.crashes === 0 && r.cleanLaps >= r.laps && ext(r, 10)));
+  add(one("g_rainext", "🌊", "Rainmaster", "Win in the rain against 15+ EXTREME AI", 7000, (s, r) => r.pos === 1 && r.finished && r.maxWet >= 0.6 && ext(r, 15)));
+  add(one("g_nightfog", "🔦", "Blind Faith", "Win a night race in the fog against 10+ EXTREME AI", 7000, (s, r) => r.pos === 1 && r.finished && r.night && r.fog && ext(r, 10)));
+  add(one("g_elim_big", "💀", "Sole Survivor", "Win an elimination race with 20+ cars", 5000, (s, r) => r.pos === 1 && r.finished && r.mode === "elim" && r.of >= 20));
+  add(one("g_plinko_170", "🎰", "Top Bucket", "Hit the 170x bucket in plinko", 3000, (s, r) => r.plinko?.mult >= 170));
+  add(one("g_plinko_big", "💸", "Cashed Out", "Win 100,000 coins in one plinko drop", 10000, (s, r) => r.plinko?.win >= 100000));
+  add(one("g_rich_1m", "🏦", "Millionaire", "Have 1,000,000 coins at once", 25000, (s, r, u) => u.coins >= 1000000));
+  add(one("g_rich_100k", "💼", "Six Figures", "Have 100,000 coins at once", 5000, (s, r, u) => u.coins >= 100000));
+  add(one("g_mythic_all", "🔮", "Mythic Collector", "Own every Mythic chest exclusive", 20000, (s, r, u) => STORE.filter((x) => x.box === "mythic").every((x) => u.owned.includes(x.id))));
+  add(one("g_own_all", "🏬", "Bought the Shop", "Own every item in the shop (not chest-only)", 50000, (s, r, u) => STORE.filter((x) => !x.loot && !x.pass).every((x) => u.owned.includes(x.id))));
+}
 // ---- SECRET achievements: never listed, never hinted. 100,000 coins each. Only people who get one
 // ever find out they exist (then it shows up in their achievements, marked SECRET).
 const SECRET_COINS = 100000;
@@ -777,6 +881,14 @@ STORE.push(
   { id: "liv_disco", slot: "livery", name: "Disco Floor livery (animated)", look: "discoL", loot: true, rarity: "legendary" },
   { id: "liv_hyperdrive", slot: "livery", name: "Hyperdrive livery (animated)", look: "hyperdrive", loot: true, rarity: "mythic", box: "legend" },
 );
+// ---- Mythic chest exclusives (only from the Mythic chest) ----
+STORE.push(
+  { id: "glow_supernova", slot: "glow", name: "Supernova underglow (animated)", look: "supernova", loot: true, rarity: "mythic", box: "mythic" },
+  { id: "trail_phoenix", slot: "trail", name: "Phoenix feather trail (animated)", look: "phoenix", loot: true, rarity: "mythic", box: "mythic" },
+  { id: "liv_eclipse", slot: "livery", name: "Solar Eclipse livery (animated)", look: "eclipse", loot: true, rarity: "mythic", box: "mythic" },
+  { id: "flame_horizon", slot: "flame", name: "Event Horizon boost flame (animated)", look: "horizon", loot: true, rarity: "mythic", box: "mythic" },
+  { id: "smoke_liquidgold", slot: "smoke", name: "Liquid gold smoke (animated)", look: "liquidgold", loot: true, rarity: "mythic", box: "mythic" },
+);
 // ---- the Paddock drop ----
 STORE.push(
   { id: "glow_violet", slot: "glow", name: "Deep violet underglow", look: "#6d28d9", price: 100 },
@@ -823,6 +935,8 @@ const BOXES = [
   { id: "basic", name: "Basic chest", price: 100, odds: { common: 72, rare: 22, epic: 5, legendary: 1 } },
   { id: "mid", name: "Intermediate chest", price: 500, odds: { common: 40, rare: 38, epic: 17, legendary: 5 } },
   { id: "legend", name: "Legendary chest", price: 1000, odds: { common: 15, rare: 30, epic: 34, legendary: 20, mythic: 1 } },
+  // no commons or rares at all, mostly legendary, 15% mythic (with 5 mythics you can only get here), double refunds
+  { id: "mythic", name: "Mythic chest", price: 5000, odds: { epic: 30, legendary: 55, mythic: 15 } },
 ];
 const DUP_REFUND = { common: 10, rare: 30, epic: 80, legendary: 200, mythic: 600 };
 function openBox(u, boxId) {
@@ -833,19 +947,45 @@ function openBox(u, boxId) {
   let roll = Math.random() * 100, rarity = "common";
   for (const [r, w] of Object.entries(box.odds)) { if (roll < w) { rarity = r; break; } roll -= w; }
   const hasBody = (x) => !x.onlyBody || u.owned.includes(STORE.find((b) => b.slot === "body" && b.look === x.onlyBody)?.id);
-  let pool = STORE.filter((x) => x.rarity === rarity && (!x.box || x.box === box.id));
+  let pool = STORE.filter((x) => x.rarity === rarity && (!x.box || x.box === box.id || (box.id === "mythic" && x.box === "legend")));
   if (pool.some(hasBody)) pool = pool.filter(hasBody);
   // favour things you don't own yet (but duplicates can still happen)
   const fresh = pool.filter((x) => !u.owned.includes(x.id));
-  const from = fresh.length && Math.random() < 0.75 ? fresh : pool;
+  const from = fresh.length && Math.random() < (box.id === "mythic" ? 0.9 : 0.75) ? fresh : pool;
   const item = from[Math.floor(Math.random() * from.length)];
   const dup = u.owned.includes(item.id);
   let refund = 0;
-  if (dup) { refund = DUP_REFUND[rarity]; u.coins += refund; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + refund; } else u.owned.push(item.id);
+  if (dup) { refund = DUP_REFUND[rarity] * (box.id === "mythic" ? 2 : 1); u.coins += refund; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + refund; } else u.owned.push(item.id);
   u.stats.boxes = (u.stats.boxes || 0) + 1;
   const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
   saveSoon(u);
   return { ok: true, box: box.id, item, rarity, dup, refund, got };
+}
+
+// ======================= Plinko (the gambling room) =======================
+// 12 rows of pegs, 13 buckets. The ball's path is rolled here (never trusted from the browser).
+// Every risk level pays back about 99% on average: over time you slowly lose, now and then you win big.
+const PLINKO = {
+  low: [10, 3, 1.6, 1.4, 1.1, 1, 0.5, 1, 1.1, 1.4, 1.6, 3, 10],
+  medium: [33, 11, 4, 2, 1.1, 0.6, 0.3, 0.6, 1.1, 2, 4, 11, 33],
+  high: [170, 24, 8.1, 2, 0.7, 0.2, 0.2, 0.2, 0.7, 2, 8.1, 24, 170],
+};
+const PLINKO_MIN = 10, PLINKO_MAX = 1000;
+function plinko(u, bet, risk) {
+  bet = Math.floor(Number(bet));
+  if (!PLINKO[risk]) return { error: "Pick a risk level" };
+  if (!(bet >= PLINKO_MIN && bet <= PLINKO_MAX)) return { error: `Bets are ${PLINKO_MIN} to ${PLINKO_MAX} coins` };
+  if (u.coins < bet) return { error: "Not enough coins" };
+  const path = Array.from({ length: 12 }, () => (crypto.randomInt(2)));
+  const bucket = path.reduce((a, b) => a + b, 0), mult = PLINKO[risk][bucket], win = Math.floor(bet * mult);
+  u.coins += win - bet;
+  const s = u.stats;
+  s.plinkoDrops = (s.plinkoDrops || 0) + 1; s.plinkoWagered = (s.plinkoWagered || 0) + bet;
+  if (win > bet) s.plinkoWon = (s.plinkoWon || 0) + (win - bet);
+  s.plinkoBest = Math.max(s.plinkoBest || 0, mult); s.plinkoBigWin = Math.max(s.plinkoBigWin || 0, win);
+  const got = checkAch(u, { pos: 99, of: 0, grid: 0, plinko: { mult, win, bet, risk } });
+  saveSoon(u);
+  return { ok: true, path, bucket, mult, win, bet, risk, coins: u.coins, got };
 }
 
 // what gets sent to other players' screens: { slot: look }
@@ -937,6 +1077,20 @@ function recordRace(u, r) {
   if (r.champTeam) s.champTeam++;
   if (r.ranked) s.rankedRaces = (s.rankedRaces || 0) + 1;
   if (r.night && r.finished) s.nightRaces = (s.nightRaces || 0) + 1;
+  // stats for the big tiered achievement list
+  const bump2 = (map, key) => { if (!key) return; s[map] = s[map] || {}; s[map][key] = (s[map][key] || 0) + 1; };
+  if (r.pos === 1 && r.finished) {
+    if (r.of >= 4) { bump2("themeWins", r.theme); bump2("aiWins", r.aiLevel); bump2("bodyWins", r.body || "standard"); }
+    if (r.kind === "f1" && r.trackId) bump2("trackWins", r.trackId);
+    if (r.mode === "elim") s.elimWins = (s.elimWins || 0) + 1;
+    if (r.aiLevel === "extreme" && r.of >= 8) { s.extremeStreak = (s.extremeStreak || 0) + 1; s.bestExtremeStreak = Math.max(s.bestExtremeStreak || 0, s.extremeStreak); }
+    s.bestMargin = Math.max(s.bestMargin || 0, r.margin < 99 ? r.margin || 0 : 0);
+    s.biggestWinField = Math.max(s.biggestWinField || 0, r.of || 0);
+  } else if (r.aiLevel === "extreme") s.extremeStreak = 0;
+  if (r.pos <= 3 && r.finished && r.kind === "f1" && r.trackId) bump2("trackPods", r.trackId);
+  if (r.classWin) s.classWins = (s.classWins || 0) + 1;
+  s.defendSec = Math.round(((s.defendSec || 0) + (r.defendSec || 0)) * 10) / 10;
+  s.perfectStops = (s.perfectStops || 0) + (r.perfectStops || 0);
   const got = checkAch(u, r);
   got.push(...weeklyRace(u, r));
   got.push(...dailyRace(u, r));
@@ -1619,7 +1773,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  signUp, logIn, signInGoogle, openBox, BOXES, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
+  signUp, logIn, signInGoogle, openBox, BOXES, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,

@@ -470,6 +470,7 @@
       case "lightning": { const f = Math.sin(t * 37) > 0.93 || Math.sin(t * 23 + 1) > 0.97; return [f ? "#ffffff" : "#4f8cff", f ? 0.95 : 0.4]; }
       case "ocean": return [`hsl(${190 + 22 * Math.sin(t * 2)},90%,${50 + 8 * Math.sin(t * 3.1)}%)`, 0.5 + 0.1 * Math.sin(t * 2)];
       case "disco": return [DISCO[Math.floor(t * 4) % DISCO.length], 0.6];
+      case "supernova": return [`hsl(${42 + 12 * Math.sin(t * 7)},100%,${68 + 18 * Math.sin(t * 3.3)}%)`, 0.8];
       case "sunsetG": return [`hsl(${(330 + 60 * (0.5 + 0.5 * Math.sin(t * 1.2))) % 360},100%,58%)`, 0.55];
       case "wildfire": return [`hsl(${12 + 26 * Math.abs(Math.sin(t * 13))},100%,55%)`, 0.5 + 0.2 * Math.abs(Math.sin(t * 17))];
       default: return [g, 0.55];
@@ -483,6 +484,7 @@
       case "ghost": return `rgba(215,240,255,${0.3 + 0.35 * Math.random()})`;
       case "toxic": return `hsl(${85 + 25 * Math.sin(t * 11)},100%,55%)`;
       case "hellfire": return Math.random() < 0.5 ? "#ff2a00" : "#ffc400";
+      case "horizon": return Math.random() < 0.45 ? "#1a0b2e" : `hsl(${270 + 25 * Math.sin(t * 8)},100%,66%)`;
       default: return f || "#3aa0ff";
     }
   }
@@ -819,6 +821,17 @@
         c.strokeStyle = "rgba(255,236,160,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
         break;
       }
+      case "eclipse": {   // MYTHIC, animated: a black sun with its golden corona turning, stars around
+        const t = performance.now() / 1000, cx = x0 + L * 0.42;
+        c.fillStyle = lin(["#020205", "#0d0a1a", "#020205"], true); c.fillRect(x0, y0, L, Wd);
+        for (let k = 0; k < 14; k++) { c.fillStyle = `rgba(255,255,255,${0.3 + 0.7 * Math.abs(Math.sin(t * 2 + k))})`; c.fillRect(x0 + R() * L, y0 + R() * Wd, 0.8, 0.8); }
+        const g = c.createRadialGradient(cx, 0, 2, cx, 0, 9); g.addColorStop(0, "rgba(255,230,140,0)"); g.addColorStop(0.45, "rgba(255,210,90,0.95)"); g.addColorStop(1, "rgba(255,150,30,0)");
+        c.fillStyle = g; c.beginPath(); c.arc(cx, 0, 9, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = "rgba(255,220,120,0.8)"; c.lineWidth = 0.7;
+        for (let k = 0; k < 10; k++) { const a = t * 0.8 + (k / 10) * Math.PI * 2; c.beginPath(); c.moveTo(cx + Math.cos(a) * 5, Math.sin(a) * 5); c.lineTo(cx + Math.cos(a) * (8 + 2 * Math.sin(t * 4 + k)), Math.sin(a) * (8 + 2 * Math.sin(t * 4 + k))); c.stroke(); }
+        c.fillStyle = "#000"; c.beginPath(); c.arc(cx, 0, 4.2, 0, Math.PI * 2); c.fill();
+        break;
+      }
       case "storm": {   // animated: dark clouds, rain streaks and lightning flashes
         const t = performance.now() / 1000, flash = Math.sin(t * 2.3) > 0.985 || Math.sin(t * 5.1 + 2) > 0.995;
         c.fillStyle = flash ? "#c7d2fe" : lin(["#1e2235", "#363c58", "#1e2235"], true); c.fillRect(x0, y0, L, Wd);
@@ -897,6 +910,12 @@
     else if (kind === "galaxyT") {   // animated: twinkling star dust
       const tw = 0.5 + 0.5 * Math.sin(performance.now() / 120 + k * 2.1); c.fillStyle = `hsl(${(250 + k * 40 + performance.now() / 20) % 360},100%,${65 + 20 * tw}%)`; c.shadowColor = c.fillStyle; c.shadowBlur = 6 * tw;
       c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, rr = i % 2 ? r * 0.2 : r * (0.5 + 0.4 * tw); c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill();
+    }
+    else if (kind === "phoenix") {   // MYTHIC, animated: glowing phoenix feathers
+      const t = performance.now() / 1000; c.rotate(k * 0.55 + Math.sin(t * 3 + k) * 0.35);
+      const g = c.createLinearGradient(-r * 1.6, 0, r * 1.2, 0); g.addColorStop(0, "rgba(255,60,0,0)"); g.addColorStop(0.5, "#ff6a00"); g.addColorStop(1, "#ffe066");
+      c.fillStyle = g; c.shadowColor = "#ff8a1f"; c.shadowBlur = 10; c.beginPath(); c.moveTo(r * 1.2, 0); c.quadraticCurveTo(0, -r * 0.9, -r * 1.6, 0); c.quadraticCurveTo(0, r * 0.9, r * 1.2, 0); c.fill();
+      c.strokeStyle = "rgba(255,240,180,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(r * 1.1, 0); c.lineTo(-r * 1.3, 0); c.stroke();
     }
     else if (kind === "rings") { c.strokeStyle = `rgba(150,220,255,${0.9 - (k % 3) * 0.2})`; c.lineWidth = 1.6; c.beginPath(); c.arc(0, 0, r * (0.45 + 0.3 * (k % 3)), 0, Math.PI * 2); c.stroke(); }
     else if (kind === "cash") { c.rotate(k * 0.6); c.fillStyle = "#1f9d55"; c.fillRect(-r * 0.75, -r * 0.42, r * 1.5, r * 0.84); c.strokeStyle = "#c7f9d4"; c.lineWidth = 0.7; c.strokeRect(-r * 0.6, -r * 0.3, r * 1.2, r * 0.6); c.fillStyle = "#eafff1"; c.font = `800 ${Math.round(r * 0.75)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("$", 0, 0.5); }
@@ -1203,12 +1222,12 @@
     for (const [inner, outer] of [["hubAch", "hubStats"], ["hubLb", "hubRanked"]]) if ($(inner).parentElement === $(outer)) $(outer).after($(inner));
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
     $("hubSecBtn")?.setAttribute("aria-pressed", String(A.tab === "sec"));
-    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"], ["plinko", "hubPlinko"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
-    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u);
+    else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderPlinko(u);
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
@@ -1261,10 +1280,16 @@
       const b = el("button", "chip" + (f === k ? " on" : ""), label); b.type = "button";
       b.addEventListener("click", () => { A.achFilter = k; renderAchs(u); }); fbar.appendChild(b);
     }
+    // search (there are well over a thousand) and a page at a time
+    const q = el("input", "ach-search"); q.type = "search"; q.placeholder = "🔍 Search achievements (e.g. Monaco, EXTREME, plinko)"; q.value = A.achQuery || ""; q.setAttribute("aria-label", "Search achievements");
+    q.addEventListener("input", () => { A.achQuery = q.value; A.achShow = 120; clearTimeout(A.achT); A.achT = setTimeout(() => { renderAchs(u); const n = $("hubAch").querySelector(".ach-search"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 220); });
+    fbar.appendChild(q);
     box.appendChild(fbar);
-    let shown = list.filter((a) => (f === "todo" ? !got[a.id] : f === "done" ? got[a.id] : f === "hard" ? a.coins >= 1000 : true));
+    const qq = (A.achQuery || "").trim().toLowerCase();
+    let shown = list.filter((a) => (f === "todo" ? !got[a.id] : f === "done" ? got[a.id] : f === "hard" ? a.coins >= 1000 : true) && (!qq || (a.name + " " + a.desc).toLowerCase().includes(qq)));
     shown = shown.sort((x, y) => (f === "done" ? (got[y.id] || 0) - (got[x.id] || 0) : pctOf(y) - pctOf(x) || x.coins - y.coins));
-    const g = el("div", "ach-grid");
+    const g = el("div", "ach-grid"), total = shown.length, page = A.achShow || 120;
+    shown = shown.slice(0, page);
     for (const a of shown) {
       const d = el("div", "ach" + (got[a.id] ? " got" : "") + (a.coins >= 1000 ? " insane" : ""));
       const tx = el("div"); tx.append(el("b", "", a.name), el("small", "", a.desc));
@@ -1276,8 +1301,9 @@
       d.append(el("span", "ic", a.icon), tx, el("span", "rw", got[a.id] ? "✓ +" + a.coins : "🪙 " + a.coins.toLocaleString()));
       g.appendChild(d);
     }
-    if (!shown.length) g.appendChild(el("p", "preset-note", f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
+    if (!shown.length) g.appendChild(el("p", "preset-note", qq ? "No achievements match that." : f === "done" ? "Nothing unlocked yet. Go race!" : "All done here. Legend."));
     box.appendChild(g);
+    if (total > shown.length) { const more = el("button", "btn ach-more", `Show more (${(total - shown.length).toLocaleString()} left)`); more.type = "button"; more.addEventListener("click", () => { A.achShow = page + 200; renderAchs(u); }); box.appendChild(more); }
     // secret achievements: only the ones you've found ever show up (nobody else even knows they exist)
     if (u?.secrets?.length) {
       const sec = el("section", "secret-achs"); sec.appendChild(el("h3", "hub-h", `🤫 Secret achievements you found (${u.secrets.length})`));
@@ -1288,7 +1314,7 @@
   }
   const RARE_TIER = { epic: { label: "EPIC", odds: "0.1%", color: "#c77dff", icon: "💎" }, legendary: { label: "LEGENDARY", odds: "0.01%", color: "#ffc21f", icon: "👑" }, mythic: { label: "MYTHIC", odds: "0.001%", color: "#ff3b8a", icon: "🌈" } };
   const RARITY = { common: ["Common", "#9aa3ad"], rare: ["Rare", "#4fa3ff"], epic: ["Epic", "#c77dff"], legendary: ["Legendary", "#ffb020"], mythic: ["Mythic", "#ff3b8a"] };
-  const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"] };
+  const BOX_LOOK = { basic: ["📦", "#6b4a2f", "#9c6b3f"], mid: ["🧰", "#1e4b8f", "#4fa3ff"], legend: ["👑", "#7a4b00", "#ffcc1f"], mythic: ["🔮", "#3b0764", "#e879f9"] };
   // store previews: animated items keep moving in the store (redrawn ~20 times a second while on screen)
   const LIVE = new Set();
   function livePreviews() {
@@ -1541,6 +1567,95 @@
     const all = el("button", "btn ghost", "🔒 Sign out on every device"); all.type = "button"; all.addEventListener("click", () => $("signOutAllBtn").click());
     so.append(el("p", "preset-note", "Use this if someone else might know your password."), all); box.appendChild(so);
     box.appendChild(msg);
+  }
+  // ======================= Plinko (the gambling room) =======================
+  // The server rolls every ball's path; this just animates it and keeps score. Built once and kept, so a
+  // coins update (which redraws the hub) never cuts a falling ball short.
+  const PL = { root: null, balls: [], risk: "medium", bet: 50, shown: null, net: 0, hist: [], id: 0, raf: 0 };
+  try { const v = JSON.parse(localStorage.getItem("tb-plinko") || "null"); if (v) { PL.risk = v.risk || PL.risk; PL.bet = v.bet || PL.bet; } } catch (e) {}
+  const plSave = () => { try { localStorage.setItem("tb-plinko", JSON.stringify({ risk: PL.risk, bet: PL.bet })); } catch (e) {} };
+  const plCol = (m) => (m >= 100 ? "#e11d48" : m >= 10 ? "#ef4444" : m >= 3 ? "#f97316" : m >= 1.5 ? "#f59e0b" : m >= 1 ? "#eab308" : "#475569");
+  function plGeom(cv) { const W = cv.width, rows = 12, sp = W / (rows + 3), top = 26, rowH = (cv.height - top - 46) / rows; return { W, rows, sp, top, rowH, by: top + rows * rowH + 8 }; }
+  function plDraw() {
+    const cv = PL.cv; if (!cv || !cv.isConnected) { PL.raf = 0; return; }
+    const c = cv.getContext("2d"), G = plGeom(cv), pays = A.catalog?.plinko?.pays?.[PL.risk] || [];
+    c.clearRect(0, 0, cv.width, cv.height);
+    c.fillStyle = "#cbd5e1";
+    for (let r = 0; r < G.rows; r++) for (let j = 0; j < r + 3; j++) { c.beginPath(); c.arc(G.W / 2 + (j - (r + 2) / 2) * G.sp, G.top + r * G.rowH, 3.2, 0, Math.PI * 2); c.fill(); }
+    const now = performance.now();
+    pays.forEach((m, b) => {
+      const x = G.W / 2 + (b - 6) * G.sp, hit = PL.flash?.b === b && now - PL.flash.at < 500;
+      c.fillStyle = plCol(m); c.globalAlpha = hit ? 1 : 0.85; rrect(c, x - G.sp / 2 + 2, G.by + (hit ? 4 : 0), G.sp - 4, 26, 5); c.fill(); c.globalAlpha = 1;
+      c.fillStyle = "#fff"; c.font = `800 ${G.sp < 34 ? 9 : 11}px 'Chakra Petch', sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(m + "x", x, G.by + 13 + (hit ? 4 : 0));
+    });
+    const dur = 1700;
+    PL.balls = PL.balls.filter((bl) => {
+      const k = Math.min(1, (now - bl.at) / dur), tt = k * G.rows, i = Math.min(G.rows - 1, Math.floor(tt)), f = tt - i;
+      const xAt = (row) => { let rights = 0; for (let q = 0; q < row; q++) rights += bl.path[q]; return G.W / 2 + (rights - row / 2) * G.sp; };
+      const x = xAt(i) + (xAt(i + 1) - xAt(i)) * f, y = G.top - 14 + (i + f) * G.rowH - Math.sin(f * Math.PI) * G.rowH * 0.35;
+      if (i !== bl.lastRow) { bl.lastRow = i; if (i > 0) tone(300 + i * 40, 0.03, "triangle", 0.04); }
+      c.fillStyle = "#ffcc1f"; c.shadowColor = "#ffcc1f"; c.shadowBlur = 8; c.beginPath(); c.arc(x, y, 6, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
+      if (k >= 1) { plLand(bl); return false; }
+      return true;
+    });
+    if (PL.balls.length || (PL.flash && now - PL.flash.at < 500)) PL.raf = requestAnimationFrame(plDraw); else PL.raf = 0;
+  }
+  function plLand(bl) {
+    PL.flash = { b: bl.bucket, at: performance.now() };
+    PL.shown += bl.win; PL.net += bl.win - bl.bet;
+    PL.hist.unshift(bl.mult); PL.hist.length = Math.min(PL.hist.length, 14);
+    if (bl.mult >= 10) { sfx("win"); banner(`🎰 ${bl.mult}x! +${bl.win.toLocaleString()}`, plCol(bl.mult)); } else if (bl.mult >= 1) sfx("tick"); else tone(160, 0.12, "sawtooth", 0.06);
+    plStatus();
+  }
+  function plStatus() {
+    if (!PL.root) return;
+    PL.root.querySelector(".pl-bal").textContent = `🪙 ${Math.max(0, Math.round(PL.shown ?? 0)).toLocaleString()}`;
+    const n = PL.root.querySelector(".pl-net"); n.textContent = `This session: ${PL.net >= 0 ? "+" : ""}${PL.net.toLocaleString()}`; n.className = "pl-net " + (PL.net > 0 ? "up" : PL.net < 0 ? "down" : "");
+    const h = PL.root.querySelector(".pl-hist"); h.textContent = "";
+    for (const m of PL.hist) { const sp = el("span", "", m + "x"); sp.style.background = plCol(m); h.appendChild(sp); }
+  }
+  function plDrop(n = 1) {
+    const u = A.user; if (!u) return popup("Sign in to play", true);
+    const bet = Math.floor(Number(PL.root.querySelector(".pl-bet").value) || 0), min = A.catalog?.plinko?.min || 10, max = A.catalog?.plinko?.max || 1000;
+    if (bet < min || bet > max) return popup(`Bets are ${min} to ${max} coins`, true);
+    PL.bet = bet; plSave();
+    for (let k = 0; k < n; k++) setTimeout(() => {
+      if ((PL.shown ?? 0) < bet) return popup("Not enough coins", true);
+      PL.shown -= bet; plStatus(); socket.emit("plinko:play", { bet, risk: PL.risk, id: ++PL.id });
+    }, k * 180);
+  }
+  socket.on("plinkoResult", (r) => {
+    if (r.error) { popup("🎰 " + r.error, true); if (A.user) { PL.shown = A.user.coins; plStatus(); } return; }
+    PL.balls.push({ path: r.path, bucket: r.bucket, mult: r.mult, win: r.win, bet: r.bet, at: performance.now() });
+    if (!PL.raf) PL.raf = requestAnimationFrame(plDraw);
+  });
+  function renderPlinko(u) {
+    const box = $("hubPlinko");
+    if (!PL.root) {
+      const R = PL.root = el("div", "plinko");
+      R.innerHTML = `<p class="hub-h">🎰 The gambling room: drop a ball, win up to 170x. <b>Coins only, just for fun.</b> On average every drop pays back about 99%, so the house wins in the end.</p>
+        <div class="pl-top"><span class="pl-bal"></span><span class="pl-net"></span></div>
+        <div class="pl-main"><canvas class="pl-board" width="520" height="440" role="img" aria-label="Plinko board"></canvas>
+        <div class="pl-side"><label class="f">Bet (10-1000) <input class="pl-bet" type="number" min="10" max="1000" step="10" inputmode="numeric"></label>
+        <div class="pl-quick"><button type="button" class="btn" data-q="half">½</button><button type="button" class="btn" data-q="double">2x</button><button type="button" class="btn" data-q="max">Max</button></div>
+        <div class="chips pl-risk"><button type="button" class="chip" data-r="low">Low risk</button><button type="button" class="chip" data-r="medium">Medium</button><button type="button" class="chip" data-r="high">High risk</button></div>
+        <button type="button" class="btn go pl-drop">🎯 Drop</button><button type="button" class="btn pl-drop10">Drop 10</button>
+        <div class="pl-hist" aria-label="Last results"></div></div></div>`;
+      PL.cv = R.querySelector(".pl-board");
+      R.querySelector(".pl-bet").value = PL.bet;
+      R.querySelector(".pl-drop").addEventListener("click", () => plDrop(1));
+      R.querySelector(".pl-drop10").addEventListener("click", () => plDrop(10));
+      R.querySelectorAll(".pl-quick button").forEach((b) => b.addEventListener("click", () => {
+        const inp = R.querySelector(".pl-bet"), v = Number(inp.value) || 10, max = Math.min(A.catalog?.plinko?.max || 1000, Math.max(10, Math.floor(PL.shown ?? 0)));
+        inp.value = Math.max(10, Math.min(max, b.dataset.q === "half" ? Math.floor(v / 2) : b.dataset.q === "double" ? v * 2 : max));
+      }));
+      R.querySelectorAll(".pl-risk .chip").forEach((b) => b.addEventListener("click", () => { PL.risk = b.dataset.r; plSave(); R.querySelectorAll(".pl-risk .chip").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.r === PL.risk))); if (!PL.raf) plDraw(); }));
+    }
+    if (PL.root.parentNode !== box) { box.textContent = ""; box.appendChild(PL.root); }
+    PL.root.querySelectorAll(".pl-risk .chip").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.r === PL.risk)));
+    const guest = !u; PL.root.querySelector(".pl-drop").disabled = guest; PL.root.querySelector(".pl-drop10").disabled = guest;
+    if (u && !PL.balls.length) PL.shown = u.coins;          // (no balls in the air: the server's number is the truth)
+    plStatus(); if (!PL.raf) plDraw();
   }
   const SLOT_NAMES = { body: "Car bodies", livery: "Liveries", decal: "Decals", num: "Number plates", wing: "Rear wings", rims: "Rims", glow: "Underglow", flame: "Boost flames", trail: "Trails", smoke: "Tyre smoke", helmet: "Helmets", badge: "Name badges" };
   const SLOT_TIPS = { body: "Legendary chest only", livery: "Chest only", badge: "Shows next to your name in races" };
@@ -4608,16 +4723,26 @@
       const ix = c.trackIdx ?? c.drawIdx ?? c.idx, k = ix !== undefined ? G.segOf[ix] : -1;
       (k >= 0 ? layers[k] : ground).push(c);
     }
-    // the safety car, gliding along in front of the leader with its lights flashing
+    // the safety car, gliding along in front of the leader with its lights flashing. It's drawn on the
+    // level of track it's on (over a ramp, not under it), bigger up there like the race cars.
+    let scK = -2, scD = null;
     if (S.sc) {
-      const d = S.scDraw || (S.scDraw = { x: S.sc[0], y: S.sc[1], h: S.sc[2] });
-      const k = Math.min(1, dt * 6); d.x += (S.sc[0] - d.x) * k; d.y += (S.sc[1] - d.y) * k; d.h += wrapAng(S.sc[2] - d.h) * k;
-      drawCar(ctx, { color: "#f2f2f2", livery: "split", number: "SC", extras: null }, d.x, d.y, d.h, 1.05, {});
+      const d = scD = S.scDraw || (S.scDraw = { x: S.sc[0], y: S.sc[1], h: S.sc[2], lvl: S.sc[4] || 0 });
+      const k = Math.min(1, dt * 6); d.x += (S.sc[0] - d.x) * k; d.y += (S.sc[1] - d.y) * k; d.h += wrapAng(S.sc[2] - d.h) * k; d.lvl += ((S.sc[4] || 0) - d.lvl) * k;
+      scK = S.sc[3] != null && G.segOf[S.sc[3]] !== undefined ? G.segOf[S.sc[3]] : -1;
+    } else S.scDraw = null;
+    const drawSC = (alpha = 1) => {
+      if (!scD) return;
+      const d = scD, sc = 1.05 * (1 + 0.14 * Math.min(2, d.lvl));
+      ctx.save(); ctx.globalAlpha = alpha;
+      if (d.lvl > 0.05 && alpha === 1) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(d.x + 16 * d.lvl, d.y + 22 * d.lvl, 26, 15, d.h, 0, Math.PI * 2); ctx.fill(); }
+      drawCar(ctx, { color: "#f2f2f2", livery: "split", number: "SC", extras: null }, d.x, d.y, d.h, sc, {});
       const on = Math.floor(performance.now() / 250) % 2;
-      ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.h);
+      ctx.translate(d.x, d.y); ctx.rotate(d.h); ctx.scale(sc, sc);
       for (const [yy, col] of [[-5, on ? "#ffb020" : "#5a3a00"], [5, on ? "#5a3a00" : "#ffb020"]]) { ctx.fillStyle = col; ctx.shadowColor = "#ffb020"; ctx.shadowBlur = col === "#ffb020" ? 14 : 0; ctx.fillRect(-4, yy - 2.5, 6, 5); }
       ctx.restore();
-    } else S.scDraw = null;
+    };
+    if (scK < 0) drawSC();
     drawGhost(ctx);
     const mineLast = (a, b) => (a.id === S.myCar) - (b.id === S.myCar);
     const drawOne = (c) => {
@@ -4673,7 +4798,19 @@
       }
     };
     ground.sort(mineLast).forEach(drawOne);
-    G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); layers[k].sort(mineLast).forEach(drawOne); });
+    G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
+    // see-through ramps: a car driving under a bridge shows through the deck as a ghost
+    if (G.bridges.length) {
+      const covered = (x, y, k) => {
+        for (let j = k + 1; j < G.bridges.length; j++) { const seg = G.bridges[j].seg; for (let q = 0; q < seg.length; q += 2) { const i = seg[q], P = t.pts[i], r = (Array.isArray(t.hw) ? t.hw[i] : t.hw || 40) + 10; if ((P.x - x) ** 2 + (P.y - y) ** 2 < r * r) return true; } }
+        return false;
+      };
+      ctx.save(); ctx.globalAlpha = 0.55;
+      const ghostOne = (c, k) => { if (visible(c) && covered(c.x, c.y, k)) drawCar(ctx, c, c.x, c.y, c.h, 1 + 0.14 * Math.min(2, c.lvl), { glow: c.id === S.myCar }); };
+      ground.forEach((c) => ghostOne(c, -1)); layers.forEach((L, k) => L.forEach((c) => ghostOne(c, k)));
+      ctx.restore();
+      if (scD && scK >= -1 && covered(scD.x, scD.y, scK)) drawSC(0.55);
+    }
     // fireworks (in the world, around the winner)
     fireworks = fireworks.filter((fw) => {
       const k = (now - fw.t) / 1300; if (k > 1) return false;
@@ -4739,6 +4876,7 @@
   function smokeCol(s) {
     if (!s) return "rgba(230,230,230,0.5)";
     if (s === "rainbow") return `hsla(${(performance.now() / 6) % 360},95%,65%,0.6)`;
+    if (s === "liquidgold") return `hsla(${40 + Math.random() * 12},100%,${52 + Math.random() * 22}%,0.85)`;
     if (s === "neon") return Math.floor(performance.now() / 300) % 2 ? "rgba(34,230,255,0.6)" : "rgba(255,43,214,0.6)";
     if (s === "fire") return `hsla(${10 + Math.random() * 35},100%,${50 + Math.random() * 15}%,0.65)`;
     if (s === "spooky") return Math.random() < 0.6 ? "rgba(190,255,215,0.45)" : "rgba(160,110,255,0.45)";
@@ -5553,6 +5691,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-18", title: "Mythic chest, Plinko, 1,300 new achievements, see-through ramps", items: [
+      "🔮 The Mythic chest (5,000 coins): no commons or rares, 55% legendary, 15% mythic, double refunds on duplicates, and 5 mythics you can only get here (Supernova underglow, Phoenix trail, Solar Eclipse livery, Event Horizon flame, Liquid gold smoke).",
+      "🎰 The gambling room (Profile > Plinko): bet 10-1000 coins, pick Low / Medium / High risk, drop balls and win up to 170x. Coins only, just for fun. The house wins in the end!",
+      "🏵️ 1,300+ new achievements: tiers for everything from races to plinko, every real circuit, every theme and AI level, and some truly brutal ones (worth up to 50,000 coins). Search and filter them in Achievements.",
+      "👻 See-through ramps: cars driving under a bridge now show through it as ghosts, so you never lose your car.",
+      "🚨 The safety car now drives over ramps (and gets bigger up there like everyone else) instead of under them.",
+    ] },
     { v: "2026-10-17", title: "Practice, knockout qualifying, sector times, strategy and rematches", items: [
       "🏋️ Practice mode (Race settings > Game mode): just you on the track, no AI, as long as you like. Learn the track, chase sector times, practise pit stops. The host ends it.",
       "🏁 Knockout qualifying (Qualifying > Knockout): Q1, Q2 and Q3. The slowest are knocked out after Q1 and Q2, and the last few fight for pole in Q3.",

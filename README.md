@@ -174,6 +174,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   Measured on very wonky and real tracks: off-track time 1.9% to about 0.7% with no upgrades, and about 0.15% while
   racing with Grip and Brakes maxed. Lap times are unchanged.
 
+## Mythic chest, Plinko, the big achievement list, ramps
+- **Mythic chest** (`BOXES` in accounts.js): 5,000 coins, odds epic 30 / legendary 55 / mythic 15. It also draws from
+  Legendary-chest-only items (bodies) and its own exclusives (`box: "mythic"`). 90% of the time it's something you
+  don't own, and duplicates refund double.
+- **Plinko** (`plinko()` in accounts.js, `plinko:play` socket, Profile › 🎰 Plinko): 12 rows, 13 buckets, the path is
+  rolled on the server with `crypto.randomInt`. Payout tables `PLINKO` (low / medium / high) each return about 99%.
+  Bets 10-1000, at most 6 balls a second. The client only animates the path it's sent (`PL`, `plDraw`).
+- **Achievements**: "The Grind" block in accounts.js generates 1,300+ from tiered families (`family()`: goals spread
+  from easy to near-impossible, coins rising steeply), every real circuit (`trackWins`/`trackPods`), every theme,
+  AI level and body, and brutal one-offs. New stats come from `recordRace` (`themeWins`, `aiWins`, `bodyWins`,
+  `elimWins`, `classWins`, `defendSec`, `perfectStops`, `extremeStreak`...) and plinko. Anything with the same
+  description as an older one is skipped. The Achievements tab has search and shows 120 at a time.
+- **See-through ramps**: after the bridges are drawn, any car under a higher bridge's deck is drawn again at 55% (a
+  ghost). **Safety car on ramps**: the state's `sc` now carries its track point and level, so it's drawn in the
+  right layer and scaled like the cars.
+
 ## Practice, knockout qualifying, sectors, strategy, rematch
 - **Practice** (`settings.mode = "practice"`): `startRace` makes no AI and runs a 1-hour session on the qualifying
   machinery (`this.practice` + `this.qualifying`: ghost cars, timed laps), but with tyre wear and the pit stop

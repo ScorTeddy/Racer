@@ -1316,3 +1316,18 @@ body.touch .pg-pad { display: flex; }
 .tp-strat { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.4rem 0.8rem; margin-top: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 0.7rem; background: rgba(255,204,31,0.1); border: 1px solid rgba(255,204,31,0.45); font-weight: 700; font-size: 0.88rem; text-align: center; }
 .tp-strat .btn { min-height: 2rem; padding: 0.25rem 0.8rem; font-size: 0.85rem; }
 .q-tag { font-size: 0.68rem; font-weight: 800; padding: 0 0.35rem; border-radius: 0.3rem; background: rgba(255,255,255,0.14); }
+
+/* ---- plinko ---- */
+.plinko .pl-top { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: baseline; margin: 0.3rem 0 0.5rem; }
+.pl-bal { font-family: "Russo One", sans-serif; font-size: 1.4rem; color: var(--yellow); }
+.pl-net { font-weight: 800; color: var(--soft); } .pl-net.up { color: #3ee06a; } .pl-net.down { color: #ff8a80; }
+.pl-main { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
+.pl-board { flex: 1 1 22rem; width: 100%; max-width: 34rem; height: auto; border-radius: 0.9rem; background: radial-gradient(ellipse at top, #1d2440, #0b0e1a 70%); border: 1.5px solid var(--edge); }
+.pl-side { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.pl-quick { display: flex; gap: 0.35rem; } .pl-quick .btn { flex: 1; min-height: 2rem; padding: 0.2rem; }
+.pl-drop { font-size: 1.1rem; min-height: 3rem; }
+.pl-hist { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.pl-hist span { font-size: 0.7rem; font-weight: 800; color: #fff; padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+/* ---- achievements search / paging ---- */
+.ach-search { flex: 1 1 14rem; min-width: 0; padding: 0.3rem 0.6rem; border-radius: 99px; border: 1.5px solid var(--edge); background: var(--panel-2); color: var(--ink); font: inherit; font-size: 0.85rem; }
+.ach-more { display: block; margin: 0.7rem auto 0; }

@@ -2446,6 +2446,7 @@ class Room {
     const held = this.time - G.raceT0;
     c.pitting = Math.max(0.25, stop - held); c.pitTotal = c.pitting;
     const p = c.owner && this.players.get(c.owner);
+    if (done && misses === 0 && stop <= PIT_TIME * crew * 0.9 && c.rs) c.rs.perfectStops = (c.rs.perfectStops || 0) + 1;
     if (p) io.to(p.id).emit("pitGameResult", { stop: Math.round(Math.max(stop, held) * 100) / 100, misses, done, ai: Math.round(PIT_TIME * crew * 100) / 100 });
   }
 
@@ -2550,7 +2551,7 @@ class Room {
     }
     // where the safety car itself is: a little way up the road from the leader
     const N = this.track.N, i = (leader.idx + Math.round(110 / sp)) % N, P = this.track.pts[i], T = this.track.tan[i];
-    this.sc.x = P.x; this.sc.y = P.y; this.sc.h = Math.atan2(T.y, T.x);
+    this.sc.x = P.x; this.sc.y = P.y; this.sc.h = Math.atan2(T.y, T.x); this.sc.i = i;
   }
   // under the safety car: the leader drives at its pace, everyone else closes up to a tight gap, no boost
   scLimit(c) {
@@ -2750,6 +2751,7 @@ class Room {
         totw: this.trackKind === "totw" && this.totwWeek === weekNow() && !this.track?.reverse ? this.totwWeek : 0,
         margin: pos === 1 && field[1]?.finished && c.finished ? field[1].finishTime - c.finishTime : pos === 1 && field.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
+        mode: this.elim ? "elim" : this.multi ? "multi" : "normal", defendSec: rs.defendSec || 0, perfectStops: rs.perfectStops || 0,
         raceCoins: !noCoins, aiCount, winCoins: !noCoins && pos === 1 && c.finished && aiCount >= WIN_MIN_AI ? (WIN_COINS[this.settings.aiLevel] || WIN_COINS.medium) * (ev?.winMult || 1) * (ev?.coinMult || 1) : 0,
         coinMult: ev?.coinMult || 1, passMult: ev?.passMult || 1, event: ev?.id || null,
       };
@@ -2794,7 +2796,7 @@ class Room {
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
-    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
+    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h), this.sc.i, r2(this.track.elev[this.sc.i] || 0)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
@@ -3375,7 +3377,7 @@ io.on("connection", (socket) => {
   });
   socket.on("setPresets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deleteSetPreset(u, String(name)); socket.emit("setPresets", u.setPresets); });
   socket.on("presets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deletePreset(u, String(name)); socket.emit("presets", u.presets); });
-  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, passThemes: accounts.PASS_THEMES.map(({ key, name, icon, c }) => ({ key, name, icon, c })), tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
+  socket.on("catalog", () => socket.emit("catalog", { ach: accounts.ACH, store: accounts.STORE, boxes: accounts.BOXES, plinko: { pays: accounts.PLINKO, min: accounts.PLINKO_MIN, max: accounts.PLINKO_MAX }, passThemes: accounts.PASS_THEMES.map(({ key, name, icon, c }) => ({ key, name, icon, c })), tracks: F1_TRACKS.map((t) => ({ id: t.id, name: t.name })) }));
   const storeAction = async (fn) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid);
     if (!u) return socket.emit("toast", "Sign in to use the store");
@@ -3387,6 +3389,18 @@ io.on("connection", (socket) => {
     const p = me(); if (p && room().phase === "lobby") { p.extras = socket.data.extras; room().sendLobby(); }
   };
   socket.on("store:buy", (id) => storeAction((u) => accounts.buy(u, String(id))));
+  // plinko: coins only, 10-1000 a ball, at most 6 balls a second
+  let plinkoAt = [];
+  socket.on("plinko:play", async (d) => {
+    const now = Date.now(); plinkoAt = plinkoAt.filter((t) => now - t < 1000); if (plinkoAt.length >= 6) return; plinkoAt.push(now);
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid);
+    if (!u) return socket.emit("plinkoResult", { error: "Sign in to play" });
+    const res = accounts.plinko(u, d?.bet, String(d?.risk || ""));
+    if (res.error) return socket.emit("plinkoResult", { error: res.error, id: d?.id });
+    socket.emit("plinkoResult", { id: d?.id, path: res.path, bucket: res.bucket, mult: res.mult, win: res.win, bet: res.bet, coins: res.coins, risk: res.risk });
+    for (const a of res.got || []) socket.emit("achievement", a);
+    clearTimeout(socket.data.plinkoSync); socket.data.plinkoSync = setTimeout(() => socket.emit("account", accounts.publicUser(u)), 1500);
+  });
   socket.on("store:open", (id) => storeAction((u) => { const r = accounts.openBox(u, String(id)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
   socket.on("store:equip", (d) => storeAction((u) => accounts.equip(u, String(d?.slot || ""), d?.id == null ? null : String(d.id))));
   // quick emotes: shown over your car (race) or next to your name (lobby), max one every 1.5s
