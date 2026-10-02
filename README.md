@@ -187,7 +187,7 @@ Recorded clips in `public/commentary/` (2.5 MB of MP3s), made offline with the K
 `c_<0-99>.mp3` ("Number seven") for players and renamed AI. `manifest.json` lists them. The client (`COMM`, `say`)
 plays a name clip and then a line, one at a time with priorities. Old news gets dropped and the music ducks while it
 talks. It's triggered by `lightsOut`, `feed` events (crash, winner, classWin, photo, lastLap, scOut/scIn, rain,
-puncture, fastest, elim), leader changes and pit stop results. to add lines, add them to `tools/commentary_gen.py`
+puncture, fastest, elim), leader changes and pit stop results. To add lines, add them to `tools/commentary_gen.py`
 (same voice) and run it again.
 
 ## Elimination races
