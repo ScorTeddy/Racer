@@ -243,9 +243,15 @@ and the "now playing" pop-up). They stream from the Internet Archive's copy of h
 Change the list in `BUILTIN` (index.html). Settings: Master / Music / Sound effects sliders, Soundtrack
 (Auto, Shuffle all, Race songs only) and a Next song button.
 
-**When the songs can't stream** (archive.org down, slow, or blocked on a school/work network): after 2 songs fail
-or don't start within 8 s, the game switches to a built-in soundtrack synthesized with Web Audio (`playSynth`, a
-menu, race and results beat), so there's never silence. Settings › ⏭ Next song tries streaming again.
+**How songs load:** the browser asks this server (`/music/km/<file>`); the server downloads the song from
+archive.org once, keeps it in a cache folder (`MUSIC_CACHE`, default the system temp folder) and serves it from
+there (with seeking). Only the 15 songs in `KM_SONGS` (server.js) can be fetched, so it isn't an open proxy.
+Keep `KM_SONGS` in step with `BUILTIN` in game.js. If our server can't get a song, the browser tries archive.org
+directly, then skips that song for the visit.
+**When songs can't load at all:** after 3 misses in a row the game plays a built-in soundtrack synthesized
+with Web Audio (`playSynth`: a menu, race and results beat), and retries the real songs every 3 minutes. The
+beat also fills in if a song takes over 5 s to start, and keeps playing until a real song is actually going.
+⏭ Next song (`nextSong`) ignores double-clicks and never leaves you in silence.
 
 **Your own songs:** put MP3s in `public/music/` and list them in `public/music/music.json`:
 ```json

@@ -2,6 +2,7 @@
 // open the web pages, and play a whole (short, fast) race against the AI like a player would.
 "use strict";
 process.env.DATA_DIR = require("path").join(require("os").tmpdir(), "scribble-test-" + process.pid);
+process.env.MUSIC_CACHE = require("path").join(process.env.DATA_DIR, "music");
 const test = require("node:test");
 const assert = require("node:assert");
 const { io } = require("socket.io-client");
@@ -26,6 +27,22 @@ test("pages load, with security headers", async () => {
   for (const p of ["/faq", "/privacy", "/robots.txt", "/sitemap.xml", "/game.js", "/game.css", "/og-image.png"]) assert.equal((await fetch(base + p)).status, 200, p);
   assert.equal((await fetch(base + "/nope-" + Date.now())).status, 404);
   assert.equal((await fetch(base + "/.env")).status, 404);
+});
+
+test("songs are fetched once, cached and served from this site (only the listed ones)", async () => {
+  const song = Buffer.alloc(50e3, 7);
+  const up = require("http").createServer((req, res) => { if (req.url === "/At%20Launch.mp3") { res.setHeader("Content-Type", "audio/mpeg"); res.end(song); } else { res.statusCode = 404; res.end(); } });
+  await new Promise((ok) => up.listen(0, ok));
+  process.env.MUSIC_UPSTREAM = `http://localhost:${up.address().port}/`;
+  try {
+    const r = await fetch(base + "/music/km/At%20Launch.mp3");
+    assert.equal(r.status, 200); assert.match(r.headers.get("content-type"), /audio\/mpeg/);
+    assert.equal(Buffer.from(await r.arrayBuffer()).length, song.length);
+    const part = await fetch(base + "/music/km/At%20Launch.mp3", { headers: { Range: "bytes=0-99" } });
+    assert.equal(part.status, 206, "seeking works");
+    assert.equal((await fetch(base + "/music/km/Airport%20Lounge.mp3")).status, 502, "missing upstream song");
+    assert.equal((await fetch(base + "/music/km/secret.mp3")).status, 404, "not an open proxy");
+  } finally { up.close(); delete process.env.MUSIC_UPSTREAM; }
 });
 
 test("bad names are filtered", () => {

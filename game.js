@@ -108,7 +108,7 @@
     mini.classList.toggle("hidden", settings.minimap === "off");
     document.body.classList.toggle("cb", settings.cb === "on");
     if (typeof TIRES !== "undefined") { TIRES.fast.color = settings.cb === "on" ? "#ff7a00" : "#e53935"; TIRES.wet.color = settings.cb === "on" ? "#56b4e9" : "#1e88e5"; }
-    if (MUS && MUS.started) { setMusicVolume(); if (MUS.lastTrack !== settings.track || (!MUS.el && musicVol() > 0)) { MUS.lastTrack = settings.track; pickMusic(true); } }
+    if (MUS && MUS.started) { setMusicVolume(); if (MUS.lastTrack !== settings.track || (!MUS.el && !MUS.syn && musicVol() > 0)) { MUS.lastTrack = settings.track; pickMusic(true); } }
     const phone = settings.phone === "on" || (settings.phone !== "off" && isTouch() && Math.min(window.innerWidth, window.innerHeight) < 760);
     if (phone !== document.body.classList.contains("phone")) {
       document.body.classList.toggle("phone", phone);
@@ -152,7 +152,7 @@
         const np = document.createElement("div"); np.className = "set-row now-row";
         const t2 = document.createElement("div"); t2.id = "nowPlaying"; t2.textContent = MUS?.now ? `♪ ${MUS.now}` : "♪ Nothing playing yet (click anywhere to start)";
         const sk = document.createElement("button"); sk.type = "button"; sk.className = "btn"; sk.textContent = "⏭ Next song";
-        sk.addEventListener("click", () => { MUS.started = true; MUS.offline = false; MUS.bad = 0; audio(); pickMusic(true); });
+        sk.addEventListener("click", nextSong);
         np.append(t2, sk); body.appendChild(np);
       }
     }
@@ -231,7 +231,7 @@
     { title: "Airport Lounge", file: "Airport Lounge.mp3", mood: "menu" },
     { title: "Beachfront Celebration", file: "Beachfront Celebration.mp3", mood: "results" },
     { title: "At Launch", file: "At Launch.mp3", mood: "results" },
-  ].map((x) => ({ ...KM, ...x, url: IA + encodeURIComponent(x.file) }));
+  ].map((x) => ({ ...KM, ...x, url: "music/km/" + encodeURIComponent(x.file), alt: IA + encodeURIComponent(x.file) }));   // through our server first, archive.org directly if that fails
   var MUS = { el: null, list: BUILTIN.slice(), cur: null, started: false, now: "", recent: [] };
   fetch("music/music.json").then((r) => (r.ok ? r.json() : [])).then((list) => {
     if (!Array.isArray(list)) return;
@@ -295,42 +295,78 @@
     MUS.now = `Scribble GP built-in ${mood} beat`;
     const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now + " (the online songs can't load right now)";
   }
-  function stopMusic() { if (MUS.el) { MUS.el.pause(); MUS.el = null; } stopSynth(); MUS.cur = null; }
+  function stopMusic() { stopSong(); stopSynth(); MUS.cur = null; }
+  function stopSong() { if (MUS.el) { const e = MUS.el; MUS.el = null; clearTimeout(e._slow); clearTimeout(e._fill); e.pause(); e.removeAttribute("src"); try { e.load(); } catch (x) {} } }
   function setMusicVolume() { if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol())); if (MUS.syn) MUS.syn.out.gain.value = Math.min(1, musicVol()) * 0.55; if (musicVol() <= 0) stopMusic(); }
-  // a song failed: try another, and after 2 misses switch to the built-in soundtrack
+  // A song didn't load (or stalled): try its other address, then another song. Songs that failed are
+  // skipped for the rest of the visit. 3 misses in a row = the network can't get songs right now, so the
+  // built-in soundtrack plays (and keeps playing until a real song is actually going).
+  MUS.dead = new Set(); MUS.miss = 0;
   function songFailed(el2) {
-    if (MUS.el !== el2) return;
-    MUS.bad = (MUS.bad || 0) + 1;
-    if (MUS.bad < 2) setTimeout(() => pickMusic(true), 600);
-    else { MUS.offline = true; MUS.el.pause(); MUS.el = null; pickMusic(true); }
+    if (MUS.el !== el2 || el2._failed) return;
+    el2._failed = true; clearTimeout(el2._slow);
+    const tr = el2._track;
+    if (!el2._alt && tr.alt) { playTrack(tr, true); return; }
+    MUS.dead.add(tr.url); MUS.miss++;
+    stopSong(); MUS.cur = null;
+    if (MUS.miss >= 3) { MUS.offline = true; MUS.offAt = Date.now(); }
+    pickMusic(true);
   }
-  function playTrack(tr) {
+  function playTrack(tr, alt = false) {
     if (musicVol() <= 0) { stopMusic(); return; }
-    stopMusic();
-    const el2 = new Audio(); el2.preload = "auto"; el2.src = tr.url; el2.volume = Math.min(1, musicVol());
+    stopSong();
+    const el2 = new Audio(); el2._track = tr; el2._alt = alt;
+    el2.preload = "auto"; el2.src = alt ? tr.alt : tr.url; el2.volume = Math.min(1, musicVol());
     el2.addEventListener("ended", () => { if (MUS.el === el2) pickMusic(true); });
     el2.addEventListener("error", () => songFailed(el2));
-    // a song that hasn't started after 8 seconds counts as failed too
-    const slow = setTimeout(() => { if (MUS.el === el2 && el2.paused && !el2.ended) songFailed(el2); }, 8000);
-    el2.addEventListener("playing", () => { clearTimeout(slow); MUS.bad = 0; }, { once: true });
-    el2.play().catch((e) => { if (e && e.name === "NotAllowedError") { clearTimeout(slow); MUS.started = false; } });
-    MUS.el = el2; MUS.cur = tr; MUS.now = `${tr.title} · ${tr.artist}${tr.license ? " (" + tr.license + ")" : ""}`;
-    MUS.recent = [tr.url, ...MUS.recent].slice(0, 5);
-    const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now;
-    if (S.screen !== "race") popup(`♪ ${tr.title} · ${tr.artist}`);
+    // still not playing after 15 seconds (or stuck that long mid-song) counts as a miss too
+    const arm = () => { clearTimeout(el2._slow); el2._slow = setTimeout(() => { if (MUS.el === el2 && !el2.ended) songFailed(el2); }, 15000); };
+    arm();
+    // slow to start: fill the gap with the built-in beat (it stops the moment the song starts)
+    el2._fill = setTimeout(() => { if (MUS.el === el2 && !el2._playing && musicVol() > 0) playSynth(moodNow()); }, 5000);
+    el2.addEventListener("waiting", arm); el2.addEventListener("stalled", arm);
+    el2.addEventListener("playing", () => {
+      clearTimeout(el2._slow); clearTimeout(el2._fill); el2._playing = true; if (MUS.el !== el2) return;
+      MUS.miss = 0; MUS.offline = false; stopSynth();      // a real song is going: the built-in beat can stop now
+      MUS.now = `${tr.title} · ${tr.artist}${tr.license ? " (" + tr.license + ")" : ""}`;
+      const np = document.getElementById("nowPlaying"); if (np) np.textContent = "♪ " + MUS.now;
+      if (S.screen !== "race" && !el2._shown) { el2._shown = true; popup(`♪ ${tr.title} · ${tr.artist}`); }
+    });
+    el2.play().catch((e) => { if (e && e.name === "NotAllowedError" && MUS.el === el2) { clearTimeout(el2._slow); stopSong(); MUS.cur = null; MUS.started = false; } });
+    MUS.el = el2; MUS.cur = tr;
+    if (!alt) MUS.recent = [tr.url, ...MUS.recent].slice(0, 5);
+    if (!MUS.syn) { const np = document.getElementById("nowPlaying"); if (np) np.textContent = `♪ Loading ${tr.title}...`; }
   }
+  const moodNow = () => settings.track === "race" ? "race" : S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
   // which song fits right now (menu / race / results), never the same one twice in a row
   function pickMusic(force) {
     if (!MUS.started) return;
     if (musicVol() <= 0) { stopMusic(); return; }
-    const mood = settings.track === "race" ? "race" : S.screen === "race" ? "race" : S.screen === "results" ? "results" : "menu";
-    const pool = MUS.list.filter((x) => settings.track === "shuffle" || x.mood === mood || x.mood === "any");
-    if (!force && MUS.cur && pool.includes(MUS.cur) && MUS.el && !MUS.el.paused) return;
-    if (MUS.offline) { playSynth(mood); return; }
-    const fresh = pool.filter((x) => !MUS.recent.includes(x.url));
-    const from = fresh.length ? fresh : pool;
-    if (from.length) playTrack(from[Math.floor(Math.random() * from.length)]);
+    const mood = moodNow();
+    // songs were down: try them again every 3 minutes (the beat keeps playing until one really starts)
+    if (MUS.offline && Date.now() - (MUS.offAt || 0) > 180e3) { MUS.offline = false; MUS.miss = 0; MUS.dead.clear(); force = true; }
+    const pool = MUS.list.filter((x) => (settings.track === "shuffle" || x.mood === mood || x.mood === "any") && !MUS.dead.has(x.url));
+    // already playing (or still loading) something that fits: leave it alone
+    if (!force && MUS.el && MUS.cur && pool.includes(MUS.cur)) return;
+    if (!force && !MUS.el && MUS.syn && MUS.syn.mood === mood) return;
+    if (MUS.offline || !pool.length) { stopSong(); MUS.cur = null; playSynth(mood); return; }
+    const fresh = pool.filter((x) => !MUS.recent.includes(x.url) && x !== MUS.cur);
+    const from = fresh.length ? fresh : pool.filter((x) => x !== MUS.cur).length ? pool.filter((x) => x !== MUS.cur) : pool;
+    // songs take a moment to load: keep the built-in beat going meanwhile if it's already on
+    playTrack(from[Math.floor(Math.random() * from.length)]);
   }
+  // ⏭ Next song: a different song right away. If songs can't load right now, try them again anyway (the
+  // built-in beat keeps playing until one actually starts, so there's no silence), else a new built-in beat.
+  function nextSong() {
+    const now = Date.now(); if (now - (MUS.lastSkip || 0) < 500) return; MUS.lastSkip = now;
+    MUS.started = true; audio();
+    if (MUS.offline) {
+      MUS.offline = false; MUS.miss = 0; MUS.dead.clear();
+      const mood = MUS.syn?.mood; if (MUS.syn) { stopSynth(); playSynth(mood || "menu"); }
+    }
+    pickMusic(true);
+  }
+  setInterval(() => { if (MUS.started && MUS.offline) pickMusic(false); }, 60e3);
   // browsers only allow sound after you click or press something
   const startMusic = () => { if (MUS.started) return; MUS.started = true; audio(); pickMusic(true); };
   window.addEventListener("pointerdown", startMusic, { capture: true });
@@ -5086,6 +5122,7 @@
       "🌍 When anyone anywhere pulls a super rare upgrade card, every player in every race hears about it.",
       "🏁 Watch YOUR finish: after the flag, rewatch your own run to the line. Your last 3 finishes stay in 🎬 Replays.",
       "🛍️ 29 new shop items: glows, flames, rims, helmets, smoke, Confetti/Ember/Checkered trails, Skull/Stripes/Dice decals and 8 new badges.",
+      "🎶 Music fixed: songs now load from the game's own server (faster, and they work on networks that block archive.org), a song that won't load is skipped instead of stopping the music, and ⏭ Next song never leaves you in silence.",
       "🎵 No more silent games: if the online songs can't load (some school and work networks block them), a built-in soundtrack made right in your browser plays instead. ⏭ Next song tries the online songs again.",
       "🛒 The store is organized now: tabs for Chests, Car & paint, Wheels & wing, Effects and Driver, plus Can buy / Owned filters and sorting by price, rarity or name.",
       "🔊 New engine sound with gears, a boost kick and whoosh, a DRS whoosh, and you can hear the cars around you.",

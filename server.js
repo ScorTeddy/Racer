@@ -352,6 +352,38 @@ for (const [f, type, age] of [["site.css", "text/css", 3600], ["favicon.svg", "i
     res.setHeader("Cache-Control", `public, max-age=${age}`); res.type(type); res.sendFile(fp);
   });
 }
+// ---- the soundtrack: Kevin MacLeod's songs, fetched from the Internet Archive ONCE and then served from here.
+// Players only need to reach this site (some school/work networks block archive.org), songs load faster,
+// and seeking works. Only the songs on this list can be fetched, so it can't be used as an open proxy.
+const KM_SONGS = new Set(["Aces High.mp3", "Basic Implosion.mp3", "Bit Shift.mp3", "BlipStream.mp3", "BlackVortex.mp3", "Big Rock.mp3", "Action.mp3", "Back on Track.mp3", "BlownAway.mp3", "Backed Vibes Clean.mp3", "Big Mojo.mp3", "Bass Walker.mp3", "Airport Lounge.mp3", "Beachfront Celebration.mp3", "At Launch.mp3"]);
+const musicJobs = new Map(), musicDead = new Map();   // downloads in progress; songs that just failed (don't hammer upstream)
+function fetchSong(file) {
+  const dir = process.env.MUSIC_CACHE || path.join(require("os").tmpdir(), "scribble-music"), dest = path.join(dir, file);
+  if (fs.existsSync(dest)) return Promise.resolve(dest);
+  if (musicJobs.has(file)) return musicJobs.get(file);
+  if (Date.now() - (musicDead.get(file) || 0) < 5 * 60e3) return Promise.reject(new Error("recently failed"));
+  const job = (async () => {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 30e3);
+    try {
+      const r = await fetch((process.env.MUSIC_UPSTREAM || "https://archive.org/download/Incompetech/mp3-royaltyfree/") + encodeURIComponent(file), { signal: ctl.signal, redirect: "follow" });
+      if (!r.ok) throw new Error("upstream " + r.status);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length < 10e3 || buf.length > 40e6) throw new Error("odd size " + buf.length);
+      fs.mkdirSync(dir, { recursive: true });
+      const tmp = dest + "." + process.pid + ".part"; fs.writeFileSync(tmp, buf); fs.renameSync(tmp, dest);
+      return dest;
+    } catch (e) { musicDead.set(file, Date.now()); console.warn("music: couldn't fetch", file, "-", e.message); throw e; }
+    finally { clearTimeout(timer); musicJobs.delete(file); }
+  })();
+  musicJobs.set(file, job);
+  return job;
+}
+app.get("/music/km/:file", (req, res) => {
+  const file = req.params.file;
+  if (!KM_SONGS.has(file)) return res.status(404).send("Not found");
+  fetchSong(file).then((fp) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.type("audio/mpeg"); res.sendFile(fp); })
+    .catch(() => { if (!res.headersSent) res.status(502).send("Song unavailable"); });
+});
 app.get("/faq", (req, res) => res.sendFile(pub("faq.html")));
 app.get("/privacy", (req, res) => res.sendFile(pub("privacy.html")));
 const siteUrl = (req) => (PROD ? "https://" : req.protocol + "://") + req.get("host");
