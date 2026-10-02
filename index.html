@@ -148,6 +148,18 @@
       </section>
       <section class="rc-pane" data-pane="race" hidden>
         <div class="settings-grid">
+          <div class="mode-pick wide" id="modePick">
+            <div class="sect">Game mode</div>
+            <div class="mode-cards" role="radiogroup" aria-label="Game mode">
+              <button type="button" class="mode-card" data-mode="normal" role="radio"><b>🏁 Normal</b><small>Everyone drives the same kind of car.</small></button>
+              <button type="button" class="mode-card" data-mode="multi" role="radio"><b>🏎️ Multiclass</b><small>Fast Hypers and slower GTs share the track. Each class races for its own win and points.</small></button>
+            </div>
+            <div class="multi-opts hidden" id="multiOpts">
+              <div class="sect">Your class <small>(everyone picks their own)</small></div>
+              <div class="class-cards" id="classCards" role="radiogroup" aria-label="Your class"></div>
+              <label class="f">AI class mix <select id="sMix"><option value="0.33">Mostly Hypers (1 in 3 AI is a GT)</option><option value="0.5">Half and half</option><option value="0.67">Mostly GTs (2 in 3 AI are GTs)</option></select></label>
+            </div>
+          </div>
           <button type="button" class="btn wide" id="setPresetBtn">💾 Setting presets: save or load all of these</button>
           <label class="f">Laps (1-99) <input type="number" id="sLaps" min="1" max="99" step="1" value="5" inputmode="numeric"></label>
           <label class="f">AI difficulty <select id="sAiLevel"><option value="easy">😌 Easy</option><option value="medium">🙂 Medium</option><option value="hard">😤 Hard</option><option value="extreme">💀 EXTREME</option></select></label>
@@ -301,6 +313,7 @@
   <canvas id="minimap" class="panel" role="img" aria-label="Mini map of the track with every car's position"></canvas>
   <div class="feed" id="feed" aria-live="polite"></div>
   <div class="weather panel hidden" id="weatherPill"></div>
+  <div class="class-flag hidden" id="classFlag" role="status"></div>
   <div class="tire-pick panel hidden" id="tirePick" role="dialog" aria-labelledby="tpTitle">
     <h2><span id="tpTitle">Pick your starting tires</span><small id="tpTime">10s</small></h2>
     <div class="tp-bar"><b id="tpBar"></b></div>
@@ -373,6 +386,7 @@
   <div class="res-card panel">
     <h2 id="resTitle">Race 1 results</h2>
     <canvas id="podium" aria-hidden="true"></canvas>
+    <p class="class-wins hidden" id="classWinLine"></p>
     <p class="dotd hidden" id="dotdLine"></p>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
     <div id="resTeamsBox"><div class="sect">Team standings</div>

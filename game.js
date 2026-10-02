@@ -456,6 +456,27 @@
     if (designCache.size > 60) designCache.delete(designCache.keys().next().value);
     designCache.set(str, cv); return cv;
   }
+  // Multiclass racing: the two kinds of car (the server has the real numbers, in CAR_CLASSES)
+  const CLASSES = {
+    hyper: { name: "Hyper", icon: "🔴", col: "#ff2d55", short: "HY", note: "Much faster everywhere: top speed, cornering, braking. Normal tyre wear and pit stops.",
+      bars: [["Top speed", 1], ["Cornering", 1], ["Tyre life", 0.55], ["Pit stops", 0.55], ["Toughness", 0.45]] },
+    gt: { name: "GT", icon: "🟢", col: "#22c55e", short: "GT", note: "Slower, but tough: tyres last much longer, quicker pit stops, boost refills faster. Watch your mirrors!",
+      bars: [["Top speed", 0.7], ["Cornering", 0.75], ["Tyre life", 0.95], ["Pit stops", 0.85], ["Toughness", 0.95]] },
+  };
+  function drawClassKit(c, car, X, L, Wd, open) {          // class markings, so you can tell them apart at a glance
+    if (car.cls === "gt") {
+      c.fillStyle = "#22c55e"; c.fillRect(-L * 0.2, -Wd / 2, 10, 2.4); c.fillRect(-L * 0.2, Wd / 2 - 2.4, 10, 2.4);   // green door panels
+      if (!open) {
+        c.fillStyle = darken(car.color, 0.5); c.fillRect(3, -Wd / 2 - 2, 3, 2.2); c.fillRect(3, Wd / 2 - 0.2, 3, 2.2);    // mirrors
+        if (!X.wing) { c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5); c.fillStyle = "#1f8f47"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 4, Wd + 6); c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(-L / 2 - 3.5, -Wd / 2 - 2.5, 1, Wd + 5); }   // big GT wing
+      }
+    } else if (car.cls === "hyper") {
+      c.save(); c.shadowColor = "#ff2d55"; c.shadowBlur = 6; c.fillStyle = "#ff2d55";
+      c.fillRect(-L * 0.4, -Wd / 2 + 0.5, L * 0.66, 1.5); c.fillRect(-L * 0.4, Wd / 2 - 2, L * 0.66, 1.5);              // glowing LED strips
+      c.beginPath(); c.moveTo(L / 2 + 0.5, -4); c.lineTo(L / 2 + 4, 0); c.lineTo(L / 2 + 0.5, 4); c.fill(); c.restore(); // splitter
+      if (!open) { c.strokeStyle = "rgba(10,10,14,0.85)"; c.lineWidth = 1.8; c.beginPath(); c.moveTo(-7, 0); c.lineTo(-L / 2 + 1, 0); c.stroke(); }   // shark fin
+    }
+  }
   function drawCar(c, car, x, y, heading, scale, opts = {}) {
     const L = CAR_LEN, Wd = CAR_WID, X = car.extras || {};
     const hueNow = (performance.now() / 8) % 360;
@@ -534,6 +555,7 @@
       c.fillStyle = "rgba(255,255,255,0.3)"; c.fillRect(6, -Wd / 2 + 5, 3, Wd - 10);
     }
     bodyExtras(c, B, car, X, L, Wd);
+    if (car.cls) drawClassKit(c, car, X, L, Wd, open);
     if (X.helmet || open) { const hc = X.helmet === "rainbow" ? `hsl(${hueNow},90%,60%)` : X.helmet || "#f5f5f5"; c.fillStyle = hc; c.beginPath(); c.arc(open ? -2 : 0, 0, 4.6, 0, Math.PI * 2); c.fill(); c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect((open ? -2 : 0) + 1.5, -3, 2, 6); }
     if (X.wing && !open) {                    // store: rear wing
       const wc = darken(car.color, 0.45);
@@ -555,6 +577,7 @@
     const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"] }[X.num] || ["#fff", "#111"];
     const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
     c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
+    if (car.cls && X.num !== "neon") { c.strokeStyle = CLASSES[car.cls]?.col || "#fff"; c.lineWidth = 1.8; c.stroke(); }
     if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
     c.save(); c.translate(nx, 0); c.rotate(Math.PI / 2); if (open) c.scale(0.75, 0.75);
     c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
@@ -1635,7 +1658,8 @@
     if (S.replaying) stopReplay();
     if (S.photoOn) photoMode(false);
     RP.buf = []; S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
-    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked };
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi };
+    if (r.multi) { const mc = r.cars.find((c) => c.owner === S.me)?.cls; if (mc) setTimeout(() => popup(`${CLASSES[mc].icon} You're racing in the ${CLASSES[mc].name} class. Win your class!`), 900); }
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
     S.ghost = null; if (r.quali) setTimeout(() => { S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
     if (!r.quali) { S.rival = S.pendingRival?.name || null; const rv = S.pendingRival; S.pendingRival = null; if (rv) setTimeout(() => { banner(`🎯 RIVAL: ${rv.name}`, "#ff6b61"); popup(`Your rival: ${rv.name} (${rv.pts} pts, you have ${rv.mine}). Beat them for +100 coins!`); }, 1500); }
@@ -1815,6 +1839,7 @@
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "classWin" && CLASSES[f.cls]) { setTimeout(() => banner(`🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!`, CLASSES[f.cls].col), 600); sfx("level"); }
     if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
     if (f.t === "scIn") { banner("🟢 GREEN FLAG!", "#3ecf6a"); sfx("level"); }
     if (f.t === "photo") setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600);
@@ -1822,7 +1847,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -1866,7 +1891,7 @@
   socket.on("feed", (f) => {
     if (f.t !== "winner") return;
     const w = [...S.cars.values()].find((c) => c.name === f.name);
-    banner(`🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
+    banner(f.cls && CLASSES[f.cls] ? `🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!` : `🏁 ${f.name} WINS!`, "#ffcc1f"); sfx("win");
     if (w) {
       S.camTarget = w.id; S.winnerCamUntil = performance.now() + 4000;
       if (!reducedMotion) for (let k = 0; k < 5; k++) setTimeout(() => fireworks.push({ x: w.x + (Math.random() - 0.5) * 300, y: w.y + (Math.random() - 0.5) * 220, t: performance.now(), hue: Math.floor(Math.random() * 360) }), k * 450);
@@ -1875,7 +1900,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs", sRevGrid: "reverseGrid" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -1915,6 +1940,25 @@
       if (key === "map") setTimeout(drawBoard, 50);
     });
   }
+  // game mode (host) and your class (everyone)
+  document.querySelectorAll(".mode-card").forEach((b) => b.addEventListener("click", () => { if (S.host && S.lobby?.phase === "lobby") socket.emit("settings", { mode: b.dataset.mode }); }));
+  function renderClassCards(l) {
+    const box = $("classCards"), me = l.players.find((p) => p.id === S.me); if (!me) { box.textContent = ""; return; }
+    const key = me.cls + JSON.stringify([me.color, me.livery, me.number, me.extras, me.design]);
+    if (box.dataset.k === key) return; box.dataset.k = key; box.textContent = "";
+    for (const [k, K] of Object.entries(CLASSES)) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "class-card"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(me.cls === k));
+      b.style.setProperty("--cc", K.col);
+      const cv = document.createElement("canvas"); cv.width = 150; cv.height = 70; drawCar(cv.getContext("2d"), { ...me, cls: k }, 75, 35, 0, 1.9);
+      const h = document.createElement("b"); h.textContent = `${K.icon} ${K.name}`;
+      const bars = document.createElement("div"); bars.className = "cls-bars";
+      for (const [lab, v] of K.bars) { const r = document.createElement("div"); r.append(lab); const i = document.createElement("i"); const f = document.createElement("b"); f.style.width = v * 100 + "%"; i.appendChild(f); r.appendChild(i); bars.appendChild(r); }
+      const n = document.createElement("small"); n.textContent = K.note;
+      b.append(cv, h, bars, n);
+      b.addEventListener("click", () => { socket.emit("pickClass", k); sfx("tick"); });
+      box.appendChild(b);
+    }
+  }
   // points system
   const ordinal = (n) => n + (["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || "th");
   function sendPoints(text) { if (S.host) socket.emit("settings", { points: text }); }
@@ -1945,6 +1989,7 @@
         inp.addEventListener("change", () => socket.emit("aiEdit", { i, [key]: inp.value }));
         return inp;
       };
+      if (r.cls) { sw.style.boxShadow = `0 0 0 2px ${CLASSES[r.cls].col}`; sw.title = CLASSES[r.cls].name; }
       row.append(sw, mk(r.name, "text", "name", { maxLength: 12 }), mk(r.number, "number", "number", { min: 0, max: 99 }), mk(r.team, "text", "team", { maxLength: 20 }));
       row.lastChild.setAttribute("list", "teamList");
       box.appendChild(row);
@@ -2015,6 +2060,7 @@
       const t = document.createElement("span"); t.className = "tg"; t.innerHTML = "";
       if (p.id === l.hostId) { const cr = document.createElement("span"); cr.className = "crown"; cr.textContent = "👑 host"; t.append(cr, document.createElement("br")); }
       t.append((p.id === S.me ? "you · " : "") + `Lv ${p.level}`);
+      if (l.settings.mode === "multi" && !l.ranked) { const K = CLASSES[p.cls] || CLASSES.hyper, ct = document.createElement("span"); ct.className = "cls-tag"; ct.style.background = K.col; ct.textContent = K.name; t.append(" ", ct); }
       const total = l.players.length + (l.settings.ai || 0);
       if (S.host && l.phase === "lobby") {
         const gs = document.createElement("select"); gs.className = "grid-sel"; gs.setAttribute("aria-label", `Starting spot for ${p.name}`); gs.title = "Where they start on the grid";
@@ -2059,6 +2105,11 @@
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
+    const multi = s.mode === "multi" && !l.ranked;
+    document.querySelectorAll(".mode-card").forEach((b) => { b.setAttribute("aria-checked", String((b.dataset.mode === "multi") === multi)); b.disabled = !S.host || l.phase !== "lobby"; });
+    $("modePick").classList.toggle("hidden", !!l.ranked);
+    $("multiOpts").classList.toggle("hidden", !multi);
+    if (multi) renderClassCards(l);
     // teams on/off, XP rate, public/private
     $("sTeamColors").disabled = !S.host || l.phase !== "lobby" || !s.teams;
     $("teamsSection").classList.toggle("hidden", !s.teams); $("teamsOff").classList.toggle("hidden", !!s.teams);
@@ -3529,12 +3580,16 @@
     $("resTitle").innerHTML = "";
     const mine = r.rows.findIndex((x) => x.owner === S.me);
     $("resTitle").append(mine >= 0 ? `${r.rows[mine].name} finished ` : `Race ${r.raceNo} results `);
-    if (mine >= 0) { const s = document.createElement("span"); s.textContent = "P" + (mine + 1); $("resTitle").append(s); }
+    if (mine >= 0) { const s = document.createElement("span"); s.textContent = "P" + (r.multi && r.rows[mine].cls ? r.rows[mine].cpos : mine + 1); $("resTitle").append(s); if (r.multi && r.rows[mine].cls) $("resTitle").append(` in ${CLASSES[r.rows[mine].cls].name}`); }
+    // multiclass: who won each class
+    const cw = $("classWinLine"); cw.textContent = ""; cw.classList.toggle("hidden", !r.multi);
+    if (r.multi) for (const [k, K] of Object.entries(CLASSES)) { const w = r.rows.find((x) => x.cls === k); if (!w) continue; const sp = document.createElement("span"); sp.style.color = K.col; sp.textContent = `${K.icon} ${K.name} winner: ${w.name}`; cw.appendChild(sp); }
     const body = $("resBody"); body.textContent = "";
     r.rows.forEach((x, i) => {
       const tr = document.createElement("tr"); if (x.owner === S.me) tr.className = "me"; tr.style.animationDelay = (0.4 + i * 0.06) + "s";
       const td = (t, cls) => { const d = document.createElement("td"); d.textContent = t; if (cls) d.className = cls; return d; };
       const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}${r.dotd?.name === x.name ? " 🏆" : ""}${S.rival === x.name ? " 🎯" : ""}`);
+      if (r.multi && x.cls) { const ct = document.createElement("span"); ct.className = "cls-tag sm"; ct.style.background = CLASSES[x.cls].col; ct.textContent = `${CLASSES[x.cls].short} P${x.cpos}`; nm.append(" ", ct); }
       tr.append(td(i + 1), nm, td(x.team || ""), td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
       body.appendChild(tr);
     });
@@ -4427,7 +4482,7 @@
       const showName = (settings.names === "all" || (settings.names === "mine" && c.id === S.myCar)) && (!PH.on || PH.names);
       if (showName) {
         const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
-        const label = (pos ? `P${pos} ` : "") + (c.extras?.prest ? c.extras.prest + " " : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
+        const label = (pos ? (S.race?.multi && c.cls ? `${CLASSES[c.cls].short} P${classPos(c.id)} ` : `P${pos} `) : "") + (c.extras?.prest ? c.extras.prest + " " : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
         ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
         ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
@@ -4592,13 +4647,36 @@
     pick.style.bottom = `calc(${Math.round(rH + bH + 18)}px + env(safe-area-inset-bottom, 0px))`;
   }
   window.addEventListener("resize", () => { if (S.screen === "race") layoutHud(); });
+  // multiclass: positions inside your own class
+  const clsOf = (id) => S.cars.get(id)?.cls || S.race?.info.get(id)?.cls || null;
+  function classPos(id) { const k = clsOf(id); let n = 0; for (const i of S.standings) { if (clsOf(i) === k) n++; if (i === id) return n; } return 0; }
+  const classCount = (k) => S.standings.filter((i) => clsOf(i) === k).length;
+  // blue flag: a faster Hyper right behind a GT (let it by), or GT traffic just ahead of a Hyper
+  function classFlag(me) {
+    const f = $("classFlag");
+    if (!S.race?.multi || !me.cls || me.id !== S.myCar || me.fin || me.pit >= 0 || S.ql >= 0) { f.classList.add("hidden"); return; }
+    const ch = Math.cos(me.h), sh = Math.sin(me.h); let msg = "", kind = "";
+    for (const o of S.cars.values()) {
+      if (o.id === me.id || o.cls === me.cls || o.fin || o.pit >= 0) continue;
+      const dx = o.x - me.x, dy = o.y - me.y, d = Math.hypot(dx, dy), along = dx * ch + dy * sh;
+      if (me.cls === "gt" && along < -10 && d < 330 && o.speed > me.speed * 1.02) { msg = `🔵 BLUE FLAG: ${o.name} (Hyper) is faster and right behind you. Leave room!`; kind = "blue"; break; }
+      if (me.cls === "hyper" && along > 10 && d < 400) { msg = `🟢 GT traffic ahead: ${o.name}. Pick your moment to pass.`; kind = "gt"; }
+    }
+    f.classList.toggle("hidden", !msg); f.className = "class-flag " + kind + (msg ? "" : " hidden"); if (msg && f.textContent !== msg) f.textContent = msg;
+    if (kind === "blue" && !S.blueAt) { S.blueAt = 1; tone(880, 0.08, "square", 0.08); tone(880, 0.08, "square", 0.08, 0, 0.14); }
+    if (kind !== "blue") S.blueAt = 0;
+  }
   function updateHud(now) {
     layoutHud();
     const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
     if (!me) return;
     const pos = S.standings.indexOf(me.id) + 1, laps = S.race?.laps || 5;
-    $("posText").innerHTML = ""; $("posText").append("P" + pos);
-    const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm);
+    $("posText").innerHTML = "";
+    if (S.race?.multi && me.cls) {
+      const K = CLASSES[me.cls]; $("posText").append("P" + classPos(me.id));
+      const sm = document.createElement("small"); sm.textContent = `/${classCount(me.cls)} ${K.name} · P${pos} overall`; sm.style.color = K.col; $("posText").append(sm);
+    } else { $("posText").append("P" + pos); const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm); }
+    classFlag(me);
     { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
     $("lapText").textContent = S.ql >= 0 ? `Qualifying · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left` : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
@@ -4659,9 +4737,10 @@
         const id = S.standings[i];
         const c = S.cars.get(id); if (!c) return;
         const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
-        const p = document.createElement("span"); p.className = "p"; p.textContent = i + 1;
+        const p = document.createElement("span"); p.className = "p"; p.textContent = S.race?.multi && c.cls ? classPos(id) : i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
         const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + c.name;
+        if (S.race?.multi && c.cls) { const ct = document.createElement("span"); ct.className = "cls-tag sm"; ct.style.background = CLASSES[c.cls].col; ct.textContent = CLASSES[c.cls].short; n.prepend(ct); p.style.color = CLASSES[c.cls].col; }
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
         g.textContent = i === 0 ? "" : gv < 0 ? "+1 lap" : "+" + gv.toFixed(1);

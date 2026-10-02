@@ -620,3 +620,33 @@ test("team ranked: friends race ranked together, then the room is normal again",
   assert.equal(r.settings.laps, 3, "with its own settings back");
   a.close(); b.close();
 });
+
+test("multiclass: you pick your class, Hypers start ahead and are faster, each class scores its own points", { timeout: 120000 }, () => {
+  const r = new game.Room("MULTIC", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "s-mc", name: "Me", up: {}, level: 1, xp: 0, cls: "gt" }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 8, quali: 0, laps: 6, mode: "multi", mix: 0.5, weather: "sunny" }); r.ensureRoster(8);
+  // the lobby shows everyone's class
+  const lm = r.lobbyMsg();
+  assert.equal(lm.players[0].cls, "gt"); assert.equal(lm.roster.filter((x) => x.cls === "gt").length, 4, "half the AI are GTs");
+  r.startRace();
+  const grid = r.cars.slice().sort((a, b) => a.rs.grid - b.rs.grid).map((c) => c.cls);
+  assert.deepEqual(grid, [...Array(4).fill("hyper"), ...Array(5).fill("gt")], "all the Hypers line up ahead of the GTs");
+  assert.equal(r.cars.find((c) => c.owner === p.id).cls, "gt", "you drive the class you picked");
+  const hy = r.cars.find((c) => c.cls === "hyper" && c.isAi), gt = r.cars.find((c) => c.cls === "gt" && c.isAi);
+  const sh = r.stats(hy), sg = r.stats(gt);
+  assert.ok(sg.maxSpeed < sh.maxSpeed * 0.92 && sg.accel < sh.accel, "GTs are slower");
+  assert.ok(sg.wear < sh.wear * 0.75 && sg.pitTime < sh.pitTime, "but much kinder to tyres and quicker in the pits");
+  r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 90 && r.phase === "race"; n++) r.step(1 / 60);
+  const best = (k) => Math.min(...r.cars.filter((c) => c.isAi && c.cls === k).map((c) => c.bestLap));
+  assert.ok(isFinite(best("gt")) && best("hyper") < best("gt") * 0.95, `Hypers lap faster (${best("hyper").toFixed(1)}s vs ${best("gt").toFixed(1)}s)`);
+  let res = null; const realEmit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "results") res = d; return realEmit(ev, d); };
+  if (r.phase === "race") r.endRace();
+  assert.ok(res && res.multi, "results say it was multiclass");
+  for (const k of ["hyper", "gt"]) {
+    const rows = res.rows.filter((x) => x.cls === k);
+    assert.equal(rows[0].cpos, 1); assert.equal(rows[0].pts, r.settings.points[0], `${k} class winner gets the winner's points`);
+  }
+  // ranked never uses multiclass
+  assert.equal(r.settings.mode, "multi");
+});

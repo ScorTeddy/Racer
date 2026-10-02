@@ -76,6 +76,16 @@ const tireLifeLaps = (laps) => clamp(laps * 0.6, 1.8, 8);
 const PIT_TIME = 2.8;
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
+// Multiclass racing: two kinds of car share the track, each racing for its own class win (like Le Mans).
+// Hypers are much faster; GTs are slower, but tougher, much kinder to their tyres, quicker to service and
+// refill their boost faster. (Hypers wear tyres like a normal car: any more and short races cost them a stop.)
+const CAR_CLASSES = {
+  hyper: { name: "Hyper", speed: 1, accel: 1, corner: 1, grip: 1, brake: 1, wear: 1, pit: 1, refill: 1, dmg: 1 },
+  gt:    { name: "GT", speed: 0.85, accel: 0.8, corner: 0.9, grip: 0.92, brake: 0.88, wear: 0.65, pit: 0.8, refill: 1.3, dmg: 0.6 },
+};
+const CLASS_MIXES = [0.33, 0.5, 0.67];        // share of the AI in GT cars
+// which AI cars are GTs: spread evenly through the roster so both classes get a mix of drivers
+const aiIsGt = (i, mix) => Math.floor((i + 1) * mix + 1e-9) > Math.floor(i * mix + 1e-9);
 const MAX_PLAYERS = 6;
 // 90 made-up drivers, so even a 60-car grid has no "Bolt 2"
 const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno", "Ziggy", "Pip",
@@ -1125,7 +1135,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false };
+    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false, mode: "normal", mix: 0.5 };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -1142,10 +1152,10 @@ class Room {
   lobbyMsg() {
     return {
       code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null, team: !!this.teamRanked } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, cls: p.cls === "gt" ? "gt" : "hyper", extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
-      roster: this.roster.slice(0, this.settings.ai),
+      roster: this.roster.slice(0, this.settings.ai).map((R, i) => (this.settings.mode === "multi" ? { ...R, cls: aiIsGt(i, this.settings.mix) ? "gt" : "hyper" } : R)),
     };
   }
   sendLobby() { this.emit("lobby", this.lobbyMsg()); menuDirty = true; }
@@ -1441,6 +1451,11 @@ class Room {
       const jit = new Map(order.map((sl) => [sl, Math.random()]));
       order.sort((a, b) => (pts.get(nm(a)) || 0) - (pts.get(nm(b)) || 0) || jit.get(a) - jit.get(b));
     }
+    // multiclass: the Hypers line up ahead of the GTs (each class keeps its own order)
+    const multi = s.mode === "multi" && !this.ranked;
+    const clsOf = (sl) => (sl.human ? (sl.human.cls === "gt" ? "gt" : "hyper") : aiIsGt(sl.ai, s.mix) ? "gt" : "hyper");
+    if (multi) { const h = order.filter((sl) => clsOf(sl) === "hyper"), g2 = order.filter((sl) => clsOf(sl) === "gt"); order.splice(0, order.length, ...h, ...g2); }
+    this.multi = multi;
     const DL = AI_LEVELS[s.aiLevel] || AI_LEVELS.medium;
     order.forEach((slot, g) => {
       const { idx, lat } = gridSlot(t, g, total);
@@ -1455,6 +1470,7 @@ class Room {
         rs: { overtakes: 0, crashes: 0, cleanLaps: 0, slips: 0, boostSec: 0, maxWet: 0, usedWets: false, grid: g + 1 },
         nitro: 1, nitroOn: false, nitroLock: 0, regenT: 0, aiNitro: false, slip: false, yawMax: STEER_LOCK, gripF: 1, chase: false, attack: false,
         aggr: 0.8 + Math.random() * 0.5, nitroMin: 0.25 + Math.random() * 0.25, power: 1,
+        cls: multi ? clsOf(slot) : null,
       };
       if (slot.human) {
         const h = slot.human;
@@ -1509,7 +1525,7 @@ class Room {
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? s.quali * 60 : 0, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -1579,6 +1595,12 @@ class Room {
   }
   // what a car's upgrades add up to
   stats(c) {
+    const s = this.upStats(c), K = c.cls && CAR_CLASSES[c.cls];
+    if (!K) return s;
+    return { ...s, maxSpeed: s.maxSpeed * K.speed, accel: s.accel * K.accel, cornerPace: s.cornerPace * K.corner, grip: s.grip * K.grip, gripMul: s.gripMul * K.grip,
+      brake: s.brake * K.brake, planBrake: s.planBrake * K.brake, wear: s.wear * K.wear, pitTime: s.pitTime * K.pit, nitroRefill: s.nitroRefill * K.refill };
+  }
+  upStats(c) {
     const u = c.up, e = 1 + 0.03 * (u.enhance || 0);        // Enhancer: +3% per level to everything below
     const base = this.baseStats(c, u);
     if (e === 1) return base;
@@ -2114,7 +2136,7 @@ class Room {
       const nn = this.around(c, Math.ceil(reach / t.spacing) + 1, 0);
       for (let q = 0; q < nn; q++) {
         const o = NEAR_O[q], along = NEAR_D[q];
-        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45) { c.slip = true; break; }
+        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && (!this.multi || o.cls === c.cls)) { c.slip = true; break; }   // (multiclass: a Hyper is gone too fast to tow a GT)
       }
     }
     if (c.slip && !this.sc) maxSp *= 1 + SLIP_BONUS;
@@ -2255,7 +2277,8 @@ class Room {
       // photo finish: crossed the line within 0.15s of the car before
       const prev = this.lastFinish; this.lastFinish = c;
       if (prev && c.finishTime - prev.finishTime < 0.15) this.emit("feed", { t: "photo", name: prev.name, other: c.name, gap: Math.max(0.001, c.finishTime - prev.finishTime) });
-      if (this.finishDeadline === Infinity) { this.finishDeadline = this.time + 30; this.emit("feed", { t: "winner", name: c.name }); }
+      if (this.finishDeadline === Infinity) { this.finishDeadline = this.time + 30; this.emit("feed", { t: "winner", name: c.name, cls: this.multi ? c.cls : null }); }
+      else if (this.multi && !this.cars.some((o) => o !== c && o.finished && o.cls === c.cls)) this.emit("feed", { t: "classWin", name: c.name, cls: c.cls });
     }
   }
 
@@ -2324,7 +2347,7 @@ class Room {
       c.vx *= 0.35 - 0.15 * k; c.vy *= 0.35 - 0.15 * k;
       const side = Math.sign((-Math.sin(c.heading)) * nx * sgn + Math.cos(c.heading) * ny * sgn) || 1;
       c.spin = side * (4 + 6 * k); c.crashT = 0.9 + 0.8 * k; if (c.rs) c.rs.crashes++;
-      c.damage = clamp(c.damage + 0.3 + 0.5 * k, 0, 1);
+      c.damage = clamp(c.damage + (0.3 + 0.5 * k) * (CAR_CLASSES[c.cls]?.dmg || 1), 0, 1);
       c.tire = Math.max(0, c.tire - 0.05 - 0.1 * k);
       c.cleanLap = false; c.passT = 0; c.aiNitro = false;
       const p = c.owner && this.players.get(c.owner);
@@ -2450,11 +2473,13 @@ class Room {
     for (const p of this.players.values()) p.nitroHeld = false;
     const order = this.standings();
     const table = this.settings.points;
+    // multiclass: each class is its own race (class P1 gets the winner's points)
+    const cpos = (c) => (this.multi ? order.filter((o) => o.cls === c.cls).indexOf(c) : order.indexOf(c));
     const rows = order.map((c, i) => {
-      const pts = table[i] || 0;
+      const pts = table[cpos(c)] || 0;
       this.champ[c.name] = (this.champ[c.name] || 0) + pts;
       if (c.team && this.settings.teams) this.teamChamp[c.team] = (this.teamChamp[c.team] || 0) + pts;
-      return { name: c.name, team: this.settings.teams ? c.team : "", color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime };
+      return { name: c.name, team: this.settings.teams ? c.team : "", color: c.color, livery: c.livery, number: c.number, owner: c.owner || c.retiredBy || null, best: isFinite(c.bestLap) ? c.bestLap : null, pits: c.pits, pts, finished: c.finished, time: c.finishTime, cls: c.cls || null, cpos: cpos(c) + 1 };
     });
     // remember the standings after this race, so the season finale can show who went up and down
     for (const r of rows) { this.seasonColors.drivers[r.name] = r.color; if (r.team && !this.seasonColors.teams[r.team]) this.seasonColors.teams[r.team] = r.color; }
@@ -2480,7 +2505,7 @@ class Room {
       io.to(p.id).emit("rivalResult", { name: p.rival, beat: p.beatRival, coins: p.beatRival && p.uid && !this.noCoinsWhy() ? RIVAL_COINS : 0, xp: p.beatRival && p.uid ? 100 : 0 });
     }
     this.dotd = dotd && dotd.car;
-    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
+    this.emit("results", { rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
     if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
     if (this.ranked && this.rankedEntries?.length) {
@@ -2521,27 +2546,28 @@ class Room {
     const fastestCar = order.find((c) => c.bestLap === this.fastest && isFinite(c.bestLap));
     const maxLevel = this.track ? Math.round(Math.max(0, ...this.track.elev)) : 0;
     const kmPerLap = this.track ? this.track.length / 4200 : 0;
-    const aiCount = order.filter((c) => c.isAi).length;          // real AI drivers (not players who left)
     const ev = this.eventHere();                                   // weekend event bonuses
     const noCoins = this.noCoinsWhy();                             // too short / tiny track / ranked: no race coins
     for (const c of humans) {
       const p = this.players.get(c.owner); if (!p?.uid) continue;
-      const pos = order.indexOf(c) + 1, rs = c.rs || {};
+      // multiclass: you're scored against your own class (if it has at least 3 cars in it)
+      const field = this.multi && order.filter((o) => o.cls === c.cls).length >= 3 ? order.filter((o) => o.cls === c.cls) : order;
+      const pos = field.indexOf(c) + 1, rs = c.rs || {}, aiCount = field.filter((o) => o.isAi).length;
       const r = {
-        pos, of: order.length, grid: rs.grid || order.length, finished: !!c.finished, pts: rows[pos - 1]?.pts || 0,
+        pos, of: field.length, classWin: this.multi && field !== order && pos === 1 && c.finished, grid: rs.grid || order.length, finished: !!c.finished, pts: rows[order.indexOf(c)]?.pts || 0,
         laps: this.settings.laps, lapsDone: Math.max(0, c.lapsDone), km: Math.max(0, c.lapsDone) * kmPerLap,
         overtakes: rs.overtakes || 0, crashes: rs.crashes || 0, cleanLaps: rs.cleanLaps || 0, slips: rs.slips || 0,
         boostSec: rs.boostSec || 0, maxWet: rs.maxWet || 0, usedWets: !!rs.usedWets, pits: c.pits,
         best: isFinite(c.bestLap) ? c.bestLap : 0, fastestLap: fastestCar === c,
         reaction: p.reaction > 0 ? p.reaction : 0, jump: !!p.jump, level: p.level,
         upgrades: Object.values(p.up || {}).reduce((a, b) => a + b, 0),
-        humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > pos - 1).length,
+        humans: humans.length, beatPlayers: humans.filter((o) => order.indexOf(o) > order.indexOf(c)).length,
         kind: this.trackKind, trackId: this.trackId, trackKey: this.trackKey ? this.trackKey + (this.track?.reverse ? "_r" : "") : null, trackName: this.trackName, drewIt: this.trackKind === "drawn" && this.trackBy === p.uid, maxLevel,
         rare: p.rare || null, beatRival: !!(p.rival && p.beatRival), dotd: this.dotd === c,
         raceSec: this.time || 0, aiLevel: this.settings.aiLevel || "medium", theme: this.settings.theme, body: p.extras?.body || null,
         wonk: this.trackKind === "random" || this.trackKind === "totw" ? this.wonk || null : null, night: !!THEME_NIGHT[this.settings.theme], fog: this.weatherSetting() === "fog", ranked: !!this.ranked,
         totw: this.trackKind === "totw" && this.totwWeek === weekNow() && !this.track?.reverse ? this.totwWeek : 0,
-        margin: pos === 1 && order[1]?.finished && c.finished ? order[1].finishTime - c.finishTime : pos === 1 && order.length > 1 ? 99 : 0,
+        margin: pos === 1 && field[1]?.finished && c.finished ? field[1].finishTime - c.finishTime : pos === 1 && field.length > 1 ? 99 : 0,
         champDriver: !!(season && season.drivers[0]?.n === c.name), champTeam: !!(season && season.teams[0]?.n && season.teams[0].n === c.team),
         raceCoins: !noCoins, aiCount, winCoins: !noCoins && pos === 1 && c.finished && aiCount >= WIN_MIN_AI ? (WIN_COINS[this.settings.aiLevel] || WIN_COINS.medium) * (ev?.winMult || 1) * (ev?.coinMult || 1) : 0,
         coinMult: ev?.coinMult || 1, passMult: ev?.passMult || 1, event: ev?.id || null,
@@ -2549,10 +2575,10 @@ class Room {
       accounts.getUser(p.uid).then((u) => {
         if (!u) return;
         const got = accounts.recordRace(u, r);
-        if (r.winCoins) io.to(p.id).emit("toast", `🏆 Race win: +${r.winCoins} coins!${ev && (ev.winMult || ev.coinMult) ? ` (${ev.icon} ${ev.name})` : ""}`);
+        if (r.winCoins) io.to(p.id).emit("toast", `🏆 ${r.classWin ? CAR_CLASSES[c.cls].name + " class win" : "Race win"}: +${r.winCoins} coins!${ev && (ev.winMult || ev.coinMult) ? ` (${ev.icon} ${ev.name})` : ""}`);
         else if (pos === 1 && c.finished && !this.ranked) io.to(p.id).emit("toast", noCoins === "laps" ? `🏆 You won! Race coins need more than ${COIN_MIN_LAPS - 1} laps.`
           : noCoins === "tiny" ? `🏆 You won! This track is too tiny for race coins (it needs to be at least ${COIN_MIN_LEN / 10000} km).`
-          : `🏆 You won! Win coins need at least ${WIN_MIN_AI} AI drivers in the race (this one had ${aiCount}).`);
+          : `🏆 You won! Win coins need at least ${WIN_MIN_AI} AI drivers in ${field !== order ? "your class" : "the race"} (this one had ${aiCount}).`);
         if (r.newPb) io.to(p.id).emit("toast", r.oldPb ? `🏅 New personal best on this track! ${r.best.toFixed(2)}s (was ${r.oldPb.toFixed(2)}s)` : `🏅 First lap record set on this track: ${r.best.toFixed(2)}s`);
         io.to(p.id).emit("account", accounts.publicUser(u));
         for (const a of got) io.to(p.id).emit("achievement", a);
@@ -2659,7 +2685,7 @@ async function startTeamRanked(r, socket) {
   // AI teams are the same size as yours (2 of you = AI teams of 2), so the AI count is a multiple of it
   const size = humans.length, ai = Math.min(Math.floor(MAX_AI / size) * size, Math.ceil((F.ai + 2 * (size - 1)) / size) * size);
   r.aiTeamSize = size;
-  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);
   r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
@@ -2672,7 +2698,7 @@ function makeRankedRoom(socket, profile, u) {
   r.ranked = true;
   const R = accounts.rankedPublic(u), F = R.field;      // the tier decides AI, laps, map size, wonkiness
   r.rankedTier = R.rank.label;
-  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
   rankedTrack(r, F);
@@ -2969,6 +2995,8 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
+    if (s?.mode === "normal" || s?.mode === "multi") S.mode = s.mode;
+    if (CLASS_MIXES.includes(Number(s?.mix))) S.mix = Number(s.mix);
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
     if (s?.reverseGrid !== undefined) S.reverseGrid = s.reverseGrid === true || s.reverseGrid === "on";
@@ -3001,6 +3029,12 @@ io.on("connection", (socket) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const err = r.setF1Track(String(d?.id || ""));
     socket.emit("trackResult", { error: err, f1: r.trackName });
+  });
+  // multiclass: everyone picks their own class (it counts from the next race)
+  socket.on("pickClass", (k) => {
+    const r = room(); if (!r || !CAR_CLASSES[k]) return;
+    const p = r.players.get(socket.id); if (!p || p.cls === k) return;
+    p.cls = k; r.sendLobby();
   });
   // host puts a player in a grid spot (0 = automatic)
   socket.on("gridPos", (d) => {
@@ -3689,4 +3723,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
