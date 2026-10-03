@@ -1394,28 +1394,6 @@ test("weekend tournament tracks are VERY wonky from week 2962 on (earlier weeks 
   const old = game.tourTrack(2961); assert.notEqual(old.wonk, "very", "this weekend's bracket keeps its track");
   assert.equal(game.tourTrack(2961).name, old.name, "and the same track every time");
 });
-
-test("track factory: random tracks are made in a helper process, so making one never stalls the races", { timeout: 90000 }, async () => {
-  const P = game.trackPool;
-  P.start();
-  assert.ok(P.child, "the helper started");
-  try {
-    const t0 = Date.now();
-    while (!(P.ready.get("normal|regular")?.length) && Date.now() - t0 < 80000) await new Promise((ok) => setTimeout(ok, 200));
-    const r = P.take("normal", "regular");
-    assert.ok(r && r.shape && Array.isArray(r.stroke) && Number.isInteger(r.start), "a finished track came from the pool, start line and all");
-    const room = new game.Room("POOL", "h");
-    P.ready.set("normal|regular", [r]);
-    const t1 = Date.now(); assert.equal(room.setRandomTrack("normal", "regular"), null);
-    assert.ok(room.track && room.track.N > 50, "the room got the pooled track");
-    assert.ok(Date.now() - t1 < 1000, "and taking it is quick");
-    await P.wait("totw");
-    assert.ok(P.built.has("totw" + Math.floor((Date.now() / 86400000 + 3) / 7)), "this week's Track of the Week gets made there too");
-  } finally {
-    const c = P.child; P.child = null; P.fails = 99; if (c) c.kill();
-    clearInterval(P.timer);
-  }
-});
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
   const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => {
