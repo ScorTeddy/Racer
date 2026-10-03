@@ -987,6 +987,56 @@
     prof.design = /[0-9a-f]/.test(str) ? str : null;
     saveProfile(); drawPaint();
   }
+  // ---- car presets: save your whole look (colour, livery, number, painted design, equipped items) and swap in one tap.
+  // Signed in: kept on your account (items included). Guest: kept in this browser (no items).
+  const CP = { list: null };
+  const cpLocal = () => { try { return JSON.parse(localStorage.getItem("tb-carPresets") || "[]"); } catch (e) { return []; } };
+  const cpLocalSave = (l) => { try { localStorage.setItem("tb-carPresets", JSON.stringify(l)); } catch (e) {} };
+  function openCarPresets() {
+    $("carPresetBox").classList.remove("hidden"); CP.list = A.user ? null : cpLocal();
+    if (A.user) socket.emit("carPresets:get");
+    $("carPresetNote").textContent = A.user ? "Saves your colour, livery, number, painted design and every item you have on." : "Saves your colour, livery, number and painted design in this browser. Sign in to save your items too.";
+    renderCarPresets(); setTimeout(() => $("carPresetName").focus(), 50);
+  }
+  function lookExtras(eq) {
+    const out = {};
+    for (const [slot, id] of Object.entries(eq || {})) { const it = A.catalog?.store.find((x) => x.id === id); if (it) out[slot] = it.look; }
+    return out;
+  }
+  function renderCarPresets() {
+    const g = $("carPresetGrid"); g.textContent = "";
+    if (!CP.list) { g.appendChild(el("p", "preset-note", "Loading...")); return; }
+    if (!CP.list.length) { g.appendChild(el("p", "preset-note", "No car presets yet. Set up a look, give it a name and save it.")); return; }
+    for (const P of CP.list) {
+      const card = el("div", "car-preset"), cv = document.createElement("canvas"); cv.width = 180; cv.height = 96;
+      const c2 = cv.getContext("2d"); drawCar(c2, { color: P.color, livery: P.livery, number: P.number, design: P.design, extras: lookExtras(P.equipped) }, 90, 48, 0, 2.1);
+      const n = Object.keys(P.equipped || {}).length;
+      card.append(cv, el("b", "", P.name), el("small", "", `#${P.number} · ${P.livery}${n ? ` · ${n} item${n === 1 ? "" : "s"}` : ""}`));
+      const row = el("div", "sec-row"), use = el("button", "btn go", "Use"), del = el("button", "btn ghost", "🗑"); use.type = del.type = "button"; del.setAttribute("aria-label", `Delete ${P.name}`);
+      use.addEventListener("click", () => applyCarPreset(P));
+      del.addEventListener("click", () => { if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Sure?"; return; } if (A.user) socket.emit("carPresets:delete", P.name); else { CP.list = CP.list.filter((x) => x !== P); cpLocalSave(CP.list); renderCarPresets(); } });
+      row.append(use, del); card.appendChild(row); g.appendChild(card);
+    }
+  }
+  function applyCarPreset(P) {
+    prof.color = P.color; prof.livery = P.livery; numIn.value = P.number;
+    paintPix = (P.design && P.design.length === DW * DH ? P.design : ".".repeat(DW * DH)).split("");
+    refreshGarage(); savePaint();
+    if (A.user && P.equipped) socket.emit("carPresets:apply", P.name);
+    popup(`🚗 Now driving: ${P.name}`); sfx("tick");
+  }
+  setTimeout(() => socket.on("carPresets", (l) => { if (l) { CP.list = l; renderCarPresets(); } }), 0);    // (the socket is made further down)
+  $("carPresetBtn").addEventListener("click", openCarPresets);
+  $("carPresetClose").addEventListener("click", () => $("carPresetBox").classList.add("hidden"));
+  $("carPresetForm").addEventListener("submit", (e) => {
+    e.preventDefault(); saveProfile();
+    const name = $("carPresetName").value.trim(); if (!name) return popup("Give the preset a name", true);
+    const P = { name, color: prof.color, livery: prof.livery, number: prof.number, design: prof.design };
+    if (A.user) socket.emit("carPresets:save", P);
+    else { CP.list = [...cpLocal().filter((x) => x.name.toLowerCase() !== name.toLowerCase()), P].slice(-20); cpLocalSave(CP.list); renderCarPresets(); }
+    $("carPresetName").value = ""; popup(`💾 Saved "${name}"`);
+  });
+  $("carPresetName").addEventListener("keydown", (e) => e.stopPropagation());
   const cellAt = (e) => { const r = paintCv.getBoundingClientRect(); return [clamp(Math.floor(((e.clientX - r.left) / r.width) * DW), 0, DW - 1), clamp(Math.floor(((e.clientY - r.top) / r.height) * DH), 0, DH - 1)]; };
   function paintCell(x, y) {
     paintPix[y * DW + x] = paintColor;
@@ -1595,6 +1645,7 @@
     const box = $("hubCustom"); box.textContent = "";
     if (!A.catalog) { box.textContent = "Loading..."; return; }
     if (!u) { box.appendChild(el("p", "preset-note", "Sign in to customize your car with the things you've bought and won.")); return; }
+    { const b = el("button", "btn wide cust-presets", "🚗 Car presets: save this whole look, or swap to another"); b.type = "button"; b.addEventListener("click", openCarPresets); box.appendChild(b); }
     const owned = A.catalog.store.filter((x) => u.owned.includes(x.id));
     box.appendChild(el("p", "hub-h", `Your garage: you own ${owned.length} of ${A.catalog.store.filter((x) => !x.pass || u.owned.includes(x.id)).length} items. Tap one to put it on.`));
     // the big preview (animated items keep moving)
@@ -5305,7 +5356,7 @@
   fetch("voice/config").then((r) => (r.ok ? r.json() : null)).then((c) => { if (c?.eleven) { COMM.base = "voice/"; COMM.cache.clear(); } }).catch(() => {});
   const commVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vComm ?? 80) / 100);
   function commClip(file) {
-    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch(COMM.base + file).then((r) => { if (r.headers.get("X-Voice") === "built-in") setTimeout(() => COMM.cache.delete(file), 0); return r.ok ? r.arrayBuffer() : null; }).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
+    if (!COMM.cache.has(file)) COMM.cache.set(file, fetch(COMM.base + file).then((r) => { const v = r.headers.get("X-Voice"); if (v === "built-in" || v === "pending") setTimeout(() => COMM.cache.delete(file), 0); return r.ok && r.status !== 204 ? r.arrayBuffer() : null; }).then((b) => (b && audio() ? audio().decodeAudioData(b) : null)).catch(() => null));
     return COMM.cache.get(file);
   }
   function commName(name) {
@@ -5320,22 +5371,27 @@
     return `l_${key}_${i}.mp3`;
   }
   // say: a line (with a name in front, if given). prio: 3 = wins, 2 = big moments, 1 = normal, 0 = filler
+  // He doesn't talk all the time: after every line there's a quiet spell (long for small stuff, short for big
+  // moments, none for the winner), small stuff isn't queued up behind another line, and filler is only sometimes.
+  const COMM_QUIET = [16000, 9000, 3000, 0];
   function say(key, name, prio = 1, gap = 0) {
     if (!COMM.man || commVol() <= 0 || S.replaying || (S.ql >= 0 && key !== "qko" && key !== "pole")) return;
     const now = performance.now();
-    if (gap && now - (COMM.at[key] || 0) < gap) return; COMM.at[key] = now;
+    if (gap && now - (COMM.at[key] || 0) < gap) return;
+    if (now - (COMM.lastEnd || -1e9) < COMM_QUIET[Math.min(3, prio)] || (COMM.busy && prio < 2) || (prio === 0 && Math.random() < 0.5)) return;
+    COMM.at[key] = now;
     const who = name && COMM.man.named?.includes(key) ? commName(name) : null;
     const parts = [who ? `s_${key}_${who}.mp3` : commLine(key)].filter(Boolean);
     if (!parts.length) return;
     parts.forEach(commClip);                         // start loading straight away
     COMM.queue.push({ parts, prio, at: now }); COMM.queue.sort((a, b) => b.prio - a.prio);
-    if (COMM.queue.length > 3) COMM.queue.length = 3;
+    if (COMM.queue.length > 2) COMM.queue.length = 2;
     commNext();
   }
   async function commNext() {
     if (COMM.busy) return;
     const it = COMM.queue.shift(); if (!it) return;
-    if (performance.now() - it.at > (it.prio >= 3 ? 9000 : 4500)) return commNext();   // old news: skip it
+    if (performance.now() - it.at > (it.prio >= 3 ? 9000 : 3500)) return commNext();   // old news: skip it
     COMM.busy = true;
     const bufs = (await Promise.all(it.parts.map(commClip))).filter(Boolean), a = audio();
     if (!bufs.length || !a) { COMM.busy = false; return commNext(); }
@@ -5343,13 +5399,13 @@
     if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol() * 0.35)); if (MUS.syn) MUS.syn.out.gain.value = Math.min(1, musicVol()) * 0.2;   // duck the music
     let t = a.currentTime + 0.05;
     for (const b of bufs) { const src = a.createBufferSource(); src.buffer = b; src.connect(g); src.start(t); t += b.duration + 0.06; }
-    setTimeout(() => { COMM.busy = false; setMusicVolume(); setTimeout(commNext, 200); }, (t - a.currentTime) * 1000 + 50);
+    setTimeout(() => { COMM.busy = false; COMM.lastEnd = performance.now(); setMusicVolume(); setTimeout(commNext, 200); }, (t - a.currentTime) * 1000 + 50);
   }
   socket.on("lightsOut", () => { COMM.leader = null; if (!S.race?.quali) say("start", null, 2); });
   socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; COMM.half = false; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
   socket.on("feed", (f) => {
     const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
-    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 5000); else say("crash", null, 1, 6000); }
+    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 8000); else say("crash", null, 1, 15000); }
     else if (f.t === "winner") say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
     else if (f.t === "classWin" && !mine(f.name)) say("classWin", f.name, 3);
     else if (f.t === "photo") say("photo", null, 2);
@@ -5360,7 +5416,7 @@
     else if (f.t === "puncture") say("puncture", f.name, 1, 8000);
     else if (f.t === "fastest") say("fastest", f.name, 0, 20000);
     else if (f.t === "elim") say(mine(f.name) ? "elimYou" : "elim", mine(f.name) ? null : f.name, 2);
-    else if (f.t === "drs") say("drs", null, 1);
+    else if (f.t === "drs") say("drs", null, 0, 60000);
     else if (f.t === "jump") say("jump", null, 1, 8000);
     else if (f.t === "pitSlow") say("pitSlow", null, 0, 15000);
     else if (f.t === "mistake") say("mistake", null, 0, 20000);
@@ -5370,12 +5426,12 @@
   function commLeader(st) {
     if (!S.race || S.race.quali || st.phase !== "race") return;
     const lead = st.standings?.[0], c = S.cars.get(lead);
-    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, 1, 9000);
+    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, lead === S.myCar ? 2 : 1, 15000);
     COMM.leader = lead;
     // halfway, and a close fight for the lead
     const laps = S.race.laps || 0;
     if (c && laps >= 4 && !COMM.half && c.laps >= Math.floor(laps / 2) && !c.fin) { COMM.half = true; say("halfway", null, 0); }
-    if (S.t > 15 && st.gaps?.[1] !== undefined && st.gaps[1] >= 0 && st.gaps[1] < 0.35 && !c?.fin) say("battle", null, 0, 30000);
+    if (S.t > 15 && st.gaps?.[1] !== undefined && st.gaps[1] >= 0 && st.gaps[1] < 0.35 && !c?.fin) say("battle", null, 0, 45000);
   }
 
   // ======================= Pit stop minigame =======================
@@ -5687,9 +5743,9 @@
     saveProfile(); S.solo = false; S.tutorial = false; S.rankedRes = null; closeHub(); socket.emit("ranked:play", prof);
   }
   $("rankedBtn").addEventListener("click", playRanked);
-  const AI_WORD = { hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE" };
-  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Hard AI · 4 laps · big, gentle tracks"], ["Bronze", "🥉", 300, "4 Hard AI · 6 laps · big tracks"], ["Silver", "🥈", 600, "5 EXTREME AI · 7 laps · big, wonky"], ["Gold", "🥇", 900, "6 EXTREME AI · 9 laps · some very wonky tracks"],
-    ["Platinum", "💠", 1200, "7 OVERDRIVE AI (ranked only) · 10 laps · big or huge tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI · 12 laps · huge tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 13 laps · huge, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 OVERDRIVE AI · 15 laps · huge, very wonky"]];
+  const AI_WORD = { rookie: "Rookie", easy: "Easy", medium: "Medium", hard: "Hard", extreme: "EXTREME", overdrive: "⚡ OVERDRIVE", elite: "👑 ELITE" };
+  const TIER_LADDER = [["Iron", "⚙️", 0, "3 Rookie AI (the gentlest) · 4 laps · big, gentle tracks"], ["Bronze", "🥉", 300, "4 Easy AI · 6 laps · big tracks"], ["Silver", "🥈", 600, "5 Medium AI · 7 laps · big, wonky"], ["Gold", "🥇", 900, "6 Hard AI · 9 laps · some very wonky tracks"],
+    ["Platinum", "💠", 1200, "7 EXTREME AI · 10 laps · big or huge tracks"], ["Diamond", "💎", 1500, "8 OVERDRIVE AI (ranked only) · 12 laps · huge tracks"], ["Master", "🔮", 1800, "10 OVERDRIVE AI · 13 laps · huge, very wonky"], ["Overdrive Elite", "⚡", 2100, "12 👑 ELITE AI (the fastest in the game) · 15 laps · huge, very wonky"]];
   function rankBadge(rank, big) {
     const b = el("div", "rank-badge" + (big ? " big" : "")); b.style.setProperty("--rk", rank.color);
     b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
@@ -5841,7 +5897,7 @@
   // ======================= Season pass + daily challenges =======================
   function rewardText(rw) {
     if (rw.coins) return `🪙 ${rw.coins}`;
-    if (rw.crate) return "🎁 Themed crate";
+    if (rw.crate) return rw.n > 1 ? `🎁 ${rw.n} themed crates` : "🎁 Themed crate";
     if (rw.spins) return `🎡 ${rw.spins} spin${rw.spins > 1 ? "s" : ""}`;
     if (rw.item) return A.catalog?.store.find((x) => x.id === rw.item)?.name || "Item";
     return "";
@@ -6122,6 +6178,13 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-27", title: "Car presets, a calmer commentator, real ranked difficulty", items: [
+      "🚗 Car presets: save your whole look (colour, livery, number, painted design and every item you have on) under a name and swap between looks in one tap. Under Your car on the menu, and in Customize.",
+      "🎙️ The commentator talks a lot less: he leaves gaps between lines and skips small stuff. He also never switches to a different voice mid-race any more.",
+      "🏆 Ranked difficulty climbs every tier: a gentle new Rookie AI at Iron, Easy at Bronze, Medium at Silver, Hard at Gold, EXTREME at Platinum, Overdrive at Diamond and Master, and a brand new Elite AI at Overdrive Elite.",
+      "🎟️ Season pass rewards get better the higher you go: bigger coin payouts every tier, more wheel spins, and double and triple crates near the top.",
+      "🔧 AI pit crews are quicker: shorter stops, faster down the pit lane, fewer fumbles.",
+    ] },
     { v: "2026-10-26", title: "Championship mode and a 7-day login streak", items: [
       "🏆 Championship mode (Mode tab): pick 2-10 tracks, draw (or load) each one and add it to the calendar, then race a full season on them in order. The next round's track loads by itself, points carry over, and the last round ends with the season finale.",
       "🔥 Login streak: come back on days in a row for a bigger daily bonus (50 up to 400 coins). Day 7 also gives a themed crate and a wheel spin. Miss a day and it starts again. See it in Profile › Stats.",

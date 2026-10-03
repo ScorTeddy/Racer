@@ -250,6 +250,18 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
 - **Login streak** (`dailyReward`, `STREAK_DAYS`): a 7-day cycle, 50 -> 400 coins; day 7 also gives a themed crate
   and a wheel spin. Missing a day starts again from day 1. `publicUser().loginStreak` drives the strip in Stats.
 
+## Car presets, commentator, ranked AI ladder
+
+- **Car presets** (`saveCarPreset` / `applyCarLook`, `carPresets:*` sockets): name + colour, livery, number, design
+  and equipped items (owned items only). Guests keep theirs in the browser (`tb-carPresets`), without items.
+- **Commentator**: `COMM_QUIET` sets the gap after each line by priority (filler 16s, normal 9s, big 3s, wins none).
+  Small lines aren't queued behind another one, and filler only plays half the time. With ElevenLabs set up,
+  `/voice/:file` answers 204 (`X-Voice: pending`) for a line that isn't made yet instead of playing the built-in
+  voice, so two voices never mix; the built-in voice only plays while ElevenLabs is failing (`voiceOffUntil`).
+- **Ranked AI**: `rookie` (Iron) and `elite` (Overdrive Elite) are ranked-only levels in `AI_LEVELS`; every tier
+  between steps up (easy, medium, hard, extreme, overdrive).
+- **AI pit crews**: `AI_PIT_STOP` (0.65x standing time) and `AI_PIT_LANE` (1.2x pit lane speed), half the fumbles.
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
