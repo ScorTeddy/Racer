@@ -156,8 +156,16 @@
               <button type="button" class="mode-card" data-mode="multi" role="radio"><b>🏎️ Multiclass</b><small>Fast Hypers and slower GT3s share the track. Each class races for its own win and points.</small></button>
               <button type="button" class="mode-card" data-mode="elim" role="radio"><b>💥 Elimination</b><small>Last place is knocked out every lap. Last car standing wins!</small></button>
               <button type="button" class="mode-card" data-mode="practice" role="radio"><b>🏋️ Practice</b><small>No AI, no pressure: learn the track, chase sector times, practise pit stops. End it when you like.</small></button>
+              <button type="button" class="mode-card" data-mode="champ" role="radio"><b>🏆 Championship</b><small>Draw a calendar of tracks, then race a full season on them in order. Points carry over every round.</small></button>
             </div>
             <p class="elim-note hidden" id="elimNote" role="status"></p>
+            <div class="champ-opts hidden" id="champOpts">
+              <div class="sect">Championship calendar</div>
+              <label class="f">Number of tracks <select id="sChampN"><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="10">10</option></select></label>
+              <p class="preset-note" id="champHint"></p>
+              <button type="button" class="btn go wide" id="calAddBtn">➕ Add this track to the calendar</button>
+              <ol class="cal-list" id="calList"></ol>
+            </div>
             <div class="multi-opts hidden" id="multiOpts">
               <div class="sect">Your class <small>(everyone picks their own)</small></div>
               <div class="class-cards" id="classCards" role="radiogroup" aria-label="Your class"></div>
@@ -406,6 +414,7 @@
     <p class="class-wins hidden" id="classWinLine"></p>
     <p class="dotd hidden" id="dotdLine"></p>
     <p class="dotd hidden" id="bestPassLine"></p>
+    <p class="dotd hidden" id="champRoundLine"></p>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
     <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>

@@ -1890,22 +1890,33 @@ async function deleteAccount(u, password, code) {
 function recheck(u) { const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); if (got.length) saveSoon(u); return got; }
 function bump(u, key, n = 1) { u.stats[key] = (u.stats[key] || 0) + n; const got = checkAch(u, { pos: 99, of: 0, grid: 0 }); saveSoon(u); return got; }
 // daily login reward: 50 coins, +10 for every day in a row (up to 150)
+// Login streak: play on days in a row and the daily bonus grows through a 7-day cycle. Day 7 is the big one:
+// coins, a themed crate and a wheel spin. Miss a day and it starts again from day 1.
+const STREAK_DAYS = [{ coins: 50 }, { coins: 75 }, { coins: 100 }, { coins: 150 }, { coins: 200 }, { coins: 300 }, { coins: 400, crate: 1, spins: 1 }];
+function streakPublic(u) {
+  const day = Math.floor(Date.now() / 86400000), alive = u.dailyDay === day || u.dailyDay === day - 1, streak = alive ? u.streak || 0 : 0;
+  const today = u.dailyDay === day;
+  return { streak, today, cycleDay: streak ? ((streak - 1) % 7) + 1 : 0, days: STREAK_DAYS };
+}
 function dailyReward(u) {
   const day = Math.floor(Date.now() / 86400000);
   if (u.dailyDay === day) return null;
   u.streak = u.dailyDay === day - 1 ? (u.streak || 0) + 1 : 1;
   u.dailyDay = day;
-  const coins = Math.min(150, 40 + u.streak * 10);
+  const cd = ((u.streak - 1) % 7) + 1, R = STREAK_DAYS[cd - 1], coins = R.coins;
   u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins;
+  let crate = null;
+  if (R.crate) { const T = monthTheme(); u.crates = u.crates || {}; u.crates[T.key] = (u.crates[T.key] || 0) + R.crate; crate = T.name; }
+  if (R.spins) u.spins = (u.spins || 0) + R.spins;
   u.stats.bestStreak = Math.max(u.stats.bestStreak || 0, u.streak);
   const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
   saveSoon(u);
-  return { coins, streak: u.streak, got };
+  return { coins, streak: u.streak, cycleDay: cd, crate, spins: R.spins || 0, got };
 }
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.

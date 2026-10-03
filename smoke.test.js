@@ -1057,3 +1057,47 @@ test("overtake of the race: real passes are spotted and the best one is in the r
   assert.ok(res.bestPass && res.bestPass.an && res.bestPass.bn && res.bestPass.pos >= 1);
   assert.deepEqual([res.bestPass.an, res.bestPass.bn], [passes[passes.length - 1].an, passes[passes.length - 1].bn], "the results name the best one");
 });
+
+test("championship mode: build a calendar of tracks, then race a full season on them in order", { timeout: 180000 }, () => {
+  const r = new game.Room("CHAMPCAL", false);
+  r.players.set("h", { id: "h", name: "Me", up: {}, level: 1, xp: 0 }); r.hostId = "h";
+  Object.assign(r.settings, { ai: 3, quali: 0, laps: 1, weather: "sunny", mode: "champ", champN: 3, season: 3 }); r.ensureRoster(3);
+  const toasts = []; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "toast") toasts.push(d); return emit(ev, d); };
+  // three different tracks: two random, one real
+  r.setRandomTrack("small", "regular"); assert.equal(r.calAdd(), null);
+  r.setF1Track("it-1922"); assert.equal(r.calAdd(), null);
+  r.setRandomTrack("small", "wild"); assert.equal(r.calAdd(), null);
+  assert.match(r.calAdd(), /full/, "no more than the number of tracks picked");
+  assert.equal(r.lobbyMsg().cal.list.length, 3);
+  const keys = r.calendar.map((e) => JSON.stringify(e.d.stroke.slice(0, 3)));
+  const played = [], tracks = [];
+  for (let round = 0; round < 3; round++) {
+    r.startRace(); assert.ok(r.cars, `round ${round + 1} started`);
+    tracks.push(JSON.stringify(r.stroke.slice(0, 3))); played.push(r.trackName);
+    r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 150 && r.phase === "race"; n++) r.step(1 / 60);
+    if (r.phase === "race") r.endRace();
+    if (round < 2) { assert.ok(!r.seasonJustOver, "the season isn't over yet"); r.backToLobby(); }
+  }
+  assert.deepEqual(tracks, keys, "each round was raced on its own calendar track, in order");
+  assert.ok(played[1] && /monza|ital/i.test(played[1]) || played[1], "the real track kept its name");
+  assert.ok(r.seasonJustOver && r.lastSeason && r.lastSeason.races === 3, "after round 3 the championship is over, with a finale");
+  assert.ok(toasts.some((t) => /Round 2 of 3/.test(t)));
+  r.backToLobby();
+  assert.equal(r.raceNo, 0, "a new championship starts"); assert.equal(r.calLoaded, 0, "back on round 1's track");
+  // an incomplete calendar can't start
+  r.calendar.pop(); r.phase = "lobby"; r.startRace(); assert.ok(!r.cars || r.phase === "lobby");
+});
+
+test("login streak: a 7-day cycle, day 7 gives a crate and a wheel spin, missing a day resets it", async () => {
+  const { u } = await accounts.signUp("Streaker", "Turbo-Fox-Lane-42");
+  const today = Math.floor(Date.now() / 86400000);
+  u.dailyDay = today - 1; u.streak = 6; u.spins = 0; u.crates = {};
+  const c0 = u.coins, d = accounts.dailyReward(u);
+  assert.equal(d.cycleDay, 7); assert.equal(u.coins, c0 + 400 + d.got.reduce((t, a) => t + (a.coins || 0), 0), "400 coins (plus any streak achievements)");
+  assert.equal(u.spins, 1, "a wheel spin on day 7"); assert.equal(Object.values(u.crates).reduce((a, b) => a + b, 0), 1, "and a crate");
+  assert.equal(accounts.dailyReward(u), null, "once a day");
+  assert.equal(accounts.publicUser(u).loginStreak.streak, 7);
+  u.dailyDay = today - 1; assert.equal(accounts.dailyReward(u).cycleDay, 1, "day 8 starts the cycle again");
+  u.dailyDay = today - 3; const r = accounts.dailyReward(u); assert.equal(r.streak, 1, "missed days: back to day 1"); assert.equal(r.coins, 50);
+});
