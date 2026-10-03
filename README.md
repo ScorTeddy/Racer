@@ -262,6 +262,13 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   between steps up (easy, medium, hard, extreme, overdrive).
 - **AI pit crews**: `AI_PIT_STOP` (0.65x standing time) and `AI_PIT_LANE` (1.2x pit lane speed), half the fumbles.
 
+## Broadcast menu look
+
+- Menu theme `broadcast` (the default; `settings.themeV` moves old "dark" players over once, "Classic dark" is still
+  in Settings). All of it is in the BROADCAST block at the end of game.css, scoped to the menu, lobby, results and
+  pop-up windows (never `#hud` or the chat box), so the race looks exactly the same. `renderBroadcast()` fills in
+  the hello, stats strip, streak strip and the ticker. The car preview canvas is 2x for sharpness (same `drawCar`).
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
