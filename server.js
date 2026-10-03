@@ -11,8 +11,6 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
-// the track factory: this same file, started a second time as a low-priority helper (see "Track factory" below)
-const TRACK_WORKER = process.env.TRACK_WORKER === "1";
 
 const PORT = process.env.PORT || 3000;
 
@@ -1412,13 +1410,13 @@ class Room {
   }
   setRandomTrack(map, wonk) {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
-    const r = trackPool.take(map, wonk) || makeRandomTrack(board, wonk);
+    const r = makeRandomTrack(board, wonk);
     if (!r) return "Couldn't make a random track. Try again!";
     const wk = WONK.includes(wonk) ? wonk : "regular";
     if (!this.settings.smooth) {
       this.calLoaded = -1; this.decor = [];
       this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null; this.wonk = wk; this.totwWeek = null; this.trackId = null;
-      this.track = finalizeTrack(r.shape, r.start ?? bestStart(r.shape), false, this.allTeams());
+      this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]); this.trackKey = strokeKey(this.stroke);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
       this.setDrs(autoDrs(this.track));
@@ -1435,7 +1433,7 @@ class Room {
     if (!T) return "Couldn't build this week's track";
     this.calLoaded = -1; this.decor = [];
     this.shape = { ...T.shape }; this.trackKind = "totw"; this.trackName = T.name; this.draft = null; this.wonk = T.wonk; this.trackId = null;
-    this.track = finalizeTrack(T.shape, T.start ?? bestStart(T.shape), false, this.allTeams());
+    this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
     this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
     this.settings.map = T.map; this.settings.theme = T.theme;
     this.totwWeek = T.week; this.trackKey = "totw_" + T.week; this.trackBy = null;
@@ -1447,7 +1445,7 @@ class Room {
     const T = tourTrack(); if (!T) return "Couldn't build the tournament track";
     this.calLoaded = -1; this.decor = [];
     this.shape = { ...T.shape }; this.trackKind = "tour"; this.trackName = `🏟️ ${T.name}`; this.draft = null; this.wonk = T.wonk; this.trackId = null; this.totwWeek = null;
-    this.track = finalizeTrack(T.shape, T.start ?? bestStart(T.shape), false, this.allTeams());
+    this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
     this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
     this.settings.map = T.map; this.settings.theme = T.theme; this.trackKey = "tour_" + T.week; this.trackBy = null;
     setTimeout(() => this.emit("toast", "🏟️ Tournament track: no tyre wear, so every lap is a fair shot"), 300);
@@ -3188,11 +3186,10 @@ async function refreshContestTotw() {
     totwOverride = { week: w, code: win.code, name: `${win.name} (by ${win.byName})`, wonk: "regular", map, theme: THEME_KEYS.includes(d.theme) ? d.theme : "grass", shape, stroke: d.stroke, contest: win.theme };
   } catch (e) { console.log("contest totw:", e.message); }
 }
-if (!TRACK_WORKER) { setTimeout(refreshContestTotw, 3000).unref(); setInterval(refreshContestTotw, 10 * 60e3).unref(); }
+setTimeout(refreshContestTotw, 3000).unref(); setInterval(refreshContestTotw, 10 * 60e3).unref();
 function totw(week = weekNow()) {
   if (totwOverride && totwOverride.week === week) return totwOverride;
   if (totwCache && totwCache.week === week) return totwCache;
-  if (trackPool.built.has("totw" + week)) return (totwCache = trackPool.built.get("totw" + week));
   const built = withSeed(week * 7919 + 13, () => {
     const wonk = ["little", "regular", "regular", "very"][Math.floor(Math.random() * 4)];
     const map = Math.random() < 0.5 ? "normal" : "small";
@@ -3209,7 +3206,6 @@ let tourCache = null;
 const TOUR_VERY_WONKY_FROM = 2962;
 function tourTrack(week = weekNow()) {
   if (tourCache && tourCache.week === week) return tourCache;
-  if (trackPool.built.has("tour" + week)) return (tourCache = trackPool.built.get("tour" + week));
   const built = withSeed(week * 104729 + 7, () => {
     // from week 2962 on, every tournament track is VERY wonky (the gentler ones got figured out too quickly);
     // older weeks keep the track they had, so a bracket in progress never changes under anyone
@@ -3223,104 +3219,6 @@ function tourTrack(week = weekNow()) {
   return built;
 }
 const totwInfo = () => { const T = totw(); return T ? { week: T.week, name: T.name, theme: T.theme, wonk: T.wonk, map: T.map, ends: (T.week + 1) * 7 * 86400000 - 3 * 86400000, stroke: T.stroke.filter((_, i) => i % 4 === 0).map((q) => [Math.round(q[0]), Math.round(q[1])]) } : null; };
-
-// ======================= Track factory =======================
-// Making a random track is heavy (lots of tries at drawing, building and rating one). Done in the game server, it
-// froze EVERY race on the server at once while it ran (on a small server, for seconds). So a second copy of this
-// file runs as a low-priority helper that makes tracks ahead of time: a few of each kind wait in a pool and the
-// Random button just takes one. This week's Track of the Week and tournament track are made there too.
-// If the helper isn't running, or that pool is empty, the track is made here like before.
-const POOL_WANT = { "normal|regular": 4, "normal|little": 2, "normal|very": 2, "small|regular": 2, "small|little": 1, "small|very": 1, "large|regular": 1, "large|little": 1, "large|very": 1, "huge|regular": 1, "huge|little": 1, "huge|very": 1 };
-const trackPool = {
-  child: null, ready: new Map(), asked: new Map(), built: new Map(), waiting: new Map(), fails: 0, timer: null,
-  key(map, wonk) { return (MAP_SIZES[map] ? map : "normal") + "|" + (WONK.includes(wonk) ? wonk : "regular"); },
-  take(map, wonk) {
-    const r = this.ready.get(this.key(map, wonk))?.shift() || null;
-    this.fill();
-    return r;
-  },
-  // a weekly track that the helper is still making: wait for it (rather than make it here), but never for long
-  wait(kind, week = weekNow()) {
-    const k = kind + week;
-    if (this.built.has(k) || !this.asked.has(k) || !this.child || !this.child.connected) return Promise.resolve();
-    return new Promise((ok) => {
-      const l = this.waiting.get(k) || []; l.push(ok); this.waiting.set(k, l);
-      setTimeout(ok, 20000).unref();
-    });
-  },
-  wake(k) { const l = this.waiting.get(k); this.waiting.delete(k); if (l) for (const ok of l) ok(); },
-  send(job) { try { if (!this.child || !this.child.connected) return false; this.child.send(job); return true; } catch (e) { return false; } },
-  fill() {
-    for (const [k, n] of Object.entries(POOL_WANT)) {
-      const ready = this.ready.get(k)?.length || 0, asked = this.asked.get(k) || 0;
-      for (let i = ready + asked; i < n; i++) {
-        const [map, wonk] = k.split("|");
-        // (an empty pool's first track comes first; the rest are made at an easy pace)
-        if (!this.send({ kind: "random", key: k, map, wonk, urgent: ready === 0 && i === asked })) return;
-        this.asked.set(k, (this.asked.get(k) || 0) + 1);
-      }
-    }
-  },
-  weekly() {
-    // this week's special tracks (and, near the end of the week, next week's) before anyone asks for them
-    const w = weekNow(), soon = Math.floor((Date.now() / 86400000 + 3 + 0.05) / 7);     // (about an hour early)
-    for (const week of new Set([w, soon])) for (const kind of ["totw", "tour"]) {
-      const k = kind + week; if (this.built.has(k) || this.asked.has(k)) continue;
-      if (this.send({ kind, key: k, week, urgent: true })) this.asked.set(k, 1);
-    }
-    for (const k of this.built.keys()) if (+k.slice(4) < w) this.built.delete(k);
-  },
-  start() {
-    if (process.env.TRACK_FACTORY === "0" || this.fails > 5) return;
-    let child;
-    try { child = require("child_process").fork(__filename, [], { env: { ...process.env, TRACK_WORKER: "1" }, serialization: "advanced", stdio: ["ignore", "inherit", "inherit", "ipc"] }); }
-    catch (e) { console.log("track factory didn't start:", e.message); return; }
-    this.child = child; this.asked = new Map();
-    try { require("os").setPriority(child.pid, 19); } catch (e) {}          // the races always come first
-    child.on("message", (m) => {
-      if (!m || typeof m.key !== "string") return;
-      if (m.kind === "random") {
-        this.asked.set(m.key, Math.max(0, (this.asked.get(m.key) || 1) - 1));
-        if (m.track) { const l = this.ready.get(m.key) || []; l.push(m.track); this.ready.set(m.key, l); }
-        // (the first time a track is finished here is slower: warm that up now, unless someone's racing)
-        if (m.track && !this.warm && ![...rooms.values()].some((r) => r.phase === "race")) { this.warm = true; try { autoDrs(finalizeTrack(m.track.shape, m.track.start, false, [])); } catch (e) {} }
-        this.fill();
-      } else { this.asked.delete(m.key); if (m.track) this.built.set(m.key, m.track); this.wake(m.key); }
-    });
-    child.on("error", () => {});
-    child.on("exit", () => {
-      if (this.child !== child) return;
-      this.child = null; this.fails++;
-      for (const k of [...this.waiting.keys()]) this.wake(k);
-      setTimeout(() => this.start(), 30000).unref();
-    });
-    child.unref(); child.channel?.unref?.();
-    this.weekly(); this.fill();
-    if (!this.timer) this.timer = setInterval(() => this.weekly(), 5 * 60e3).unref();
-  },
-};
-// (the helper's side) make what's asked for, one at a time; with nothing urgent waiting, rest between tracks
-// so it never hogs a small server's CPU
-function trackWorkerMain() {
-  const queue = []; let busy = false;
-  const next = () => {
-    if (busy || !queue.length) return;
-    const i = Math.max(0, queue.findIndex((j) => j.urgent)), job = queue.splice(i, 1)[0];
-    busy = true;
-    const c0 = process.cpuUsage(); let track = null;
-    try {
-      if (job.kind === "random") track = makeRandomTrack(MAP_SIZES[job.map] || MAP_SIZES.normal, job.wonk);
-      else if (job.kind === "totw") track = totw(job.week);
-      else if (job.kind === "tour") track = tourTrack(job.week);
-      if (track && track.start == null) track = { ...track, start: bestStart(track.shape) };     // (where the start line goes: also slow-ish)
-    } catch (e) { console.log("track factory:", e.message); }
-    try { process.send({ kind: job.kind, key: job.key, track }); } catch (e) {}
-    const u = process.cpuUsage(c0), ms = (u.user + u.system) / 1000;
-    setTimeout(() => { busy = false; next(); }, queue.some((j) => j.urgent) ? 10 : Math.min(20000, 50 + ms * 4));
-  };
-  process.on("message", (job) => { if (job && typeof job.key === "string") { queue.push(job); next(); } });
-  process.on("disconnect", () => process.exit(0));
-}
 
 // ======================= Ranked rooms =======================
 // A private room with one player, fixed settings, and AI picked by your tier. Starts by itself.
@@ -3430,7 +3328,7 @@ function menuInfo() {
   list.sort((a, b) => (a.phase === "lobby" ? 0 : 1) - (b.phase === "lobby" ? 0 : 1) || b.players - a.players);
   return { online: io.engine.clientsCount, inRooms, racing, lobbies: list.slice(0, 30), event: eventPublic() };
 }
-if (!TRACK_WORKER) setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menuInfo", menuInfo()); } }, 1500);
+setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menuInfo", menuInfo()); } }, 1500);
 
 // ======================= Connections =======================
 // who's online (signed-in players): account id -> socket ids
@@ -3538,7 +3436,7 @@ async function shutdown() {
   try { await accounts.flush(); } catch (e) {}
   setTimeout(() => process.exit(0), 1500);
 }
-if (!TRACK_WORKER) { process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown); }
+process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
 const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "contest:get": 3, "contest:enter": 10, "contest:vote": 2, "decor:add": 1, "decor:undo": 1, "decor:clear": 2, horn: 1, "predict:list": 2, predict: 3, "ghost:send": 10, "ghost:load": 8, "ghost:beat": 4, "tour:get": 3, "tour:join": 5, "tour:load": 10, "tt:board": 3, teamOrder: 2, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
@@ -4019,7 +3917,7 @@ io.on("connection", (socket) => {
   socket.on("tour:load", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; const err = r.setTourTrack(); if (!err) { r.settings.mode = "tt"; r.sendLobby(); } socket.emit("trackResult", { error: err, tour: r.trackName }); });
   // time trial board for the track in this room
   socket.on("tt:board", async () => { const r = room(); if (!r || !r.trackKey) return socket.emit("ttBoard", null); const key = r.trackKey + (r.track?.reverse ? "_r" : ""); socket.emit("ttBoard", { name: r.trackName || r.calLabel?.() || "This track", ...(await accounts.getBoard("tt", key)) }); });
-  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "rankedTeam", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") { await trackPool.wait("totw"); return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); } socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "rankedTeam", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
   // ---- ranked ----
   socket.on("teamRanked:start", async () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return socket.emit("toast", "Only the host can start team ranked, from the lobby");
@@ -4034,7 +3932,7 @@ io.on("connection", (socket) => {
     leave(); makeRankedRoom(socket, profile, u);
   });
   // ---- Track of the Week ----
-  socket.on("totw:info", async () => { await trackPool.wait("totw"); socket.emit("totwInfo", totwInfo()); });
+  socket.on("totw:info", () => socket.emit("totwInfo", totwInfo()));
   socket.on("totw:load", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const err = r.setTotwTrack();
@@ -4552,7 +4450,7 @@ if (process.env.RESET_PASSWORD && require.main === module) setTimeout(async () =
 
 // Idle kick: anyone in a room with no activity for IDLE_MS (an hour) is warned 2 minutes before, then removed
 // from the room and disconnected (a phone or PC left on somewhere shouldn't hold the account or a seat).
-if (!TRACK_WORKER) setInterval(() => {
+setInterval(() => {
   const now = Date.now();
   for (const r of [...rooms.values()]) for (const p of [...r.players.values()]) {
     const sk = io.sockets.sockets.get(p.id); if (!sk) continue;
@@ -4568,7 +4466,7 @@ if (!TRACK_WORKER) setInterval(() => {
 }, 15000);
 
 // Main loop: 30 ticks a second. Each room is guarded so one broken race can't freeze the others.
-if (!TRACK_WORKER) setInterval(() => {
+setInterval(() => {
   for (const r of rooms.values()) {
     if (!r.track) continue;
     // (big grids: the race state goes out 15 times a second instead of 30. The game smooths between updates
@@ -4578,12 +4476,5 @@ if (!TRACK_WORKER) setInterval(() => {
   }
 }, 1000 / 30);
 
-if (TRACK_WORKER) trackWorkerMain();
-else if (require.main === module) {
-  server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-  trackPool.start();
-  // (Node loads its web client the first time anything is fetched, which stalls the server for a moment: do it now,
-  // not when the first race's music is fetched)
-  setTimeout(() => { try { fetch("data:,").catch(() => {}); } catch (e) {} }, 1500).unref();
-}
-module.exports = { tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server, trackPool };
+if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
+module.exports = { tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
