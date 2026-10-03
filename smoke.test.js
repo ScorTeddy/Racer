@@ -275,6 +275,7 @@ test("track of the week is the same all week, and share codes load tracks", { ti
   const sc = await got("shareCode");
   assert.match(sc.code, /^[A-HJ-NP-Z2-9]{6}$/);
   s.emit("randomTrack", { map: "small" }); await got("trackResult");
+  await new Promise((ok) => setTimeout(ok, 1000));      // (the rate limiter would drop a burst this big)
   s.emit("track:load", sc.code);
   const lr = await got("trackResult");
   assert.ok(!lr.error && lr.shared === sc.code, "loaded from the code: " + lr.error);
@@ -555,6 +556,7 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
     u.ranked = { sr, peak: sr, games: 0, wins: 0 };
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);
+    for (let i = 0; i < 100 && (r.makingTrack || !r.track); i++) await new Promise((ok) => setTimeout(ok, 50));   // (random tracks are made in slices)
     assert.ok(check(r), `SR ${sr}: ${r.trackKind} ${r.settings.map} ${r.wonk} ${r.settings.ai} AI ${r.settings.laps} laps`);
     assert.ok(!(r.settings.weather === "fog" && ["night", "neon"].includes(r.settings.theme)), "never night + fog");
     s.emit("leave"); await new Promise((ok) => setTimeout(ok, 1200));
@@ -1393,6 +1395,38 @@ test("weekend tournament tracks are VERY wonky from week 2962 on (earlier weeks 
   for (const w of [2962, 2963, 2970]) assert.equal(game.tourTrack(w).wonk, "very", `week ${w}`);
   const old = game.tourTrack(2961); assert.notEqual(old.wonk, "very", "this weekend's bracket keeps its track");
   assert.equal(game.tourTrack(2961).name, old.name, "and the same track every time");
+});
+
+test("random tracks are made a slice at a time, so the other races keep running meanwhile", { timeout: 60000 }, async () => {
+  let gaps = 0, last = Date.now(), worst = 0;
+  const tick = setInterval(() => { const n = Date.now(); worst = Math.max(worst, n - last); last = n; gaps++; }, 5);
+  try {
+    for (const wonk of ["regular", "very"]) {
+      last = Date.now(); worst = 0;
+      const r = await game.makeRandomTrackSoon(game.MAP_SIZES.normal, wonk);
+      assert.ok(r && r.shape && !r.shape.error && Array.isArray(r.stroke), `a real ${wonk} track came out`);
+      assert.ok(worst < 120, `the server never stopped for long while making it (worst gap ${worst} ms)`);
+    }
+  } finally { clearInterval(tick); }
+  // the room version: a lobby gets it; a room that started racing meanwhile keeps its track
+  const room = new game.Room("SLCE", "h"); game.rooms.set("SLCE", room);
+  try {
+    assert.equal(await room.setRandomTrackSoon("normal", "regular"), null);
+    assert.ok(room.track && room.trackKind === "random");
+    const t = room.track, p = room.setRandomTrackSoon("normal", "little"); room.phase = "results";
+    assert.ok(await p, "too late: says so"); assert.equal(room.track, t, "and the race's track didn't change");
+  } finally { game.rooms.delete("SLCE"); }
+});
+
+test("this week's special tracks are saved once made, and come back identical after a restart", { timeout: 60000 }, async () => {
+  const w = 3100;
+  assert.match(game.weekCode(w), /^[A-HJ-NP-Z2-9]{6}$/);
+  const made = game.tourTrack(w);
+  await game.weeklyTrack("tour", w);            // (already in memory: nothing to do)
+  await accounts.putShared("tour", game.weekCode(w), JSON.stringify({ name: made.name, wonk: made.wonk, map: made.map, theme: made.theme, stroke: made.stroke }), 600);
+  const raw = JSON.parse(await accounts.getShared("tour", game.weekCode(w)));
+  const again = game.buildTrack(raw.stroke, game.MAP_SIZES[raw.map]);
+  assert.deepEqual(again.base, made.shape.base, "rebuilt from the saved drawing: the very same track");
 });
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
