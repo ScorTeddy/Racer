@@ -1331,6 +1331,47 @@ body.touch .pg-pad { display: flex; }
 .pl-drop { font-size: 1.1rem; min-height: 3rem; }
 .pl-hist { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .pl-hist span { font-size: 0.7rem; font-weight: 800; color: #fff; padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+/* ---- race: mode chip (king of the hill, endurance clock), time trial board ---- */
+.mode-chip { position: fixed; left: 50%; top: calc(4.2rem + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 11; padding: 0.3rem 0.9rem; border-radius: 99px; background: rgba(10, 13, 22, 0.85); border: 1.5px solid var(--edge); font-weight: 800; font-size: 0.85rem; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.tt-row { display: flex; justify-content: space-between; padding: 0.3rem 0.6rem; border-radius: 0.4rem; background: rgba(255,255,255,0.04); }
+.tt-row.me { background: rgba(255, 45, 85, 0.18); }
+/* ---- presentation: lap chart, spectator timing, intro card, grid walk ---- */
+#hud :is(.predict-box, .spec-stats, .pit-wall) { pointer-events: auto; }      /* (the HUD ignores clicks except where it needs them) */
+.lap-chart { margin: 0.6rem 0; padding: 0.5rem; border-radius: 0.6rem; background: rgba(255,255,255,0.03); overflow-x: auto; }
+.lap-chart canvas { display: block; max-width: 100%; }
+.lc-tip { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--soft); }
+.spec-stats { position: fixed; left: 0.8rem; top: 50%; transform: translateY(-50%); z-index: 9; max-height: 70vh; overflow: auto; padding: 0.4rem; font-size: 0.78rem; }
+.spec-stats table { border-collapse: collapse; } .spec-stats th { color: var(--soft); font-weight: 700; text-align: left; padding: 0.15rem 0.4rem; }
+.spec-stats td { padding: 0.18rem 0.4rem; white-space: nowrap; font-variant-numeric: tabular-nums; } .spec-stats tr { cursor: pointer; } .spec-stats tr.on td { background: rgba(255,255,255,0.08); }
+.spec-stats .dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-right: 0.35rem; }
+.intro-card { position: fixed; left: 50%; top: 16%; transform: translateX(-50%); z-index: 13; display: grid; gap: 0.2rem; text-align: center; padding: 0.9rem 1.6rem; border-radius: 0.6rem; background: rgba(8, 10, 18, 0.88); border-left: 4px solid #ff2d55; width: max-content; max-width: 92vw; pointer-events: none; animation: achIn 6.5s ease both; }
+.intro-card small { color: #ff2d55; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; } .intro-card b { font-size: 1.6rem; font-style: italic; } .intro-card span { color: var(--soft); font-size: 0.85rem; }
+.grid-walk { position: fixed; left: 50%; transform: translateX(-50%); top: 40%; z-index: 13; padding: 0.45rem 1rem; background: linear-gradient(90deg, #ff2d55, rgba(255,45,85,0.7)); font-weight: 800; font-style: italic; text-transform: uppercase; pointer-events: none; clip-path: polygon(0.6rem 0, 100% 0, calc(100% - 0.6rem) 100%, 0 100%); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .spec-stats { left: 0.3rem; right: 0.3rem; top: auto; bottom: 5.5rem; transform: none; max-height: 34vh; } .intro-card b { font-size: 1.2rem; } }
+/* ---- weekly track contest ---- */
+.contest-top { display: grid; gap: 0.5rem; margin-bottom: 0.6rem; grid-column: 1 / -1; }
+.contest-entry { display: grid; gap: 0.25rem; padding: 0.6rem; border-radius: 0.6rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.04); }
+.contest-entry.mine { border-color: var(--yellow); } .contest-entry small { color: var(--soft); }
+/* ---- predictions, tournament bracket ---- */
+.predict-box { position: fixed; z-index: 40; left: 50%; bottom: 5rem; transform: translateX(-50%); width: min(26rem, 94vw); max-height: 60vh; overflow: auto; padding: 0.8rem; display: grid; gap: 0.5rem; }
+.predict-cars { display: grid; gap: 0.3rem; }
+.predict-car { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; text-align: left; }
+.predict-car .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; } .predict-car small { color: var(--yellow); font-weight: 800; }
+.tour-top { display: grid; gap: 0.4rem; padding: 0.8rem; border-radius: 0.6rem; background: rgba(255,255,255,0.04); margin-bottom: 0.8rem; } .tour-top small { color: var(--soft); }
+.bracket { display: flex; gap: 0.8rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.br-col { display: flex; flex-direction: column; justify-content: space-around; gap: 0.5rem; min-width: 10rem; }
+.br-h { color: var(--soft); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; }
+.br-m { border: 1.5px solid var(--edge); border-radius: 0.4rem; overflow: hidden; } .br-m.me { border-color: var(--yellow); }
+.br-p { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem; } .br-p + .br-p { border-top: 1px solid var(--edge); }
+.br-p.win { background: rgba(62, 207, 106, 0.16); font-weight: 800; } .br-p.out { opacity: 0.5; } .br-p small { color: var(--soft); font-variant-numeric: tabular-nums; }
+/* ---- race: red flag, pit wall ---- */
+.rf-box { position: fixed; left: 50%; top: 28%; transform: translateX(-50%); z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.8rem 1.6rem; border-radius: 0.6rem; background: rgba(150, 10, 30, 0.9); border: 2px solid #ff2d55; color: #fff; font-size: 1rem; pointer-events: none; }
+.rf-box b { font-size: 1.6rem; letter-spacing: 0.06em; } .rf-box i { font-style: normal; font-weight: 800; }
+.pit-wall { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.8rem; margin: 0.2rem 0; }
+.pit-wall span { color: var(--soft); font-weight: 700; }
+.pit-wall button { cursor: pointer; padding: 0.2rem 0.55rem; border-radius: 0.4rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.06); color: inherit; font: inherit; font-weight: 700; }
+.pit-wall button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); }
 /* ---- car presets ---- */
 #carPresetBox { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; background: rgba(5,6,10,0.6); }
 #carPresetBox.hidden { display: none; }

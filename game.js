@@ -51,9 +51,12 @@
     { key: "vMaster", label: "🔊 Master volume", hint: "Everything at once", def: 80, range: true },
     { key: "vMusic", label: "🎵 Music", hint: "", def: 45, range: true },
     { key: "vFx", label: "💥 Sound effects", hint: "Lights, engines, overtakes...", def: 70, range: true },
+    { key: "vCrowd", label: "📣 Crowd", hint: "The crowd: a murmur all race, a roar for overtakes, crashes and the finish. 0 = off", def: 60, range: true },
     { key: "vComm", label: "🎙️ Commentator", hint: "The race commentator: starts, crashes, overtakes for the lead, wins. 0 = off", def: 80, range: true },
     { key: "track", label: "Soundtrack", hint: "Auto: calmer songs in the menus, fast ones in the race. Music by Kevin MacLeod (incompetech.com), CC BY 3.0", def: "auto", opts: [["auto", "Auto"], ["shuffle", "Shuffle all"], ["race", "Race songs only"]] },
-    { key: "engine", label: "Engine sound", hint: "A hum that follows your car's speed", def: "on", opts: [["on", "On"], ["off", "Off"]] },
+    { key: "engine", label: "Engine sound", hint: "The sound of your car (only you hear it)", def: "on", opts: [["on", "Classic"], ["v8", "V8 rumble"], ["v12", "V12 scream"], ["electric", "Electric whine"], ["off", "Off"]] },
+    { key: "horn", label: "📯 Your horn", hint: "Press H in a race: everyone near your car hears it", def: "classic", opts: [["classic", "Classic beep"], ["truck", "Big truck"], ["clown", "Clown"], ["air", "Air horn"], ["tune", "Party tune"], ["bike", "Bike bell"]] },
+    { key: "intro", label: "Pre-race intro", hint: "The track card and the camera walking down the grid before the start", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "units", label: "Speed units", def: "kmh", opts: [["kmh", "km/h"], ["mph", "mph"]] },
     { key: "zoom", label: "Camera zoom", def: "normal", opts: [["close", "Close"], ["normal", "Normal"], ["far", "Far"]] },
     { key: "cam", label: "Camera follows", hint: "Tab also switches who you're watching", def: "me", opts: [["me", "My car"], ["leader", "Leader"]] },
@@ -78,7 +81,7 @@
   // ---- keybinds (Settings > Keybinds): every race key can be changed ----
   const KEY_ACTIONS = [
     ["boost", "⚡ Boost (hold) · start reaction", "Space"], ["boost2", "⚡ Boost, second key", "KeyN"], ["drs", "🟩 Open DRS", "KeyD"],
-    ["box", "🔧 Box this lap", "KeyB"], ["defend", "🛡️ Defend on/off", "KeyV"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"],
+    ["box", "🔧 Box this lap", "KeyB"], ["defend", "🛡️ Defend on/off", "KeyV"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"], ["horn", "📯 Horn", "KeyH"],
     ["pause", "⏸ Pause race (host)", "KeyP"], ["spectate", "👀 Watch the next car", "Tab"], ["settings", "⚙ Settings", "KeyO"],
   ];
   const KEY_DEFAULTS = Object.fromEntries(KEY_ACTIONS.map(([a, , k]) => [a, k]));
@@ -404,13 +407,50 @@
   // "gears", a rushing whoosh while your boost is firing, and a faint hum from the cars around you.
   let noiseBuf = null;
   const noise = (a) => { if (!noiseBuf) { noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const n = a.createBufferSource(); n.buffer = noiseBuf; n.loop = true; return n; };
+  // engine sounds to pick from (Settings): same "gears", a different voice
+  const ENGINES = {
+    on: { wave: "sawtooth", wave2: "sawtooth", detune: 7, q: 4, pitch: 1, sub: 0.5, bright: 1 },
+    v8: { wave: "sawtooth", wave2: "square", detune: 14, q: 6, pitch: 0.62, sub: 0.5, bright: 0.65 },
+    v12: { wave: "sawtooth", wave2: "sawtooth", detune: 4, q: 3, pitch: 1.7, sub: 0.5, bright: 1.7 },
+    electric: { wave: "sine", wave2: "triangle", detune: 2, q: 9, pitch: 4.2, sub: 1.5, bright: 2.4 },
+  };
+  // the crowd: filtered noise, a murmur all race that swells for the big moments
+  let crowd = null;
+  const crowdVol = () => (Number(settings.vMaster) / 100) * (Number(settings.vCrowd ?? 60) / 100);
+  function crowdOn(on) {
+    const a = on && crowdVol() > 0 ? audio() : actx; if (!a) return;
+    if (!crowd && on && crowdVol() > 0) {
+      const n = noise(a), f = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
+      f.type = "bandpass"; f.frequency.value = 1100; f.Q.value = 0.5; f2.type = "lowpass"; f2.frequency.value = 2600; g.gain.value = 0;
+      n.connect(f).connect(f2).connect(g).connect(a.destination); n.start(); crowd = { n, g, f };
+    }
+    if (crowd) crowd.g.gain.setTargetAtTime(on ? 0.018 * crowdVol() : 0, a.currentTime, 0.8);
+  }
+  function crowdRoar(k = 1) {
+    if (!crowd || !actx || crowdVol() <= 0) return;
+    const t = actx.currentTime, g = crowd.g.gain, base = 0.018 * crowdVol();
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(base + 0.09 * k * crowdVol(), t + 0.35); g.setTargetAtTime(base, t + 0.9, 1.1);
+    crowd.f.frequency.cancelScheduledValues(t); crowd.f.frequency.setValueAtTime(1500, t); crowd.f.frequency.setTargetAtTime(1100, t + 0.6, 1);
+  }
+  // horns (H): synthesized, quieter the further the car is from your screen
+  function hornSound(type, vol = 1) {
+    const v = 0.16 * vol; if (v < 0.01) return;
+    if (type === "truck") { tone(150, 0.7, "sawtooth", v, 0); tone(190, 0.7, "sawtooth", v * 0.8, 0); }
+    else if (type === "clown") { tone(500, 0.18, "square", v, 400); tone(900, 0.22, "square", v, -500, 0.2); }
+    else if (type === "air") { tone(440, 0.8, "sawtooth", v, 0); tone(554, 0.8, "sawtooth", v * 0.8, 0); tone(659, 0.8, "sawtooth", v * 0.6, 0); }
+    else if (type === "tune") { [392, 392, 392, 523, 659].forEach((f, i) => tone(f, i === 4 ? 0.35 : 0.12, "square", v * 0.8, 0, i * 0.15)); }
+    else if (type === "bike") { tone(1800, 0.12, "triangle", v, 0); tone(1800, 0.2, "triangle", v, 0, 0.16); }
+    else { tone(410, 0.35, "square", v * 0.8, 0); tone(520, 0.35, "square", v * 0.8, 0); }
+  }
   function engineSound(speed, on, boost = false, near = null) {
-    const want = on && settings.engine === "on" && fxVol() > 0;
+    const want = on && settings.engine !== "off" && fxVol() > 0;
+    const E = ENGINES[settings.engine] || ENGINES.on;
+    if (engine && engine.kind !== settings.engine) { try { engine.o1.stop(); engine.o2.stop(); engine.oo.stop(); engine.g.disconnect(); engine.bg.disconnect(); engine.og.disconnect(); } catch (e) {} engine = null; }
     const a = want ? audio() : actx;
     if (!a) return;
     if (!engine && want) {
       const o1 = a.createOscillator(), o2 = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
-      o1.type = "sawtooth"; o2.type = "sawtooth"; o2.detune.value = 7; f.type = "lowpass"; f.Q.value = 4; g.gain.value = 0;
+      o1.type = E.wave; o2.type = E.wave2; o2.detune.value = E.detune; f.type = "lowpass"; f.Q.value = E.q; g.gain.value = 0;
       const g2 = a.createGain(); g2.gain.value = 0.55; o2.connect(g2).connect(f); o1.connect(f); f.connect(g).connect(a.destination);
       // boost: filtered noise, swept up while it's on
       const n = noise(a), bf = a.createBiquadFilter(), bg = a.createGain(); bf.type = "bandpass"; bf.Q.value = 1.2; bf.frequency.value = 900; bg.gain.value = 0;
@@ -419,15 +459,15 @@
       const oo = a.createOscillator(), of = a.createBiquadFilter(), og = a.createGain(); oo.type = "triangle"; of.type = "lowpass"; of.frequency.value = 700; og.gain.value = 0;
       oo.connect(of).connect(og).connect(a.destination);
       o1.start(); o2.start(); oo.start();
-      engine = { o1, o2, f, g, bf, bg, oo, og, wasBoost: false };
+      engine = { o1, o2, f, g, bf, bg, oo, og, wasBoost: false, kind: settings.engine };
     }
     if (!engine) return;
     const t = a.currentTime, v = Math.max(0, speed);
     // 5 "gears": the pitch climbs within each one, then drops a little at the shift
     const gear = Math.min(4, Math.floor(v / 190)), inGear = (v - gear * 190) / 190;
     const base = 48 + gear * 14 + inGear * (70 - gear * 6) + (boost ? 12 : 0);
-    engine.o1.frequency.setTargetAtTime(base, t, 0.06); engine.o2.frequency.setTargetAtTime(base / 2, t, 0.06);
-    engine.f.frequency.setTargetAtTime(350 + v * 1.4 + (boost ? 500 : 0), t, 0.1);
+    engine.o1.frequency.setTargetAtTime(base * E.pitch, t, 0.06); engine.o2.frequency.setTargetAtTime(base * E.pitch * E.sub, t, 0.06);
+    engine.f.frequency.setTargetAtTime((350 + v * 1.4 + (boost ? 500 : 0)) * E.bright, t, 0.1);
     engine.g.gain.setTargetAtTime(want ? (0.03 + 0.03 * Math.min(1, v / 600)) * fxVol() : 0, t, 0.12);
     engine.bf.frequency.setTargetAtTime(boost ? 1400 + v * 1.6 : 700, t, 0.15);
     engine.bg.gain.setTargetAtTime(want && boost ? 0.075 * fxVol() : 0, t, boost ? 0.05 : 0.25);
@@ -1316,12 +1356,13 @@
     for (const [inner, outer] of [["hubAch", "hubStats"], ["hubLb", "hubRanked"]]) if ($(inner).parentElement === $(outer)) $(outer).after($(inner));
     document.querySelectorAll("[data-ht]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ht === A.tab)));
     $("hubSecBtn")?.setAttribute("aria-pressed", String(A.tab === "sec"));
-    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"], ["plinko", "hubPlinko"], ["custom", "hubCustom"]]) $(id).classList.toggle("hidden", A.tab !== t);
+    for (const [t, id] of [["stats", "hubStats"], ["ach", "hubAch"], ["store", "hubStore"], ["sec", "hubSec"], ["friends", "hubFriends"], ["lb", "hubLb"], ["pass", "hubPass"], ["ranked", "hubRanked"], ["plinko", "hubPlinko"], ["custom", "hubCustom"], ["tour", "hubTour"]]) $(id).classList.toggle("hidden", A.tab !== t);
     $("hubGuest").classList.toggle("hidden", !!u);
     $("hubTitle").textContent = u ? u.name : "Guest";
     $("achCount").textContent = A.catalog ? `${u ? A.catalog.ach.filter((a) => u.ach[a.id]).length : 0}/${A.catalog.ach.length}` : "";
     if (A.tab === "stats") renderStats(u); else if (A.tab === "ach") renderAchs(u); else if (A.tab === "sec") renderSec(u);
     else if (A.tab === "pass") renderPass(u); else if (A.tab === "ranked") renderRanked(u); else if (A.tab === "plinko") renderCasino(u); else if (A.tab === "custom") renderCustom(u);
+    else if (A.tab === "tour") { renderTour(u); if (!A.tourAsked) { A.tourAsked = true; socket.emit("tour:get"); setTimeout(() => (A.tourAsked = false), 4000); } }
     else if (A.tab === "friends") { renderFriends(u); if (u && !A.friendsAsked) { A.friendsAsked = true; socket.emit("friends:get"); setTimeout(() => (A.friendsAsked = false), 3000); } }
     else if (A.tab === "lb") { renderLb(); if (!A.lbAsked) { A.lbAsked = true; socket.emit("lb:get", { kind: A.lbKind || "wins", track: A.lbTrack || "" }); setTimeout(() => (A.lbAsked = false), 2000); } }
     else renderStore(u);
@@ -1527,12 +1568,13 @@
     row.append(inp, go); top.appendChild(row); const fm = el("p", "sec-msg"); fm.id = "friendMsg"; fm.setAttribute("role", "status"); top.appendChild(fm);
     box.appendChild(top);
     const tb = tradesBlock(u); if (tb) box.appendChild(tb);
+    const gb = ghostsBlock(u); if (gb) box.appendChild(gb);
     const bb = betsBlock(u); if (bb) box.appendChild(bb);
     if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     const person = (f, buttons) => {
       const d = el("div", "friend");
       const dot = el("span", "fdot" + (f.online ? " on" : "")); dot.title = f.online ? "Online" : "Offline";
-      const tx = el("div"); tx.append(el("b", "", f.name), el("small", "", f.online ? `Online · ${f.where}` : "Offline"));
+      const tx = el("div"); tx.append(el("b", "", f.name), el("small", "", (f.online ? `Online · ${f.where}` : "Offline") + (f.h2h?.n ? ` · Head-to-head ${f.h2h.w}–${f.h2h.n - f.h2h.w}` : "")));
       const bs = el("div", "sec-row"); for (const [label, cls, fn] of buttons) { const b = el("button", "btn " + cls, label); b.type = "button"; b.addEventListener("click", fn); bs.appendChild(b); }
       d.append(dot, tx, bs); return d;
     };
@@ -1546,7 +1588,7 @@
       const b = [];
       if (S.code && S.screen === "lobby") b.push(["Invite", "go", () => socket.emit("friends:invite", f.id)]);
       if (f.online && f.room && f.room !== S.code) b.push(["Join them", "", () => { closeHub(); saveProfile(); S.solo = false; socket.emit("join", { code: f.room, profile: prof }); }]);
-      b.push(["💬", "", () => openFriend(f, "chat")], ["🎁", "", () => openFriend(f, "gift")], ["🤝", "", () => openFriend(f, "trade")], ["⚔️", "", () => openFriend(f, "bet")]);
+      b.push(["💬", "", () => openFriend(f, "chat")], ["🎁", "", () => openFriend(f, "gift")], ["🤝", "", () => openFriend(f, "trade")], ["⚔️", "", () => openFriend(f, "bet")], ["👻", "", () => openFriend(f, "ghost")]);
       b.push(["Remove", "ghost", () => socket.emit("friends:remove", f.id)]);
       box.appendChild(person(f, b));
     }
@@ -2152,6 +2194,7 @@
   }
   function show(screen) {
     S.screen = screen; setTimeout(setTitle, 0); setTimeout(maybeNews, 600);
+    crowdOn(screen === "race" && !S.replaying);
     $("menu").classList.toggle("hidden", screen !== "menu");
     $("lobby").classList.toggle("hidden", screen !== "lobby");
     document.body.classList.toggle("in-lobby", screen === "lobby");
@@ -2287,14 +2330,16 @@
   socket.on("race", (r) => {
     if (S.replaying) stopReplay();
     if (S.photoOn) photoMode(false);
-    RP.buf = []; RP.best = null; RP.bestPend = null; clearTimeout(RP.bestT); S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
-    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null, practice: !!r.practice, ko: !!r.ko };
+    RP.buf = []; RP.best = null; RP.bestPend = null; RP.reel = []; clearTimeout(RP.bestT); S.replayRec = null; S.rankedRes = null; S.rankedRaced = !!r.ranked && !r.quali;
+    S.race = { laps: r.laps, raceNo: r.raceNo, speed: r.speed || 1, info: new Map(r.cars.map((c) => [c.id, c])), fog: !!r.fog, ranked: !!r.ranked, multi: !!r.multi, elim: r.elim || null, practice: !!r.practice, ko: !!r.ko, dayNight: !!r.dayNight, koth: !!r.koth, enduro: r.enduro || 0, tt: !!r.tt, rolling: !!r.rolling };
     $("endPracticeBtn").classList.toggle("hidden", !(r.practice && S.host));
     S.sec = null;
     if (r.elim && !r.quali) setTimeout(() => popup(`💥 ELIMINATION: the last ${r.elim.per === 1 ? "car is" : r.elim.per + " cars are"} knocked out every lap. Stay out of the bottom!`), 900);
     if (r.multi) { const mc = r.cars.find((c) => c.owner === S.me)?.cls; if (mc) setTimeout(() => popup(`${CLASSES[mc].icon} You're racing in the ${CLASSES[mc].name} class. Win your class!`), 900); }
     S.rareCars = new Map(r.cars.filter((c) => c.rare).map((c) => [c.id, c.rare])); S.myRare = null;
-    S.ghost = null; if (r.quali) setTimeout(() => { S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
+    S.ghost = null; if (r.quali) setTimeout(() => {
+      if (S.challenge) { S.ghost = { t: S.challenge.t, path: S.challenge.path, from: S.challenge.from }; popup(`👻 ${S.challenge.from}'s ghost: ${S.challenge.t.toFixed(3)}s. Beat it!`); return; }
+      S.ghost = loadGhost(); if (S.ghost) popup(`👻 Your best lap here (${fmt(S.ghost.t)}) is out there as a ghost. Beat it!`); }, 300);
     if (!r.quali) { S.rival = S.pendingRival?.name || null; const rv = S.pendingRival; S.pendingRival = null; if (rv) setTimeout(() => { banner(`🎯 RIVAL: ${rv.name}`, "#ff6b61"); popup(`Your rival: ${rv.name} (${rv.pts} pts, you have ${rv.mine}). Beat them for +100 coins!`); }, 1500); }
     snaps.length = 0; rt = 0; S.geo = S.track ? buildGeo(S.track) : null; resetTiles();
     S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
@@ -2314,6 +2359,26 @@
     $("lightsSay").innerHTML = S.myCar ? `Press <kbd>${keyName(KEY("boost")).replace(/[<>&]/g, "")}</kbd> the moment the lights go out!` : "Watching this race. You're in the next one!";
     $("goBtn").classList.toggle("hidden", !S.myCar);
     resize();
+    setTimeout(() => introCard(r), 400);
+  });
+  // endurance: you share a car with a teammate and swap at the pit stops
+  socket.on("coDriver", (d) => {
+    if (!S.race) return;
+    S.camTarget = d.car; S.coCar = d.car; document.body.classList.add("spectating"); $("specName").textContent = d.driver;
+    popup(`⏳ ${d.driver} is driving your team's car. You take over at their next pit stop!`);
+  });
+  socket.on("driverSwap", (d) => {
+    const info = S.race?.info.get(d.car); if (info) info.owner = d.owner;
+    if (d.owner === S.me) { S.myCar = d.car; S.coCar = null; S.camTarget = null; document.body.classList.remove("spectating"); banner("🔁 YOUR STINT!", "#3ecf6a"); popup(`You take over from ${d.from || "your teammate"}. Go!`); sfx("go"); }
+    else if (S.myCar === d.car || S.coCar === d.car) { S.myCar = null; S.coCar = d.car; S.camTarget = d.car; document.body.classList.add("spectating"); $("specName").textContent = d.name; popup(`🔁 ${d.name} takes over. You're back in at the next stop.`); }
+    else popup(`🔁 Driver change: ${d.name} takes over from ${d.from || "a teammate"}`);
+  });
+  socket.on("tourLap", (d) => {
+    popup(`🏟️ Tournament lap ${d.lap.toFixed(3)}s${d.pb ? " (your best this round!)" : ""}${d.opp ? ` · vs ${d.opp}: ${d.oppBest ? d.oppBest.toFixed(3) + "s" : "no lap yet"}` : ""}`);
+  });
+  socket.on("ttLap", (d) => {
+    if (d.pb) banner(`⏱️ ${fmt(d.lap)} PB!`, "#a855f7");
+    popup(`⏱️ ${d.lap.toFixed(3)}s${d.rank ? ` · you're #${d.rank} on this track's time trial board` : ""}`);
   });
   let tpTimer = null;
   socket.on("tirePick", (p) => {
@@ -2346,10 +2411,48 @@
   });
   function markPick() { document.querySelectorAll(".tp").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === S.startPick))); }
   socket.on("lightsBegin", () => { tut("lights"); });
-  socket.on("lightsBegin", () => {
+  socket.on("lightsBegin", (d) => {
     clearInterval(tpTimer); $("tirePick").classList.add("hidden");
+    if (d?.rolling) { $("goBtn").classList.add("hidden"); banner("🟡 FORMATION LAP", "#ffc53d"); popup("Rolling start: follow the safety car round. Green flag at the line!"); return; }
     const L = $("lights"); L.classList.remove("hidden"); L.querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
   });
+  socket.on("horn", (d) => {
+    const c = S.cars.get(d.car); if (!c || S.screen !== "race") return;
+    const dist = d.car === S.myCar ? 0 : Math.hypot((c.x || 0) - cam.x, (c.y || 0) - cam.y);
+    hornSound(d.type, Math.max(0, 1 - dist / 900));
+  });
+  // ---- spectator live stats ----
+  S.specStatsOn = !isPhone();
+  $("specStatsBtn").addEventListener("click", () => { S.specStatsOn = !S.specStatsOn; $("specStats").classList.toggle("hidden", !S.specStatsOn); });
+  function renderSpecStats(st) {
+    const box = $("specStats"); box.classList.toggle("hidden", !S.specStatsOn || !!S.myCar); const tb = $("specStatsBody"); tb.textContent = "";
+    (st.standings || []).slice(0, 20).forEach((id, i) => {
+      const c = S.cars.get(id); if (!c) return; const g = st.gaps?.[i];
+      const tr = document.createElement("tr"); if (id === S.camTarget) tr.className = "on";
+      const cells = [i + 1, c.name, i === 0 ? "Leader" : g === -1 ? "+1 lap" : g ? `+${g.toFixed(1)}` : "", `${(TIRES[c.comp]?.name || "")[0] || ""} ${Math.round((c.tire || 0) * 100)}%`, `${c.tyreAge || 0}L`, c.pits || 0];
+      cells.forEach((v, k) => { const td = document.createElement("td"); td.textContent = v; if (k === 1) { const d = el("span", "dot"); d.style.background = c.color; td.prepend(d); } tr.appendChild(td); });
+      tr.addEventListener("click", () => { S.camTarget = id; $("specName").textContent = c.name; });
+      tb.appendChild(tr);
+    });
+  }
+  // ---- before the start: the track card, and the camera walking down the grid ----
+  function introCard(r) {
+    if (settings.intro === "off" || r.quali || S.replaying) return;
+    const T = S.track, L = S.lobby?.settings || {}, card = $("introCard"); if (!T) return;
+    const W = { sunny: "☀️ Dry", rain: "🌧️ Rain", dynamic: "🌦️ Changing", fog: "🌫️ Fog" }[L.weather] || "☀️ Dry";
+    $("icName").textContent = T.name || S.lobby?.trackName || "Today's track";
+    $("icSub").textContent = [`${(T.length / 10000).toFixed(2)} km`, `${r.laps} laps`, W, `${r.cars.filter((c) => !c.owner).length} AI · ${L.aiLevel || ""}`, r.dayNight ? "🌇 Day into night" : "", r.rolling ? "🟡 Rolling start" : "", r.koth ? "👑 King of the hill" : r.enduro ? `⏳ ${Math.round(r.enduro / 60)} min endurance` : ""].filter(Boolean).join(" · ");
+    card.classList.remove("hidden"); clearTimeout(S.introT); S.introT = setTimeout(() => card.classList.add("hidden"), 6500);
+    S.walk = { t0: performance.now(), ids: null };
+  }
+  // pit wall: orders for your AI teammate (only shown if you have one)
+  document.querySelectorAll("[data-order]").forEach((b) => b.addEventListener("click", () => socket.emit("teamOrder", b.dataset.order)));
+  socket.on("teamOrderOk", (d) => { popup(`📻 To ${d.names.join(" & ")}: ${d.msg}`); document.querySelectorAll("[data-order]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.order === d.cmd))); });
+  function refreshPitWall() {
+    const me = S.cars.get(S.myCar), info = S.race?.info, myTeam = me && info?.get(S.myCar)?.team;
+    const has = !!myTeam && [...info.values()].some((x) => x.id !== S.myCar && !x.owner && x.team === myTeam);
+    $("pitWall").classList.toggle("hidden", !has || S.race?.quali);
+  }
   socket.on("crash", (d) => {
     banner("CRASH!", "#ff7043"); sfx("jump"); addShake(18);
     popup(`Hit ${d.with}! Damage ${d.damage}%${d.damage > 40 ? ". Box to fix it!" : ""}`, true);
@@ -2364,8 +2467,9 @@
     sfx("light");
   });
   socket.on("lightsOut", () => { setTimeout(() => tut("boost"), 2500); });
-  socket.on("lightsOut", () => {
+  socket.on("lightsOut", (d) => {
     S.lightsOutAt = performance.now();
+    if (d?.rolling) { sfx("go"); banner("🟢 GREEN FLAG!", "#3ecf6a"); $("goBtn").classList.add("hidden"); return; }
     $("lights").querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
     sfx("go");
     banner("GO!", "#3ecf6a");
@@ -2402,10 +2506,83 @@
     if (!S.replaying) onState(st);
   });
   // Overtake of the race: the server says when a pass beats the best one so far; keep 4s before it and 2s after
+  // Highlight reel: the race's best moments (lead changes, big crashes, the best pass, a photo finish...),
+  // each kept as a short clip in race time. Played back to back after the race, and shareable as a replay.
+  function markMoment(prio, title, before = 3.5) {
+    if (!S.race || S.race.quali || S.replaying || !S.t) return;
+    const m = { t: S.t, prio, title, before };
+    setTimeout(() => {
+      const clip = RP.buf.filter((x) => x.st.t >= m.t - m.before && x.st.t <= m.t + 2);
+      if (clip.length < 15) return;
+      RP.reel = RP.reel || []; RP.reel.push({ ...m, clip });
+      RP.reel.sort((a, b) => b.prio - a.prio || a.t - b.t); RP.reel.length = Math.min(RP.reel.length, 6);
+    }, 2300 / (S.race?.speed || 1));
+  }
+  function reelClip() {
+    const R = (RP.reel || []).slice().sort((a, b) => a.t - b.t); if (!R.length) return null;
+    // one continuous clip: each moment after the other (race time stitched so it keeps counting up)
+    const frames = [], titles = []; let at = 0, lastT = null;
+    for (const m of R) {
+      const t0 = m.clip[0].st.t, a0 = m.clip[0].at, tShift = lastT === null ? 0 : lastT + 0.6 - t0;
+      titles.push({ at, title: m.title });
+      for (const x of m.clip) frames.push({ at: at + (x.at - a0), st: { ...x.st, t: x.st.t + tShift } });
+      lastT = m.clip[m.clip.length - 1].st.t + tShift; at = frames[frames.length - 1].at + 600;
+    }
+    return { frames, titles };
+  }
+  function startReel() {
+    const r = reelClip(); if (!r || !S.race) return;
+    runClip(r.frames, null, null, `🎞️ ${r.titles[0].title}`);
+    for (const x of r.titles.slice(1)) RP.timers.push(setTimeout(() => ($("replayTitle").textContent = `🎞️ ${x.title}`), x.at));
+  }
+  function shareReel() {
+    const r = reelClip(); if (!r) return;
+    const keep = RP.buf; RP.buf = r.frames.map((x) => ({ at: x.at, st: x.st }));
+    const rec = buildReplay({ title: `🎞️ Highlights · ${S.track?.name || "Scribble track"}` }); RP.buf = keep;
+    if (rec) shareReplay(rec);
+  }
+  // Lap chart: everyone's position at the end of every lap (lap 0 = the grid). Your line is bold and named,
+  // the top 3 are named at the end; hover a lap to read the order.
+  function drawLapChart(r) {
+    const cv = $("lapChart"), box = $("lapChartBox"); if (!r) return;
+    const rows = r.rows.filter((x) => x.lp && x.lp.length), laps = Math.max(1, ...rows.map((x) => x.lp.length)), N = r.rows.length;
+    const W = Math.max(280, Math.min(760, (box.clientWidth || 700) - 8)), H = Math.max(220, Math.min(420, 22 * N + 60)), dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
+    const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+    const L = 34, R = W < 420 ? 64 : 96, T = 14, B = 26, X = (lap) => L + (lap / laps) * (W - L - R), Y = (pos) => T + ((pos - 1) / Math.max(1, N - 1)) * (H - T - B);
+    const ink = getComputedStyle(box).color || "#ccc";
+    c.font = "11px system-ui, sans-serif"; c.fillStyle = ink; c.globalAlpha = 0.6; c.textAlign = "right"; c.textBaseline = "middle";
+    for (let p = 1; p <= N; p += N > 12 ? 2 : 1) c.fillText("P" + p, L - 6, Y(p));
+    c.textAlign = "center"; c.textBaseline = "top"; const step = Math.max(1, Math.ceil(laps / 10));
+    for (let l = 0; l <= laps; l += step) c.fillText(l === 0 ? "Grid" : "L" + l, X(l), H - B + 8);
+    c.globalAlpha = 0.12; c.strokeStyle = ink; c.lineWidth = 1; for (let l = 0; l <= laps; l += step) { c.beginPath(); c.moveTo(X(l), T); c.lineTo(X(l), H - B); c.stroke(); }
+    c.globalAlpha = 1;
+    const pts = (x) => [[0, x.grid || N], ...x.lp.map((p, i) => [i + 1, p]).filter((q) => q[1])];
+    const mine = (x) => x.owner === S.me;
+    for (const pass of [0, 1]) for (const x of rows) {
+      if (mine(x) !== !!pass) continue;
+      const P = pts(x); c.strokeStyle = x.color; c.lineWidth = mine(x) ? 3.5 : 2; c.globalAlpha = mine(x) ? 1 : 0.55; c.lineJoin = c.lineCap = "round";
+      c.beginPath(); P.forEach(([l, p], i) => (i ? c.lineTo(X(l), Y(p)) : c.moveTo(X(l), Y(p)))); c.stroke();
+      const [ll, lp] = P[P.length - 1]; c.globalAlpha = 1; c.fillStyle = x.color; c.beginPath(); c.arc(X(ll), Y(lp), mine(x) ? 5 : 4, 0, Math.PI * 2); c.fill();
+      if (mine(x) || r.rows.indexOf(x) < 3) { c.fillStyle = ink; c.textAlign = "left"; c.textBaseline = "middle"; c.font = `${mine(x) ? 700 : 500} 12px system-ui, sans-serif`; c.fillText(`${x.name}${mine(x) ? " (you)" : ""}`, X(ll) + 9, Y(lp)); c.font = "11px system-ui, sans-serif"; }
+    }
+    cv.onpointermove = (e) => {
+      const rc = cv.getBoundingClientRect(), lap = Math.round(((e.clientX - rc.left - L) / (W - L - R)) * laps), tip = $("lapChartTip");
+      if (lap < 0 || lap > laps) { tip.classList.add("hidden"); return; }
+      const order = rows.map((x) => [x, lap === 0 ? x.grid || N : x.lp[lap - 1]]).filter((q) => q[1]).sort((a, b) => a[1] - b[1]).slice(0, 6);
+      tip.textContent = `${lap === 0 ? "Grid" : "Lap " + lap}: ` + order.map(([x, p]) => `P${p} ${x.name}`).join(" · ");
+      tip.classList.remove("hidden");
+    };
+    cv.onpointerleave = () => $("lapChartTip").classList.add("hidden");
+  }
   function grabBestPass() {
     const P = RP.bestPend; if (!P) return; RP.bestPend = null; clearTimeout(RP.bestT);
     const clip = RP.buf.filter((m) => m.st.t >= P.d.t - 4 && m.st.t <= P.d.t + 2);    // (race time: 4s before the pass, 2s after)
-    if (clip.length > 20) RP.best = { clip: clip.map((m) => ({ at: m.at - clip[0].at, st: m.st })), d: P.d };
+    if (clip.length > 20) {
+      RP.best = { clip: clip.map((m) => ({ at: m.at - clip[0].at, st: m.st })), d: P.d };
+      RP.reel = (RP.reel || []).filter((x) => !x.pass); RP.reel.push({ t: P.d.t, prio: 3, title: `🏎️ ${P.d.an} passes ${P.d.bn}`, clip, pass: true });
+      RP.reel.sort((a, b) => b.prio - a.prio || a.t - b.t); RP.reel.length = Math.min(RP.reel.length, 6);
+    }
   }
   socket.on("bestPass", (d) => { clearTimeout(RP.bestT); RP.bestPend = { d }; RP.bestT = setTimeout(grabBestPass, 900 / (S.race?.speed || 1)); });      // (it arrives 1.5s after the pass: 2s after it is soon)
   function startBestPass() {
@@ -2457,17 +2634,29 @@
       const [id, x, y, h, speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp, punct, surf, inPit, dmg, crashed, elev, vx, vy, idx, nitroOn, nitro, slip, ghost, drs, def, out] = a;
       let c = S.cars.get(id);
       if (!c) { c = { id, x, y, h, lvl: elev, ...S.race?.info.get(id) }; S.cars.set(id, c); }
-      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1, def: def === 1, out: out === 1 });
+      Object.assign(c, { speed, tire, laps, pits, pit, mistake, fin, slide, onTrack, boost, prog, best, comp: SHORT_TO_KEY[comp] || "inter", punct, surf, inPit, dmg, crashed, idx, nitroOn, nitro, slip, ghost, drs: drs === 2, drsAvail: drs === 1, def: def === 1, out: out === 1, temp: a[33] ?? 100, tyreAge: a[34] ?? 0, leadT: a[35] || 0 });
     }
     lapDelta();
+    if (!S.pwAt || performance.now() - S.pwAt > 1000) { S.pwAt = performance.now(); refreshPitWall(); }
     if (S.tutorial) {            // tutorial hints that depend on your car
       const c = S.cars.get(S.myCar);
       if (c) { if (c.tire < 0.45 && !S.box) tut("pit"); if (S.tutPits !== undefined && c.pits > S.tutPits) tut("afterPit"); S.tutPits = c.pits; }
     }
     S.weather = st.weather;
+    // king of the hill: who's held the lead longest / endurance: time left
+    { const mc = $("modeChip"); let txt = "";
+      if (S.race?.koth) { const top = [...S.cars.values()].filter((c) => c.leadT > 0).sort((a, b) => b.leadT - a.leadT).slice(0, 3); const me = S.cars.get(S.myCar);
+        txt = "👑 " + (top.map((c) => `${c.name.split(" ")[0]} ${c.leadT.toFixed(0)}s`).join(" · ") || "Lead the race to start your clock") + (me && !top.includes(me) ? ` · you ${(me.leadT || 0).toFixed(0)}s` : ""); }
+      else if (S.race?.enduro && st.enduro >= 0) { const m = Math.floor(st.enduro / 60), sec = String(st.enduro % 60).padStart(2, "0"); txt = st.enduro > 0 ? `⏳ ${m}:${sec} left` : "⏳ Time's up: last lap!"; }
+      mc.classList.toggle("hidden", !txt); mc.textContent = txt; }
+    // spectators: live timing (gap, tyres, tyre age, stops)
+    if (!S.myCar && S.specStatsOn && (!S.ssAt || performance.now() - S.ssAt > 500)) { S.ssAt = performance.now(); renderSpecStats(st); }
+    if (S.myCar) $("specStats").classList.add("hidden");
+    // red flag: a countdown in the middle of the screen
+    { const rb = $("rfBox"); rb.classList.toggle("hidden", !st.rf); if (st.rf) $("rfSecs").textContent = st.rf; }
     if (S.myCar) {
       const pos = S.standings.indexOf(S.myCar) + 1;
-      if (pos && S.lastPos !== 99 && pos !== S.lastPos) { sfx(pos < S.lastPos ? "pass" : "lost"); const el = $("posText"); el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+      if (pos && S.lastPos !== 99 && pos !== S.lastPos) { if (pos < S.lastPos) crowdRoar(pos <= 3 ? 1 : 0.6); sfx(pos < S.lastPos ? "pass" : "lost"); const el = $("posText"); el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
       S.lastPos = pos;
     }
   }
@@ -2548,7 +2737,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -2623,6 +2812,12 @@
     });
     for (let i = C.list.length; i < C.n; i++) { const li = el("li", "cal-item empty"); li.append(el("span", "cal-n", String(i + 1)), el("small", "", "Empty: add a track")); ol.appendChild(li); }
   }
+  $("sEnduro").addEventListener("change", () => { if (S.host) socket.emit("settings", { enduroMin: Number($("sEnduro").value) }); });
+  socket.on("ttBoard", (b) => {
+    const ol = $("ttList"); ol.textContent = "";
+    if (!b || !b.list.length) { ol.appendChild(el("li", "preset-note", "No times yet on this track. Set the first one!")); return; }
+    b.list.forEach((x, i) => { const li = el("li", "tt-row" + (x.name === A.user?.name ? " me" : "")); li.append(el("span", "", `${i + 1}. ${x.name}`), el("b", "", x.v.toFixed(3) + "s")); ol.appendChild(li); });
+  });
   $("calAddBtn").addEventListener("click", () => { if (S.host) socket.emit("cal:add"); });
   $("sChampN").addEventListener("change", () => { if (S.host) socket.emit("settings", { champN: Number($("sChampN").value) }); });
   document.querySelectorAll(".mode-card").forEach((b) => b.addEventListener("click", () => { if (S.host && S.lobby?.phase === "lobby") socket.emit("settings", { mode: b.dataset.mode }); }));
@@ -2785,14 +2980,15 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" ? (s[key] ? "on" : "off") : String(s[key]);
+      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" || key === "dayNight" ? (s[key] ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
     const multi = s.mode === "multi" && !l.ranked, mode = l.ranked ? "normal" : s.mode || "normal";
     document.querySelectorAll(".mode-card").forEach((b) => { b.setAttribute("aria-checked", String(b.dataset.mode === mode)); b.disabled = !S.host || l.phase !== "lobby"; });
     { const n = l.players.filter((p) => !p.spectator).length + (s.ai || 0), per = Math.max(1, Math.ceil((n - 1) / 12)), en = $("elimNote");
-      en.classList.toggle("hidden", mode !== "elim" && mode !== "practice");
+      en.classList.toggle("hidden", mode !== "elim" && mode !== "practice" && mode !== "koth");
+      if (mode === "koth") en.textContent = "👑 King of the hill: the race runs as normal, but a clock runs for whoever is in the lead. Most time in first place wins (points go by that order too).";
       if (mode === "practice") en.textContent = "🏋️ Practice: no AI (the AI drivers setting is ignored) and no stats or coins. Sector times, your ghost and the pit stop minigame are all on. The host ends it from the race screen.";
       else if (mode === "elim") en.textContent = n < 2 ? "💥 Elimination needs at least 2 cars (add some AI)." : `💥 ${n} cars: ${per === 1 ? "the last car is" : `the last ${per} cars are`} knocked out every lap, so the race is ${Math.ceil((n - 1) / per)} laps (the Laps setting is ignored).`; }
     $("modePick").classList.toggle("hidden", !!l.ranked);
@@ -2801,6 +2997,10 @@
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
     renderCalendar(l, mode === "champ" && !l.ranked);
+    $("enduroOpts").classList.toggle("hidden", mode !== "endur" || !!l.ranked);
+    if (document.activeElement !== $("sEnduro")) $("sEnduro").value = String(s.enduroMin || 20); $("sEnduro").disabled = !S.host || l.phase !== "lobby";
+    $("ttOpts").classList.toggle("hidden", mode !== "tt" || !!l.ranked);
+    if (mode === "tt" && !l.ranked && S.ttKey !== (l.trackName || "") + (S.track?.length || 0)) { S.ttKey = (l.trackName || "") + (S.track?.length || 0); socket.emit("tt:board"); }
     { const ss = $("sSeason"); if (mode === "champ" && !l.ranked) { if (![...ss.options].some((o) => o.value === String(s.season))) { const o = document.createElement("option"); o.value = String(s.season); o.textContent = `${s.season} races`; ss.appendChild(o); } ss.value = String(s.season); ss.disabled = true; ss.title = "Set by the championship calendar (Mode tab)"; } else ss.title = ""; }
     // teams on/off, XP rate, public/private
     $("sTeamColors").disabled = !S.host || l.phase !== "lobby" || !s.teams;
@@ -2991,6 +3191,48 @@
     c.strokeStyle = "rgba(255,255,255,0.18)"; c.lineWidth = 2 / B.s; c.strokeRect(0, 0, B.bw, B.bh);
     return cv;
   }
+  // ---- track objects: grandstands (beside the track), banners (an arch over it), tunnels and bridges (over the
+  // cars). "ground" ones are drawn under the cars, the rest on top. In a tunnel your own car shows as an arrow.
+  function drawObjects(c, T, layer, me = null, board = false) {
+    const D = T?.decor; if (!D || !D.length) return;
+    const N = T.N, P = (i) => T.pts[((i % N) + N) % N], Nn = (i) => T.nor[((i % N) + N) % N], ang = (i) => { const q = T.tan[((i % N) + N) % N]; return Math.atan2(q.y, q.x); };
+    for (const d of D) {
+      const i = d.i, p = P(i), n = Nn(i), hw = hwAt(T, i), a = ang(i);
+      if (d.k === "stand" && layer === "ground") {
+        const off = hw + 62, x = p.x + n.x * off * d.side, y = p.y + n.y * off * d.side;
+        c.save(); c.translate(x, y); c.rotate(a + (d.side < 0 ? Math.PI : 0));
+        c.fillStyle = "#3b4150"; c.fillRect(-90, -30, 180, 60); c.fillStyle = "#e5e7eb"; c.fillRect(-90, 24, 180, 6);
+        const cols = ["#ef4444", "#3b82f6", "#facc15", "#22c55e", "#f472b6", "#f8fafc"];
+        for (let r = 0; r < 4; r++) for (let k = 0; k < 15; k++) { c.fillStyle = cols[(r * 7 + k * 3 + i) % cols.length]; c.beginPath(); c.arc(-82 + k * 11.5, -20 + r * 11, 3.6, 0, Math.PI * 2); c.fill(); }
+        c.fillStyle = "#ff2d55"; c.fillRect(-90, -36, 180, 6);
+        c.restore();
+      } else if (d.k === "banner" && layer === "top") {
+        c.save(); c.translate(p.x, p.y); c.rotate(a);
+        const w = hw + 14; c.fillStyle = "#1f2937"; c.fillRect(-5, -w - 6, 10, 10); c.fillRect(-5, w - 4, 10, 10);
+        c.globalAlpha = board ? 1 : 0.92; c.fillStyle = "#ff2d55"; c.fillRect(-11, -w, 22, w * 2);
+        c.rotate(Math.PI / 2); c.fillStyle = "#fff"; c.font = "900 15px 'Titillium Web', 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("SCRIBBLE GP", 0, 1);
+        c.restore();
+      } else if (d.k === "tunnel" && layer === "top") {
+        const len = 16, L = [], R = [];
+        for (let k = 0; k <= len; k++) { const q = P(i + k), m = Nn(i + k), h = hwAt(T, (i + k) % N) + 16; L.push([q.x + m.x * h, q.y + m.y * h]); R.push([q.x - m.x * h, q.y - m.y * h]); }
+        c.save(); c.globalAlpha = board ? 0.85 : 1;
+        c.beginPath(); L.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); for (let k = R.length - 1; k >= 0; k--) c.lineTo(R[k][0], R[k][1]); c.closePath();
+        c.fillStyle = "#4b5563"; c.fill(); c.lineWidth = 6; c.strokeStyle = "#1f2937"; c.stroke();
+        c.strokeStyle = "rgba(255,255,255,0.12)"; c.lineWidth = 3; for (let k = 2; k < len; k += 3) { c.beginPath(); c.moveTo(L[k][0], L[k][1]); c.lineTo(R[k][0], R[k][1]); c.stroke(); }
+        c.restore();
+        if (me && me.x !== undefined && me.idx !== undefined && ((me.idx - i + N) % N) <= len) {            // you're in the tunnel: an arrow where you are
+          c.save(); c.translate(me.x, me.y); c.rotate(me.h); c.fillStyle = "#ffcc1f"; c.strokeStyle = "#000"; c.lineWidth = 2;
+          c.beginPath(); c.moveTo(22, 0); c.lineTo(-12, -13); c.lineTo(-5, 0); c.lineTo(-12, 13); c.closePath(); c.fill(); c.stroke(); c.restore();
+        }
+      } else if (d.k === "bridge" && layer === "top") {
+        c.save(); c.translate(p.x, p.y); c.rotate(a);
+        const w = hw + 70; c.globalAlpha = board ? 0.9 : 1; c.fillStyle = "#9ca3af"; c.fillRect(-22, -w, 44, w * 2);
+        c.fillStyle = "#6b7280"; c.fillRect(-22, -w, 5, w * 2); c.fillRect(17, -w, 5, w * 2);
+        c.strokeStyle = "rgba(255,255,255,0.35)"; c.setLineDash([10, 10]); c.lineWidth = 2; c.beginPath(); c.moveTo(0, -w); c.lineTo(0, w); c.stroke(); c.setLineDash([]);
+        c.restore();
+      }
+    }
+  }
   function drawBoard() {
     if (!B.w) return;
     boardDims();
@@ -3022,9 +3264,11 @@
           c.beginPath(); c.moveTo(27, 0); c.lineTo(-18, -21); c.lineTo(-18, 21); c.closePath(); c.fill(); c.restore();
         }
       };
+      drawObjects(c, T, "ground");
       arrows(false);
       for (const br of G.bridges) drawBridge(c, T, G, th, br);
       arrows(true);
+      drawObjects(c, T, "top", null, true);
       // DRS zones: a green band over the road, and "DRS" where each one starts
       (T.drs || []).forEach((z, zi) => {
         c.beginPath();
@@ -3405,6 +3649,26 @@
     sfx("tick"); refreshUndo();
   }
   $("trackUndo").addEventListener("click", undoAnything);
+  socket.on("joined", () => {
+    if (S.pendingGhost) { const c = S.pendingGhost; S.pendingGhost = null; setTimeout(() => socket.emit("ghost:load", c), 300); }
+    if (S.pendingTour) { S.pendingTour = false; setTimeout(() => socket.emit("tour:load"), 300); }
+  });
+  $("predictBtn").addEventListener("click", () => socket.emit("predict:list"));
+  socket.on("predictList", (d) => {
+    const box = $("predictBox"), list = $("predictCars"); list.textContent = "";
+    if (!d) return;
+    box.classList.remove("hidden");
+    $("predictNote").textContent = d.mine ? `You picked ${d.mine.name}: 🪙 ${d.mine.coins} at ${d.mine.odds}x` : d.open ? "Who wins? Pay-outs by grid position: the further back, the more you win." : "Predictions are closed for this race.";
+    for (const c of d.cars) {
+      const b = el("button", "btn predict-car"); b.type = "button"; b.disabled = !d.open || !!d.mine;
+      const dot = el("span", "dot"); dot.style.background = c.color; b.append(dot, el("b", "", `P${c.grid} ${c.name}`), el("small", "", `${c.odds}x`));
+      b.addEventListener("click", () => { const coins = Math.floor(Number($("predictCoins").value) || 0); socket.emit("predict", { car: c.id, coins }); });
+      list.appendChild(b);
+    }
+  });
+  socket.on("predictOk", (d) => { $("predictBox").classList.add("hidden"); popup(`🎲 ${d.coins} on ${d.name} at ${d.odds}x: win ${d.win.toLocaleString()} if they do it!`); });
+  $("predictClose").addEventListener("click", () => $("predictBox").classList.add("hidden"));
+  socket.on("ghostChallenge", (g) => { S.challenge = g; boardHint(`👻 ${g.from}'s lap: ${g.t.toFixed(3)}s. Press Start, then beat their ghost!`, false); });
   socket.on("joined", () => { UNDO.stack = []; UNDO.restoring = false; refreshUndo(); });
   socket.on("trackResult", (r) => { if (UNDO.restoring && (r.error || !P.steps.length)) { UNDO.restoring = false; clearTimeout(UNDO.safety); } });
   socket.on("lobby", () => refreshUndo());
@@ -3425,6 +3689,14 @@
   $("moreBtn").addEventListener("click", () => { const open = $("moreTools").classList.toggle("hidden") === false; $("moreBtn").setAttribute("aria-expanded", String(open)); $("moreBtn").classList.toggle("on", open); requestAnimationFrame(sizeBoard); });
   document.querySelectorAll("[data-tf]").forEach((b) => b.addEventListener("click", () => (b.dataset.tf === "wide" || b.dataset.tf === "narrow" ? startWidthPick(b.dataset.tf) : transformTrack(b.dataset.tf))));
   $("closeLoop").addEventListener("click", finishDraft);
+  document.querySelectorAll("[data-decor]").forEach((b) => b.addEventListener("click", () => {
+    if (!S.host) return;
+    S.decorTool = S.decorTool === b.dataset.decor ? null : b.dataset.decor;
+    document.querySelectorAll("[data-decor]").forEach((x) => x.classList.toggle("on", x.dataset.decor === S.decorTool));
+    if (S.decorTool) boardHint({ stand: "🏟️ Click beside the track to put a grandstand there (on that side).", banner: "🎌 Click on the track for a banner arch over it.", tunnel: "🚇 Click on the track where the tunnel starts.", bridge: "🌉 Click on the track for a bridge over it." }[S.decorTool], false);
+  }));
+  $("decorUndo").addEventListener("click", () => S.host && socket.emit("decor:undo"));
+  $("decorClear").addEventListener("click", () => S.host && socket.emit("decor:clear"));
   $("startLineBtn").addEventListener("click", () => {
     if (!S.track) { boardHint("Draw a track first.", true); return; }
     endCut(); endDrs(); startMode = !startMode; $("startLineBtn").classList.toggle("on", startMode);
@@ -3638,7 +3910,7 @@
     const x = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f, h = a[3] + wrapAng(b[3] - a[3]) * f;
     ctx.save(); ctx.globalAlpha = 0.38;
     drawCar(ctx, { color: "#9ad0ff", livery: me.livery || "plain", number: me.number, extras: null }, x, y, h, 1, {});
-    ctx.globalAlpha = 0.75; ctx.font = "700 12px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "#cfe6ff"; ctx.fillText(`👻 best ${fmt(G.t)}`, x, y - 22);
+    ctx.globalAlpha = 0.75; ctx.font = "700 12px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "#cfe6ff"; ctx.fillText(G.from ? `👻 ${G.from} ${fmt(G.t)}` : `👻 best ${fmt(G.t)}`, x, y - 22);
     ctx.restore();
   }
   // ---- live delta to your best lap: time at each point of this lap vs. the same point on your best lap ----
@@ -3651,7 +3923,8 @@
       if (L.start !== null && me.laps === L.lap + 1) {
         const lapT = S.t - L.start;
         if (!L.best || lapT < L.bestT) { L.best = L.cur; L.bestT = lapT; }
-        if (S.race?.quali && L.path?.length > 20) saveGhost(lapT, L.path);
+        if (S.challenge && S.race?.quali && lapT < S.challenge.t && !S.challenge.done) { S.challenge.done = true; banner(`👻 YOU BEAT ${S.challenge.from.toUpperCase()}!`, "#a855f7"); socket.emit("ghost:beat", { code: S.challenge.code, t: lapT }); }
+        if (S.race?.quali && L.path?.length > 20 && !S.challenge) saveGhost(lapT, L.path);
       }
       L.cur = []; L.path = []; L.start = me.laps >= 0 ? S.t : null; L.lap = me.laps;
     }
@@ -3918,6 +4191,7 @@
     const p = toBoard(e);
     if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
+    if (S.decorTool) { socket.emit("decor:add", { k: S.decorTool, x: p[0], y: p[1] }); return; }
     if (drsMode) {
       if (!drsMode.a) { drsMode.a = p; boardHint("Now click where the DRS zone ends (just before the braking point).", false); drawBoard(); }
       else { socket.emit("drs:add", { a: drsMode.a, b: p }); endDrs(); drawBoard(); }
@@ -4259,6 +4533,8 @@
   }
   $("replayBtn").addEventListener("click", startReplay);
   $("bestPassBtn").addEventListener("click", startBestPass);
+  $("reelBtn").addEventListener("click", startReel); $("reelShareBtn").addEventListener("click", shareReel);
+  $("lapChartBtn").addEventListener("click", () => { const w = $("lapChartBox"); w.classList.toggle("hidden"); if (!w.classList.contains("hidden")) drawLapChart(S.lastResults); });
   $("replayExit").addEventListener("click", stopReplay);
   $("replayCam").addEventListener("click", () => {
     const ids = S.standings; if (!ids.length) return;
@@ -4307,13 +4583,15 @@
     r.rows.forEach((x, i) => {
       const tr = document.createElement("tr"); if (x.owner === S.me) tr.className = "me"; tr.style.animationDelay = (0.4 + i * 0.06) + "s";
       const td = (t, cls) => { const d = document.createElement("td"); d.textContent = t; if (cls) d.className = cls; return d; };
-      const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}${r.dotd?.name === x.name ? " 🏆" : ""}${S.rival === x.name ? " 🎯" : ""}`);
+      const nm = td(""); const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = x.color; nm.append(dot, `#${x.number} ${x.name}${r.dotd?.name === x.name ? " 🏆" : ""}${S.rival === x.name ? " 🎯" : ""}${x.lead !== undefined && x.lead !== null ? `  👑 ${x.lead.toFixed(1)}s` : ""}`);
       if (r.multi && x.cls) { const ct = document.createElement("span"); ct.className = "cls-tag sm"; ct.style.background = CLASSES[x.cls].col; ct.textContent = `${CLASSES[x.cls].short} P${x.cpos}`; nm.append(" ", ct); }
       tr.append(td(i + 1), nm, td(x.team || ""), td(x.best ? fmt(x.best) : "--", "n"), td(x.pits, "n"), td("+" + x.pts, "n"));
       body.appendChild(tr);
     });
     // Driver of the Day (most places gained)
     grabBestPass();             // (a pass right before the flag: keep what we have of it)
+    setTimeout(() => { const n = (RP.reel || []).length; $("reelBtn").classList.toggle("hidden", n < 2); $("reelBtn").textContent = `🎞️ Highlights (${n})`; $("reelShareBtn").classList.toggle("hidden", n < 2 || !A.user); }, 300);
+    $("lapChartBox").classList.add("hidden"); $("lapChartBtn").classList.toggle("hidden", !r.rows.some((x) => x.lp && x.lp.length > 1));
     { const C = S.lobby?.cal, cl = $("champRoundLine"), on = !!(C && C.list.length && r.seasonLen);
       cl.classList.toggle("hidden", !on);
       if (on) cl.textContent = r.raceNo >= r.seasonLen ? `🏆 That was the final round (${r.raceNo} of ${r.seasonLen})!` : `🏆 Round ${r.raceNo} of ${r.seasonLen} done. Next up: ${C.list[r.raceNo]?.label || "the next track"}`; }
@@ -5113,6 +5391,15 @@
     if (!PH.on) interpCars(dt);
     if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; }
     let target = S.camTarget && S.cars.get(S.camTarget);
+    // grid walk: before the lights, the camera drives down the grid from pole, one car at a time
+    if (S.walk && (S.phase === "tires" || S.phase === "lights") && !PH.on) {
+      if (!S.walk.ids && S.standings?.length) S.walk.ids = S.standings.slice();
+      const k = (performance.now() - S.walk.t0) / 1000 - 1.2, ids = S.walk.ids || [], i = Math.floor(k / 0.7);
+      if (ids.length && k >= 0 && i < Math.min(ids.length, 12)) {
+        target = S.cars.get(ids[i]) || target; const info = S.race?.info.get(ids[i]);
+        const gw = $("gridWalk"); gw.classList.remove("hidden"); gw.textContent = `P${i + 1} · ${target?.name || ""}${info?.team ? ` · ${info.team}` : ""}${ids[i] === S.myCar ? " (you)" : ""}`;
+      } else if (k > 0 && ids.length) { $("gridWalk").classList.add("hidden"); S.walk = null; }
+    } else if (S.walk && S.phase === "race") { S.walk = null; $("gridWalk").classList.add("hidden"); }
     if (!target) target = settings.cam === "leader" || !S.myCar ? S.cars.get(S.standings[0]) : S.cars.get(S.myCar);
     if (!target) target = [...S.cars.values()][0];
     if (!target || target.x === undefined) return;
@@ -5218,7 +5505,7 @@
     const mineLast = (a, b) => (a.id === S.myCar) - (b.id === S.myCar);
     const drawOne = (c) => {
       if (!visible(c)) return;
-      if (th.night) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.h); ctx.drawImage(headlight(), -30, -110); ctx.restore(); }
+      if (th.night || (S.race?.dayNight && duskLevel() > 0.35)) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.h); ctx.drawImage(headlight(), -30, -110); ctx.restore(); }
       if (c.ghost && !c.fin) ctx.globalAlpha = 0.5;
       if (c.lvl > 0.05) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(c.x + 16 * c.lvl, c.y + 22 * c.lvl, 26, 15, c.h, 0, Math.PI * 2); ctx.fill(); }
       if (c.slip && settings.lines === "on" && !reducedMotion) {          // slipstream: wind streaks off the car
@@ -5268,8 +5555,10 @@
         ctx.globalAlpha = 1;
       }
     };
+    drawObjects(ctx, t, "ground");
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
+    drawObjects(ctx, t, "top", S.cars.get(S.myCar));
     // fireworks (in the world, around the winner)
     fireworks = fireworks.filter((fw) => {
       const k = (now - fw.t) / 1300; if (k > 1) return false;
@@ -5293,11 +5582,13 @@
       }
     }
     const fogX = PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, fogY = PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z;
-    if (th.night) {
+    // day into night: the light fades as the race goes on (from about a third of the way in)
+    const dusk = !th.night && S.race?.dayNight ? duskLevel() : 0;
+    if (th.night || dusk > 0.02) {
       if (settings.fx === "off") {       // cheap version: just darker round the edges
         if (!S.vignette || S.vignette.w !== w || S.vignette.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(0,0,20,0)"); g.addColorStop(1, "rgba(0,0,20,0.55)"); S.vignette = { g, w, h }; }
         ctx.fillStyle = S.vignette.g; ctx.fillRect(0, 0, w, h);
-      } else drawNight(w, h, dpr, z, shx, shy, th, S.race?.fog ? { now, x: fogX, y: fogY } : null);
+      } else drawNight(w, h, dpr, z, shx, shy, th, S.race?.fog ? { now, x: fogX, y: fogY } : null, th.night ? 1 : dusk);
     }
     if (S.race?.fog && !(th.night && settings.fx !== "off")) drawFog(w, h, !!th.night, now, fogX, fogY);
     // DRS open: the screen edges glow green (with a pulse when it opens), and green speed streaks
@@ -5434,10 +5725,10 @@
   socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; COMM.half = false; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
   socket.on("feed", (f) => {
     const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
-    if (f.t === "crash") { if (f.big) say("crashBig", null, 2, 8000); else say("crash", null, 1, 15000); }
-    else if (f.t === "winner") say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
+    if (f.t === "crash") { crowdRoar(f.big ? 1 : 0.5); markMoment(f.big ? 3 : 1, `💥 ${f.name} and ${f.other} crash`, 2); if (f.big) say("crashBig", null, 2, 8000); else say("crash", null, 1, 15000); }
+    else if (f.t === "winner" && (crowdRoar(1.3), markMoment(2, `🏁 ${f.name} wins`), true)) say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
     else if (f.t === "classWin" && !mine(f.name)) say("classWin", f.name, 3);
-    else if (f.t === "photo") say("photo", null, 2);
+    else if (f.t === "photo") { crowdRoar(1.3); markMoment(4, "📸 Photo finish!"); say("photo", null, 2); }
     else if (f.t === "lastLap") say("lastLap", null, 1);
     else if (f.t === "scOut") say("scOut", null, 2);
     else if (f.t === "scIn") say("scIn", null, 2);
@@ -5450,11 +5741,15 @@
     else if (f.t === "pitSlow") say("pitSlow", null, 0, 15000);
     else if (f.t === "mistake") say("mistake", null, 0, 20000);
     else if (f.t === "qko") say("qko", null, 2);
+    else if (f.t === "timeUp") { say("lastLap", null, 2); banner("⏳ TIME'S UP: LAST LAP!", "#ffc53d"); }
+    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s: crews are fixing the cars`, true); }
+    else if (f.t === "rfRestart") { banner("RESTART", "#ffc53d"); popup("Restarting in order behind the safety car"); }
   });
   // new leader (from the race state): "Bolt takes the lead!"
   function commLeader(st) {
     if (!S.race || S.race.quali || st.phase !== "race") return;
     const lead = st.standings?.[0], c = S.cars.get(lead);
+    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) { crowdRoar(0.9); markMoment(3, `🥇 ${c.name} takes the lead`); }
     if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, lead === S.myCar ? 2 : 1, 15000);
     COMM.leader = lead;
     // halfway, and a close fight for the lead
@@ -5656,7 +5951,7 @@
     if (S.stratBox && me.id === S.myCar && me.laps + 1 === S.stratBox && !S.box && !me.fin && S.stratTold !== S.stratBox) { S.stratTold = S.stratBox; popup(`📋 The plan says: box this lap! Press ${keyName(KEY("box"))}.`); sfx("tick"); }
     const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
     $("speedText").textContent = `${Math.round(spd)} ${settings.units === "mph" ? "mph" : "km/h"}`;
-    $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
+    $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.temp < 60 ? "  ·  ❄️ COLD" : me.temp < 85 ? "  ·  warming up" : "") + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
     $("tireName").style.color = me.punct || me.dmg > 0.4 ? "#ff8a80" : "";
     if (me.inPit) $("speedText").textContent = "PIT LIMITER";
     const W = S.weather;
@@ -5748,6 +6043,7 @@
     if (e.code === KEY("box") && !e.repeat) { e.preventDefault(); socket.emit("box"); sfx("tick"); }
     if (e.code === KEY("drs") && !e.repeat) { e.preventDefault(); openDrs(); }
     if (e.code === KEY("defend") && !e.repeat && S.screen === "race") { e.preventDefault(); toggleDefend(); }
+    if (e.code === KEY("horn") && !e.repeat && S.screen === "race" && S.myCar) { e.preventDefault(); socket.emit("horn", settings.horn); }
     if (e.code === KEY("spectate")) {       // spectate: cycle who the camera follows
       e.preventDefault();
       const ids = S.standings; const cur = ids.indexOf(S.camTarget ?? S.myCar);
@@ -6075,6 +6371,15 @@
       box.append(l1, l2, l3, go); if (cd) tickCd(go, "🎁 Send gift");
       return;
     }
+    if (FR.tab === "ghost") {
+      const g = typeof loadGhost === "function" && S.track ? loadGhost() : null;
+      box.appendChild(el("p", "preset-note", `Send ${f.name} your best lap on the track you're on: they race against your ghost, and you hear about it when they beat you. (You need to have done a qualifying, practice or time trial lap on this track.)`));
+      if (f.h2h?.n) box.appendChild(el("p", "bet-live", `Head-to-head: you ${f.h2h.w} – ${f.h2h.n - f.h2h.w} ${f.name} (${f.h2h.n} race${f.h2h.n === 1 ? "" : "s"} together)`));
+      if (!g) { box.appendChild(el("p", "preset-note", S.track ? "No ghost lap on this track yet. Do a lap in practice or time trial first." : "Load (or race) a track first, then set a lap on it.")); return; }
+      const go = el("button", "btn go", `👻 Send my ${fmt(g.t)} lap`); go.type = "button";
+      go.addEventListener("click", () => { socket.emit("ghost:send", { to: f.id, t: g.t, path: g.path }); go.disabled = true; });
+      box.appendChild(go); return;
+    }
     if (FR.tab === "bet") {
       const live = (u.bets?.live || []).find((b) => b.vs === f.id);
       box.appendChild(el("p", "preset-note", `Bet ${f.name} coins on a 1v1: you both put in the same amount, and whoever finishes ahead in your next race together takes it all. Leaving that race counts as losing. Not raced each other within 3 days? You both get your coins back.`));
@@ -6106,6 +6411,48 @@
     const go = el("button", "btn go", cd ? `Cooldown ${cd}s` : "🤝 Send offer"); go.type = "button"; go.disabled = !!cd;
     go.addEventListener("click", () => socket.emit("trade:offer", { to: f.id, give: { coins: gc.value, item: gi.value || null }, want: { coins: wc.value, item: wi.value || null } }));
     box.append(g, go); if (cd) tickCd(go, "🤝 Send offer");
+  }
+  // ---- weekend tournament (hub tab) ----
+  socket.on("tour", (T) => { A.tour = T; if (A.tab === "tour") renderTour(A.user); });
+  function renderTour(u) {
+    const box = $("hubTour"); box.textContent = ""; const T = A.tour;
+    box.appendChild(el("p", "hub-h", "🏟️ Weekend tournament: sign up during the week. On Saturday a knockout bracket is drawn (seeded by ranked SR). Each round, the faster lap on this weekend's tournament track wins your match. No lap? The higher seed goes through."));
+    if (!T) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
+    const now = Date.now(), dd = (ms) => { const h = Math.max(0, Math.round(ms / 3600000)); return h >= 48 ? `${Math.round(h / 24)} days` : `${h}h`; };
+    const live = now >= T.begin, top = el("div", "tour-top");
+    top.appendChild(el("b", "", live ? (T.champion ? `🏆 Champion: ${T.champion}` : T.rounds.length && T.rounds[0].length ? `Round ${T.round + 1} of ${T.rounds.length ? Math.log2(T.rounds[0].length * 2) : 0} · ends in ${dd(T.roundEnds - now)}` : "Not enough players this week") : `Sign-ups open · bracket drawn in ${dd(T.begin - now)}`));
+    top.appendChild(el("small", "", `${T.count} player${T.count === 1 ? "" : "s"} · prizes 🪙 ${T.prizes[0].toLocaleString()} / ${T.prizes[1].toLocaleString()} / ${T.prizes[2]} (semi-finals)${T.last?.champion ? ` · last week: ${T.last.champion}` : ""}`));
+    const row = el("div", "sec-row");
+    if (!live) { const j = el("button", "btn go", T.joined ? "✓ You're in" : "Enter the tournament"); j.type = "button"; j.disabled = T.joined || !u; j.addEventListener("click", () => socket.emit("tour:join")); row.appendChild(j); }
+    const go = el("button", "btn" + (live ? " go" : ""), live ? "🏁 Race the tournament track" : "Practise the tournament track"); go.type = "button";
+    go.addEventListener("click", () => { closeHub(); saveProfile(); S.solo = true; S.tutorial = false; S.pendingTour = true; socket.emit("create", prof); });
+    row.appendChild(go); top.appendChild(row); box.appendChild(top);
+    if (!u) box.appendChild(el("p", "preset-note", "Sign in to enter."));
+    if (!T.rounds.length) { if (T.entrants.length) box.appendChild(el("p", "preset-note", "Entered: " + T.entrants.join(", "))); return; }
+    const br = el("div", "bracket");
+    const names = ["Final", "Semi-finals", "Quarter-finals", "Round of 16", "Round of 32", "Round of 64"], R = Math.log2(T.rounds[0].length * 2);
+    T.rounds.forEach((rd, i) => {
+      const col = el("div", "br-col"); col.appendChild(el("small", "br-h", names[R - 1 - i] || `Round ${i + 1}`));
+      for (const m of rd) {
+        const card = el("div", "br-m" + (m.me ? " me" : ""));
+        for (const [n, l] of [[m.a, m.la], [m.b, m.lb]]) { const ln = el("div", "br-p" + (m.w && m.w === n ? " win" : m.w && n ? " out" : "")); ln.append(el("span", "", n || "bye"), el("small", "", l ? l.toFixed(3) : "")); card.appendChild(ln); }
+        col.appendChild(card);
+      }
+      br.appendChild(col);
+    });
+    box.appendChild(br);
+  }
+  function ghostsBlock(u) {
+    const G = u?.ghosts || []; if (!G.length) return null;
+    const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", "👻 Ghost challenges"));
+    for (const g of G) {
+      const d = el("div", "friend"), tx = el("div");
+      tx.append(el("b", "", `${g.fromName}: ${g.t.toFixed(3)}s`), el("small", "", `${g.trackName || "Their track"}${g.won ? ` · beaten ✓ (${g.beat.toFixed(3)}s)` : g.beat ? ` · your best ${g.beat.toFixed(3)}s` : ""}`));
+      const b = el("button", "btn go", g.won ? "Again" : "Race it"); b.type = "button";
+      b.addEventListener("click", () => { closeHub(); saveProfile(); S.solo = true; S.tutorial = false; S.pendingGhost = g.code; socket.emit("create", prof); });
+      d.append(el("span", "fdot on"), tx, b); sec.appendChild(d);
+    }
+    return sec;
   }
   function betsBlock(u) {
     const inc = u?.bets?.in || [], live = u?.bets?.live || [];
@@ -6148,9 +6495,9 @@
   const DOCK_SECS = {
     draw: ["#drawMode", "#stampPick", "#snapBtn", "#widthTools", "#cutBtn", "#smoothBtn", "#clearBtn"],
     tracks: ["#wonkTools", "#randomBtn", "#f1Btn", "#totwBtn", "#commBtn", "#presetBtn", "#loadCodeBtn", "#shareTrackBtn"],
-    edit: ["#startLineBtn", "#reverseBtn", "#drsBtn", "#drsAutoBtn", "#drsClearBtn", "#moreBtn", "#moreTools"],
+    edit: ["#startLineBtn", "#reverseBtn", "#drsBtn", "#drsAutoBtn", "#drsClearBtn", "[data-decor]", "#decorUndo", "#decorClear", "#moreBtn", "#moreTools"],
   };
-  for (const [sec, sels] of Object.entries(DOCK_SECS)) for (const q of sels) document.querySelector(q)?.setAttribute("data-sec", sec);
+  for (const [sec, sels] of Object.entries(DOCK_SECS)) for (const q of sels) document.querySelectorAll(q).forEach((e) => e.setAttribute("data-sec", sec));
   // section switcher at the top of the track tools
   (() => {
     const dock = document.querySelector(".dock"); if (!dock) return;
@@ -6207,6 +6554,19 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-29", title: "The biggest update yet: 22 new things", items: [
+      "🟥 Red flag (safety car on): a huge pile-up stops the race, the crews fix the cars, and it restarts in order behind the safety car.",
+      "🟡 Rolling starts (Settings › Start): a formation lap behind the safety car, green flag at the line.",
+      "❄️ Cold tyres: a bit less grip at the start and out of the pits until they warm up (about a lap).",
+      "🌇 Day into night (Settings): the sun goes down as the race goes on, headlights on at dusk.",
+      "📻 Pit wall: tell your AI teammate to Push, Hold or Box (team radio panel).",
+      "⏱️ Time trial mode with a leaderboard on every track · 👑 King of the hill · ⏳ Endurance (10-30 min, teammates share a car and swap at the stops).",
+      "🏟️ Weekend tournaments (Profile › Tournament): sign up in the week, knockout bracket at the weekend, best lap wins each match.",
+      "🤝 Head-to-head records with friends · 🎲 Predict the winner when you're watching · 👻 Ghost challenges: send a friend your lap to beat.",
+      "📈 Lap chart and 🎞️ highlight reel after every race · 📣 Crowd noise · 📊 Live timing for spectators · Grid walk and a track card before the start.",
+      "📯 Horns (H) and engine sounds (V8, V12, electric) in Settings.",
+      "🏟️ Track objects: grandstands, banners, tunnels and bridges (Edit tools) · 🗳️ Weekly track contest (Community tracks): the winner becomes next week's Track of the Week.",
+    ] },
     { v: "2026-10-28", title: "A brand new look", items: [
       "🎨 The Broadcast look: a new main menu with a big hello, your car on a glowing stage, slanted play tiles, your stats and login streak, and a live ticker along the bottom. Profile, lobby, results and pop-ups match it.",
       "🏁 The race itself looks exactly the same, and so do the cars.",
@@ -6434,7 +6794,30 @@
 
   // ======================= Community tracks =======================
   let commSort = "popular";
-  function openComm() { $("commBox").classList.remove("hidden"); $("commGrid").textContent = ""; $("commGrid").appendChild(el("p", "preset-note", "Loading...")); socket.emit("community:list", { sort: commSort }); }
+  // ---- weekly track contest (a tab in Community tracks) ----
+  socket.on("contest", (C) => {
+    if (!S.commContest || $("commBox").classList.contains("hidden")) return;
+    const g = $("commGrid"); g.textContent = "";
+    const days = Math.max(0, Math.ceil((C.ends - Date.now()) / 86400000));
+    $("commNote").textContent = `🗳️ This week's theme: "${C.theme}". Enter a track you drew, vote for your favourites (not your own). The most votes when the week ends (${days} day${days === 1 ? "" : "s"} left) becomes NEXT week's Track of the Week, and its maker gets 1,500 coins. Next theme: "${C.nextTheme}".`;
+    const top = el("div", "contest-top");
+    if (C.thisWeeksWinner) top.appendChild(el("p", "bet-live", `🏆 Last week's winner, now Track of the Week: "${C.thisWeeksWinner.name}" by ${C.thisWeeksWinner.byName} (${C.thisWeeksWinner.votes} votes)`));
+    const enter = el("button", "btn go", "🗳️ Enter the track I'm on"); enter.type = "button"; enter.disabled = !A.user || !S.track;
+    enter.title = !A.user ? "Sign in first" : !S.track ? "Make a room and draw a track first" : "";
+    enter.addEventListener("click", () => socket.emit("contest:enter", { name: S.lobby?.trackName || "" }));
+    top.appendChild(enter); g.appendChild(top);
+    if (!C.entries.length) g.appendChild(el("p", "preset-note", "No entries yet this week. Be the first!"));
+    for (const e of C.entries) {
+      const card = el("div", "contest-entry" + (e.mine ? " mine" : ""));
+      card.append(el("b", "", e.name), el("small", "", `by ${e.byName}${e.mine ? " (you)" : ""} · ${e.votes} vote${e.votes === 1 ? "" : "s"}`));
+      const row = el("div", "sec-row");
+      const v = el("button", "btn" + (e.voted ? " go" : ""), e.voted ? "✓ Voted" : "👍 Vote"); v.type = "button"; v.disabled = e.mine || !A.user; v.addEventListener("click", () => socket.emit("contest:vote", e.code));
+      const ld = el("button", "btn", "Try it"); ld.type = "button"; ld.disabled = !S.host || S.lobby?.phase !== "lobby"; ld.title = ld.disabled ? "Make a room first (you load it as the host)" : "";
+      ld.addEventListener("click", () => { socket.emit("track:load", e.code); $("commBox").classList.add("hidden"); });
+      row.append(v, ld); card.appendChild(row); g.appendChild(card);
+    }
+  });
+  function openComm() { S.commContest = false; document.querySelectorAll("[data-cs]").forEach((x) => x.setAttribute("aria-selected", String(x.dataset.cs === commSort))); $("commBox").classList.remove("hidden"); $("commGrid").textContent = ""; $("commGrid").appendChild(el("p", "preset-note", "Loading...")); socket.emit("community:list", { sort: commSort }); }
   function commCard(t) {
     const card = el("div", "preset"); card.dataset.code = t.code;
     const cv = document.createElement("canvas"); cv.width = 200; cv.height = 120;
@@ -6460,7 +6843,7 @@
     card.appendChild(row);
     return card;
   }
-  socket.on("community", (d) => {
+  socket.on("community", (d) => { if (S.commContest) return;
     const g = $("commGrid"); g.textContent = "";
     if (!d.list.length) g.appendChild(el("p", "preset-note", "No community tracks yet. Share a track (🔗 Share code) and add it!"));
     for (const t of d.list) g.appendChild(commCard(t));
@@ -6468,7 +6851,9 @@
   socket.on("communityVoted", (t) => { const old = $("commGrid").querySelector(`[data-code="${t.code}"]`); if (old) old.replaceWith(commCard(t)); });
   socket.on("communityMsg", (m) => { if (m.error) { if (!$("codeBox").classList.contains("hidden")) $("codeMsg").textContent = m.error; else popup(m.error, true); } else { $("codeMsg").textContent = m.ok; $("commPub").classList.add("hidden"); popup(m.ok); } });
   document.querySelectorAll("[data-cs]").forEach((b) => b.addEventListener("click", () => {
-    commSort = b.dataset.cs; document.querySelectorAll("[data-cs]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    document.querySelectorAll("[data-cs]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    if (b.dataset.cs === "contest") { S.commContest = true; $("commGrid").textContent = ""; $("commGrid").appendChild(el("p", "preset-note", "Loading...")); socket.emit("contest:get"); return; }
+    S.commContest = false; commSort = b.dataset.cs;
     socket.emit("community:list", { sort: commSort });
   }));
   $("commBtn").addEventListener("click", openComm);
@@ -6482,7 +6867,7 @@
   });
 
   // ======================= Replays: save, share, load =======================
-  const TRACK_KEYS = ["pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name", "drs"];
+  const TRACK_KEYS = ["decor", "pts", "tan", "nor", "N", "W", "H", "length", "trackW", "theme", "hw", "line", "gravel", "pitLane", "minX", "minY", "pad", "scale", "reverse", "elev", "bridges", "maxLevel", "vmax", "name", "drs"];
   function buildReplay(opts = {}) {
     const buf = opts.from ? RP.buf.filter((m) => m.at >= opts.from) : RP.buf;
     if (buf.length < 30 || !S.track || !S.race) return null;
@@ -6711,14 +7096,20 @@
     });
     glowSp = sprite(128, 128, (c) => { const r = c.createRadialGradient(64, 64, 8, 64, 64, 58); r.addColorStop(0, "rgba(0,0,0,0.9)"); r.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = r; c.fillRect(0, 0, 128, 128); });
   }
-  function drawNight(w, h, dpr, z, shx, shy, th, fog) {
+  function duskLevel() {
+    const L = S.race?.laps || 1, lead = S.cars.get(S.standings?.[0]), N = S.track?.N || 1;
+    if (!lead) return 0;
+    const f = (Math.max(0, lead.laps) + (lead.idx || 0) / N) / L;
+    const k = Math.min(1, Math.max(0, (f - 0.3) / 0.55)); return k * k * (3 - 2 * k);
+  }
+  function drawNight(w, h, dpr, z, shx, shy, th, fog, dark = 1) {
     nightSprites();
     const k = dpr * 0.5, W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
     if (!nightCv) nightCv = document.createElement("canvas");
     if (nightCv.width !== W || nightCv.height !== H) { nightCv.width = W; nightCv.height = H; }
     const n = nightCv.getContext("2d");
     n.setTransform(1, 0, 0, 1, 0, 0); n.globalCompositeOperation = "copy";
-    n.fillStyle = th.key === "neon" ? "rgba(8,4,26,0.5)" : "rgba(3,5,16,0.7)"; n.fillRect(0, 0, W, H);
+    n.fillStyle = th.key === "neon" ? "rgba(8,4,26,0.5)" : `rgba(${dark < 1 ? "12,8,30" : "3,5,16"},${0.7 * dark})`; n.fillRect(0, 0, W, H);
     n.globalCompositeOperation = "destination-out";
     const rot = PH.on ? PH.rot : 0;
     n.setTransform(k * z, 0, 0, k * z, k * (w / 2 + shx), k * (h / 2 + shy));

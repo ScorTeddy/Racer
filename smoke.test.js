@@ -1140,3 +1140,234 @@ test("car presets: save a whole look (with items) and put it back on in one go",
   assert.deepEqual(u.equipped, { [items[0].slot]: items[0].id }, "exactly the saved items are back on");
   accounts.deleteCarPreset(u, "Hack"); assert.equal(u.carPresets.length, 1);
 });
+
+test("rolling start: a formation lap behind the safety car, green flag at the line, then a normal race", { timeout: 120000 }, () => {
+  const r = new game.Room("ROLLING", false); r.setRandomTrack("normal", "regular");
+  r.players.set("rs", { id: "rs", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 3, weather: "sunny", start: "rolling" }); r.ensureRoster(5);
+  const feed = []; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); if (ev === "lightsOut") feed.push("lightsOut"); return emit(ev, d); };
+  r.startRace(); r.startLights();
+  assert.equal(r.phase, "race", "no lights: straight onto the formation lap"); assert.ok(r.sc && r.sc.rolling);
+  assert.ok(r.cars.every((c) => c.lapsDone === -2));
+  let greenAt = null;
+  for (let n = 0; n < 60 * 200 && r.phase === "race"; n++) { r.step(1 / 60); if (!greenAt && !r.sc) greenAt = r.time; if (greenAt && r.time - greenAt > 1) break; }
+  assert.ok(greenAt, "green flag came"); assert.ok(feed.includes("formation") && feed.includes("green") && feed.includes("lightsOut"));
+  const lead = r.standings()[0]; assert.equal(lead.lapsDone, 0, "the race starts at lap 0, the formation lap isn't counted");
+  assert.ok(r.cars.every((c) => !isFinite(c.bestLap)), "no lap time from the formation lap");
+});
+
+test("red flag: a big pile-up stops everyone, the damage is fixed and the race restarts in order", { timeout: 60000 }, () => {
+  const r = new game.Room("REDFLAG", false); r.setRandomTrack("normal", "regular");
+  r.players.set("rf", { id: "rf", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 7, quali: 0, laps: 5, weather: "sunny", safetyCar: true }); r.ensureRoster(7);
+  const feed = []; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); return emit(ev, d); };
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 12; n++) r.step(1 / 60);
+  const [a, b, c, d] = r.cars;
+  r.crash(a, b, 200, 1, 0); assert.ok(!r.rf, "one crash: no red flag");
+  r.crash(c, d, 200, 1, 0);
+  assert.ok(r.rf && feed.includes("redFlag"), "4 cars in a pile-up: red flag");
+  const order = r.standings().map((x) => x.id), pos = r.cars.map((x) => [x.x, x.y]);
+  for (let n = 0; n < 60 * 3; n++) r.step(1 / 60);
+  assert.ok(r.cars.every((x, i) => x.x === pos[i][0] && x.y === pos[i][1]), "everyone stands still");
+  for (let n = 0; n < 60 * 4; n++) r.step(1 / 60);
+  assert.ok(!r.rf && feed.includes("rfRestart") && r.sc, "restart behind the safety car");
+  assert.deepEqual(r.standings().map((x) => x.id).slice(0, 3), order.slice(0, 3), "in the same order");
+  assert.ok(r.cars.every((x) => x.damage === 0), "crews fixed the damage");
+  r.crash(a, b, 200, 1, 0); r.crash(c, d, 200, 1, 0); assert.ok(!r.rf, "only one red flag a race");
+});
+
+test("cold tyres: less grip at the start and out of the pits, warm after a lap", { timeout: 60000 }, () => {
+  const r = new game.Room("TYRETEMP", false); r.setRandomTrack("normal", "regular");
+  Object.assign(r.settings, { ai: 2, quali: 0, laps: 5, weather: "sunny" }); r.ensureRoster(2);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const c = r.cars[0], cold = r.gripOf(c);
+  assert.ok(c.temp < 0.3);
+  let warm = 0, warmGrip = 0, pits = c.pits, outCold = null;
+  for (let n = 0; n < 60 * 60; n++) { r.step(1 / 60); if (c.temp > warm) { warm = c.temp; warmGrip = r.gripOf(c) / r.tireGrip(c.tire); } if (c.pits > pits && outCold === null) outCold = c.temp; }
+  assert.ok(warm > 0.95, `warmed up (${warm.toFixed(2)})`); assert.ok(warmGrip > (cold / r.tireGrip(1)) * 1.08, "and grippier");
+  if (outCold !== null) assert.ok(outCold <= 0.35, "fresh tyres out of the pits are cold again");
+});
+
+test("pit wall: your AI teammate pushes, holds or boxes when you tell it to", { timeout: 60000 }, () => {
+  const r = new game.Room("PITWALL", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "pw", name: "Boss", up: {}, level: 1, xp: 0, team: "Boss Racing" }; r.players.set(p.id, p);
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 6, weather: "sunny", teams: true }); r.ensureRoster(5);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const me = r.carOf(p.id);
+  const mate = r.cars.find((c) => !c.owner) ; mate.team = me.team;
+  mate.teamOrder = "push"; const t0 = mate.tire;
+  for (let n = 0; n < 60 * 20; n++) r.step(1 / 60);
+  const pushWear = t0 - mate.tire;
+  mate.teamOrder = "hold"; const t1 = mate.tire;
+  for (let n = 0; n < 60 * 20; n++) r.step(1 / 60);
+  assert.ok(pushWear > (t1 - mate.tire) * 1.3, "push wears the tyres much faster than hold");
+  mate.teamOrder = "box";
+  let pitted = false; for (let n = 0; n < 60 * 120 && !pitted; n++) { r.step(1 / 60); if (mate.pits > 0) pitted = true; }
+  assert.ok(pitted, "box: it comes in"); assert.equal(mate.teamOrder, null, "and the order is done");
+});
+
+test("king of the hill: whoever leads the longest wins", { timeout: 120000 }, () => {
+  const r = new game.Room("KOTH", false); r.setRandomTrack("normal", "regular");
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 2, weather: "sunny", mode: "koth" }); r.ensureRoster(5);
+  let res = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "results") res = d; return emit(ev, d); };
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 200 && r.phase === "race"; n++) r.step(1 / 60);
+  if (r.phase === "race") r.endRace();
+  assert.ok(res.rows[0].lead > 0, "the winner led for a while");
+  for (let i = 1; i < res.rows.length; i++) assert.ok(res.rows[i - 1].lead >= res.rows[i].lead, "results by time in the lead");
+  const total = res.rows.reduce((t, x) => t + x.lead, 0); assert.ok(total > 20, "the clock ran for the leader");
+});
+
+test("endurance: a race against the clock, and teammates share a car, swapping at the pit stop", { timeout: 180000 }, () => {
+  const r = new game.Room("ENDURO", false); r.setRandomTrack("small", "regular");
+  const a = { id: "e1", name: "Ann", up: {}, level: 1, xp: 0, team: "Duo" }, b = { id: "e2", name: "Bo", up: {}, level: 1, xp: 0, team: "Duo" };
+  r.players.set(a.id, a); r.players.set(b.id, b);
+  Object.assign(r.settings, { ai: 3, quali: 0, laps: 4, weather: "sunny", mode: "endur", enduroMin: 10, teams: true }); r.ensureRoster(3);
+  const feed = [], swaps = []; let res = null; const emit = r.emit.bind(r);
+  r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); if (ev === "driverSwap") swaps.push(d); if (ev === "results") res = d; return emit(ev, d); };
+  r.startRace();
+  const shared = r.cars.find((c) => c.owner === "e1");
+  assert.ok(shared && !r.cars.some((c) => c.owner === "e2"), "one car for the two of them"); assert.deepEqual(shared.drivers, ["e1", "e2"]);
+  assert.ok(r.enduro && r.enduro.secs === 600 && r.settings.laps > 4, "10 minutes, not 4 laps");
+  r.startLights(); r.phase = "race"; r.launchCars();
+  r.enduro.secs = 60;                                         // (a short one for the test)
+  for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
+  r.swapDriver(shared);
+  assert.equal(shared.owner, "e2", "Bo takes over"); assert.equal(swaps[0].name, "Bo"); assert.equal(a.coDriver, "e2");
+  for (let n = 0; n < 60 * 240 && r.phase === "race"; n++) r.step(1 / 60);
+  if (r.phase === "race") r.endRace();
+  assert.ok(feed.includes("timeUp"), "time's up was called");
+  assert.ok(res && res.rows.length === 4); assert.equal(r.settings.laps, 4, "the laps setting is put back");
+});
+
+test("time trial: no AI, laps go on a leaderboard for the track", { timeout: 60000 }, async () => {
+  const { u } = await accounts.signUp("TimeTrial", "Turbo-Fox-Lane-42");
+  const r1 = await accounts.putTtLap(u, "dtest1", 31.2), r2 = await accounts.putTtLap(u, "dtest1", 33.0), r3 = await accounts.putTtLap(u, "dtest1", 29.9);
+  assert.ok(r1.pb && !r2.pb && r3.pb, "only faster laps are personal bests");
+  const B = await accounts.getBoard("tt", "dtest1"); assert.equal(B.list.length, 1); assert.equal(B.list[0].v, 29.9);
+  const r = new game.Room("TTMODE", false); r.setRandomTrack("normal", "regular");
+  r.players.set("t", { id: "t", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 6, mode: "tt" }); r.ensureRoster(6);
+  r.startRace();
+  assert.ok(r.tt && r.practice && r.cars.length === 1, "just you on track"); assert.ok(r.trackKey, "random tracks have a key too");
+});
+
+test("head-to-head: friends' records against each other add up race by race", async () => {
+  const a = (await accounts.signUp("HeadA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("HeadB", "Turbo-Fox-Lane-42")).u;
+  await accounts.recordH2H([{ uid: a.id, rank: 1 }, { uid: b.id, rank: 2 }]);
+  assert.equal(a.h2h, undefined, "only friends are tracked");
+  await accounts.friendAdd(a, "HeadB"); await accounts.friendAccept(b, a.id);
+  await accounts.recordH2H([{ uid: a.id, rank: 1 }, { uid: b.id, rank: 2 }]);
+  await accounts.recordH2H([{ uid: a.id, rank: 3 }, { uid: b.id, rank: 0 }]);
+  await accounts.recordH2H([{ uid: a.id, rank: 0 }, { uid: b.id, rank: 5 }]);
+  assert.deepEqual(a.h2h[b.id], { n: 3, w: 2 }); assert.deepEqual(b.h2h[a.id], { n: 3, w: 1 });
+  const fl = await accounts.friendList(a, () => null); assert.deepEqual(fl.friends[0].h2h, { n: 3, w: 2 }, "shown on the friends list");
+});
+
+test("predictions: spectators back a driver at grid odds, paid at the flag, refunded if the race is stopped", { timeout: 120000 }, async () => {
+  const { u } = await accounts.signUp("Punter", "Turbo-Fox-Lane-42"); u.coins = 1000;
+  const r = new game.Room("PREDICT", false); r.setRandomTrack("small", "regular");
+  r.players.set("spec", { id: "spec", name: "Watcher", up: {}, level: 1, xp: 0, spectator: true, uid: u.id });
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 1, weather: "sunny" }); r.ensureRoster(5);
+  r.startRace();
+  const pole = r.cars.find((c) => c.rs.grid === 1), back = r.cars.reduce((m, c) => (c.rs.grid > m.rs.grid ? c : m));
+  assert.ok(r.predictOdds(pole) < r.predictOdds(back), "the back of the grid pays more"); assert.ok(r.predictOdds(back) <= 10);
+  // place it the way the socket does
+  const pick = back; u.coins -= 100; r.predictions.set("spec", { uid: u.id, car: pick.id, name: pick.name, coins: 100, odds: r.predictOdds(pick) });
+  r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 150 && r.phase === "race"; n++) r.step(1 / 60);
+  if (r.phase === "race") r.endRace();
+  await new Promise((ok) => setTimeout(ok, 200));
+  const res = u.coins;
+  assert.ok(res === 900 || res === 900 + Math.round(100 * r.predictOdds(pick)), `paid out or lost (${res})`);
+  // stopped race: money back
+  r.phase = "lobby"; r.startRace(); r.predictions.set("spec", { uid: u.id, car: r.cars[0].id, name: "x", coins: 50, odds: 2 }); const before = u.coins - 50; u.coins = before;
+  r.stopRace("test"); await new Promise((ok) => setTimeout(ok, 200));
+  assert.equal(u.coins, before + 50, "refunded");
+});
+
+test("ghost challenges: a friend's lap to beat, a reward the first time you beat it", async () => {
+  const a = (await accounts.signUp("GhostA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("GhostB", "Turbo-Fox-Lane-42")).u;
+  assert.ok(accounts.addGhostChallenge(a, b, { code: "ABCDEF", t: 30, trackName: "Loop", trackKey: "dx" }).error, "friends only");
+  await accounts.friendAdd(a, "GhostB"); await accounts.friendAccept(b, a.id);
+  assert.ok(accounts.addGhostChallenge(a, b, { code: "ABCDEF", t: 30, trackName: "Loop", trackKey: "dx" }).ok);
+  assert.equal(accounts.publicUser(b).ghosts[0].fromName, "GhostA");
+  const c0 = b.coins;
+  assert.equal(accounts.ghostBeat(b, "ABCDEF", 31).beat, false, "slower: not beaten");
+  const w = accounts.ghostBeat(b, "ABCDEF", 29.5); assert.ok(w.beat && w.first && w.coins > 0); assert.equal(b.coins, c0 + w.coins);
+  assert.equal(accounts.ghostBeat(b, "ABCDEF", 29).coins, 0, "the reward is only once");
+});
+
+test("weekend tournament: sign up in the week, a seeded bracket at the weekend, best laps decide each round, prizes paid", async () => {
+  const realNow = Date.now, T0 = accounts.tourTimes(Math.floor((realNow() / 86400000 + 3) / 7));
+  Date.now = () => T0.open + 3600e3;                                   // Monday
+  try {
+    const us = [];
+    for (let i = 0; i < 5; i++) { const { u } = await accounts.signUp("Tourney" + i, "Turbo-Fox-Lane-42"); u.ranked = { sr: 1000 - i * 100 }; us.push(u); assert.ok((await accounts.tourJoin(u)).ok); }
+    assert.ok((await accounts.tourJoin(us[0])).error, "only once");
+    Date.now = () => T0.begin + 60e3;                                   // Saturday: the bracket is drawn
+    let S = await accounts.tourState();
+    assert.equal(S.bracket.size, 8); assert.equal(S.bracket.rounds[0].filter((m) => m.a && m.b).length, 1, "5 players: 3 byes for the top seeds, 1 real match");
+    assert.ok((await accounts.tourJoin((await accounts.signUp("LateOne", "Turbo-Fox-Lane-42")).u)).error, "sign-ups closed");
+    // round 1: seed 4 vs seed 5; seed 5 sets the faster lap
+    await accounts.tourLap(us[3], 33); await accounts.tourLap(us[4], 31.5);
+    const len = S.bracket.len;
+    Date.now = () => T0.begin + len + 60e3; S = await accounts.tourState();
+    assert.equal(S.bracket.rounds[0].find((m) => m.a && m.b).w, us[4].id, "the faster lap goes through");
+    // round 2: nobody sets a lap: the higher seeds go through
+    Date.now = () => T0.begin + 2 * len + 60e3; S = await accounts.tourState();
+    // final: seed 1 vs seed 2; seed 2 is faster
+    const fin = S.bracket.rounds[2][0]; assert.deepEqual([fin.a, fin.b].sort(), [us[0].id, us[1].id].sort());
+    await accounts.tourLap(us[0], 30); await accounts.tourLap(us[1], 29);
+    const c1 = us[1].coins, c0 = us[0].coins;
+    Date.now = () => T0.end + 1000; S = await accounts.tourState();
+    // (a new week started: last week's was finished off and paid)
+    const pub = accounts.tourPublic(S, us[1]); assert.equal(pub.last.champion, "Tourney1");
+    assert.equal(us[1].coins, c1 + 5000, "champion paid"); assert.equal(us[0].coins, c0 + 2000, "runner-up paid");
+  } finally { Date.now = realNow; }
+});
+
+test("lap chart: everyone's position after every lap is in the results", { timeout: 120000 }, () => {
+  const r = new game.Room("LAPCHART", false); r.setRandomTrack("small", "regular");
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 3, weather: "sunny" }); r.ensureRoster(5);
+  let res = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "results") res = d; return emit(ev, d); };
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 200 && r.phase === "race"; n++) r.step(1 / 60);
+  if (r.phase === "race") r.endRace();
+  const fin = res.rows.filter((x) => x.finished);
+  assert.ok(fin.length && fin.every((x) => x.lp.length === 3 && x.grid >= 1), "3 laps of positions + the grid slot");
+  assert.equal(res.rows[0].lp[2], 1, "the winner was P1 at the flag");
+});
+
+test("track objects: placed next to the track, snapped to it, kept in share codes, cleared by a new track", () => {
+  const r = new game.Room("DECOR", false); r.setRandomTrack("normal", "regular");
+  const t = r.track, sc = r.trackMsg().scale, p = t.pts[40], bx = (p.x - t.pad) / sc + t.minX, by = (p.y - t.pad) / sc + t.minY;
+  assert.equal(r.addDecor("stand", bx, by), null); assert.equal(r.addDecor("tunnel", bx, by), null);
+  assert.match(r.addDecor("stand", t.minX - 900, t.minY - 900), /next to the track/);
+  assert.match(r.addDecor("rocket", bx, by), /Unknown/);
+  const msg = r.trackMsg().decor; assert.equal(msg.length, 2); assert.ok(Math.abs(msg[0].i - 40) <= 2, "snapped to the nearest bit of track");
+  const share = r.shareData(); assert.equal(share.decor.length, 2);
+  const r2 = new game.Room("DECOR2", false); r2.setSharedTrack(share); assert.equal(r2.trackMsg().decor.length, 2, "a share code brings them along");
+  r.setRandomTrack("normal", "regular"); assert.equal(r.trackMsg().decor.length, 0, "a new track starts with none");
+});
+
+test("weekly track contest: enter, vote (not your own), and the winner becomes next week's Track of the Week", async () => {
+  const realNow = Date.now;
+  try {
+    const a = (await accounts.signUp("Contester", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("Voter", "Turbo-Fox-Lane-42")).u;
+    const r = new game.Room("CONTEST", false); r.setRandomTrack("normal", "regular");
+    const data = JSON.stringify(r.shareData()), code = accounts.shareCode("trk:" + data);
+    await accounts.putShared("trk", code, data, 365 * 86400);
+    assert.ok((await accounts.contestEnter(a, { code, name: "Loopy" })).ok);
+    assert.match((await accounts.contestVote(a, code)).error, /own/);
+    assert.ok((await accounts.contestVote(b, code)).voted);
+    const pub = await accounts.contestPublic(b); assert.equal(pub.entries[0].votes, 1); assert.ok(pub.theme);
+    const c0 = a.coins;
+    Date.now = () => realNow() + 7 * 86400000;                        // a week later
+    const win = await accounts.contestWinner(Math.floor((Date.now() / 86400000 + 3) / 7));
+    assert.equal(win.code, code, "the most-voted track won"); assert.equal(a.coins, c0 + 1500, "its maker got the prize");
+    await game.refreshContestTotw();
+    assert.match(game.totw().name, /Loopy \(by Contester\)/, "and it's the Track of the Week");
+  } finally { Date.now = realNow; await game.refreshContestTotw(); }
+});
