@@ -1389,6 +1389,12 @@ test("weekend tournament track: no tyre wear, in any mode", { timeout: 60000 }, 
   assert.ok(n.cars.some((c) => c.tire < 1), "other tracks still wear");
 });
 
+test("weekend tournament tracks are VERY wonky from week 2962 on (earlier weeks keep their track)", { timeout: 60000 }, () => {
+  for (const w of [2962, 2963, 2970]) assert.equal(game.tourTrack(w).wonk, "very", `week ${w}`);
+  const old = game.tourTrack(2961); assert.notEqual(old.wonk, "very", "this weekend's bracket keeps its track");
+  assert.equal(game.tourTrack(2961).name, old.name, "and the same track every time");
+});
+
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
   const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => {

@@ -3216,10 +3216,13 @@ function totw(week = weekNow()) {
 }
 // the weekend tournament's track: a different seeded random track every week
 let tourCache = null;
+const TOUR_VERY_WONKY_FROM = 2962;
 function tourTrack(week = weekNow()) {
   if (tourCache && tourCache.week === week) return tourCache;
   const built = withSeed(week * 104729 + 7, () => {
-    const wonk = ["little", "regular", "regular"][Math.floor(Math.random() * 3)], map = "normal";
+    // from week 2962 on, every tournament track is VERY wonky (the gentler ones got figured out too quickly);
+    // older weeks keep the track they had, so a bracket in progress never changes under anyone
+    const wonk = week >= TOUR_VERY_WONKY_FROM ? "very" : ["little", "regular", "regular"][Math.floor(Math.random() * 3)], map = "normal";
     const theme = THEME_KEYS[Math.floor(Math.random() * THEME_KEYS.length)];
     const name = `${TOTW_A[Math.floor(Math.random() * TOTW_A.length)]} ${TOTW_B[Math.floor(Math.random() * TOTW_B.length)]}`;
     const r = makeRandomTrack(MAP_SIZES[map], wonk);
@@ -4487,4 +4490,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
