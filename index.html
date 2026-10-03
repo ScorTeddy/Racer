@@ -22,7 +22,7 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"Scribble GP: Team Boss","description":"Multiplayer racing team manager: draw a track, pick tires, call pit stops and race friends and AI drivers.","genre":["Racing","Strategy"],"gamePlatform":"Web browser","playMode":["SinglePlayer","MultiPlayer"],"applicationCategory":"Game","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Emmett"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700;1,900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/game.css">
 </head>
 <body>
@@ -60,15 +60,17 @@
       </div>
     </div>
     <section class="menu-car" aria-labelledby="carHead">
+    <div class="bc-hero" aria-hidden="true"><p class="bc-big">Ready to <span>race,</span> <b id="heroName">Ace</b>?</p><p class="bc-sub" id="heroSub">Your car · #7</p></div>
     <h2 class="menu-h" id="carHead">Your car</h2>
     <div class="garage-preview">
-      <canvas id="carPreview" width="300" height="180" aria-hidden="true"></canvas>
+      <canvas id="carPreview" width="600" height="360" aria-hidden="true"></canvas>
       <div style="flex:1;display:flex;flex-direction:column;gap:0.5rem">
         <label class="f">Driver name <input type="text" id="nameIn" maxlength="12" autocomplete="off" spellcheck="false"></label>
         <label class="f">Car number <input type="text" id="numIn" maxlength="2" inputmode="numeric" autocomplete="off"></label>
         <label class="f">Team <input type="text" id="teamIn" maxlength="20" autocomplete="off" list="teamList" placeholder="Same name as a friend = teammates"></label>
       </div>
     </div>
+    <div class="bc-stats hidden" id="bcStats"></div>
     <div><div class="f" style="margin-bottom:0.25rem">Car color</div><div class="swatches" id="swatches"></div></div>
     <div><div class="f" style="margin-bottom:0.25rem">Livery</div><div class="chips" id="liveries"></div></div>
     <button type="button" class="btn" id="carPresetBtn">🚗 Car presets: save or swap your whole look</button>
@@ -84,8 +86,8 @@
     </section>
     <section class="menu-play" aria-labelledby="playHead">
     <h2 class="menu-h" id="playHead">Play</h2>
-    <button type="button" class="btn go" id="quickBtn" title="Jump straight into a public room with other players">⚡ Quick Play</button>
-    <div class="menu-row2"><button type="button" class="btn" id="soloBtn">🏁 Race solo</button><button type="button" class="btn" id="tutBtn" title="A short guided race that shows you how everything works">🎓 Tutorial</button></div>
+    <button type="button" class="btn go" id="quickBtn" data-sub="Jump into a public race with real people" data-n="01" title="Jump straight into a public room with other players">⚡ Quick Play</button>
+    <div class="menu-row2"><button type="button" class="btn" id="soloBtn" data-sub="You vs the AI">🏁 Race solo</button><button type="button" class="btn" id="tutBtn" data-sub="Learn the basics" title="A short guided race that shows you how everything works">🎓 Tutorial</button></div>
     <button type="button" class="btn ranked-btn" id="rankedBtn" title="Race for your skill rating: Iron up to Overdrive Elite"><span class="rk-ic" id="rankedIc" aria-hidden="true">🏆</span><span class="rk-tx"><b>Ranked</b><small id="rankedSub">Sign in to get a rank</small></span></button>
     <div class="totw-card" id="totwCard">
       <canvas id="totwCv" width="120" height="76" aria-hidden="true"></canvas>
@@ -103,8 +105,10 @@
     <div class="lob-head"><div class="sect">Public lobbies</div><button type="button" class="btn" id="pubBtn">Make public lobby</button></div>
     <div class="lobbies" id="lobbyList"><div class="lob-empty">Looking for lobbies...</div></div>
     <div class="hidden" id="menuFriends"><div class="lob-head"><div class="sect">Friends online</div></div><div class="lobbies" id="friendsList"></div></div>
+    <div class="bc-streak hidden" id="bcStreak"></div>
     <p class="err" id="menuErr" role="alert"></p>
     </section>
+    <div class="bc-ticker" id="bcTicker" aria-hidden="true"><span class="bc-live">Live</span><div class="bc-roll"><div class="bc-items" id="bcItems"></div></div></div>
     <footer class="menu-foot"><a href="#" id="newsLink">📰 What's new</a><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
   </form>
 </div>

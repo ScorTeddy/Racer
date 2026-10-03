@@ -66,7 +66,7 @@
     { key: "shake", label: "Screen shake", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "minimap", label: "Minimap", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
-    { key: "theme", label: "Menu theme", def: "dark", opts: [["dark", "Dark"], ["light", "Light"]] },
+    { key: "theme", label: "Menu theme", def: "broadcast", opts: [["broadcast", "Broadcast (new)"], ["dark", "Classic dark"], ["light", "Light"]] },
     { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
@@ -85,6 +85,8 @@
   const settings = {};
   for (const x of SETTINGS) settings[x.key] = x.def;
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
+  // the Broadcast look is the new default menu theme: players on the old dark theme move over once (Settings has Classic)
+  if (!settings.themeV) { if (settings.theme === "dark") settings.theme = "broadcast"; settings.themeV = 1; }
   settings.keys = { ...KEY_DEFAULTS, ...(settings.keys && typeof settings.keys === "object" ? settings.keys : {}) };
   const KEY = (a) => settings.keys[a] || KEY_DEFAULTS[a];
   const keyName = (code) => (!code ? "?" : code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) : code.startsWith("Numpad") ? "Num " + code.slice(6)
@@ -1066,6 +1068,7 @@
   const pv = $("carPreview"), pctx = pv.getContext("2d");
   function drawPreview(now) {
     pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pv.width, pv.height);
+    const k = pv.width / 300; pctx.setTransform(k, 0, 0, k, 0, 0);          // (the canvas is 2x for a sharp big preview: same car)
     const spin = reducedMotion ? -0.35 : -0.35 + Math.sin(now / 900) * 0.25;
     drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, design: prof.design, extras: A.extras }, 150, 92, spin, 3.2, { trailPreview: true });
   }
@@ -1109,8 +1112,33 @@
     for (const [slot, id] of Object.entries(u.equipped || {})) { const it = A.catalog.store.find((x) => x.id === id); if (it && u.owned.includes(id)) o[slot] = it.look; }
     return Object.keys(o).length ? o : null;
   }
+  // ---- Broadcast menu bits: the big hello, the stats strip, the streak strip and the live ticker ----
+  function renderBroadcast() {
+    const u = A.user, name = (nameIn.value || prof.name || "Ace").trim() || "Ace";
+    $("heroName").textContent = name;
+    const P = (u?.carPresets || []).find((x) => x.color === prof.color && x.livery === prof.livery && Number(x.number) === Number(prof.number));
+    $("heroSub").textContent = `Your car${P ? ` · ${P.name}` : ""} · #${numIn.value || prof.number}`;
+    const st = $("bcStats"); st.classList.toggle("hidden", !u); st.textContent = "";
+    if (u) for (const [v, l, c] of [[u.stats.races || 0, "Races"], [u.stats.wins || 0, "Wins"], [u.stats.poles || 0, "Poles"], [`${u.loginStreak?.streak || 0}🔥`, "Day streak", 1]]) {
+      const d = el("div", "bc-stat" + (c ? " alt" : "")); d.append(el("b", "", typeof v === "number" ? v.toLocaleString() : v), el("small", "", l)); st.appendChild(d);
+    }
+    const sk = $("bcStreak"); sk.classList.toggle("hidden", !u?.loginStreak); sk.textContent = "";
+    if (u?.loginStreak) sk.appendChild(streakStrip(u.loginStreak.days, u.loginStreak.cycleDay, u.loginStreak.today));
+    // ticker: what's going on right now
+    const m = S.menu, items = [], E = (x) => String(x ?? "").replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+    if (m) { items.push(`🟢 <b>${E(m.online)}</b> online · <b>${E(m.racing)}</b> racing right now`); if (m.lobbies?.length) items.push(`🏁 <b>${m.lobbies.length}</b> public room${m.lobbies.length === 1 ? "" : "s"} open`); if (m.event) items.push(`${E(m.event.icon || "🎉")} ${m.event.live ? "Weekend event on now" : "Next event"}: <b>${E(m.event.name)}</b>`); }
+    if (u?.wheel?.free) items.push("🎡 Your <b>free daily spin</b> is ready (Profile › Casino)");
+    if (u?.pass) items.push(`🎟️ Season pass: <b>tier ${u.pass.tier}</b> of ${u.pass.tiers}`);
+    if (u?.ranked) { const R = u.ranked; items.push(`🏆 Ranked: <b>${E(R.rank?.label || "Unranked")}</b>${R.sr != null ? ` · ${E(R.sr)} SR` : ""}`); }
+    const tw = $("totwName")?.textContent; if (tw && tw !== "Loading...") items.push(`🌟 Track of the week: <b>${E(tw)}</b>`);
+    if (!items.length) items.push("🏁 Welcome to Scribble GP");
+    const box = $("bcItems"), html = items.map((x) => `<span>${x}</span>`).join("");
+    if (box.dataset.h !== html) { box.dataset.h = html; box.innerHTML = html + html; }       // (twice, so it scrolls round seamlessly)
+  }
+  nameIn.addEventListener("input", () => renderBroadcast()); numIn.addEventListener("input", () => renderBroadcast());
   function renderAcct() {
     const u = A.user;
+    setTimeout(renderBroadcast, 0);
     $("acctName").textContent = u ? u.name : "Playing as a guest";
     $("acctSub").textContent = u ? `${u.stats.races} races · ${u.stats.wins} wins · ${Object.keys(u.ach).length}/${A.catalog?.ach.length || "?"} achievements`
       : "Make an account to save your stats, earn coins and unlock car parts.";
@@ -2086,6 +2114,7 @@
   }
   function renderMenuInfo() {
     const m = S.menu; if (!m) return;
+    renderBroadcast();
     renderEvent(m.event);
     const t = $("onlineText"); t.textContent = "";
     const b1 = document.createElement("b"); b1.textContent = m.online;
@@ -6178,6 +6207,11 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-28", title: "A brand new look", items: [
+      "🎨 The Broadcast look: a new main menu with a big hello, your car on a glowing stage, slanted play tiles, your stats and login streak, and a live ticker along the bottom. Profile, lobby, results and pop-ups match it.",
+      "🏁 The race itself looks exactly the same, and so do the cars.",
+      "⚙ Prefer the old look? Settings › Menu theme › Classic dark.",
+    ] },
     { v: "2026-10-27", title: "Car presets, a calmer commentator, real ranked difficulty", items: [
       "🚗 Car presets: save your whole look (colour, livery, number, painted design and every item you have on) under a name and swap between looks in one tap. Under Your car on the menu, and in Customize.",
       "🎙️ The commentator talks a lot less: he leaves gaps between lines and skips small stuff. He also never switches to a different voice mid-race any more.",
