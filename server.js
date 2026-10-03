@@ -1448,6 +1448,7 @@ class Room {
     this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
     this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
     this.settings.map = T.map; this.settings.theme = T.theme; this.trackKey = "tour_" + T.week; this.trackBy = null;
+    setTimeout(() => this.emit("toast", "🏟️ Tournament track: no tyre wear, so every lap is a fair shot"), 300);
     this.setDrs(autoDrs(this.track));
     this.emit("track", this.trackMsg()); this.sendLobby();
     return null;
@@ -1911,6 +1912,7 @@ class Room {
       if (!p) this.aiPlan(c);
       c.compound = p ? (p.compound || (this.wet > 0.45 ? "wet" : "inter")) : c.planComp;
       if (this.qualifying) { c.compound = this.wet > 0.45 ? "wet" : "fast"; c.stintEnd = Infinity; c.stopsLeft = 0; }
+      if (this.trackKind === "tour") { c.stintEnd = Infinity; c.stopsLeft = 0; }        // tournament track: no tyre wear, so no stops
       if (p) { p.compound = c.compound; if (!p.nextCompound) p.nextCompound = c.compound; }
     }
     // rolling start: no lights; a formation lap behind the safety car, green flag when it gets back to the line
@@ -2221,12 +2223,13 @@ class Room {
         const noMoreStops = (c.stintEnd ?? laps) >= laps;
         // won't make it: to the next pit window, or (if no more stops were planned) to the flag
         const toGo = left - 1 + toEntry / N;                                  // laps still to drive from here
-        const critical = c.tire < perLap * (noMoreStops ? toGo * 1.1 : Math.min(toGo, 1) * 1.1 + 0.1);
+        const noWear = this.trackKind === "tour";                             // (tournament track: tyres never wear)
+        const critical = !noWear && c.tire < perLap * (noMoreStops ? toGo * 1.1 : Math.min(toGo, 1) * 1.1 + 0.1);
         const wrongTires = (this.wet > 0.55 && dryTires) || (this.wet < 0.2 && !dryTires);
-        const planned = c.lapsDone + 1 >= (c.stintEnd ?? laps);
+        const planned = !noWear && c.lapsDone + 1 >= (c.stintEnd ?? laps);
         // undercut: the car just ahead is pitting and my stop is due soon anyway? go now too
         const restCap = Math.max(1, Math.floor(this.safeLaps(c, "durable"))) * Math.max(1, c.stopsLeft || 1);
-        const ahead = c.ahead, undercut = !!ahead && (ahead.aiMode === "pitLane" || ahead.aiMode === "wantPit") && c.lapsDone + 2 === (c.stintEnd ?? laps) && left - 1 <= restCap && c.tire < 0.6;
+        const ahead = c.ahead, undercut = !noWear && !!ahead && (ahead.aiMode === "pitLane" || ahead.aiMode === "wantPit") && c.lapsDone + 2 === (c.stintEnd ?? laps) && left - 1 <= restCap && c.tire < 0.6;
         let want = critical || wrongTires || planned || undercut || (c.damage > 0.5 && left > 2);
         // don't queue behind a teammate who's already stopping, unless the tires are really gone
         if (want && !critical && !wrongTires && left > 2 && c.tire > perLap * 2.3 && this.cars.some((o) => o !== c && o.team === c.team && (o.aiMode === "pitLane" || o.pitting > 0))) { want = false; c.stintEnd = (c.stintEnd ?? laps) + 1; }
@@ -2598,7 +2601,7 @@ class Room {
     if (c.surface === 3) wear *= 2;
     if (this.qualifying && !this.practice) wear = 0;
     const before = c.tire;
-    if (!c.finished) c.tire = Math.max(0, c.tire - wear * st.wear * (c.teamOrder === "push" ? 1.35 : c.teamOrder === "hold" ? 0.8 : 1));       // no wear on the cool-down lap (pit wall: push wears more, hold saves them)
+    if (!c.finished && this.trackKind !== "tour") c.tire = Math.max(0, c.tire - wear * st.wear * (c.teamOrder === "push" ? 1.35 : c.teamOrder === "hold" ? 0.8 : 1));       // no wear on the cool-down lap (pit wall: push wears more, hold saves them)
     // tyres warm up with speed (and cool a little when crawling)
     { const sp = Math.hypot(c.vx, c.vy) / MAX_SPEED; c.temp = clamp((c.temp ?? 1) + dt * (sp > 0.25 ? 0.045 * (0.5 + sp) : -0.01), 0, 1); }
     if (c.tire <= 0 && before > 0 && !c.punct) {
@@ -2804,7 +2807,7 @@ class Room {
       const side = Math.sign((-Math.sin(c.heading)) * nx * sgn + Math.cos(c.heading) * ny * sgn) || 1;
       c.spin = side * (4 + 6 * k); c.crashT = 0.9 + 0.8 * k; if (c.rs) c.rs.crashes++;
       c.damage = clamp(c.damage + (0.3 + 0.5 * k) * (CAR_CLASSES[c.cls]?.dmg || 1), 0, 1);
-      c.tire = Math.max(0, c.tire - 0.05 - 0.1 * k);
+      if (this.trackKind !== "tour") c.tire = Math.max(0, c.tire - 0.05 - 0.1 * k);
       c.cleanLap = false; c.passT = 0; c.aiNitro = false;
       const p = c.owner && this.players.get(c.owner);
       if (p) io.to(p.id).emit("crash", { with: (c === a ? b : a).name, damage: Math.round(c.damage * 100) });
