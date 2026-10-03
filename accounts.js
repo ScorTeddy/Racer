@@ -1315,14 +1315,28 @@ async function updateBoards(u, r) {
   if (r.best > 0 && r.totw) await putTotwLap(u, r.totw, r.best);
   saveBoards();
 }
+// Time trial: a top 10 for every track (by its drawing). Only the 400 most recently used tracks are kept.
+async function putTtLap(u, key, t) {
+  if (!(t > 1) || typeof key !== "string" || !/^[\w-]{1,40}$/.test(key)) return null;
+  const B = await boards(); B.tt = B.tt || {}; B.ttUsed = B.ttUsed || {};
+  const list = (B.tt[key] = B.tt[key] || []), before = list.find((x) => x.id === u.id)?.v;
+  putBoard(list, { id: u.id, name: u.name, v: Math.round(t * 1000) / 1000, at: Date.now() }, (a, b) => a.v < b.v, 10);
+  B.ttUsed[key] = Date.now();
+  const keys = Object.keys(B.tt);
+  if (keys.length > 400) { keys.sort((a, b) => (B.ttUsed[a] || 0) - (B.ttUsed[b] || 0)); for (const k of keys.slice(0, keys.length - 400)) { delete B.tt[k]; delete B.ttUsed[k]; } }
+  saveBoards();
+  const rank = list.findIndex((x) => x.id === u.id) + 1;
+  return { rank, pb: !before || t < before, list: list.map((x) => ({ name: x.name, v: x.v })) };
+}
 async function getBoard(kind, track) {
   const B = await boards();
+  if (kind === "tt") return { kind, track, list: ((B.tt || {})[String(track)] || []).map((x) => ({ name: x.name, v: x.v })) };
   if (kind === "ranked" || kind === "rankedTeam") return { kind, list: (B[kind] || []).map((x) => ({ ...x, rank: rankOf(x.v).label })) };
   if (kind === "totw") return { kind, week: Number(track) || 0, list: B.totw && B.totw.week === Number(track) ? B.totw.list : [] };
   if (kind === "laps") return { kind, track, list: B.laps[String(track)] || [], tracks: Object.keys(B.laps) };
   return { kind, list: B[kind] || [] };
 }
-function dropFromBoards(id) { if (!BOARDS) return; if (BOARDS.totw) BOARDS.totw.list = BOARDS.totw.list.filter((x) => x.id !== id); for (const k of ["wins", "ach", "km", "ranked", "rankedTeam"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
+function dropFromBoards(id) { if (!BOARDS) return; if (BOARDS.tt) for (const k of Object.keys(BOARDS.tt)) BOARDS.tt[k] = BOARDS.tt[k].filter((x) => x.id !== id); if (BOARDS.totw) BOARDS.totw.list = BOARDS.totw.list.filter((x) => x.id !== id); for (const k of ["wins", "ach", "km", "ranked", "rankedTeam"]) BOARDS[k] = BOARDS[k].filter((x) => x.id !== id); for (const t in BOARDS.laps) BOARDS.laps[t] = BOARDS.laps[t].filter((x) => x.id !== id); saveBoards(); }
 
 // ======================= Friends =======================
 // Add by username or by friend code (for Google accounts). Requests must be accepted.
@@ -1373,7 +1387,7 @@ async function friendList(u, online) {
   const one = async (id) => { const o = await getUser(id); return o ? { id, name: o.name, ...(online(id) || { online: false }) } : null; };
   return {
     code: friendCode(u.id),
-    friends: (await Promise.all(u.friends.map(one))).filter(Boolean).sort((a, b) => b.online - a.online || a.name.localeCompare(b.name)),
+    friends: (await Promise.all(u.friends.map(one))).filter(Boolean).map((f) => ({ ...f, h2h: u.h2h?.[f.id] || null })).sort((a, b) => b.online - a.online || a.name.localeCompare(b.name)),
     reqIn: (await Promise.all(u.reqIn.map(one))).filter(Boolean),
     reqOut: (await Promise.all(u.reqOut.map(one))).filter(Boolean),
   };
@@ -1698,6 +1712,161 @@ function sendDm(u, o, text) {
   return { ok: true, m };
 }
 function dmThread(u, id) { return (u.dms || {})[id] || []; }
+// ---- head-to-head: how you do against each friend when you're in the same race ----
+// ranked = [{ uid, rank }] from one race (lower rank = finished ahead)
+async function recordH2H(ranked) {
+  const us = await Promise.all(ranked.map((x) => getUser(x.uid)));
+  for (let i = 0; i < ranked.length; i++) for (let j = 0; j < ranked.length; j++) {
+    const a = us[i], b = us[j]; if (i === j || !a || !b || !isFriend(a, b.id) || ranked[i].rank === ranked[j].rank) continue;
+    a.h2h = a.h2h || {}; const R = (a.h2h[b.id] = a.h2h[b.id] || { n: 0, w: 0 });
+    R.n++; if (ranked[i].rank < ranked[j].rank) R.w++;
+    const ks = Object.keys(a.h2h); if (ks.length > 200) delete a.h2h[ks[0]];
+    saveSoon(a);
+  }
+}
+// ---- ghost challenges: your best lap on a track, sent to a friend to beat ----
+function addGhostChallenge(u, o, c) {
+  if (!o || !isFriend(u, o.id)) return { error: "You can only challenge friends" };
+  o.ghostsIn = (o.ghostsIn || []).filter((x) => !(x.fromId === u.id && x.trackKey === c.trackKey));
+  o.ghostsIn.push({ code: c.code, fromId: u.id, fromName: u.name, t: c.t, trackName: c.trackName, trackKey: c.trackKey, at: Date.now() });
+  if (o.ghostsIn.length > 10) o.ghostsIn = o.ghostsIn.slice(-10);
+  saveSoon(o); return { ok: true };
+}
+function ghostsPublic(u) { const now = Date.now(); u.ghostsIn = (u.ghostsIn || []).filter((x) => now - x.at < 14 * 86400000); return u.ghostsIn.map(({ code, fromName, fromId, t, trackName, beat, won }) => ({ code, fromName, fromId, t, trackName, beat: beat || null, won: !!won })); }
+function ghostBeat(u, code, t) {
+  const g = (u.ghostsIn || []).find((x) => x.code === code); if (!g || !(t > 1)) return null;
+  if (!g.beat || t < g.beat) g.beat = Math.round(t * 1000) / 1000;          // (your best try)
+  const first = t < g.t && !g.won;                                            // the reward: the first time you actually beat it
+  if (first) { g.won = true; u.coins += GHOST_BEAT_COINS; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + GHOST_BEAT_COINS; }
+  saveSoon(u); return { first, beat: t < g.t, by: Math.round((g.t - t) * 1000) / 1000, fromId: g.fromId, coins: first ? GHOST_BEAT_COINS : 0 };
+}
+const GHOST_BEAT_COINS = 150;
+
+// ---- weekend tournaments: sign up in the week, then a knockout bracket over the weekend. Each match is decided
+// by the best lap on that weekend's tournament track, set during that round (no lap = the higher seed goes through) ----
+const DAY_MS = 86400000, TOUR_PRIZES = [5000, 2000, 750], TOUR_MAX = 64;
+const tourTimes = (w) => { const open = (w * 7 - 3) * DAY_MS; return { open, begin: open + 5 * DAY_MS, end: open + 7 * DAY_MS }; };
+function seedOrder(n) { let o = [1]; while (o.length < n) { const m = o.length * 2 + 1; o = o.flatMap((x) => [x, m - x]); } return o; }
+async function tourState(now = Date.now()) {
+  const B = await boards(), w = weekNo();
+  if (!B.tour || B.tour.week !== w) {
+    if (B.tour) { const O = B.tour, nm = (id) => O.entrants.find((e) => e.id === id)?.name || null; resolveTour(O, tourTimes(O.week).end + 1); await tourPay(O); B.tourLast = { week: O.week, champion: nm(O.champion), runnerUp: nm(O.runnerUp) }; }
+    B.tour = { week: w, entrants: [], bracket: null, laps: {}, paid: false, last: B.tourLast || null }; saveBoards();
+  }
+  if (resolveTour(B.tour, now)) { await tourPay(B.tour); saveBoards(); }
+  return B.tour;
+}
+function resolveTour(T, now) {
+  const { begin, end } = tourTimes(T.week); if (now < begin) return false;
+  let changed = false;
+  if (!T.bracket) {
+    const E = [...T.entrants].sort((a, b) => (b.sr || 0) - (a.sr || 0));
+    if (E.length < 2) { T.bracket = { size: 0, rounds: [], len: 0 }; return true; }
+    const size = 2 ** Math.ceil(Math.log2(E.length)), order = seedOrder(size), R = Math.log2(size), first = [];
+    for (let i = 0; i < size; i += 2) { const a = E[order[i] - 1] || null, b = E[order[i + 1] - 1] || null; first.push({ a: a && a.id, b: b && b.id, sa: order[i], sb: order[i + 1], w: null }); }
+    T.bracket = { size, len: (end - begin) / R, rounds: [first] }; changed = true;
+  }
+  const BR = T.bracket; if (!BR.size) return changed;
+  const R = Math.log2(BR.size);
+  for (let r = 0; r < R; r++) {
+    const round = BR.rounds[r]; if (!round || round.every((m) => m.w)) continue;
+    // byes go through straight away; real matches when their round is over
+    const over = now >= begin + (r + 1) * BR.len;
+    for (const m of round) {
+      if (m.w) continue;
+      if (!m.a || !m.b) { if (m.a || m.b) { m.w = m.a || m.b; changed = true; } else { m.w = "-"; changed = true; } continue; }
+      if (!over) continue;
+      const la = T.laps[m.a]?.[r], lb = T.laps[m.b]?.[r];
+      m.la = la ?? null; m.lb = lb ?? null;
+      m.w = la && lb ? (la <= lb ? m.a : m.b) : la ? m.a : lb ? m.b : (m.sa < m.sb ? m.a : m.b); changed = true;
+    }
+    if (round.every((m) => m.w) && r + 1 < R && !BR.rounds[r + 1]) {
+      const next = []; for (let i = 0; i < round.length; i += 2) { const A = round[i], Bm = round[i + 1], wa = A.w === "-" ? null : A.w, wb = Bm.w === "-" ? null : Bm.w;
+        next.push({ a: wa, b: wb, sa: A.w === A.a ? A.sa : A.sb, sb: Bm.w === Bm.a ? Bm.sa : Bm.sb, w: null }); }
+      BR.rounds.push(next); changed = true;
+    }
+    if (r === R - 1 && round[0].w && !T.champion) { const f = round[0]; T.champion = f.w; T.runnerUp = f.w === f.a ? f.b : f.a; T.semis = R >= 2 ? BR.rounds[R - 2].map((m) => (m.w === m.a ? m.b : m.a)).filter(Boolean) : []; changed = true; }
+  }
+  return changed;
+}
+async function tourPay(T) {
+  if (!T.champion || T.paid || T.champion === "-") return;
+  T.paid = true;
+  const name = (id) => T.entrants.find((e) => e.id === id)?.name || "?";
+  for (const [ids, coins, what] of [[[T.champion], TOUR_PRIZES[0], "won"], [[T.runnerUp], TOUR_PRIZES[1], "finished runner-up in"], [T.semis || [], TOUR_PRIZES[2], "reached the semi-finals of"]]) for (const id of ids) {
+    const u = id && (await getUser(id)); if (!u) continue;
+    u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; u.stats.tourWins = (u.stats.tourWins || 0) + (what === "won" ? 1 : 0);
+    addNote(u, { icon: "🏟️", title: `You ${what} the weekend tournament!`, text: `+${coins.toLocaleString()} coins${what === "won" ? ` · ${name(T.runnerUp)} was runner-up` : ""}` });
+  }
+}
+async function tourJoin(u) {
+  const T = await tourState(), { begin } = tourTimes(T.week);
+  if (Date.now() >= begin) return { error: "Sign-ups are closed: the tournament has started. Next week's opens on Monday." };
+  if (T.entrants.some((e) => e.id === u.id)) return { error: "You're already in" };
+  if (T.entrants.length >= TOUR_MAX) return { error: "The tournament is full (64 players)" };
+  T.entrants.push({ id: u.id, name: u.name, sr: u.ranked?.sr || 0 }); saveBoards();
+  return { ok: true };
+}
+// a lap on the tournament track: counts for your match in the round that's on right now
+async function tourLap(u, t) {
+  const T = await tourState(), BR = T.bracket; if (!BR || !BR.size) return null;
+  const { begin } = tourTimes(T.week), r = Math.floor((Date.now() - begin) / BR.len), round = BR.rounds[r];
+  const m = round && round.find((x) => !x.w && (x.a === u.id || x.b === u.id)); if (!m) return null;
+  const L = (T.laps[u.id] = T.laps[u.id] || {}); const pb = !L[r] || t < L[r]; if (pb) L[r] = Math.round(t * 1000) / 1000; saveBoards();
+  const opp = m.a === u.id ? m.b : m.a;
+  return { round: r, best: L[r], pb, opp: T.entrants.find((e) => e.id === opp)?.name || null, oppBest: T.laps[opp]?.[r] ?? null };
+}
+function tourPublic(T, u) {
+  const tt = tourTimes(T.week), name = (id) => (id && id !== "-" ? T.entrants.find((e) => e.id === id)?.name || "?" : null), BR = T.bracket;
+  const r = BR && BR.size ? Math.min(Math.log2(BR.size) - 1, Math.floor((Date.now() - tt.begin) / BR.len)) : -1;
+  return {
+    week: T.week, ...tt, now: Date.now(), joined: !!u && T.entrants.some((e) => e.id === u.id), count: T.entrants.length, entrants: T.entrants.slice(0, 64).map((e) => e.name),
+    round: r, roundEnds: BR && BR.size ? tt.begin + (r + 1) * BR.len : 0, prizes: TOUR_PRIZES, champion: name(T.champion), last: T.last || null,
+    rounds: BR ? BR.rounds.map((rd, i) => rd.map((m) => ({ a: name(m.a), b: name(m.b), w: name(m.w), la: i === r ? T.laps[m.a]?.[i] ?? null : m.la ?? null, lb: i === r ? T.laps[m.b]?.[i] ?? null : m.lb ?? null, me: !!u && (m.a === u.id || m.b === u.id) }))) : [],
+  };
+}
+// ---- weekly track contest: a theme each week, enter a track, vote for others. The winner becomes NEXT week's
+// Track of the Week. One entry per player (a new one replaces it), one vote per player per entry, not your own. ----
+const CONTEST_THEMES = ["Figure eights", "Tiny tracks", "Bridges galore", "Long straights", "Hairpin heaven", "Real-world copies", "Weird shapes", "Speed bowls", "Draw an animal", "Letters and numbers"];
+const contestTheme = (w) => CONTEST_THEMES[((w % CONTEST_THEMES.length) + CONTEST_THEMES.length) % CONTEST_THEMES.length];
+async function contestState() {
+  const B = await boards(), w = weekNo();
+  if (!B.contest || B.contest.week !== w) {
+    if (B.contest) {
+      const C = B.contest, best = [...C.entries].sort((a, b) => b.votes.length - a.votes.length || a.at - b.at)[0];
+      B.contestWin = B.contestWin || {};
+      if (best && best.votes.length) {
+        B.contestWin[C.week + 1] = { code: best.code, name: best.name, byName: best.byName, votes: best.votes.length, theme: contestTheme(C.week) };
+        const by = await getUser(best.uid); if (by) { by.coins += 1500; by.stats.coinsEarned = (by.stats.coinsEarned || 0) + 1500; addNote(by, { icon: "🗳️", title: "Your track won the weekly contest!", text: `"${best.name}" is this week's Track of the Week · +1,500 coins` }); }
+      }
+      for (const k of Object.keys(B.contestWin)) if (Number(k) < w - 3) delete B.contestWin[k];
+    }
+    B.contest = { week: w, entries: [] }; saveBoards();
+  }
+  return B.contest;
+}
+async function contestWinner(w) { await contestState(); const B = await boards(); return (B.contestWin || {})[w] || null; }
+async function contestEnter(u, e) {
+  const C = await contestState();
+  const name = String(e.name || "").replace(/\s+/g, " ").trim().slice(0, 30) || `${u.name}'s track`;
+  if (C.entries.some((x) => x.code === e.code && x.uid !== u.id)) return { error: "Someone already entered that exact track" };
+  const old = C.entries.find((x) => x.uid === u.id);
+  C.entries = C.entries.filter((x) => x.uid !== u.id);
+  if (C.entries.length >= 40) return { error: "The contest is full this week" };
+  C.entries.push({ code: e.code, uid: u.id, byName: u.name, name, votes: old && old.code === e.code ? old.votes : [], at: Date.now() });
+  saveBoards(); return { ok: true, replaced: !!old };
+}
+async function contestVote(u, code) {
+  const C = await contestState(), e = C.entries.find((x) => x.code === code);
+  if (!e) return { error: "That entry is gone" }; if (e.uid === u.id) return { error: "You can't vote for your own track" };
+  e.votes = e.votes.includes(u.id) ? e.votes.filter((x) => x !== u.id) : [...e.votes, u.id];
+  saveBoards(); return { ok: true, voted: e.votes.includes(u.id) };
+}
+async function contestPublic(u) {
+  const C = await contestState(), B = await boards();
+  return { week: C.week, theme: contestTheme(C.week), ends: (C.week + 1) * 7 * 86400000 - 3 * 86400000, nextTheme: contestTheme(C.week + 1), thisWeeksWinner: (B.contestWin || {})[C.week] || null,
+    entries: C.entries.map((e) => ({ code: e.code, name: e.name, byName: e.byName, votes: e.votes.length, mine: !!u && e.uid === u.id, voted: !!u && e.votes.includes(u.id) })).sort((a, b) => b.votes - a.votes) };
+}
 // ---- notifications for when you're offline: shown at the top of the screen the next time you sign in ----
 function addNote(u, n) {
   u.notes = (u.notes || []).filter((x) => !n.key || x.key !== n.key);      // (one "new messages from X" at a time)
@@ -1919,7 +2088,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), ghosts: ghostsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -2030,7 +2199,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  saveCarPreset, deleteCarPreset, applyCarLook, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
+  contestState, contestWinner, contestEnter, contestVote, contestPublic, CONTEST_THEMES, saveSoon, saveCarPreset, deleteCarPreset, applyCarLook, putTtLap, recordH2H, addGhostChallenge, ghostsPublic, ghostBeat, GHOST_BEAT_COINS, tourState, tourJoin, tourLap, tourPublic, tourTimes, resolveTour, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,

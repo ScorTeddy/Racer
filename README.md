@@ -269,6 +269,26 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   pop-up windows (never `#hud` or the chat box), so the race looks exactly the same. `renderBroadcast()` fills in
   the hello, stats strip, streak strip and the ticker. The car preview canvas is 2x for sharpness (same `drawCar`).
 
+## October update: racing, modes, social, presentation, track builder
+
+- **Red flag** (`redFlag` / `stepRedFlag`): with the safety car on, `RED_FLAG_CARS` (4) cars crashing within 4s stop the race
+  for `RED_FLAG_TIME`; damage is fixed and the safety car leads the restart. Once a race.
+- **Rolling start** (`settings.start = "rolling"`): no lights; cars start at `lapsDone = -2` and follow the safety car
+  (`sc.rolling`) until the leader crosses the line (green flag + `lightsOut {rolling}`). The formation lap isn't timed.
+- **Tyre temperature** (`c.temp`, `gripOf`): up to 14% less grip when cold; warms with speed; 0.3 after a stop.
+- **Day into night** (`settings.dayNight`): the client fades `drawNight` in with `duskLevel()` (leader's race distance).
+- **Pit wall** (`teamOrder` socket, `c.teamOrder`): push (+3% pace, 1.35x wear), hold (no fighting teammates, 0.8x wear), box.
+- **Modes**: `tt` (practice + `putTtLap` boards per `trackKey`), `koth` (`c.leadT`, results by lead time), `endur`
+  (`enduro.secs`, laps estimated then cut when time's up; with teams, teammates share a car: `p.coDriver`,
+  `c.drivers`, `swapDriver` at every pit stop).
+- **Social**: `recordH2H` (friends only), predictions (`predict` socket, odds by grid slot, settled in `endRace`,
+  refunded in `stopRace`), ghost challenges (`ghost:send` stores the lap + track in share storage "gho" for 14 days),
+  weekend tournament (`tourState` / `resolveTour` / `tourLap`: async bracket over Sat-Sun, seeded by SR).
+- **Presentation**: lap chart (`c.lapPos` -> results `lp`), highlight reel (`markMoment` / `reelClip`), crowd
+  (`crowdOn` / `crowdRoar`), spectator timing, grid walk + intro card, horns (`horn` socket) and `ENGINES`.
+- **Track builder**: objects (`decor`, `addDecor`, `decorMsg`; board points snapped to the track; in share codes),
+  weekly contest (`contestState` etc.; the winner's track overrides `totw()` via `refreshContestTotw`).
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
