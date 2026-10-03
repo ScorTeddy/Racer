@@ -1372,6 +1372,23 @@ test("weekly track contest: enter, vote (not your own), and the winner becomes n
   } finally { Date.now = realNow; await game.refreshContestTotw(); }
 });
 
+test("weekend tournament track: no tyre wear, in any mode", { timeout: 60000 }, () => {
+  for (const mode of ["tt", "normal"]) {
+    const r = new game.Room("TOURWEAR" + mode, false); assert.equal(r.setTourTrack(), null);
+    r.players.set("w", { id: "w", name: "Me", up: {}, level: 1, xp: 0 });
+    Object.assign(r.settings, { ai: 3, quali: 0, laps: 5, weather: "sunny", mode, wear: "high" }); r.ensureRoster(3);
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 45; n++) r.step(1 / 60);
+    assert.ok(r.cars.every((c) => c.tire === 1), `${mode}: tyres still 100%`);
+    assert.ok(r.cars.every((c) => c.pits === 0), `${mode}: nobody needs to stop`);
+  }
+  const n = new game.Room("NORMWEAR", false); n.setRandomTrack("normal", "regular");
+  Object.assign(n.settings, { ai: 2, quali: 0, laps: 5, weather: "sunny" }); n.ensureRoster(2);
+  n.startRace(); n.startLights(); n.phase = "race"; n.launchCars();
+  for (let k = 0; k < 60 * 20; k++) n.step(1 / 60);
+  assert.ok(n.cars.some((c) => c.tire < 1), "other tracks still wear");
+});
+
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
   const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => {
