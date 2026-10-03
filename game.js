@@ -6561,7 +6561,7 @@
       "🌇 Day into night (Settings): the sun goes down as the race goes on, headlights on at dusk.",
       "📻 Pit wall: tell your AI teammate to Push, Hold or Box (team radio panel).",
       "⏱️ Time trial mode with a leaderboard on every track · 👑 King of the hill · ⏳ Endurance (10-30 min, teammates share a car and swap at the stops).",
-      "🏟️ Weekend tournaments (Profile › Tournament): sign up in the week, knockout bracket at the weekend, best lap wins each match. No tyre wear on the tournament track.",
+      "🏟️ Weekend tournaments (Profile › Tournament): sign up in the week, knockout bracket at the weekend, best lap wins each match. No tyre wear on the tournament track, and from next week it's always a VERY wonky one.",
       "🤝 Head-to-head records with friends · 🎲 Predict the winner when you're watching · 👻 Ghost challenges: send a friend your lap to beat.",
       "📈 Lap chart and 🎞️ highlight reel after every race · 📣 Crowd noise · 📊 Live timing for spectators · Grid walk and a track card before the start.",
       "📯 Horns (H) and engine sounds (V8, V12, electric) in Settings.",
