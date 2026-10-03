@@ -1372,6 +1372,11 @@ body.touch .pg-pad { display: flex; }
 .pit-wall span { color: var(--soft); font-weight: 700; }
 .pit-wall button { cursor: pointer; padding: 0.2rem 0.55rem; border-radius: 0.4rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.06); color: inherit; font: inherit; font-weight: 700; }
 .pit-wall button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); }
+/* ---- messages outside a race (the race has its own floating ones) ---- */
+.toasts { position: fixed; left: 50%; bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 80; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; pointer-events: none; width: min(30rem, 92vw); }
+.toast-card { padding: 0.6rem 1rem; border-radius: 0.6rem; background: rgba(16, 20, 31, 0.96); border: 1.5px solid var(--edge); border-left: 4px solid #3ecf6a; color: #fff; font-weight: 700; font-size: 0.95rem; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: toastIn 250ms ease both; }
+.toast-card.warn { border-left-color: #ff2d55; } .toast-card.out { opacity: 0; transform: translateY(6px); transition: opacity 300ms ease, transform 300ms ease; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* ---- car presets ---- */
 #carPresetBox { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; background: rgba(5,6,10,0.6); }
 #carPresetBox.hidden { display: none; }
