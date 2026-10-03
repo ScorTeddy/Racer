@@ -1331,6 +1331,13 @@ body.touch .pg-pad { display: flex; }
 .pl-drop { font-size: 1.1rem; min-height: 3rem; }
 .pl-hist { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .pl-hist span { font-size: 0.7rem; font-weight: 800; color: #fff; padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+/* ---- car presets ---- */
+#carPresetBox { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; background: rgba(5,6,10,0.6); }
+#carPresetBox.hidden { display: none; }
+#carPresetBtn { margin-top: 0.3rem; } .cust-presets { margin-bottom: 0.7rem; }
+.car-preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.6rem; max-height: 60vh; overflow: auto; }
+.car-preset { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.5rem; border-radius: 0.8rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.04); }
+.car-preset canvas { width: 100%; max-width: 180px; height: auto; } .car-preset small { color: var(--soft); } .car-preset .sec-row { display: flex; gap: 0.3rem; width: 100%; } .car-preset .btn.go { flex: 1; }
 /* ---- login streak ---- */
 .streak-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; margin: 0.4rem 0; }
 .streak-day { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; padding: 0.35rem 0.15rem; border-radius: 0.6rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.04); text-align: center; }

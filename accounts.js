@@ -593,7 +593,7 @@ ACH.push(
   add(cnt("g_themes_all", "🌈", "Every Weather, Every World", "Win on every theme", 3000, (s) => Object.keys(THEMES).filter((k) => s.themeWins?.[k]).length, Object.keys(THEMES).length));
   // the brutal ones
   brutal = true;
-  const ext = (r, n) => (r.aiLevel === "extreme" || r.aiLevel === "overdrive") && r.of - (r.humans || 1) >= n;
+  const ext = (r, n) => (r.aiLevel === "extreme" || r.aiLevel === "overdrive" || r.aiLevel === "elite") && r.of - (r.humans || 1) >= n;
   for (const [n, c] of [[10, 1500], [20, 4000], [30, 8000], [40, 15000], [59, 30000]]) add(one(`g_field_${n}`, "🏟️", `Giant Slayer ${ROMAN([10, 20, 30, 40, 59].indexOf(n) + 1)}`, `Win against ${n}+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && ext(r, n)));
   for (const [m, c] of [[5, 500], [10, 1500], [20, 4000], [30, 8000], [45, 15000]]) add(one(`g_margin_${m}`, "📏", `Daylight ${ROMAN([5, 10, 20, 30, 45].indexOf(m) + 1)}`, `Win by ${m}+ seconds against 8+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && r.margin >= m && r.margin < 99 && ext(r, 8)));
   for (const [l, c] of [[20, 2000], [30, 4000], [50, 9000], [75, 16000]]) add(one(`g_endure_${l}`, "🗿", `Iron Man ${ROMAN([20, 30, 50, 75].indexOf(l) + 1)}`, `Win a ${l}+ lap race against 10+ EXTREME AI`, c, (s, r) => r.pos === 1 && r.finished && r.laps >= l && ext(r, 10)));
@@ -1235,7 +1235,7 @@ const WEEKLY_POOL = [
   { id: "w_wonky3", name: "Wonky Week", desc: "Win 3 races on VERY wonky random tracks", goal: 3, coins: 500, add: (r) => (r.pos === 1 && r.of >= 4 && r.wonk === "very" ? 1 : 0) },
   { id: "w_real5", name: "Road Trip", desc: "Finish top 3 on 5 real tracks", goal: 5, coins: 350, add: (r) => (r.finished && r.pos <= 3 && r.of >= 4 && r.kind === "f1" ? 1 : 0) },
   { id: "w_drawn4", name: "Home Made", desc: "Finish 4 races on tracks you drew", goal: 4, coins: 300, add: (r) => (r.finished && r.drewIt ? 1 : 0) },
-  { id: "w_extreme", name: "Tough Crowd", desc: "Win 2 races on EXTREME AI (8+ cars)", goal: 2, coins: 700, add: (r) => (r.pos === 1 && (r.aiLevel === "extreme" || r.aiLevel === "overdrive") && r.of >= 8 ? 1 : 0) },
+  { id: "w_extreme", name: "Tough Crowd", desc: "Win 2 races on EXTREME AI (8+ cars)", goal: 2, coins: 700, add: (r) => (r.pos === 1 && (r.aiLevel === "extreme" || r.aiLevel === "overdrive" || r.aiLevel === "elite") && r.of >= 8 ? 1 : 0) },
   { id: "w_laps100", name: "Lap Grinder", desc: "Drive 100 laps", goal: 100, coins: 350, add: (r) => r.lapsDone || 0 },
   { id: "w_pb6", name: "Personal Bests", desc: "Set 6 personal-best laps", goal: 6, coins: 350, add: (r) => (r.newPb ? 1 : 0) },
   { id: "w_clean3", name: "Clean Sheet", desc: "Finish 3 races of 5+ laps with every lap clean", goal: 3, coins: 450, add: (r) => (r.finished && r.laps >= 5 && r.cleanLaps >= r.laps && r.crashes === 0 ? 1 : 0) },
@@ -1439,12 +1439,14 @@ const passItem = (T, slot) => `bp_${T.key}_${slot}`;
 function passRewards(T = monthTheme()) {
   const free = [], prem = [];
   for (let t = 1; t <= PASS_TIERS; t++) {
-    // 60 tiers: themed items up to 30, then crates, coins and wheel spins all the way to 60
-    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 || t === 45 || t === 60 ? { crate: T.key } : t % 10 === 7 ? { spins: 1 }
-      : t % 5 === 0 ? { coins: 250 } : { coins: 60 + Math.min(t, 30) * 3 });
+    // 60 tiers, and the rewards get better the higher you go: coins grow every tier, more spins and
+    // double crates late on. Themed items up to 30, the biggest prizes at the top.
+    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 ? { crate: T.key } : t === 45 ? { crate: T.key, n: 2 } : t === 60 ? { crate: T.key, n: 3 }
+      : t % 10 === 7 ? { spins: t < 30 ? 1 : t < 50 ? 2 : 3 } : t % 5 === 0 ? { coins: 150 + t * 8 } : { coins: 50 + t * 5 });
     prem.push(t === 1 ? { item: passItem(T, "helmet") } : t === 5 ? { item: passItem(T, "glow") } : t === 10 ? { item: passItem(T, "smoke") }
       : t === 20 ? { item: passItem(T, "flame") } : t === 25 ? { item: passItem(T, "trail") } : t === 30 ? { item: passItem(T, "badge") }
-      : t === 60 ? { spins: 5 } : t % 6 === 0 ? { spins: 2 } : t % 4 === 3 ? { crate: T.key } : { coins: 120 + Math.min(t, 30) * 4 });
+      : t === 60 ? { spins: 6 } : t === 50 ? { crate: T.key, n: 3 } : t % 6 === 0 ? { spins: t <= 30 ? 2 : 3 } : t % 4 === 3 ? { crate: T.key, n: t < 40 ? 1 : 2 }
+      : { coins: 100 + t * 10 });
   }
   return { free, prem };
 }
@@ -1456,7 +1458,7 @@ function passState(u) {
 function grant(u, rw, why) {
   if (rw.coins) { u.coins += rw.coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + rw.coins; return `+${rw.coins} coins`; }
   if (rw.spins) { u.spins = (u.spins || 0) + rw.spins; return `${rw.spins} wheel spin${rw.spins > 1 ? "s" : ""}`; }
-  if (rw.crate) { u.crates = u.crates || {}; u.crates[rw.crate] = (u.crates[rw.crate] || 0) + 1; return `a ${PASS_THEMES.find((x) => x.key === rw.crate)?.name || ""} crate`; }
+  if (rw.crate) { const n = rw.n || 1; u.crates = u.crates || {}; u.crates[rw.crate] = (u.crates[rw.crate] || 0) + n; const nm = PASS_THEMES.find((x) => x.key === rw.crate)?.name || ""; return n > 1 ? `${n} ${nm} crates` : `a ${nm} crate`; }
   if (rw.item) { const it = STORE_BY_ID.get(rw.item); if (!it) return ""; if (!u.owned.includes(it.id)) u.owned.push(it.id); else { u.coins += 150; return `+150 coins (you had the ${it.name})`; } return it.name; }
   return "";
 }
@@ -1539,14 +1541,15 @@ function rankOf(sr) {
 // real = chance of a real circuit (up to realKm long) instead of a random track on one of `maps` at one of `wonks`.
 // (Rough lap times: large map 22-38s, huge 34-76s.)
 const RANKED_FIELDS = [
-  { ai: 3, aiLevel: "hard", laps: 4, maps: ["large"], wonks: ["little"], real: 0.2, realKm: 4.5 },                                  // Iron
-  { ai: 4, aiLevel: "hard", laps: 6, maps: ["large"], wonks: ["little", "regular"], real: 0.3, realKm: 5.5 },                       // Bronze
-  { ai: 5, aiLevel: "extreme", laps: 7, maps: ["large"], wonks: ["regular"], real: 0.35, realKm: 6 },                               // Silver
-  { ai: 6, aiLevel: "extreme", laps: 9, maps: ["large"], wonks: ["regular", "regular", "very"], real: 0.4, realKm: 7.2 },           // Gold
-  { ai: 7, aiLevel: "overdrive", laps: 10, maps: ["large", "huge"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },            // Platinum
+  // AI level climbs every tier: Rookie (ranked only, really gentle) at Iron, up to Elite (ranked only) at the top
+  { ai: 3, aiLevel: "rookie", laps: 4, maps: ["large"], wonks: ["little"], real: 0.2, realKm: 4.5 },                                // Iron
+  { ai: 4, aiLevel: "easy", laps: 6, maps: ["large"], wonks: ["little", "regular"], real: 0.3, realKm: 5.5 },                       // Bronze
+  { ai: 5, aiLevel: "medium", laps: 7, maps: ["large"], wonks: ["regular"], real: 0.35, realKm: 6 },                                // Silver
+  { ai: 6, aiLevel: "hard", laps: 9, maps: ["large"], wonks: ["regular", "regular", "very"], real: 0.4, realKm: 7.2 },              // Gold
+  { ai: 7, aiLevel: "extreme", laps: 10, maps: ["large", "huge"], wonks: ["regular", "very"], real: 0.4, realKm: 7.2 },              // Platinum
   { ai: 8, aiLevel: "overdrive", laps: 12, maps: ["huge"], wonks: ["regular", "very"], real: 0.4, realKm: 8 },                       // Diamond
   { ai: 10, aiLevel: "overdrive", laps: 13, maps: ["huge"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Master
-  { ai: 12, aiLevel: "overdrive", laps: 15, maps: ["huge"], wonks: ["very"], real: 0.4, realKm: 8 },                                 // Overdrive Elite
+  { ai: 12, aiLevel: "elite", laps: 15, maps: ["huge"], wonks: ["very"], real: 0.4, realKm: 8 },                                     // Overdrive Elite
 ];
 function rankedField(sr) { return { ...RANKED_FIELDS[rankOf(sr).i] }; }
 const RANKED_DNF = 45;
@@ -1952,6 +1955,33 @@ function cleanSetPreset(p) {
   }
   return { name, settings: s, saved: Number(p.saved) || Date.now() };
 }
+// Car presets: a whole look saved under a name (colour, livery, number, painted design and every item you
+// have equipped), so you can swap between looks in one tap. Max 20.
+const CAR_LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
+function cleanCarPreset(u, p) {
+  const name = String(p?.name || "").replace(/\s+/g, " ").trim().slice(0, 24);
+  if (!name) return null;
+  const eq = {};
+  for (const [slot, id] of Object.entries(p?.equipped || {})) { const it = STORE_BY_ID.get(String(id)); if (it && it.slot === slot && u.owned.includes(it.id)) eq[slot] = it.id; }
+  return {
+    name, color: /^#[0-9a-fA-F]{6}$/.test(p?.color) ? p.color : "#ffcc1f", livery: CAR_LIVERIES.includes(p?.livery) ? p.livery : "stripes",
+    number: Math.max(0, Math.min(99, Math.round(Number(p?.number) || 0))), design: typeof p?.design === "string" && /^[0-9a-f.]{288}$/.test(p.design) ? p.design : null, equipped: eq,
+  };
+}
+function saveCarPreset(u, p) {
+  const c = cleanCarPreset(u, p); if (!c) return { error: "Give the preset a name" };
+  u.carPresets = (u.carPresets || []).filter((x) => x.name.toLowerCase() !== c.name.toLowerCase());
+  if (u.carPresets.length >= 20) return { error: "You have 20 car presets already. Delete one first." };
+  u.carPresets.push(c); saveSoon(u); return { ok: true };
+}
+function deleteCarPreset(u, name) { u.carPresets = (u.carPresets || []).filter((x) => x.name !== name); saveSoon(u); }
+// put a preset's items on (only ones you still own); slots it didn't use are cleared, so the look is exact
+function applyCarLook(u, equipped) {
+  const want = cleanCarPreset(u, { name: "x", equipped }).equipped;
+  u.equipped = {};
+  for (const [slot, id] of Object.entries(want)) u.equipped[slot] = id;
+  saveSoon(u); return { ok: true };
+}
 function saveSetPreset(u, p) {
   const c = cleanSetPreset(p); if (!c) return { error: "Those settings couldn't be saved" };
   u.setPresets = (u.setPresets || []).filter((x) => x.name.toLowerCase() !== c.name.toLowerCase());
@@ -2000,7 +2030,7 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
+  saveCarPreset, deleteCarPreset, applyCarLook, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,

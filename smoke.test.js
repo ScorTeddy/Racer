@@ -201,9 +201,9 @@ test("ranked tiers, rating maths and who you race", () => {
   assert.equal(accounts.rankOf(750).label, "Silver II");
   assert.equal(accounts.rankOf(2100).key, "oe");
   const iron = accounts.rankedField(100), silver = accounts.rankedField(700), plat = accounts.rankedField(1300), oe = accounts.rankedField(2500);
-  assert.deepEqual([iron.ai, iron.aiLevel, iron.laps, iron.maps, iron.wonks], [3, "hard", 4, ["large"], ["little"]], "Iron: 4 laps against 3 Hard AI on big, gentle tracks");
-  assert.equal(silver.aiLevel, "extreme");
-  assert.equal(plat.aiLevel, "overdrive");
+  assert.deepEqual([iron.ai, iron.aiLevel, iron.laps, iron.maps, iron.wonks], [3, "rookie", 4, ["large"], ["little"]], "Iron: 4 laps against 3 Rookie AI on big, gentle tracks");
+  assert.equal(silver.aiLevel, "medium");
+  assert.equal(plat.aiLevel, "extreme");
   assert.ok(oe.ai > plat.ai && plat.ai > silver.ai && silver.ai > iron.ai, "more AI every tier");
   const allLaps = [0, 300, 600, 900, 1200, 1500, 1800, 2100].map((sr) => accounts.rankedField(sr).laps);
   assert.ok(allLaps.every((l, i) => !i || l > allLaps[i - 1]), "laps go up every tier: " + allLaps);
@@ -309,7 +309,7 @@ test("a whole ranked race: signed in, locked settings, rating changes at the fla
   s.emit("ranked:play", { name: "RankRacer" });
   const j = await got("joined");
   const r = game.rooms.get(j.code);
-  assert.ok(r.ranked && r.settings.aiLevel === "hard" && r.settings.ai === 3, "Iron: 3 hard AI");
+  assert.ok(r.ranked && r.settings.aiLevel === "rookie" && r.settings.ai === 3, "Iron: 3 rookie AI");
   r.settings.laps = 1; r.settings.speed = 3;                // (quick test race)
   s.emit("settings", { ai: 20, aiLevel: "easy" });
   s.on("tirePick", () => s.emit("compound", "fast"));
@@ -551,7 +551,7 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
   s.emit("auth:login", { username: "RankTracks", password: "Turbo-Fox-Lane-42" }); const acct = await got("account");
   const u = await accounts.getUser(acct.id);
   for (const [sr, check] of [[0, (r) => (r.trackKind === "f1" || (r.settings.map === "large" && r.wonk === "little")) && r.settings.ai === 3 && r.settings.laps === 4 && r.track.length > 9000],
-    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 15 && r.settings.aiLevel === "overdrive" && (r.trackKind === "f1" || r.settings.map === "huge")]]) {
+    [2500, (r) => r.settings.ai === 12 && r.settings.laps === 15 && r.settings.aiLevel === "elite" && (r.trackKind === "f1" || r.settings.map === "huge")]]) {
     u.ranked = { sr, peak: sr, games: 0, wins: 0 };
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);
@@ -602,7 +602,7 @@ test("team ranked: friends race ranked together, then the room is normal again",
   a.emit("teamRanked:start");
   await new Promise((ok) => setTimeout(ok, 800));
   assert.ok(r.ranked && r.teamRanked, "the room went ranked");
-  assert.equal(r.settings.aiLevel, "overdrive", "the field is set by the highest rank on the team (Platinum), not the average");
+  assert.equal(r.settings.aiLevel, "extreme", "the field is set by the highest rank on the team (Platinum), not the average");
   assert.ok(r.settings.teams && [...r.players.values()].every((p) => p.team === [...r.players.values()][0].team), "one team");
   r.settings.laps = 1; r.settings.speed = 3;                    // (quick test race)
   for (const s of [a, b]) { s.on("tirePick", () => s.emit("compound", "fast")); s.on("lightsOut", () => s.emit("react", 250)); }
@@ -1100,6 +1100,45 @@ test("login streak: a 7-day cycle, day 7 gives a crate and a wheel spin, missing
   assert.equal(accounts.publicUser(u).loginStreak.streak, 7);
   u.dailyDay = today - 1; assert.equal(accounts.dailyReward(u).cycleDay, 1, "day 8 starts the cycle again");
   u.dailyDay = today - 3; const r = accounts.dailyReward(u); assert.equal(r.streak, 1, "missed days: back to day 1"); assert.equal(r.coins, 50);
+});
+
+test("commentator voice: never mixes voices (a slow ElevenLabs line is skipped, not played in the built-in voice)", { timeout: 30000 }, async () => {
+  const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => setTimeout(() => { res.setHeader("Content-Type", "audio/mpeg"); res.end(Buffer.from("SLOWMP3")); }, 3500)); });
+  await new Promise((ok) => fake.listen(0, ok));
+  Object.assign(process.env, { ELEVENLABS_URL: `http://localhost:${fake.address().port}`, ELEVENLABS_API_KEY: "test-key", COMMENTATOR_VOICE: "SlowVoice12345678" });
+  try {
+    let r = await fetch(base + "/voice/s_win_kira.mp3");
+    assert.equal(r.status, 204, "not ready: nothing plays"); assert.equal(r.headers.get("x-voice"), "pending");
+    await new Promise((ok) => setTimeout(ok, 1500));
+    r = await fetch(base + "/voice/s_win_kira.mp3");
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), "SLOWMP3", "ready next time, in the same voice");
+  } finally { fake.close(); for (const k of ["ELEVENLABS_URL", "ELEVENLABS_API_KEY", "COMMENTATOR_VOICE"]) delete process.env[k]; }
+});
+
+test("ranked: every tier up is a harder AI, from Rookie at Iron to Elite at the top", () => {
+  const order = ["rookie", "easy", "medium", "hard", "extreme", "overdrive", "elite"];
+  const lv = [0, 300, 600, 900, 1200, 1500, 1800, 2100].map((sr) => accounts.rankedField(sr).aiLevel);
+  assert.deepEqual(lv, ["rookie", "easy", "medium", "hard", "extreme", "overdrive", "overdrive", "elite"]);
+  for (let i = 1; i < lv.length; i++) assert.ok(order.indexOf(lv[i]) >= order.indexOf(lv[i - 1]), "never easier going up");
+  const L = game.AI_LEVELS;
+  assert.ok(L.rookie.skill[1] < L.easy.skill[0] && L.rookie.power < L.easy.power, "Rookie is clearly slower than Easy");
+  assert.ok(L.elite.skill[0] > L.overdrive.skill[0] && L.elite.power > L.overdrive.power, "Elite is quicker than Overdrive");
+  assert.ok(L.rookie.rankedOnly && L.elite.rankedOnly, "both only in ranked");
+});
+
+test("car presets: save a whole look (with items) and put it back on in one go", async () => {
+  const { u } = await accounts.signUp("Presetty", "Turbo-Fox-Lane-42");
+  const items = accounts.STORE.filter((x) => !x.loot && !x.onlyBody).slice(0, 2); u.owned.push(...items.map((x) => x.id));
+  u.equipped = { [items[0].slot]: items[0].id };
+  assert.ok(accounts.saveCarPreset(u, { name: "Gold rush", color: "#ffcc1f", livery: "flames", number: 44, design: null, equipped: u.equipped }).ok);
+  assert.ok(accounts.saveCarPreset(u, { name: "  ", color: "#000000" }).error, "needs a name");
+  assert.ok(accounts.saveCarPreset(u, { name: "Hack", color: "red;", livery: "nope", number: 999, equipped: { glow: "not_an_item" } }).ok);
+  const hack = u.carPresets.find((x) => x.name === "Hack");
+  assert.deepEqual([hack.color, hack.livery, hack.number, hack.equipped], ["#ffcc1f", "stripes", 99, {}], "bad values are cleaned");
+  u.equipped = { [items[1].slot]: items[1].id };
+  accounts.applyCarLook(u, u.carPresets[0].equipped);
+  assert.deepEqual(u.equipped, { [items[0].slot]: items[0].id }, "exactly the saved items are back on");
+  accounts.deleteCarPreset(u, "Hack"); assert.equal(u.carPresets.length, 1);
 });
 
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {

@@ -71,6 +71,7 @@
     </div>
     <div><div class="f" style="margin-bottom:0.25rem">Car color</div><div class="swatches" id="swatches"></div></div>
     <div><div class="f" style="margin-bottom:0.25rem">Livery</div><div class="chips" id="liveries"></div></div>
+    <button type="button" class="btn" id="carPresetBtn">🚗 Car presets: save or swap your whole look</button>
     <details class="paint-box" id="paintBox">
       <summary>🎨 Paint your own design</summary>
       <div class="paint">
@@ -507,6 +508,17 @@
   </div>
 </div>
 
+<div id="carPresetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="carPresetTitle">
+  <div class="preset-card panel">
+    <header class="hub-head"><h2 id="carPresetTitle">🚗 Car presets</h2><button type="button" class="x" id="carPresetClose" aria-label="Close">✕</button></header>
+    <form class="preset-save" id="carPresetForm">
+      <input type="text" id="carPresetName" maxlength="24" placeholder="Name this look (e.g. Gold rush)" aria-label="Preset name">
+      <button type="submit" class="btn go">Save my current look</button>
+    </form>
+    <p class="preset-note" id="carPresetNote"></p>
+    <div class="car-preset-grid" id="carPresetGrid"></div>
+  </div>
+</div>
 <div id="setPresetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="setPresetTitle">
   <div class="preset-card panel">
     <header class="hub-head"><h2 id="setPresetTitle">💾 Setting presets</h2><button type="button" class="x" id="setPresetClose" aria-label="Close">✕</button></header>

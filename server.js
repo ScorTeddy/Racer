@@ -80,6 +80,7 @@ const XP_RATE_MIN = 10, XP_RATE_MAX = 50, XP_RATE_DEFAULT = 10;   // passive XP 
 // (at least 1.8 laps, at most 8), so every race needs at least one pit stop.
 const tireLifeLaps = (laps) => clamp(laps * 0.6, 1.8, 8);
 const PIT_TIME = 2.8;
+const AI_PIT_STOP = 0.65, AI_PIT_LANE = 1.2;   // AI pit stops: 35% shorter standing still, 20% faster down the pit lane
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
 // Multiclass racing: two kinds of car share the track, each racing for its own class win (like Le Mans).
@@ -252,12 +253,16 @@ function rollRareCard(rand = Math.random()) {
 }
 // AI difficulty (Race tab): how good the AI drivers are, how quickly they upgrade, how often they slip up
 const AI_LEVELS = {
+  // ranked only (Iron): properly gentle, so the climb from Iron to Overdrive Elite really feels it
+  rookie:  { skill: [0.72, 0.78], power: 0.92, xp: 0.5, mistakes: 2.6, aggr: 0.6, react: [0.4, 0.8], rankedOnly: true },
   easy:    { skill: [0.8, 0.86], power: 0.96, xp: 0.75, mistakes: 1.8, aggr: 0.8, react: [0.3, 0.6] },
   medium:  { skill: [0.88, 0.95], power: 0.99, xp: 1.5, mistakes: 1, aggr: 1, react: [0.18, 0.48] },
   hard:    { skill: [0.95, 1.0], power: 1.01, xp: 2.1, mistakes: 0.6, aggr: 1.15, react: [0.12, 0.3] },
   extreme: { skill: [1.0, 1.05], power: 1.04, xp: 2.8, mistakes: 0.3, aggr: 1.3, react: [0.08, 0.18] },
   // ranked only (Platinum and up): can't be picked in a normal room
   overdrive: { skill: [1.05, 1.1], power: 1.075, xp: 3.5, mistakes: 0.15, aggr: 1.4, react: [0.05, 0.12], rankedOnly: true },
+  // ranked only (Overdrive Elite): the fastest AI in the game
+  elite:   { skill: [1.09, 1.14], power: 1.11, xp: 4, mistakes: 0.08, aggr: 1.5, react: [0.04, 0.09], rankedOnly: true },
 };
 const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"];
 const WEATHERS = ["sunny", "rain", "dynamic", "fog"];
@@ -476,11 +481,15 @@ app.get("/voice/:file", (req, res) => {
   if (!VOICE_LINES[file]) return res.status(404).send("Not found");
   const builtIn = () => { const fp = pub(path.join("commentary", file)); if (voiceOn()) res.setHeader("X-Voice", "built-in"); if (fs.existsSync(fp)) return res.sendFile(fp); res.status(404).send("Not found"); };
   if (!voiceOn()) return builtIn();
-  // not ready within 1.5 s (ElevenLabs is slow making it): play the built-in line now, the custom one is ready next time
+  // Never mix two voices: a line that isn't made yet is skipped this time (nothing plays) and is ready next time.
+  // The built-in voice only stands in while ElevenLabs is actually failing (out of credits, bad key...).
+  const notReady = () => { res.setHeader("Cache-Control", "no-store"); res.setHeader("X-Voice", "pending"); res.status(204).end(); };
+  const fallback = () => (Date.now() < voiceOffUntil ? builtIn() : notReady());
+  if (Date.now() < voiceOffUntil) return builtIn();
   let done = false;
-  const slow = setTimeout(() => { if (!done) { done = true; res.setHeader("Cache-Control", "no-store"); builtIn(); } }, 1500);
+  const slow = setTimeout(() => { if (!done) { done = true; notReady(); } }, 2500);
   voiceClip(file).then((buf) => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "public, max-age=86400"); res.type("audio/mpeg").send(buf); })
-    .catch(() => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "no-store"); builtIn(); });
+    .catch(() => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "no-store"); fallback(); });
 });
 app.get("/music/km/:file", (req, res) => {
   const file = req.params.file;
@@ -1767,10 +1776,11 @@ class Room {
       pitLimit: base.pitLimit * e, mistakes: base.mistakes / e };
   }
   baseStats(c, u) {
+    const ai = !c.owner && !c.retiredBy;                     // AI crews are slicker: shorter stops, quicker down the pit lane
     return {
       maxSpeed: MAX_SPEED * (1 + 0.07 * u.engine) * (c.power || 1), accel: ACCEL * (1 + 0.25 * u.turbo), grip: GRIP * (1 + 0.3 * u.grip),
       wear: Math.pow(0.85, u.whisper), brake: BRAKE * (1 + 0.5 * u.brakes),
-      pitTime: PIT_TIME * Math.pow(0.75, u.pit),
+      pitTime: PIT_TIME * Math.pow(0.75, u.pit) * (ai ? AI_PIT_STOP : 1),
       cornerPace: 1 + 0.06 * u.corner + 0.02 * u.late + 0.02 * u.grip,
       gripMul: 1 + 0.25 * u.grip,
       // drivers plan to use 72% of the brakes (Late Braker: up to 94%); Carbon Brakes add more power than
@@ -1778,7 +1788,7 @@ class Room {
       planBrake: BRAKE * (1 + 0.38 * u.brakes) * (0.72 + 0.055 * u.late),
       slipTime: SLIP_TIME + 0.1 * u.craft,
       nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN * (1 - 0.03 * (u.saver || 0)), nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
-      pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane),
+      pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane) * (ai ? AI_PIT_LANE : 1),
       mistakes: Math.pow(0.6, u.focus),
     };
   }
@@ -2181,7 +2191,7 @@ class Room {
             c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
             c.pitting = st.pitTime * (c.punct ? 1.4 : 1); c.aiMode = "pitting";
             if (p && p.assist?.pitGame === true && (!this.qualifying || this.practice)) this.startPitGame(c, p);   // players: the arrow-key pit stop
-            else if (Math.random() < PIT_MISTAKE_CHANCE) {     // the crew fumbles a wheel nut
+            else if (Math.random() < PIT_MISTAKE_CHANCE * (p ? 1 : 0.5)) {     // the crew fumbles a wheel nut (AI crews half as often)
               c.pitting += PIT_MISTAKE_TIME;
               this.emit("feed", { t: "pitSlow", name: c.name, id: c.id });
               if (p) io.to(p.id).emit("toast", "Pit crew fumbled a wheel! +1 second");
@@ -3081,7 +3091,7 @@ async function startTeamRanked(r, socket) {
   Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);
-  r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
+  r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
   r.sendLobby();
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.teamRanked && r.players.size) r.startRace(); }, 5000);
   return null;
@@ -3095,7 +3105,7 @@ function makeRankedRoom(socket, profile, u) {
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
   rankedTrack(r, F);
-  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${F.aiLevel === "overdrive" ? "OVERDRIVE" : F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
+  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
   setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
   return r;
 }
@@ -3255,7 +3265,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3599,6 +3609,15 @@ io.on("connection", (socket) => {
     const r = accounts.savePreset(u, p); if (r.error) return socket.emit("toast", r.error);
     socket.emit("presets", u.presets);
   });
+  // car presets (a saved look: colour, livery, number, design, equipped items)
+  socket.on("carPresets:get", async () => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); socket.emit("carPresets", u ? u.carPresets || [] : null); });
+  socket.on("carPresets:save", async (p) => {
+    const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
+    const r = accounts.saveCarPreset(u, { ...p, equipped: u.equipped }); if (r.error) return socket.emit("toast", r.error);
+    socket.emit("carPresets", u.carPresets);
+  });
+  socket.on("carPresets:delete", async (name) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return; accounts.deleteCarPreset(u, String(name)); socket.emit("carPresets", u.carPresets); });
+  socket.on("carPresets:apply", (name) => storeAction((u) => { const P = (u.carPresets || []).find((x) => x.name === String(name)); return P ? accounts.applyCarLook(u, P.equipped) : { error: "That preset is gone" }; }));
   socket.on("setPresets:get", async () => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); socket.emit("setPresets", u ? u.setPresets || [] : null); });
   socket.on("setPresets:save", async (p) => {
     const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return;
