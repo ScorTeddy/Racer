@@ -1258,6 +1258,7 @@
   }
   function renderStats(u) {
     const box = $("hubStats"); box.textContent = "";
+    if (u?.loginStreak) { const L = u.loginStreak, sec = el("section", "sec-box"); sec.append(el("h3", "hub-h", L.streak ? `🔥 Login streak: ${L.streak} day${L.streak === 1 ? "" : "s"}` : "🔥 Login streak"), streakStrip(L.days, L.cycleDay, L.today)); box.appendChild(sec); }
     const st = u?.stats || {};
     const n = (v) => (v || 0).toLocaleString();
     const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "-");
@@ -2508,6 +2509,42 @@
     });
   }
   // game mode (host) and your class (everyone)
+  // ---- championship calendar (Mode tab) ----
+  function calThumb(pts) {
+    const cv = document.createElement("canvas"); cv.width = 72; cv.height = 46; cv.className = "cal-thumb";
+    const c = cv.getContext("2d"); if (!pts?.length) return cv;
+    const mx = Math.max(...pts.map((q) => q[0])) || 1, my = Math.max(...pts.map((q) => q[1])) || 1, k = Math.min(62 / mx, 38 / my), ox = (72 - mx * k) / 2, oy = (46 - my * k) / 2;
+    c.strokeStyle = "#ffcc1f"; c.lineWidth = 3; c.lineJoin = c.lineCap = "round"; c.beginPath();
+    pts.forEach(([x, y], i) => (i ? c.lineTo(ox + x * k, oy + y * k) : c.moveTo(ox + x * k, oy + y * k))); c.closePath(); c.stroke();
+    return cv;
+  }
+  function renderCalendar(l, on) {
+    $("champOpts").classList.toggle("hidden", !on); if (!on) return;
+    const C = l.cal || { n: 4, list: [], round: 0, loaded: -1 }, edit = S.host && l.phase === "lobby", started = C.round > 0;
+    $("sChampN").value = String(C.n); $("sChampN").disabled = !edit || started;
+    const full = C.list.length >= C.n;
+    $("calAddBtn").classList.toggle("hidden", !edit || full || started);
+    $("calAddBtn").textContent = `➕ Add this track as round ${C.list.length + 1} of ${C.n}`;
+    $("calAddBtn").disabled = !l.trackName && !S.track;
+    $("champHint").textContent = started ? `Round ${Math.min(C.round + 1, C.n)} of ${C.n} is next. Reset the championship (Drivers tab) to change the calendar.`
+      : full ? "✅ The calendar is full. Press Start to race round 1!" : `Draw a track (or load a random, real or shared one), then add it. ${C.n - C.list.length} more to go.`;
+    const ol = $("calList"); ol.textContent = "";
+    C.list.forEach((e, i) => {
+      const li = el("li", "cal-item" + (i === C.loaded ? " on" : "") + (started && i < C.round ? " done" : "") + (started && i === C.round ? " next" : ""));
+      li.append(el("span", "cal-n", String(i + 1)), calThumb(e.thumb));
+      const tx = el("div", "cal-tx"); tx.append(el("b", "", e.label), el("small", "", `${e.km} km${started && i < C.round ? " · raced ✓" : started && i === C.round ? " · next up" : ""}`)); li.appendChild(tx);
+      if (edit) {
+        const bs = el("div", "cal-btns"), mk = (t, title, fn) => { const b = el("button", "btn ghost", t); b.type = "button"; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bs.appendChild(b); };
+        mk("👁", "Show this track", () => socket.emit("cal:show", i));
+        if (!started) { mk("▲", "Move up", () => socket.emit("cal:move", { i, dir: -1 })); mk("▼", "Move down", () => socket.emit("cal:move", { i, dir: 1 })); mk("✕", "Remove", () => socket.emit("cal:remove", i)); }
+        li.appendChild(bs);
+      }
+      ol.appendChild(li);
+    });
+    for (let i = C.list.length; i < C.n; i++) { const li = el("li", "cal-item empty"); li.append(el("span", "cal-n", String(i + 1)), el("small", "", "Empty: add a track")); ol.appendChild(li); }
+  }
+  $("calAddBtn").addEventListener("click", () => { if (S.host) socket.emit("cal:add"); });
+  $("sChampN").addEventListener("change", () => { if (S.host) socket.emit("settings", { champN: Number($("sChampN").value) }); });
   document.querySelectorAll(".mode-card").forEach((b) => b.addEventListener("click", () => { if (S.host && S.lobby?.phase === "lobby") socket.emit("settings", { mode: b.dataset.mode }); }));
   function renderClassCards(l) {
     const box = $("classCards"), me = l.players.find((p) => p.id === S.me); if (!me) { box.textContent = ""; return; }
@@ -2683,6 +2720,8 @@
     if (l.ranked && $("modeTab").getAttribute("aria-selected") === "true") document.querySelector('.rc-tabs [data-tab="drivers"]').click();
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
+    renderCalendar(l, mode === "champ" && !l.ranked);
+    { const ss = $("sSeason"); if (mode === "champ" && !l.ranked) { if (![...ss.options].some((o) => o.value === String(s.season))) { const o = document.createElement("option"); o.value = String(s.season); o.textContent = `${s.season} races`; ss.appendChild(o); } ss.value = String(s.season); ss.disabled = true; ss.title = "Set by the championship calendar (Mode tab)"; } else ss.title = ""; }
     // teams on/off, XP rate, public/private
     $("sTeamColors").disabled = !S.host || l.phase !== "lobby" || !s.teams;
     $("teamsSection").classList.toggle("hidden", !s.teams); $("teamsOff").classList.toggle("hidden", !!s.teams);
@@ -3475,7 +3514,26 @@
     if (m.pid !== S.me) sfx("tick");
   });
   // daily login reward
-  socket.on("daily", (d) => { banner(`DAILY BONUS +${d.coins} 🪙`, "#ffcc1f"); popup(d.streak > 1 ? `🔥 ${d.streak}-day streak! Come back tomorrow for more.` : "Come back tomorrow for a bigger bonus!"); sfx("level"); });
+  // login streak: a 7-day strip of daily bonuses (day 7 = coins, a crate and a wheel spin)
+  function streakStrip(days, cycleDay, today) {
+    const row = el("div", "streak-strip");
+    (days || []).forEach((r, i) => {
+      const d = i + 1, cls = d < cycleDay || (d === cycleDay && today) ? " got" : d === cycleDay + (today ? 1 : 0) || (!cycleDay && d === 1) ? " next" : "";
+      const b = el("div", "streak-day" + cls + (d === 7 ? " big" : ""));
+      b.append(el("small", "", `Day ${d}`), el("b", "", d === 7 ? "🎁" : "🪙"), el("span", "", `${r.coins}${r.crate ? " + crate" : ""}${r.spins ? " + 🎡" : ""}`));
+      row.appendChild(b);
+    });
+    return row;
+  }
+  socket.on("daily", (d) => {
+    banner(`DAILY BONUS +${d.coins} 🪙`, "#ffcc1f"); sfx("level");
+    const box = el("div", "streak-pop"); box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Daily bonus");
+    box.append(el("b", "streak-h", d.streak > 1 ? `🔥 ${d.streak}-day streak!` : "🔥 Day 1 of your streak"),
+      streakStrip(d.days, d.cycleDay, true),
+      el("p", "", d.cycleDay === 7 ? `Day 7! +${d.coins} coins${d.crate ? `, a ${d.crate} crate` : ""}${d.spins ? " and a wheel spin" : ""}. The cycle starts again tomorrow.` : `+${d.coins} coins today. Come back tomorrow for day ${d.cycleDay + 1}: miss a day and it starts again.`));
+    const ok = el("button", "btn go", "Nice!"); ok.type = "button"; ok.addEventListener("click", () => box.remove()); box.appendChild(ok);
+    document.body.appendChild(box); setTimeout(() => box.remove(), 9000);
+  });
   socket.on("teamRenamed", (nu) => { prof.team = nu; teamIn.value = nu; try { localStorage.setItem("tb-profile", JSON.stringify(prof)); } catch (e) {} });
   socket.on("lastSeason", (sn) => { S.lastSeason = sn; openFinale(sn); });
   // ---- qualifying ghost: a see-through copy of your best lap on this track (kept in this browser) ----
@@ -4176,6 +4234,9 @@
     });
     // Driver of the Day (most places gained)
     grabBestPass();             // (a pass right before the flag: keep what we have of it)
+    { const C = S.lobby?.cal, cl = $("champRoundLine"), on = !!(C && C.list.length && r.seasonLen);
+      cl.classList.toggle("hidden", !on);
+      if (on) cl.textContent = r.raceNo >= r.seasonLen ? `🏆 That was the final round (${r.raceNo} of ${r.seasonLen})!` : `🏆 Round ${r.raceNo} of ${r.seasonLen} done. Next up: ${C.list[r.raceNo]?.label || "the next track"}`; }
     { const bp = $("bestPassLine"), x = r.bestPass;
       bp.textContent = x ? `🏎️ Overtake of the race: ${x.an} on ${x.bn} for P${x.pos} (lap ${x.lap})` : ""; bp.classList.toggle("hidden", !x);
       $("bestPassBtn").classList.toggle("hidden", !(x && RP.best && RP.best.d.an === x.an && RP.best.d.bn === x.bn)); }
@@ -4878,7 +4939,7 @@
   // the middle) rather than in a straight line: a straight-line guess sends it off the road in a corner
   // and then it snaps back. null = no good guess (going backwards, in the pits...): use the straight line.
   function aheadOnTrack(t, q, e) {
-    const i0 = q[25]; if (!t || !t.pts || !t.nor || i0 === undefined || e <= 0) return null;
+    const i0 = q[25]; if (!t || !t.pts || !t.nor || !t.tan || i0 === undefined || i0 >= t.N || e <= 0) return null;     // (an update from a track that was just swapped out)
     const N = t.N, P = t.pts[i0], n = t.nor[i0], tn = t.tan[i0];
     const sp = Math.hypot(q[23], q[24]); if (sp < 30 || q[23] * tn.x + q[24] * tn.y < sp * 0.7) return null;
     const lat = (q[1] - P.x) * n.x + (q[2] - P.y) * n.y;
@@ -6061,6 +6122,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-26", title: "Championship mode and a 7-day login streak", items: [
+      "🏆 Championship mode (Mode tab): pick 2-10 tracks, draw (or load) each one and add it to the calendar, then race a full season on them in order. The next round's track loads by itself, points carry over, and the last round ends with the season finale.",
+      "🔥 Login streak: come back on days in a row for a bigger daily bonus (50 up to 400 coins). Day 7 also gives a themed crate and a wheel spin. Miss a day and it starts again. See it in Profile › Stats.",
+    ] },
     { v: "2026-10-25", title: "Casino, daily wheel, 60-tier pass, notifications", items: [
       "🎡 Daily wheel: one free spin every day (Profile › 🎰 Casino). Coins, season pass XP, crates or another spin.",
       "🎟️ The season pass has 60 tiers now (was 30), and both tracks hand out wheel spins.",

@@ -1331,6 +1331,25 @@ body.touch .pg-pad { display: flex; }
 .pl-drop { font-size: 1.1rem; min-height: 3rem; }
 .pl-hist { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .pl-hist span { font-size: 0.7rem; font-weight: 800; color: #fff; padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+/* ---- login streak ---- */
+.streak-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; margin: 0.4rem 0; }
+.streak-day { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; padding: 0.35rem 0.15rem; border-radius: 0.6rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.04); text-align: center; }
+.streak-day small { color: var(--soft); font-size: 0.68rem; font-weight: 700; } .streak-day b { font-size: 1.2rem; } .streak-day span { font-size: 0.7rem; font-weight: 800; }
+.streak-day.got { border-color: var(--green); background: color-mix(in srgb, var(--green) 18%, transparent); } .streak-day.next { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow) inset; }
+.streak-day.big { background: color-mix(in srgb, var(--yellow) 14%, transparent); }
+.streak-pop { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 70; width: min(94vw, 34rem); padding: 1rem; border-radius: 1rem; background: linear-gradient(160deg, #2b2410, #1a1d25); border: 2px solid var(--yellow); box-shadow: 0 20px 50px rgba(0,0,0,0.6); display: grid; gap: 0.5rem; text-align: center; animation: achIn 9s ease both; }
+.streak-h { font-family: "Russo One", sans-serif; font-size: 1.3rem; color: var(--yellow); }
+/* ---- championship calendar ---- */
+.champ-opts { display: grid; gap: 0.5rem; margin-top: 0.6rem; }
+.cal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.champ-opts, .champ-opts .f, #sChampN { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.cal-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; padding: 0.35rem 0.5rem; border-radius: 0.7rem; background: var(--panel-2, rgba(255,255,255,0.05)); border: 1.5px solid var(--edge); }
+.cal-item.on { border-color: var(--yellow); } .cal-item.done { opacity: 0.6; } .cal-item.next { box-shadow: 0 0 0 2px var(--green) inset; }
+.cal-item.empty { border-style: dashed; color: var(--soft); }
+.cal-n { font-family: "Russo One", sans-serif; width: 1.6rem; text-align: center; color: var(--yellow); }
+.cal-thumb { flex: none; border-radius: 0.4rem; background: rgba(0,0,0,0.3); }
+.cal-tx { flex: 1 1 6rem; min-width: 0; display: flex; flex-direction: column; } .cal-tx b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cal-tx small { color: var(--soft); }
+.cal-btns { display: flex; gap: 0.2rem; margin-left: auto; } .cal-btns .btn { min-height: 1.9rem; min-width: 1.9rem; padding: 0.1rem 0.3rem; font-size: 0.85rem; }
 /* ---- casino: wheel, slots, blackjack ---- */
 .cz-nav { margin-bottom: 0.6rem; }
 .cz-main { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }

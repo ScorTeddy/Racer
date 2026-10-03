@@ -1240,6 +1240,38 @@ class Room {
     this.history = [];          // championship standings after every race of this season (for the finale)
     this.seasonColors = { drivers: {}, teams: {} };
   }
+  // ---- Championship mode: the host builds a calendar of tracks (drawn, random, real...), then the season
+  // runs through it in order: round 1 on the first track, round 2 on the next, points carrying over ----
+  calLabel() { return this.trackName || (this.trackKind === "random" ? "Random track" : this.trackKind === "totw" ? "Track of the week" : this.trackKind === "shared" ? "Shared track" : "Drawn track"); }
+  calAdd() {
+    if (!this.track || !this.stroke) return "Draw or load a track first";
+    const N = this.settings.champN || 4; this.calendar = this.calendar || [];
+    if (this.raceNo > 0) return "The championship has started: reset it to change the calendar";
+    if (this.calendar.length >= N) return `The calendar is full (${N} tracks). Remove one or pick more tracks.`;
+    // a tiny outline of the track for the calendar list (about 40 points, 0-100)
+    const st = this.stroke, step = Math.max(1, Math.floor(st.length / 40)), pts = [];
+    for (let i = 0; i < st.length; i += step) pts.push([st[i][0], st[i][1]]);
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), sc = 100 / Math.max(1, Math.max(...xs) - x0, Math.max(...ys) - y0);
+    const thumb = pts.map(([x, y]) => [Math.round((x - x0) * sc), Math.round((y - y0) * sc)]);
+    this.calendar.push({ d: this.shareData(), kind: this.trackKind || "drawn", id: this.trackId || null, theme: this.settings.theme, label: this.calLabel(), km: Math.round(this.track.length / 100) / 100, thumb });
+    this.calLoaded = this.calendar.length - 1;
+    this.sendLobby();
+    return null;
+  }
+  loadRound(i) {
+    const e = (this.calendar || [])[i]; if (!e) return;
+    if (THEME_KEYS.includes(e.theme)) this.settings.theme = e.theme;
+    if (e.kind === "totw") this.setTotwTrack();
+    else if (e.kind === "f1" && e.id) {
+      if (!this.setF1Track(e.id)) {                                  // (with the start line and direction it had)
+        if (Array.isArray(e.d.start) && e.d.start.length === 2) this.setStart(Number(e.d.start[0]), Number(e.d.start[1]));
+        if (e.d.reverse) this.rebuildTrack(this.track.start, true);
+        if (Array.isArray(e.d.drs)) { this.applyDrsBoard(e.d.drs); this.emit("track", this.trackMsg()); }
+      }
+    } else if (!this.setSharedTrack(e.d)) { this.trackKind = e.kind; this.trackName = e.d.name || null; }
+    this.calLoaded = i;
+    this.sendLobby();
+  }
   resetSeason() { this.champ = {}; this.teamChamp = {}; this.raceNo = 0; this.history = []; this.seasonColors = { drivers: {}, teams: {} }; }
   emit(ev, d) { io.to(this.code).emit(ev, d); }
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
@@ -1248,6 +1280,7 @@ class Room {
       code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null, team: !!this.teamRanked } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
       players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, cls: p.cls === "gt" ? "gt" : "hyper", extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
+      cal: this.settings.mode === "champ" ? { n: this.settings.champN || 4, list: (this.calendar || []).map((e) => ({ label: e.label, km: e.km, thumb: e.thumb })), round: this.raceNo, loaded: this.calLoaded ?? -1 } : null,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
       roster: this.roster.slice(0, this.settings.ai).map((R, i) => (this.settings.mode === "multi" ? { ...R, cls: aiIsGt(i, this.settings.mix) ? "gt" : "hyper" } : R)),
     };
@@ -1333,6 +1366,7 @@ class Room {
     const board = MAP_SIZES[map] || MAP_SIZES.normal;
     const shape = buildTrack(stroke, board, this.settings.smooth);
     if (shape.error) return shape.error;
+    this.calLoaded = -1;                                          // (a new track: not a calendar round any more)
     this.shape = shape; this.trackKind = kind; this.trackName = name; this.draft = null; this.commCode = null; this.trackId = null; this.wonk = null; this.totwWeek = null;
     // a short fingerprint of the drawing, so personal bests are kept per track (same track = same key)
     { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } this.trackKey = "d" + (h >>> 0).toString(36) + "_" + map; }
@@ -1354,6 +1388,7 @@ class Room {
     if (!r) return "Couldn't make a random track. Try again!";
     const wk = WONK.includes(wonk) ? wonk : "regular";
     if (!this.settings.smooth) {
+      this.calLoaded = -1;
       this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null; this.wonk = wk; this.totwWeek = null; this.trackId = null;
       this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]);
@@ -1370,6 +1405,7 @@ class Room {
   setTotwTrack() {
     const T = totw();
     if (!T) return "Couldn't build this week's track";
+    this.calLoaded = -1;
     this.shape = { ...T.shape }; this.trackKind = "totw"; this.trackName = T.name; this.draft = null; this.wonk = T.wonk; this.trackId = null;
     this.track = finalizeTrack(T.shape, bestStart(T.shape), false, this.allTeams());
     this.stroke = T.stroke.map((q) => [q[0], q[1], q[2]]);
@@ -1499,6 +1535,15 @@ class Room {
   // ======================= Race =======================
   startRace() {
     if (!this.track || this.phase !== "lobby") return;
+    // championship mode: the calendar has to be full, and each round is raced on its own track
+    if (this.settings.mode === "champ" && !this.ranked && !this.qualiGrid) {
+      const N = this.settings.champN || 4, cal = this.calendar || [];
+      if (cal.length < N) { this.emit("toast", `🏆 Add ${N - cal.length} more track${N - cal.length === 1 ? "" : "s"} to the calendar first (Mode tab)`); return; }
+      this.settings.season = N;
+      if (this.raceNo >= N) this.resetSeason();
+      if (this.calLoaded !== this.raceNo) this.loadRound(this.raceNo);
+      this.emit("toast", `🏆 Round ${this.raceNo + 1} of ${N}: ${cal[this.raceNo].label}`);
+    }
     const t = this.track, s = this.settings;
     // qualifying first? (a timed session, fastest lap = pole). The race after it uses that grid.
     const grid = this.qualiGrid; this.qualiGrid = null;
@@ -2870,6 +2915,10 @@ class Room {
       this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
     }
     if (this.seasonJustOver) { this.seasonJustOver = false; this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
+    // championship mode: the next round's track is loaded and waiting
+    if (this.settings.mode === "champ" && (this.calendar || []).length && this.raceNo < this.calendar.length && this.calLoaded !== this.raceNo) {
+      this.loadRound(this.raceNo); this.emit("toast", `🏆 Next up, round ${this.raceNo + 1} of ${this.calendar.length}: ${this.calendar[this.raceNo].label}`);
+    }
     this.sendLobby();
   }
 
@@ -3206,7 +3255,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3345,7 +3394,16 @@ io.on("connection", (socket) => {
     if (s?.smooth !== undefined) { const v = s.smooth === true || s.smooth === "on"; if (v !== S.smooth) { S.smooth = v; r.rebuildSmooth(); } }
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
-    if (["normal", "multi", "elim", "practice"].includes(s?.mode)) S.mode = s.mode;
+    if (["normal", "multi", "elim", "practice", "champ"].includes(s?.mode) && s.mode !== S.mode) {
+      // championship mode sets the season length to the calendar; leaving it puts your old setting back
+      if (s.mode === "champ") { S.seasonBefore = S.season; S.season = S.champN || 4; r.resetSeason(); }
+      else if (S.mode === "champ") { S.season = SEASONS.includes(S.seasonBefore) ? S.seasonBefore : 0; r.resetSeason(); }
+      S.mode = s.mode;
+    }
+    if (s?.champN !== undefined && Number.isFinite(Number(s.champN)) && r.raceNo === 0) {
+      S.champN = clamp(Math.round(Number(s.champN)), 2, 10); if (S.mode === "champ") S.season = S.champN;
+      if (r.calendar && r.calendar.length > S.champN) r.calendar.length = S.champN;
+    }
     if (CLASS_MIXES.includes(Number(s?.mix))) S.mix = Number(s.mix);
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
@@ -3375,6 +3433,10 @@ io.on("connection", (socket) => {
     else return;
     socket.to(r.code).emit("draft", from === 0 ? { from: 0, pts: r.draft } : { from, pts: r.draft.slice(from) });
   });
+  socket.on("cal:add", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.settings.mode !== "champ") return; const err = r.calAdd(); if (err) socket.emit("toast", err); else r.emit("toast", `🏆 ${r.calendar[r.calendar.length - 1].label} is round ${r.calendar.length} of ${r.settings.champN || 4}`); });
+  socket.on("cal:remove", (i) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.raceNo > 0 || !r.calendar) return; const k = Math.round(Number(i)); if (k >= 0 && k < r.calendar.length) { r.calendar.splice(k, 1); r.calLoaded = -1; r.sendLobby(); } });
+  socket.on("cal:move", (d) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.raceNo > 0 || !r.calendar) return; const a = Math.round(Number(d?.i)), b = a + (d?.dir > 0 ? 1 : -1); if (a >= 0 && b >= 0 && a < r.calendar.length && b < r.calendar.length) { [r.calendar[a], r.calendar[b]] = [r.calendar[b], r.calendar[a]]; r.calLoaded = -1; r.sendLobby(); } });
+  socket.on("cal:show", (i) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.calendar) return; const k = Math.round(Number(i)); if (k >= 0 && k < r.calendar.length) r.loadRound(k); });
   socket.on("f1Track", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const err = r.setF1Track(String(d?.id || ""));
@@ -3400,7 +3462,7 @@ io.on("connection", (socket) => {
     // achievements you already qualify for (e.g. new ones added in an update) unlock right away
     if (u.pwLost) setTimeout(() => socket.emit("toast", "🔑 Your password needs to be set again (an old bug wiped it). Go to Profile > 🔒 Security and pick a new one, or you can't sign in on other devices."), 3000);
     const re = accounts.recheck(u); if (re.length) setTimeout(() => { for (const x of re) socket.emit("achievement", x); socket.emit("account", accounts.publicUser(u)); }, 2500);
-    const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
+    const d = accounts.dailyReward(u); if (d) setTimeout(() => { socket.emit("daily", { coins: d.coins, streak: d.streak, cycleDay: d.cycleDay, crate: d.crate, spins: d.spins, days: accounts.publicUser(u).loginStreak.days }); for (const a of d.got || []) socket.emit("achievement", a); socket.emit("account", accounts.publicUser(u)); }, 1200); };
   const signedIn = async (res) => {
     // 2FA on? the password (or Google) was right, but no session until the 6-digit code is in
     if (res.u.totp?.on && !res.passed2fa) {

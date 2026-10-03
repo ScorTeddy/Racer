@@ -240,6 +240,16 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   later, with neither car in the pits or crashed. Higher places, players and later laps score more. The client keeps
   the clip (4s before to 2s after, in race time) for the "Watch the overtake of the race" button.
 
+## Championship mode and the login streak
+
+- **Championship mode** (`settings.mode === "champ"`, Mode tab): the host picks `champN` (2-10) tracks and adds
+  each one with `cal:add` (`calAdd` saves `shareData()` plus kind, F1 id, theme and a small outline). `startRace`
+  won't start until the calendar is full, sets `season = champN` and loads round `raceNo` (`loadRound`);
+  `backToLobby` loads the next round. Any other track loaded in between sets `calLoaded = -1`, so the right one is
+  put back before the start. The calendar can only be changed before round 1 (or after a reset).
+- **Login streak** (`dailyReward`, `STREAK_DAYS`): a 7-day cycle, 50 -> 400 coins; day 7 also gives a themed crate
+  and a wheel spin. Missing a day starts again from day 1. `publicUser().loginStreak` drives the strip in Stats.
+
 ## Pit stop minigame
 When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
