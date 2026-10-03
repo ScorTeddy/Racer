@@ -61,6 +61,7 @@
     { key: "zoom", label: "Camera zoom", def: "normal", opts: [["close", "Close"], ["normal", "Normal"], ["far", "Far"]] },
     { key: "cam", label: "Camera follows", hint: "Tab also switches who you're watching", def: "me", opts: [["me", "My car"], ["leader", "Leader"]] },
     { key: "names", label: "Name tags", def: "all", opts: [["all", "All"], ["mine", "Mine"], ["off", "Off"]] },
+    { key: "gfx", label: "Graphics", hint: "Auto lowers the race view's sharpness when your device can't keep up, so it stays smooth", def: "auto", opts: [["auto", "Auto (smooth)"], ["high", "Sharp"], ["fast", "Fast (for slow phones)"]] },
     { key: "fx", label: "Smoke and dust", def: "high", opts: [["high", "High"], ["low", "Low"], ["off", "Off"]] },
     { key: "boardScenery", label: "Drawing board look", hint: "How much scenery shows on the board while you draw (the race always gets the full thing)", def: "light", opts: [["off", "Clean"], ["light", "Light"], ["full", "Full"]] },
     { key: "scenery", label: "Scenery", hint: "Buildings, trees and props around the track (turn off on slow devices)", def: "on", opts: [["on", "On"], ["off", "Off"]] },
@@ -2300,7 +2301,7 @@
     else if (r.random) boardHint(`Random track: ${r.bridges || 0} bridge${r.bridges === 1 ? "" : "s"}${r.maxLevel >= 2 ? ", with a DOUBLE ramp!" : ""} Hit Random again for another.`, false);
     else boardHint("Nice track! Press Start race when everyone's ready.", false);
   });
-  socket.on("toast", (t) => popup(t, true));
+  socket.on("toast", (t) => popup(t, S.screen === "race" || /can't|cannot|not enough|only|need|too |doesn't|don't|first|full|gone|expired|closed|already|sign in|wait|no /i.test(String(t))));
   // ---- mouse wheel scrolls sideways on rows that only scroll sideways (profile tabs, season pass, track tools...) ----
   document.addEventListener("wheel", (e) => {
     if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || !e.deltaY) return;
@@ -4510,6 +4511,13 @@
   }
   function banner(text, color) { const b = $("banner"); b.textContent = text; b.style.color = color || "#fff"; b.classList.remove("show"); void b.offsetWidth; b.classList.add("show"); }
   function popup(text, warn) {
+    // outside a race the HUD (and its floating race messages) is hidden: show a readable card instead
+    if (S.screen !== "race" || S.replaying) {
+      const box = $("toasts"), d = document.createElement("div"); d.className = "toast-card" + (warn ? " warn" : ""); d.textContent = text; d.setAttribute("role", "status");
+      box.appendChild(d); while (box.children.length > 3) box.firstChild.remove();
+      setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 350); }, 3800);
+      return;
+    }
     const el = document.createElement("div"); el.className = "popup" + (warn ? " warn" : ""); el.textContent = text;
     const box = $("popups"); box.appendChild(el);
     while (box.children.length > 4) box.firstChild.remove();
@@ -4762,8 +4770,22 @@
 
   // ======================= Race rendering =======================
   const scr = { w: 0, h: 0, dpr: 1 };
+  // race view sharpness: the screen's pixel ratio (max 2), times a scale that Auto turns down when frames take too
+  // long (and back up when there's room). Fast = 1x pixels and lighter effects.
+  const GFX = { scale: 1, slow: 0, fast: 0, at: 0, ema: 16.7 };
+  function maxDpr() { const d = Math.min(window.devicePixelRatio || 1, 2); return settings.gfx === "fast" ? Math.min(1, d) : d; }
+  function gfxTick(ms, now) {
+    if (GFX.mode !== settings.gfx) { GFX.mode = settings.gfx; GFX.scale = 1; GFX.ema = 16.7; resize(); }          // (the setting was changed)
+    if (settings.gfx !== "auto" || S.screen !== "race" || document.hidden || ms > 250) return;
+    GFX.ema += (ms - GFX.ema) * 0.05;
+    if (now - GFX.at < 1500) return; GFX.at = now;
+    const d = maxDpr(), min = Math.max(0.6, 0.75 / d);
+    if (GFX.ema > 21 && GFX.scale > min) { GFX.scale = Math.max(min, GFX.scale - 0.15); GFX.fast = 0; resize(); }           // under ~48 fps: less sharp
+    else if (GFX.ema < 17.8) { if (++GFX.fast >= 4 && GFX.scale < 1) { GFX.fast = 0; GFX.scale = Math.min(1, GFX.scale + 0.1); resize(); } }   // smooth for a while: sharper again
+    else GFX.fast = 0;
+  }
   function resize() {
-    scr.dpr = Math.min(window.devicePixelRatio || 1, 2); scr.w = window.innerWidth; scr.h = window.innerHeight;
+    scr.dpr = Math.max(0.5, maxDpr() * (settings.gfx === "auto" ? GFX.scale : 1)); scr.w = window.innerWidth; scr.h = window.innerHeight;
     view.width = scr.w * scr.dpr; view.height = scr.h * scr.dpr;
     const mw = mini.getBoundingClientRect().width || 180, mh = mini.getBoundingClientRect().height || 130;
     mini.width = mw * scr.dpr; mini.height = mh * scr.dpr;
@@ -5449,7 +5471,7 @@
       }
     }
     // dust + smoke
-    const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" ? 0.35 : 1;
+    const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" || settings.gfx === "fast" ? 0.35 : 1;
     if (S.phase === "race" && fxLevel && !PH.on) for (const c of S.cars.values()) {
       if (!visible(c, 200)) continue;
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
@@ -6554,6 +6576,10 @@
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   const WHATS_NEW = [
+    { v: "2026-10-30", title: "Smoother races, messages you can see", items: [
+      "🚀 New Graphics setting (Auto by default): when your device can't keep up, the race view gets a little less sharp so it stays smooth, and sharpens again when it can. Fast mode for slow phones.",
+      "💬 Messages on the menu and in the lobby show up now (they were hidden behind the race screen): bet sent, gift sent, and why something didn't work.",
+    ] },
     { v: "2026-10-29", title: "The biggest update yet: 22 new things", items: [
       "🟥 Red flag (safety car on): a huge pile-up stops the race, the crews fix the cars, and it restarts in order behind the safety car.",
       "🟡 Rolling starts (Settings › Start): a formation lap behind the safety car, green flag at the line.",
@@ -7153,6 +7179,7 @@
   // ======================= Main loop =======================
   let last = performance.now();
   function frame(now) {
+    gfxTick(now - last, now);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (S.screen === "menu" || !$("menu").classList.contains("hidden")) drawPreview(now);
     if (S.screen === "race" || S.screen === "results") renderRace(dt, now);
