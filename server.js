@@ -641,27 +641,37 @@ function circR(a, b, c) {
 }
 // Two separate bits of road running side by side (not crossing) must not overlap: narrow
 // the road there so there's always a strip of grass between them.
-function narrowCloseRoads(pts) {
+function narrowCloseRoads(pts) { const it = narrowCloseRoadsSteps(pts); for (;;) { const r = it.next(); if (r.done) return r.value; } }
+function* narrowCloseRoadsSteps(pts) {
   const n = pts.length, grid = segGrid(pts, 60), cap = new Array(n).fill(MAX_W);
   let L = 0; for (let i = 0; i < n; i++) L += dist(pts[i], pts[(i + 1) % n]);
   const sp = L / n, cross = [];
-  for (let i = 0; i < n; i++) for (const j of grid.near(pts[i].x, pts[i].y, 30)) {
+  for (let i0 = 0; i0 < n; i0 += 128) { if (i0) yield; closeCross(pts, grid, n, cross, i0, Math.min(n, i0 + 128)); }
+  // (how far each point is from the nearest crossing: worked out once, not again for every nearby point)
+  const toCross = cross.length ? pts.map((p) => { let m = Infinity; for (const c of cross) m = Math.min(m, dist(c, p)); return m * SCALE; }) : null;
+  for (let i0 = 0; i0 < n; i0 += 64) { yield; closeCap(pts, grid, n, sp, toCross, cap, i0, Math.min(n, i0 + 64)); }
+  pts.forEach((p, i) => (p.w = Math.min(p.w, cap[i])));
+  return pts;
+}
+// (the loops themselves are plain functions: much faster than inside a generator)
+function closeCross(pts, grid, n, cross, from, to) {
+  for (let i = from; i < to; i++) for (const j of grid.near(pts[i].x, pts[i].y, 30)) {
     if (j < i + 8 || (i < 8 && j > n - 8 + i)) continue;
     const h = segHit(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]); if (h) cross.push(h);
   }
-  for (let i = 0; i < n; i++) {
+}
+function closeCap(pts, grid, n, sp, toCross, cap, from, to) {
+  for (let i = from; i < to; i++) {
     const p = pts[i];
     for (const j of grid.near(p.x, p.y, (MAX_W + 40) / SCALE)) {
       let di = Math.abs(i - j); di = Math.min(di, n - di);
       if (di * sp < (MAX_W / SCALE) * 2.5) continue;                        // same bit of road
       const D = dist(p, pts[j]) * SCALE;
       if (D > MAX_W + 40) continue;
-      if (cross.some((c) => dist(c, p) * SCALE < D + MAX_W)) continue;       // it's a proper crossing (bridge)
+      if (toCross && toCross[i] < D + MAX_W) continue;                     // it's a proper crossing (bridge)
       cap[i] = Math.min(cap[i], Math.max(MIN_W, D - 36));
     }
   }
-  pts.forEach((p, i) => (p.w = Math.min(p.w, cap[i])));
-  return pts;
 }
 function narrowTightTurns(pts) {
   const n = pts.length, R = 10;
@@ -742,7 +752,9 @@ function straighten(pts) {
   return resample(out, 6, true);
 }
 
-function buildTrack(stroke, board, smooth) {
+function buildTrack(stroke, board, smooth) { const it = buildTrackSteps(stroke, board, smooth); for (;;) { const r = it.next(); if (r.done) return r.value; } }
+// (one step at a time, pausing between the heavy bits, so making a random track can be spread out: makeRandomTrackSoon)
+function* buildTrackSteps(stroke, board, smooth) {
   if (!Array.isArray(stroke) || stroke.length < 4) return { error: "Draw a loop to make a track." };
   const [BW, BH] = board;
   const raw = [];
@@ -761,8 +773,10 @@ function buildTrack(stroke, board, smooth) {
   pts = smoothJoin(pts);
   pts = smoothKinks(pts, 0.3);
   pts = resample(pts, 10, true);
-  pts = smoothWidths(narrowTightTurns(narrowCloseRoads(pts)));
-  pts = narrowCloseRoads(pts);                  // (again after blending, so the squeeze is still respected)
+  yield;
+  pts = smoothWidths(narrowTightTurns(yield* narrowCloseRoadsSteps(pts)));
+  yield;
+  pts = yield* narrowCloseRoadsSteps(pts);      // (again after blending, so the squeeze is still respected)
   if (pts.length < 40) return { error: "Too small! Draw a bigger track." };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
@@ -834,7 +848,30 @@ function computeElev(world, tan, hw, spacing) {
 }
 
 // Turn the track shape into a raceable track, starting at base point `start`, optionally reversed.
-function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
+function finalizeTrack(shape, start = 0, reverse = false, teams = []) { return runSteps(finalizeTrackSteps(shape, start, reverse, teams)); }
+// how close the rest of the track comes to a pit lane spot beside point li
+function laneRoom(world, nor, hw, N, li, sgn) {
+  const off = hw[li] + PIT_GAP + 50, c = { x: world[li].x + nor[li].x * sgn * off, y: world[li].y + nor[li].y * sgn * off };
+  let room = Infinity;
+  for (let i = 0; i < N; i += 2) { const di = Math.min(Math.abs(i - li), N - Math.abs(i - li)); if (di < 10) continue; room = Math.min(room, dist(world[i], c) - hw[i]); }
+  return room;
+}
+// one pass of the racing line (a plain function: the hot loop runs much faster outside a generator)
+function linePass(k, N, lx, ly, wx, wy, nx, ny, ln, lim) {
+  let moved = 0;
+  for (let i = 0; i < N; i++) {
+    const ia = (i - k + N) % N, ib = (i + k) % N, ia2 = (i - 2 * k + 2 * N) % N, ib2 = (i + 2 * k) % N;
+    // "minimum curvature" target: fits a smooth curve through the neighbours
+    const tx = (4 * (lx[ia] + lx[ib]) - (lx[ia2] + lx[ib2])) / 6, ty = (4 * (ly[ia] + ly[ib]) - (ly[ia2] + ly[ib2])) / 6;
+    const want = (tx - wx[i]) * nx[i] + (ty - wy[i]) * ny[i];
+    const nl = clamp(ln[i] + (want - ln[i]) * 0.5, -lim[i], lim[i]);
+    const ch = nl - ln[i]; if (ch > moved) moved = ch; else if (-ch > moved) moved = -ch;
+    ln[i] = nl; lx[i] = wx[i] + nx[i] * nl; ly[i] = wy[i] + ny[i] * nl;
+  }
+  return moved;
+}
+// (step by step, pausing now and then, so it can be spread out over a busy server: see runSliced)
+function* finalizeTrackSteps(shape, start = 0, reverse = false, teams = []) {
   const B = shape.base, n0 = B.length;
   const order = [];
   for (let k = 0; k < n0; k++) order.push(reverse ? (start - k + n0 * 2) % n0 : (start + k) % n0);
@@ -857,17 +894,8 @@ function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
   const lx = Float64Array.from(wx), ly = Float64Array.from(wy), ln = new Float64Array(N);
   for (const [k, iters] of [[8, 220], [4, 220], [2, 200], [1, 160]]) {
     for (let it = 0; it < iters; it++) {
-      let moved = 0;
-      for (let i = 0; i < N; i++) {
-        const ia = (i - k + N) % N, ib = (i + k) % N, ia2 = (i - 2 * k + 2 * N) % N, ib2 = (i + 2 * k) % N;
-        // "minimum curvature" target: fits a smooth curve through the neighbours
-        const tx = (4 * (lx[ia] + lx[ib]) - (lx[ia2] + lx[ib2])) / 6, ty = (4 * (ly[ia] + ly[ib]) - (ly[ia2] + ly[ib2])) / 6;
-        const want = (tx - wx[i]) * nx[i] + (ty - wy[i]) * ny[i];
-        const nl = clamp(ln[i] + (want - ln[i]) * 0.5, -lim[i], lim[i]);
-        const ch = nl - ln[i]; if (ch > moved) moved = ch; else if (-ch > moved) moved = -ch;
-        ln[i] = nl; lx[i] = wx[i] + nx[i] * nl; ly[i] = wy[i] + ny[i] * nl;
-      }
-      if (moved < 0.01) break;         // settled: more passes wouldn't change anything you could see
+      if ((it & 15) === 15) yield;
+      if (linePass(k, N, lx, ly, wx, wy, nx, ny, ln, lim) < 0.01) break;   // settled: more passes wouldn't change anything you could see
     }
   }
   for (let i = 0; i < N; i++) line[i] = ln[i];
@@ -886,7 +914,9 @@ function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
   for (let pass = 0; pass < 2; pass++) for (let i = N - 1; i >= 0; i--) {
     const next = vmax[(i + 1) % N]; vmax[i] = Math.min(vmax[i], Math.sqrt(next * next + 2 * BRAKE_PLAN * spacing));
   }
+  yield;
   const { elev, crossings, maxLevel } = computeElev(world, tan, hw, spacing);
+  yield;
   // gravel traps on the outside of corners (like a real F1 circuit), grass elsewhere
   const gravel = new Array(N).fill(0);
   for (let i = 0; i < N; i++) if (Math.abs(turnAt[i]) > 0.3) {
@@ -899,8 +929,8 @@ function finalizeTrack(shape, start = 0, reverse = false, teams = []) {
   for (const sgn of [1, -1]) {
     let room = Infinity;
     for (let kk = 0; kk <= laneLen; kk += 2) {
-      const li = (entry + kk) % N, off = hw[li] + PIT_GAP + 50, c = { x: world[li].x + nor[li].x * sgn * off, y: world[li].y + nor[li].y * sgn * off };
-      for (let i = 0; i < N; i += 2) { const di = Math.min(Math.abs(i - li), N - Math.abs(i - li)); if (di < 10) continue; room = Math.min(room, dist(world[i], c) - hw[i]); }
+      if ((kk & 15) === 14) yield;
+      room = Math.min(room, laneRoom(world, nor, hw, N, (entry + kk) % N, sgn));
     }
     if (room > bestRoom) { bestRoom = room; side = sgn; }
   }
@@ -1126,7 +1156,28 @@ function strokeOk(st, minR = 27) {
   return true;
 }
 const WONK = ["little", "regular", "very"];
-function makeRandomTrack(board, wonk = "regular") {
+// The search runs one try at a time (a generator), so it can be spread over many short slices (see
+// makeRandomTrackSoon) instead of freezing every race on the server while it works. The time limits count only the
+// time spent actually working on it.
+function makeRandomTrack(board, wonk = "regular") { return runSteps(randomTrackTries(board, wonk)); }
+function makeRandomTrackSoon(board, wonk = "regular") { const clock = { work: 0 }; return runSliced(randomTrackTries(board, wonk, clock), clock); }
+// run a step-by-step job in one go...
+function runSteps(it) { for (;;) { const r = it.next(); if (r.done) return r.value; } }
+// ...or a few ms at a time, letting the races (and everyone's messages) run in between. Resolves to its result
+// (null if it broke). clock.work counts only the time spent on the job itself.
+function runSliced(it, clock = { work: 0 }) {
+  return new Promise((ok) => {
+    const slice = () => {
+      const t = Date.now();
+      try {
+        for (;;) { const s0 = Date.now(), r = it.next(); clock.work += Date.now() - s0; if (r.done) return ok(r.value); if (Date.now() - t > 5) break; }
+      } catch (e) { console.error("track job:", e); return ok(null); }
+      setImmediate(slice);
+    };
+    setImmediate(slice);
+  });
+}
+function* randomTrackTries(board, wonk = "regular", clock = null) {
   if (!WONK.includes(wonk)) wonk = "regular";
   const wantDouble = wonk === "regular" && Math.random() < 0.22;
   const maxCross = wonk === "little" ? 1 : wonk === "very" ? 14 : 5;
@@ -1134,13 +1185,17 @@ function makeRandomTrack(board, wonk = "regular") {
   const tight = wonk === "very" && Math.random() < 0.35;     // now and then: a few really tight hairpins
   let pick = tight ? "noodle" : wonk === "very" ? ["knot", "knot", "knot", "spiro", "spiro", "wild", "noodle"][Math.floor(Math.random() * 7)] : null;
   let best = null, bestScore = -Infinity, fallback = null, good = 0;
-  const t0 = Date.now();
+  // (time spent working on it: the slice runner keeps count; run in one go, it's simply the time since the start)
+  const t0 = Date.now(), work = () => (clock ? clock.work : Date.now() - t0);
   // stop once there's a handful of good ones to pick from: it's a random track, it doesn't need to be the best of 400
-  for (let tries = 0; tries < 400 && Date.now() - t0 < (best ? 250 : 2500) && good < (wonk === "very" ? 4 : 8); tries++) {
+  // (made in slices on a busy server, fewer still: it's the server's time everyone's races share)
+  for (let tries = 0; tries < 400 && work() < (best ? 250 : 2500) && good < (wonk === "very" ? (clock ? 3 : 4) : (clock ? 5 : 8)); tries++) {
+    if (tries) yield;
     if (pick && !best && tries === (tight ? 120 : 60)) pick = Math.random() < 0.5 ? "knot" : "spiro";   // that style isn't working out: try a surer one
     const stroke = randomStroke(board, wantDouble && tries % 3 === 0, wonk, pick, tight);
     if (!strokeOk(stroke, tight ? 16 : 27)) continue;
-    const shape = buildTrack(stroke, board);
+    yield;
+    const shape = yield* buildTrackSteps(stroke, board);
     if (!shape.error && !fallback) fallback = { stroke, shape };
     if (shape.error) continue;
     const r = rateTrack(shape, tight);
@@ -1156,16 +1211,26 @@ function makeRandomTrack(board, wonk = "regular") {
     if (r.maxLevel >= 2) score += wantDouble ? 14 : 3;
     if (score > bestScore) { bestScore = score; best = { stroke, shape }; }
   }
-  if (!best && !fallback && wonk !== "regular") return makeRandomTrack(board, "regular");   // never come back empty-handed
+  if (!best && !fallback && wonk !== "regular") return yield* randomTrackTries(board, "regular", clock);   // never come back empty-handed
   return best || fallback;
 }
 // For random tracks: put the start line (and the pit lane) on the longest straight, away from bridges.
-function bestStart(shape) {
-  const t = finalizeTrack(shape, 0, false, []), N = t.N;
+function bestStart(shape) { return runSteps(bestStartSteps(shape)); }
+function* bestStartSteps(shape) {
+  const t = yield* finalizeTrackSteps(shape, 0, false, []), N = t.N;
   const before = Math.ceil(900 / t.spacing), after = Math.ceil(700 / t.spacing);
   // how much open space each point has (distance to any OTHER part of the track)
   const W = shape.base, grid = segGrid(W, 200), room = new Array(N).fill(Infinity);
-  for (let i = 0; i < N; i += 2) {
+  for (let i0 = 0; i0 < N; i0 += 64) { if (i0) yield; startRoom(W, grid, t, room, N, i0, Math.min(N, i0 + 64)); }
+  for (const needRoom of [160, 60, -Infinity]) {
+    yield;
+    const best = startPick(t, room, N, before, after, needRoom);
+    if (best >= 0) return best;
+  }
+  return 0;
+}
+function startRoom(W, grid, t, room, N, from, to) {
+  for (let i = from; i < to; i += 2) {
     for (const j of grid.near(W[i].x, W[i].y, 600)) {
       let di = Math.abs(i - j); di = Math.min(di, N - di);
       if (di * t.spacing < 900) continue;
@@ -1173,20 +1238,19 @@ function bestStart(shape) {
     }
     room[(i + 1) % N] = room[i];
   }
-  for (const needRoom of [160, 60, -Infinity]) {
-    let best = -1, bs = -Infinity;
-    for (let s = 0; s < N; s += 2) {
-      let ok = true, score = 0;
-      for (let d = -before; d <= after && ok; d++) {
-        const i = (s + d + N) % N;
-        if (t.elev[i] > 0 || room[i] < needRoom) ok = false;
-        score += t.vmax[i] * (d <= 4 ? 1 : 0.4) + Math.min(room[i], 300) * 0.1;
-      }
-      if (ok && score > bs) { bs = score; best = s; }
+}
+function startPick(t, room, N, before, after, needRoom) {
+  let best = -1, bs = -Infinity;
+  for (let s = 0; s < N; s += 2) {
+    let ok = true, score = 0;
+    for (let d = -before; d <= after && ok; d++) {
+      const i = (s + d + N) % N;
+      if (t.elev[i] > 0 || room[i] < needRoom) ok = false;
+      score += t.vmax[i] * (d <= 4 ? 1 : 0.4) + Math.min(room[i], 300) * 0.1;
     }
-    if (best >= 0) return best;
+    if (ok && score > bs) { bs = score; best = s; }
   }
-  return 0;
+  return best;
 }
 
 // Staggered grid like real racing: every car is half a row behind the one in front (pole is
@@ -1408,15 +1472,31 @@ class Room {
     this.sendLobby();
     return null;
   }
-  setRandomTrack(map, wonk) {
-    const board = MAP_SIZES[map] || MAP_SIZES.normal;
-    const r = makeRandomTrack(board, wonk);
+  setRandomTrack(map, wonk) { return this.useRandomTrack(makeRandomTrack(MAP_SIZES[map] || MAP_SIZES.normal, wonk), map, wonk); }
+  // the same, but made a slice at a time so the other races on the server don't freeze while it's made
+  async setRandomTrackSoon(map, wonk) {
+    const before = this.track;
+    const r = await makeRandomTrackSoon(MAP_SIZES[map] || MAP_SIZES.normal, wonk);
+    if (rooms.get(this.code) !== this) return "That room is gone";
+    if (this.phase !== "lobby") return "The race already started";
+    if (this.track !== before) return null;             // another track was picked meanwhile: that one stays
+    // (where the start line goes is worked out in a slice of its own too)
+    let ready = null;
+    if (r && !this.settings.smooth) {
+      const start = await runSliced(bestStartSteps(r.shape));
+      if (start != null) ready = await runSliced(finalizeTrackSteps(r.shape, start, false, this.allTeams()));
+    }
+    if (rooms.get(this.code) !== this || this.phase !== "lobby") return "The race already started";
+    if (this.track !== before) return null;
+    return this.useRandomTrack(r, map, wonk, ready);
+  }
+  useRandomTrack(r, map, wonk, ready = null) {
     if (!r) return "Couldn't make a random track. Try again!";
     const wk = WONK.includes(wonk) ? wonk : "regular";
     if (!this.settings.smooth) {
       this.calLoaded = -1; this.decor = [];
       this.shape = r.shape; this.trackKind = "random"; this.trackName = null; this.draft = null; this.wonk = wk; this.totwWeek = null; this.trackId = null;
-      this.track = finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
+      this.track = ready || finalizeTrack(r.shape, bestStart(r.shape), false, this.allTeams());
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]); this.trackKey = strokeKey(this.stroke);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
       this.setDrs(autoDrs(this.track));
@@ -3219,6 +3299,39 @@ function tourTrack(week = weekNow()) {
   return built;
 }
 const totwInfo = () => { const T = totw(); return T ? { week: T.week, name: T.name, theme: T.theme, wonk: T.wonk, map: T.map, ends: (T.week + 1) * 7 * 86400000 - 3 * 86400000, stroke: T.stroke.filter((_, i) => i % 4 === 0).map((q) => [Math.round(q[0]), Math.round(q[1])]) } : null; };
+// This week's special tracks are saved once they're made (just the drawing: rebuilding the track from it takes a few
+// ms), so a server restart doesn't make them all over again. Making one stops the whole server for a moment, which
+// every race on it feels; this way it happens once a week, not after every restart. (Same track all week, too.)
+const weekCode = (w) => { const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 6; i++) { s = A[w % 32] + s; w = Math.floor(w / 32); } return s; };
+async function weeklyTrack(kind, w) {
+  const have = kind === "totw" ? totwCache : tourCache;
+  if (have && have.week === w) return;
+  if (kind === "totw" && totwOverride && totwOverride.week === w) return;      // the contest winner is this week's track
+  let T = null;
+  try {
+    const raw = await accounts.getShared(kind, weekCode(w));
+    const d = raw && JSON.parse(raw);
+    if (d && Array.isArray(d.stroke)) { const shape = buildTrack(d.stroke, MAP_SIZES[d.map] || MAP_SIZES.normal); if (!shape.error) T = { week: w, name: d.name, wonk: d.wonk, map: d.map, theme: d.theme, shape, stroke: d.stroke }; }
+  } catch (e) { console.log("weekly track load:", e.message); }
+  if (T) { if (kind === "totw") totwCache = T; else tourCache = T; return; }
+  T = kind === "totw" ? totw(w) : tourTrack(w);
+  if (T && T !== totwOverride) accounts.putShared(kind, weekCode(w), JSON.stringify({ name: T.name, wonk: T.wonk, map: T.map, theme: T.theme, stroke: T.stroke }), 9 * 86400).catch((e) => console.log("weekly track save:", e.message));
+}
+let weeklyLoading = null;
+function loadWeekly() {
+  if (!weeklyLoading) weeklyLoading = (async () => { for (const kind of ["totw", "tour"]) await weeklyTrack(kind, weekNow()); })().catch(() => {}).finally(() => { weeklyLoading = null; });
+  return weeklyLoading;
+}
+if (require.main === module) { setTimeout(loadWeekly, 1500).unref(); setInterval(loadWeekly, 10 * 60e3).unref(); }
+// Freeze watch: if the whole server stalls (every race on it pauses, then jumps), say so in the logs, with how long
+// and how much memory it's using, so it can be tracked down
+if (require.main === module) {
+  const lag = require("perf_hooks").monitorEventLoopDelay({ resolution: 20 }); lag.enable();
+  setInterval(() => {
+    const max = lag.max / 1e6; lag.reset();
+    if (max > 400) console.warn(`[freeze] the server stalled for up to ${Math.round(max)} ms in the last minute (rooms: ${rooms.size}, memory: ${Math.round(process.memoryUsage().rss / 1048576)} MB)`);
+  }, 60e3).unref();
+}
 
 // ======================= Ranked rooms =======================
 // A private room with one player, fixed settings, and AI picked by your tier. Starts by itself.
@@ -3233,11 +3346,16 @@ function rankedLook() {
 }
 const rankedReal = (maxKm) => F1_TRACKS.filter((t) => t.km >= 3 && t.km <= maxKm);
 // a ranked room's track: a real circuit or a random one, as the tier says
-function rankedTrack(r, F) {
+async function rankedTrack(r, F) {
   const real = rankedReal(F.realKm);
   let err = real.length && Math.random() < F.real ? r.setF1Track(pickOne(real).id) : "random";
-  if (err) err = r.setRandomTrack(pickOne(F.maps), pickOne(F.wonks));
-  if (err) r.setRandomTrack(F.maps[0], "little");
+  if (err) { r.makingTrack = true; try { err = await r.setRandomTrackSoon(pickOne(F.maps), pickOne(F.wonks)); } finally { r.makingTrack = false; } }
+  if (err && rooms.get(r.code) === r) r.setRandomTrack(F.maps[0], "little");
+}
+// start a ranked race after `ms`, or as soon as its track is ready if that takes longer
+function startRankedSoon(r, ms, ok) {
+  const go = () => { if (rooms.get(r.code) !== r || r.phase !== "lobby" || !ok()) return; if (r.makingTrack || !r.track) return setTimeout(go, 300); r.startRace(); };
+  setTimeout(go, ms);
 }
 // Team ranked: a normal room's host takes the room (2-4 signed-in players) into ranked together. Everyone races as
 // one team against an AI field set by the HIGHEST rank on the team (anyone's solo or team rating, whichever is higher),
@@ -3266,7 +3384,7 @@ async function startTeamRanked(r, socket) {
   rankedTrack(r, F);
   r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
   r.sendLobby();
-  setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.teamRanked && r.players.size) r.startRace(); }, 5000);
+  startRankedSoon(r, 5000, () => r.teamRanked && r.players.size);
   return null;
 }
 function makeRankedRoom(socket, profile, u) {
@@ -3279,7 +3397,7 @@ function makeRankedRoom(socket, profile, u) {
   r.addPlayer(socket, profile);
   rankedTrack(r, F);
   r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
-  setTimeout(() => { if (rooms.get(r.code) === r && r.phase === "lobby" && r.players.size) r.startRace(); }, 4000);
+  startRankedSoon(r, 4000, () => r.players.size);
   return r;
 }
 
@@ -3917,7 +4035,7 @@ io.on("connection", (socket) => {
   socket.on("tour:load", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; const err = r.setTourTrack(); if (!err) { r.settings.mode = "tt"; r.sendLobby(); } socket.emit("trackResult", { error: err, tour: r.trackName }); });
   // time trial board for the track in this room
   socket.on("tt:board", async () => { const r = room(); if (!r || !r.trackKey) return socket.emit("ttBoard", null); const key = r.trackKey + (r.track?.reverse ? "_r" : ""); socket.emit("ttBoard", { name: r.trackName || r.calLabel?.() || "This track", ...(await accounts.getBoard("tt", key)) }); });
-  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "rankedTeam", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
+  socket.on("lb:get", async (d) => { const kind = ["wins", "ach", "km", "laps", "ranked", "rankedTeam", "totw"].includes(d?.kind) ? d.kind : "wins"; if (kind === "totw") { await loadWeekly(); return socket.emit("lb", { ...(await accounts.getBoard("totw", String(weekNow()))), info: totwInfo() }); } socket.emit("lb", await accounts.getBoard(kind, String(d?.track || ""))); });
   // ---- ranked ----
   socket.on("teamRanked:start", async () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return socket.emit("toast", "Only the host can start team ranked, from the lobby");
@@ -3932,7 +4050,7 @@ io.on("connection", (socket) => {
     leave(); makeRankedRoom(socket, profile, u);
   });
   // ---- Track of the Week ----
-  socket.on("totw:info", () => socket.emit("totwInfo", totwInfo()));
+  socket.on("totw:info", async () => { await loadWeekly(); socket.emit("totwInfo", totwInfo()); });
   socket.on("totw:load", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     const err = r.setTotwTrack();
@@ -4174,9 +4292,12 @@ io.on("connection", (socket) => {
     r.sendLobby(); r.emit("toast", "🎲 Everyone gets a random grid spot each race.");
   });
   socket.on("randomTrack", (d) => {
-    const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
-    const err = r.setRandomTrack(d?.map, d?.wonk);
-    socket.emit("trackResult", { error: err, random: true, bridges: r.track?.bridges, maxLevel: r.track?.maxLevel });
+    const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.makingTrack) return;
+    r.makingTrack = true;
+    r.setRandomTrackSoon(d?.map, d?.wonk).then((err) => {
+      r.makingTrack = false;
+      socket.emit("trackResult", { error: err, random: true, bridges: r.track?.bridges, maxLevel: r.track?.maxLevel });
+    }, () => { r.makingTrack = false; });
   });
   socket.on("clearTrack", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; r.track = null; r.stroke = null; r.trackName = null; r.draft = null; r.emit("draft", null); r.emit("track", null); r.sendLobby(); });
   socket.on("aiEdit", (d) => {
@@ -4477,4 +4598,4 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
