@@ -242,6 +242,9 @@
   @media (max-width: 860px) { .lap-delta { padding-left: 0.5rem; } .lap-delta b { font-size: 1rem; } }
   .standings ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
   .standings li { display: flex; align-items: center; gap: 0.35rem; transition: transform 200ms ease; }
+  .standings li:not(.lb-gap):hover { background: rgba(255,255,255,0.07); border-radius: 4px; }
+  .standings li.watch { background: rgba(34,211,238,0.18); border-radius: 4px; box-shadow: inset 2px 0 0 #22d3ee; }
+  .watch-chip { position: absolute; left: 50%; transform: translateX(-50%); top: calc(4.2rem + env(safe-area-inset-top, 0px)); z-index: 9; pointer-events: auto; cursor: pointer; padding: 0.35rem 0.9rem; border-radius: 99px; border: 1px solid #22d3ee; background: rgba(8,20,30,0.85); color: #e6fbff; font-weight: 700; font-size: 0.85rem; }
   .standings li .p { width: 1.3rem; color: var(--soft); font-weight: 700; text-align: right; }
   .standings li .d { width: 0.65rem; height: 0.65rem; border-radius: 3px; }
   .standings li .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

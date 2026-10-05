@@ -216,6 +216,24 @@
     if (actx.state === "suspended") actx.resume();
     return actx;
   }
+  // Every race sound (engines, effects, horns, the commentator) goes through this bus. Normally it's just passed
+  // through; in a tunnel an echo comes up: a big concrete room (reverb) plus a slap-back off the walls.
+  let BUS = null;
+  function fxOut(a) {
+    if (BUS && BUS.a === a) return BUS.input;
+    const input = a.createGain(), conv = a.createConvolver(), wet = a.createGain(), dl = a.createDelay(1), fb = a.createGain(), slap = a.createGain();
+    const len = Math.floor(a.sampleRate * 1.8), ir = a.createBuffer(2, len, a.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+    conv.buffer = ir; wet.gain.value = 0; dl.delayTime.value = 0.14; fb.gain.value = 0.38; slap.gain.value = 0;
+    input.connect(a.destination); input.connect(conv).connect(wet).connect(a.destination);
+    input.connect(dl); dl.connect(fb).connect(dl); dl.connect(slap).connect(a.destination);
+    BUS = { a, input, wet, slap, v: 0 };
+    return input;
+  }
+  function setEcho(v) {
+    if (!BUS || Math.abs(BUS.v - v) < 0.01) return; BUS.v = v;
+    const t = BUS.a.currentTime; BUS.wet.gain.setTargetAtTime(v * 1.1, t, 0.12); BUS.slap.gain.setTargetAtTime(v * 0.4, t, 0.12);
+  }
 
   // ======================= Music =======================
   // Real songs by Kevin MacLeod (incompetech.com), free to use under Creative Commons BY 3.0 as long
@@ -388,7 +406,7 @@
     o.type = type; o.frequency.setValueAtTime(freq, t0);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t0 + dur);
     g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+    o.connect(g).connect(fxOut(a)); o.start(t0); o.stop(t0 + dur + 0.02);
   }
   function sfx(name) {
     if (name === "light") tone(440, 0.16, "square", 0.18);
@@ -423,7 +441,7 @@
     if (!crowd && on && crowdVol() > 0) {
       const n = noise(a), f = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
       f.type = "bandpass"; f.frequency.value = 1100; f.Q.value = 0.5; f2.type = "lowpass"; f2.frequency.value = 2600; g.gain.value = 0;
-      n.connect(f).connect(f2).connect(g).connect(a.destination); n.start(); crowd = { n, g, f };
+      n.connect(f).connect(f2).connect(g).connect(fxOut(a)); n.start(); crowd = { n, g, f };
     }
     if (crowd) crowd.g.gain.setTargetAtTime(on ? 0.018 * crowdVol() : 0, a.currentTime, 0.8);
   }
@@ -452,13 +470,13 @@
     if (!engine && want) {
       const o1 = a.createOscillator(), o2 = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
       o1.type = E.wave; o2.type = E.wave2; o2.detune.value = E.detune; f.type = "lowpass"; f.Q.value = E.q; g.gain.value = 0;
-      const g2 = a.createGain(); g2.gain.value = 0.55; o2.connect(g2).connect(f); o1.connect(f); f.connect(g).connect(a.destination);
+      const g2 = a.createGain(); g2.gain.value = 0.55; o2.connect(g2).connect(f); o1.connect(f); f.connect(g).connect(fxOut(a));
       // boost: filtered noise, swept up while it's on
       const n = noise(a), bf = a.createBiquadFilter(), bg = a.createGain(); bf.type = "bandpass"; bf.Q.value = 1.2; bf.frequency.value = 900; bg.gain.value = 0;
-      n.connect(bf).connect(bg).connect(a.destination); n.start();
+      n.connect(bf).connect(bg).connect(fxOut(a)); n.start();
       // other cars: one soft triangle hum, louder the closer they are
       const oo = a.createOscillator(), of = a.createBiquadFilter(), og = a.createGain(); oo.type = "triangle"; of.type = "lowpass"; of.frequency.value = 700; og.gain.value = 0;
-      oo.connect(of).connect(og).connect(a.destination);
+      oo.connect(of).connect(og).connect(fxOut(a));
       o1.start(); o2.start(); oo.start();
       engine = { o1, o2, f, g, bf, bg, oo, og, wasBoost: false, kind: settings.engine };
     }
@@ -2395,7 +2413,7 @@
     if (!r.quali) { S.rival = S.pendingRival?.name || null; const rv = S.pendingRival; S.pendingRival = null; if (rv) setTimeout(() => { banner(`🎯 RIVAL: ${rv.name}`, "#ff6b61"); popup(`Your rival: ${rv.name} (${rv.pts} pts, you have ${rv.mine}). Beat them for +100 coins!`); }, 1500); }
     snaps.length = 0; rt = 0; S.geo = S.track ? buildGeo(S.track) : null; resetTiles();
     S.cars = new Map(); S.skids = []; S.particles = []; S.myCar = null; S.reacted = false; S.lightsOutAt = 0;
-    S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99;
+    S.box = false; S.order = "normal"; S.offer = null; S.camTarget = null; S.lastPos = 99; $("watchChip").classList.add("hidden"); S.tun = 0; setEcho(0);
     for (const c of r.cars) if (c.owner === S.me) S.myCar = c.id;
     setOrder("normal", true); updateBox(); disarmLeave();
     $("feed").textContent = ""; $("popups").textContent = "";
@@ -2522,6 +2540,7 @@
   socket.on("lightsOut", (d) => {
     S.lightsOutAt = performance.now();
     if (d?.rolling) { sfx("go"); banner("🟢 GREEN FLAG!", "#3ecf6a"); $("goBtn").classList.add("hidden"); return; }
+    if (d?.restart) { sfx("go"); banner("GO! RESTART", "#3ecf6a"); return; }
     $("lights").querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
     sfx("go");
     banner("GO!", "#3ecf6a");
@@ -2678,7 +2697,7 @@
   }
   function onState(st) {
     S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.sc = st.sc || null; S.standings = st.standings; S.gaps = st.gaps || [];
-    S.ql = st.ql ?? -1; S.qs = st.qs || 0;
+    S.ql = st.ql ?? -1; S.qs = st.qs || 0; S.qf = !!st.qf;
     commLeader(st);
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
@@ -2736,7 +2755,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "qFlag" ? "🏁 Time's up! Anyone on a lap gets to finish it" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -2789,7 +2808,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix", sMultiEndur: "multiEndur" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix", sMultiEndur: "multiEndur", sEnduroShare: "enduroShare" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -3032,7 +3051,8 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" || key === "dayNight" || key === "multiEndur" ? (s[key] ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
+      const sw = ["teamColors", "teams", "safetyCar", "drs", "reverseGrid", "dayNight", "multiEndur", "enduroShare"].includes(key);
+      $(id).value = sw ? ((key === "enduroShare" ? s[key] !== false : !!s[key]) ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
@@ -3245,6 +3265,7 @@
   }
   // ---- track objects: grandstands (beside the track), banners (an arch over it), tunnels and bridges (over the
   // cars). "ground" ones are drawn under the cars, the rest on top. In a tunnel your own car shows as an arrow.
+  const TUNNEL_LEN = 16;          // (how many track points a tunnel covers)
   function drawObjects(c, T, layer, me = null, board = false) {
     const D = T?.decor; if (!D || !D.length) return;
     const N = T.N, P = (i) => T.pts[((i % N) + N) % N], Nn = (i) => T.nor[((i % N) + N) % N], ang = (i) => { const q = T.tan[((i % N) + N) % N]; return Math.atan2(q.y, q.x); };
@@ -3265,14 +3286,38 @@
         c.rotate(Math.PI / 2); c.fillStyle = "#fff"; c.font = "900 15px 'Titillium Web', 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("SCRIBBLE GP", 0, 1);
         c.restore();
       } else if (d.k === "tunnel" && layer === "top") {
-        const len = 16, L = [], R = [];
+        const len = TUNNEL_LEN, L = [], R = [];
         for (let k = 0; k <= len; k++) { const q = P(i + k), m = Nn(i + k), h = hwAt(T, (i + k) % N) + 16; L.push([q.x + m.x * h, q.y + m.y * h]); R.push([q.x - m.x * h, q.y - m.y * h]); }
-        c.save(); c.globalAlpha = board ? 0.85 : 1;
-        c.beginPath(); L.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); for (let k = R.length - 1; k >= 0; k--) c.lineTo(R[k][0], R[k][1]); c.closePath();
+        const tube = () => { c.beginPath(); L.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); for (let k = R.length - 1; k >= 0; k--) c.lineTo(R[k][0], R[k][1]); c.closePath(); };
+        const inside = !board && S.tun > 0 && D.indexOf(d) === S.tunK ? S.tun : 0;
+        if (inside) {
+          // INSIDE: the world outside goes dark, the roof goes see-through, and you see the tunnel itself:
+          // concrete walls, orange lamps sliding past, a light strip along the ceiling
+          c.save();
+          c.fillStyle = `rgba(3,3,9,${0.84 * inside})`; c.beginPath(); c.rect(-1e5, -1e5, 2e5, 2e5);
+          L.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); for (let k = R.length - 1; k >= 0; k--) c.lineTo(R[k][0], R[k][1]); c.closePath(); c.fill("evenodd");
+          tube(); c.fillStyle = `rgba(20,22,30,${0.35 * inside})`; c.fill();
+          c.lineJoin = "round"; c.lineCap = "round";
+          for (const W of [L, R]) {
+            c.globalAlpha = inside; c.strokeStyle = "#262a33"; c.lineWidth = 16; c.beginPath(); W.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke();
+            c.strokeStyle = "#8b93a3"; c.lineWidth = 2.5; c.stroke();
+          }
+          c.globalCompositeOperation = "lighter";
+          for (let k = 1; k < len; k += 2) for (const W of [L, R]) {
+            const [x, y] = W[k], g = c.createRadialGradient(x, y, 0, x, y, 46);
+            g.addColorStop(0, `rgba(255,190,90,${0.5 * inside})`); g.addColorStop(1, "rgba(255,150,40,0)"); c.fillStyle = g; c.beginPath(); c.arc(x, y, 46, 0, Math.PI * 2); c.fill();
+            c.fillStyle = `rgba(255,225,150,${inside})`; c.beginPath(); c.arc(x, y, 3.2, 0, Math.PI * 2); c.fill();
+          }
+          c.strokeStyle = `rgba(190,220,255,${0.35 * inside})`; c.lineWidth = 3; c.setLineDash([22, 18]); c.lineDashOffset = -performance.now() / 12;
+          c.beginPath(); for (let k = 0; k <= len; k++) { const q = P(i + k); k ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); } c.stroke(); c.setLineDash([]);
+          c.restore();
+        }
+        c.save(); c.globalAlpha = (board ? 0.85 : 1) * (1 - 0.92 * inside);
+        tube();
         c.fillStyle = "#4b5563"; c.fill(); c.lineWidth = 6; c.strokeStyle = "#1f2937"; c.stroke();
         c.strokeStyle = "rgba(255,255,255,0.12)"; c.lineWidth = 3; for (let k = 2; k < len; k += 3) { c.beginPath(); c.moveTo(L[k][0], L[k][1]); c.lineTo(R[k][0], R[k][1]); c.stroke(); }
         c.restore();
-        if (me && me.x !== undefined && me.idx !== undefined && ((me.idx - i + N) % N) <= len) {            // you're in the tunnel: an arrow where you are
+        if (!inside && me && me.x !== undefined && me.idx !== undefined && ((me.idx - i + N) % N) <= len) {            // you're in the tunnel: an arrow where you are
           c.save(); c.translate(me.x, me.y); c.rotate(me.h); c.fillStyle = "#ffcc1f"; c.strokeStyle = "#000"; c.lineWidth = 2;
           c.beginPath(); c.moveTo(22, 0); c.lineTo(-12, -13); c.lineTo(-5, 0); c.lineTo(-12, 13); c.closePath(); c.fill(); c.stroke(); c.restore();
         }
@@ -3666,7 +3711,7 @@
   $("undoPt").addEventListener("click", undoDraft);
   // ---- Undo anything in the drawing phase: the track as it was before every change is kept (last 30) ----
   // Every message that changes the track is noticed on its way out; the track before it is saved first.
-  const UNDO = { stack: [], restoring: false, quiet: false };
+  const UNDO = { stack: [], redo: [], restoring: false, quiet: false };
   const TRACK_EVENTS = new Set(["track", "randomTrack", "f1Track", "clearTrack", "reverse", "setStart", "totw:load", "track:load", "drs:add", "drs:set", "drs:clear", "drs:auto"]);
   const snapTrack = () => (S.track && S.lobby?.stroke ? currentPreset("your last track") : { empty: true });
   const sameSnap = (a, b) => !!a && !!b && (a.empty ? b.empty : !b.empty && JSON.stringify([a.stroke, a.start, a.reverse, a.drs, a.smooth]) === JSON.stringify([b.stroke, b.start, b.reverse, b.drs, b.smooth]));
@@ -3677,6 +3722,7 @@
       if (changes && S.host && S.lobby?.phase === "lobby" && !UNDO.restoring && !UNDO.quiet) {
         const snap = snapTrack();
         if (!sameSnap(snap, UNDO.stack[UNDO.stack.length - 1])) { UNDO.stack.push(snap); if (UNDO.stack.length > 30) UNDO.stack.shift(); }
+        UNDO.redo = [];                                   // (a new change: what you undid can't come back any more)
         if (ev !== "track") S.lastDraft = null;          // (a finished drawing can only be "un-finished" right after)
         refreshUndo();
       }
@@ -3684,8 +3730,10 @@
     };
   }
   function refreshUndo() {
-    const can = S.host && S.lobby?.phase === "lobby" && (!!S.draft || !!S.lastDraft || UNDO.stack.length > 0);
+    const lobby = S.host && S.lobby?.phase === "lobby", canRedo = lobby && ((!!S.draft && redoStack.length > 0) || (!S.draft && UNDO.redo.length > 0));
+    const can = lobby && (!!S.draft || !!S.lastDraft || UNDO.stack.length > 0 || canRedo);
     $("undoTools").classList.toggle("hidden", !can);
+    $("trackRedo").classList.toggle("hidden", !canRedo);
   }
   function undoAnything() {
     if (!S.host || S.lobby?.phase !== "lobby") return;
@@ -3696,11 +3744,23 @@
     while (snap && sameSnap(snap, now)) snap = UNDO.stack.pop();
     if (!snap) { boardHint("Nothing to undo.", true); refreshUndo(); return; }
     // (putting it back isn't a new change: quiet until the server has rebuilt it, start line, direction and all)
+    UNDO.redo.push(now); if (UNDO.redo.length > 30) UNDO.redo.shift();
     if (snap.empty) { UNDO.quiet = true; socket.emit("clearTrack"); UNDO.quiet = false; boardHint("Undone: the track is cleared again.", false); }
     else { UNDO.restoring = true; clearTimeout(UNDO.safety); UNDO.safety = setTimeout(() => (UNDO.restoring = false), 8000); loadPreset(snap); boardHint("↩️ Undone!", false); }
     sfx("tick"); refreshUndo();
   }
   $("trackUndo").addEventListener("click", undoAnything);
+  // Redo: whatever you just undid comes back (a drawing piece while drawing, otherwise the whole track as it was)
+  function redoAnything() {
+    if (!S.host || S.lobby?.phase !== "lobby") return;
+    if (S.draft) { if (redoStack.length) redoDraft(); refreshUndo(); return; }
+    const snap = UNDO.redo.pop(); if (!snap) { boardHint("Nothing to redo.", true); refreshUndo(); return; }
+    UNDO.stack.push(snapTrack()); if (UNDO.stack.length > 30) UNDO.stack.shift();
+    if (snap.empty) { UNDO.quiet = true; socket.emit("clearTrack"); UNDO.quiet = false; }
+    else { UNDO.restoring = true; clearTimeout(UNDO.safety); UNDO.safety = setTimeout(() => (UNDO.restoring = false), 8000); loadPreset(snap); }
+    boardHint("↪️ Redone!", false); sfx("tick"); refreshUndo();
+  }
+  $("trackRedo").addEventListener("click", redoAnything);
   socket.on("joined", () => {
     if (S.pendingGhost) { const c = S.pendingGhost; S.pendingGhost = null; setTimeout(() => socket.emit("ghost:load", c), 300); }
     if (S.pendingTour) { S.pendingTour = false; setTimeout(() => socket.emit("tour:load"), 300); }
@@ -3721,10 +3781,10 @@
   socket.on("predictOk", (d) => { $("predictBox").classList.add("hidden"); popup(`🎲 ${d.coins} on ${d.name} at ${d.odds}x: win ${d.win.toLocaleString()} if they do it!`); });
   $("predictClose").addEventListener("click", () => $("predictBox").classList.add("hidden"));
   socket.on("ghostChallenge", (g) => { S.challenge = g; boardHint(`👻 ${g.from}'s lap: ${g.t.toFixed(3)}s. Press Start, then beat their ghost!`, false); });
-  socket.on("joined", () => { UNDO.stack = []; UNDO.restoring = false; refreshUndo(); });
+  socket.on("joined", () => { UNDO.stack = []; UNDO.redo = []; UNDO.restoring = false; refreshUndo(); });
   socket.on("trackResult", (r) => { if (UNDO.restoring && (r.error || !P.steps.length)) { UNDO.restoring = false; clearTimeout(UNDO.safety); } });
   socket.on("lobby", () => refreshUndo());
-  function updateRedo() { $("redoPt").classList.toggle("hidden", !redoStack.length || !S.draft); }
+  function updateRedo() { $("redoPt").classList.toggle("hidden", !redoStack.length || !S.draft); if (typeof refreshUndo === "function") refreshUndo(); }
   function redoDraft() {
     const r = redoStack.pop(), d = S.draft; if (!r || !d) return;
     if (r.ctrl && d.ctrl) { d.ctrl.push(r.ctrl); d.pts = d.pts.slice(0, d.base).concat(spline(d.ctrl, false)); }
@@ -4307,7 +4367,7 @@
     if (e.key === "Escape" && editing && !cut && !S.draft) { setEditing(false); return; }
     if (e.key === "Escape" && cut) { endCut(); boardHint("", false); return; }
     if (e.key === "Escape" && S.draft) { S.draft = null; drawing = false; updateDraftUi(); drawBoard(); boardHint("Drawing cleared.", false); }
-    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); redoDraft(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); redoAnything(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undoAnything(); }
     if (e.key === "[" || e.key === "]") { const ws = WIDTHS.map((x) => x[0]), i = ws.indexOf(brushW); setBrush(ws[clamp(i + (e.key === "]" ? 1 : -1), 0, ws.length - 1)]); }
   });
@@ -5499,7 +5559,7 @@
     if (!t) return;
     const th = THEMES[t.theme] || THEMES.grass; th.key = t.theme;
     if (!PH.on) interpCars(dt);
-    if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; }
+    if (S.winnerCamUntil && performance.now() > S.winnerCamUntil) { S.winnerCamUntil = 0; S.camTarget = null; $("watchChip").classList.add("hidden"); }
     let target = S.camTarget && S.cars.get(S.camTarget);
     // grid walk: before the lights, the camera drives down the grid from pole, one car at a time
     if (S.walk && (S.phase === "tires" || S.phase === "lights") && !PH.on) {
@@ -5665,10 +5725,15 @@
         ctx.globalAlpha = 1;
       }
     };
+    // in a tunnel? (the car the camera follows) The view and the sound change while you're in there
+    { const fc = (S.camTarget && S.cars.get(S.camTarget)) || S.cars.get(S.myCar); let inT = -1;
+      if (fc && fc.drawIdx !== undefined && t.decor) t.decor.forEach((d, k) => { if (d.k === "tunnel" && ((fc.drawIdx - d.i + t.N) % t.N) <= TUNNEL_LEN) inT = k; });
+      if (inT >= 0) S.tunK = inT;
+      S.tun = clamp((S.tun || 0) + (inT >= 0 ? 1 : -1) * Math.min(dt, 0.1) * 3, 0, 1); setEcho(S.replaying ? 0 : S.tun); }
     drawObjects(ctx, t, "ground");
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
-    drawObjects(ctx, t, "top", S.cars.get(S.myCar));
+    drawObjects(ctx, t, "top", (S.camTarget && S.cars.get(S.camTarget)) || S.cars.get(S.myCar));
     // fireworks (in the world, around the winner)
     fireworks = fireworks.filter((fw) => {
       const k = (now - fw.t) / 1300; if (k > 1) return false;
@@ -5825,7 +5890,7 @@
     COMM.busy = true;
     const bufs = (await Promise.all(it.parts.map(commClip))).filter(Boolean), a = audio();
     if (!bufs.length || !a) { COMM.busy = false; return commNext(); }
-    const g = a.createGain(); g.gain.value = Math.min(1.4, commVol() * 1.3); g.connect(a.destination);
+    const g = a.createGain(); g.gain.value = Math.min(1.4, commVol() * 1.3); g.connect(fxOut(a));
     if (MUS.el) MUS.el.volume = Math.max(0, Math.min(1, musicVol() * 0.35)); if (MUS.syn) MUS.syn.out.gain.value = Math.min(1, musicVol()) * 0.2;   // duck the music
     let t = a.currentTime + 0.05;
     for (const b of bufs) { const src = a.createBufferSource(); src.buffer = b; src.connect(g); src.start(t); t += b.duration + 0.06; }
@@ -5852,8 +5917,8 @@
     else if (f.t === "mistake") say("mistake", null, 0, 20000);
     else if (f.t === "qko") say("qko", null, 2);
     else if (f.t === "timeUp") { say("lastLap", null, 2); banner("⏳ TIME'S UP: LAST LAP!", "#ffc53d"); }
-    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s: crews are fixing the cars`, true); }
-    else if (f.t === "rfRestart") { banner("RESTART", "#ffc53d"); popup("Restarting in order behind the safety car"); }
+    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s: everyone back to the grid in the order before the crash${S.race?.multi ? " (each class together)" : ""}`, true); }
+    else if (f.t === "rfRestart") popup("Standing restart from the grid!");
   });
   // new leader (from the race state): "Bolt takes the lead!"
   function commLeader(st) {
@@ -6054,7 +6119,7 @@
     } else { $("posText").append("P" + pos); const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm); }
     classFlag(me); elimFlag(me);
     { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
-    $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
+    $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${S.qf ? "🏁 finishing laps" : `${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left`}${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);
     renderSectors(me);
@@ -6125,6 +6190,10 @@
         if (S.race?.elim && c.out) li.className += " out";
         const x = document.createElement("span"); x.className = "tw"; x.textContent = c.out ? "OUT" : c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : c.dmg > 0.3 ? "DMG" : `${Math.round(c.tire * 100)}%`;
         if (c.punct) x.style.color = "#ff8a80";
+        if (id === S.camTarget && id !== S.myCar) li.className += " watch";
+        li.title = id === S.myCar ? "Your car" : `Watch ${c.name}`;
+        // click a driver: the camera follows them (click yourself, or the chip, to come back)
+        li.addEventListener("click", (e) => { e.stopPropagation(); watchCar(id === S.myCar ? null : id); });
         li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
       if (!all && myI < fit && S.standings.length > fit) { const m = document.createElement("li"); m.className = "lb-gap"; m.textContent = `+${S.standings.length - fit} more · ${isTouch() ? "tap" : "hold Ctrl"}`; ol.appendChild(m); }
@@ -6137,6 +6206,15 @@
   window.addEventListener("keyup", (e) => { if (e.key === "Control") S.lbAll = false; });
   window.addEventListener("blur", () => { S.lbAll = false; });
   $("standings").addEventListener("click", () => { S.lbAll = !S.lbAll; });
+  // spectate anyone from the leaderboard
+  function watchCar(id) {
+    if (S.myCar === null || S.myCar === undefined) { S.camTarget = id; const c = id && S.cars.get(id); $("specName").textContent = c ? c.name : "the leader"; lastHudStand = ""; return; }
+    S.camTarget = id; lastHudStand = "";
+    const chip = $("watchChip"), c = id && S.cars.get(id);
+    chip.classList.toggle("hidden", !c);
+    if (c) chip.textContent = `👁 Watching ${c.name} · back to my car`;
+  }
+  $("watchChip").addEventListener("click", () => watchCar(null));
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
     if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }
@@ -6667,7 +6745,48 @@
   // ======================= What's new (shown once after each update) =======================
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
+  // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-05c", date: "5 Oct", title: "Red flag restarts, tunnels, spectating, redo", items: [
+      "🟥 Red flags only for a BIG pile-up now (6+ cars, hard hits), and everyone goes back to the starting grid in the order they were in just before the crash. Standing restart, no safety car.",
+      "🏎️ Multiclass red flags: each class lines up together (all Hypers, then all GT3s), so you restart where you were in YOUR class.",
+      "🏁 Qualifying (all kinds, knockout too): when the clock runs out, everyone on a lap gets to finish it. The timer says \"finishing laps\".",
+      "👁 Click anyone on the race leaderboard to watch them. Click yourself (or the chip at the top) to go back to your car.",
+      "💨 Slipstream works behind any class now: GT3s can tow behind Hypers and the other way round.",
+      "⏳ Endurance: pick \"Share one car\" (swap at every stop) or \"Both race\" (a car each) in the Mode tab.",
+      "🚇 Tunnels (track objects): drive into one and the world goes dark, the tunnel lights up around you, and every sound echoes, engines and commentator too.",
+      "↪️ Redo button next to Undo in the track editor (Ctrl+Y works too): brings back whatever you just undid.",
+      "Small stuff: \"GO! RESTART\" banner after a red flag · the red flag message says where you'll restart · new feed line when qualifying's time is up.",
+    ] },
+    { v: "u-2026-10-05b", date: "5 Oct", title: "Smoother cars, ranked grids, safety car unlaps", items: [
+      "🛠️ Cars can't slide off the road on screen any more when the connection hiccups (they used to keep going straight, then snap back).",
+      "⚙️ The server does about 20% less work per race (updates 15 times a second for every race), which matters a lot on a small server.",
+      "🏆 Ranked: below Platinum you start from a random grid spot; Platinum and up get a 2 minute qualifying.",
+      "👻 Safety car: lapped cars ghost through the pack and unlap themselves, and the safety car waits for them.",
+      "🛞 Tyre warnings now count laps: one with 2 laps left on your tyres, one with 1 lap left (only if they won't make the flag). The must-pit banner says how many laps are left.",
+      "⏳ Endurance: half the tyre wear.",
+      "✨ Picking an upgrade card: it flashes, spins and flies to your upgrades with a burst of sparks.",
+      "Small stuff: your dashboard numbers (boost, sectors) update a bit less often to save the server work; you won't notice",
+    ] },
+    { v: "u-2026-10-05a", date: "5 Oct", title: "Halloween shop, mythics, fair ranked restarts", items: [
+      "🎃 Halloween shop drop: 26 new items (pumpkin, witch and slime underglows, candlelight glow, bat and pumpkin trails, spider web decal, vampire, witch, zombie and more badges...).",
+      "💀 Haunted crates: 4 more items and 3 MYTHICS (Phantom livery, Witching Hour underglow, Possessed boost flame).",
+      "🌈 Every season pass theme has its own elusive mythic livery (1.5% per crate). The shop drop's mythic, Lost Souls trail, is in the chests.",
+      "🛡️ An update or restart in the middle of a ranked race doesn't cost you SR any more: the race just doesn't count.",
+      "Small stuff: \"The game is updating\" no longer shows when it isn't (it says the server is restarting) · the server keeps itself awake while people are playing · a duplicate mythic refunds 1,500 coins.",
+    ] },
+    { v: "u-2026-10-04", date: "4 Oct", title: "Rain pit stops fixed, rank shield", items: [
+      "🌧️ AI cars stopped pitting every lap in the rain: wet races get a proper plan now (about one stop instead of five).",
+      "🛡️ Rank shield: the first time you'd drop out of a rank, the shield keeps you in. A fresh one comes with every promotion.",
+      "🏆 Ranked gives 50 XP a second (was 15).",
+      "🏎️ Multiclass can be an endurance race too (Endurance switch in the Mode tab).",
+      "Small stuff: AI pit stops are a tad slower · the ranked panel shows if your shield is ready.",
+    ] },
+    { v: "u-2026-10-03", date: "3 Oct", title: "No more freezes when someone makes a track", items: [
+      "🧊 Making a random track used to freeze every race on the server for a moment. It's made a little at a time now, so races keep running.",
+      "📅 Track of the Week and the tournament track are saved once made, so they're the same all week (a restart used to be able to change them).",
+      "Small stuff: the Random button says \"Making a ... random track\" while it works · the server logs any freeze so it can be tracked down.",
+    ] },
     { v: "2026-10-30", title: "Smoother races, messages you can see", items: [
       "🚀 New Graphics setting (Auto by default): when your device can't keep up, the race view gets a little less sharp so it stays smooth, and sharpens again when it can. Fast mode for slow phones.",
       "💬 Messages on the menu and in the lobby show up now (they were hidden behind the race screen): bet sent, gift sent, and why something didn't work.",
@@ -6854,7 +6973,7 @@
     WHATS_NEW.forEach((n, i) => {
       const fresh = !onlyNew || cut < 0 || i < cut;
       const box = document.createElement("div"); box.className = "news-item" + (fresh ? "" : " old");
-      const h = document.createElement("h3"); h.textContent = n.title; const sm = document.createElement("small"); sm.textContent = n.v; h.appendChild(sm); box.appendChild(h);
+      const h = document.createElement("h3"); h.textContent = n.title; if (n.date) { const sm = document.createElement("small"); sm.textContent = n.date; h.appendChild(sm); } box.appendChild(h);
       const ul = document.createElement("ul"); for (const it of n.items) { const li = document.createElement("li"); li.textContent = it; ul.appendChild(li); } box.appendChild(ul);
       list.appendChild(box);
     });
