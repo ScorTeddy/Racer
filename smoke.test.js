@@ -558,6 +558,9 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
     const j = await got("joined"), r = game.rooms.get(j.code);
     for (let i = 0; i < 100 && (r.makingTrack || !r.track); i++) await new Promise((ok) => setTimeout(ok, 50));   // (random tracks are made in slices)
     assert.equal(r.settings.xpRate, 50, "ranked gives 50 XP a second");
+    const me = [...r.players.values()][0];
+    if (sr < 1200) assert.ok(r.settings.quali === 0 && me.gridPos === -1, "below Platinum: no qualifying, a random grid spot");
+    else assert.ok(r.settings.quali === 2, "Platinum and up: 2 minutes of qualifying");
     assert.ok(check(r), `SR ${sr}: ${r.trackKind} ${r.settings.map} ${r.wonk} ${r.settings.ai} AI ${r.settings.laps} laps`);
     assert.ok(!(r.settings.weather === "fog" && ["night", "neon"].includes(r.settings.theme)), "never night + fog");
     s.emit("leave"); await new Promise((ok) => setTimeout(ok, 1200));
@@ -1508,4 +1511,44 @@ test("Halloween: new shop items, more Haunted crate items, and every theme has a
   const u = { id: "u_cratetest", coins: 0, owned: [], stats: {}, ach: {}, crates: { haunted: 4000 }, equipped: {} };
   let m = 0; for (let i = 0; i < 4000; i++) { const r = accounts.openCrate(u, "haunted"); if (r.item.rarity === "mythic") m++; }
   assert.ok(m > 20 && m < 110, `mythics in 4000 crates: ${m}`);
+});
+
+test("safety car: lapped cars ghost through the pack and unlap themselves", { timeout: 120000 }, () => {
+  const r = new game.Room("UNLAP", false); r.setRandomTrack("normal", "regular");
+  r.players.set("ul", { id: "ul", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 7, quali: 0, laps: 12, weather: "sunny", safetyCar: true }); r.ensureRoster(7);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 25; n++) r.step(1 / 60);
+  const order = r.standings(), back = order[order.length - 1];
+  back.lapsDone -= 1; back.maxLaps = back.lapsDone; back.progress -= r.track.N;       // a lap down
+  r.deploySafetyCar();
+  assert.ok(r.sc, "safety car out");
+  r.step(1 / 60);
+  assert.ok(back.unlapping && r.ghost(back), "the lapped car is a ghost, on its way to unlap");
+  let unlapped = false;
+  for (let n = 0; n < 60 * 80 && r.sc; n++) { r.step(1 / 60); const L = r.standings().find((c) => !c.finished); if (back.progress > L.progress - r.track.N) { unlapped = true; break; } }
+  assert.ok(unlapped, "back on the lead lap before the safety car went in");
+});
+
+test("tyre warnings come with 2 laps and 1 lap left on the tyres (not 4 laps early)", { timeout: 60000 }, () => {
+  const r = new game.Room("TYREWARN", false); r.setRandomTrack("normal", "regular");
+  const toasts = []; const p = { id: "tw", name: "Me", up: {}, level: 1, xp: 0, warned: 0, passCd: new Map(), lostCd: new Map(), lastPos: 99 };
+  r.players.set("tw", p);
+  Object.assign(r.settings, { ai: 3, quali: 0, laps: 20, weather: "sunny" }); r.ensureRoster(3);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const io0 = game.io.to; game.io.to = (id) => ({ emit: (ev, d) => { if (ev === "toast" && id === "tw") toasts.push(d); } });
+  try {
+    for (let n = 0; n < 60 * 5; n++) r.step(1 / 60);
+    const c = r.cars.find((x) => x.owner === "tw"), perLap = 1 / r.lifeLaps(c, c.compound); c.lapWearMeas = perLap;
+    c.tire = perLap * 3.5; r.drive(c, 1 / 60); assert.equal(toasts.filter((t) => /laps? left on these tyres/.test(t)).length, 0, "3.5 laps left: no warning yet");
+    c.tire = perLap * 1.9; r.drive(c, 1 / 60); assert.ok(toasts.some((t) => /2 laps left on these tyres/.test(t)), "2 laps");
+    c.tire = perLap * 0.95; r.drive(c, 1 / 60); assert.ok(toasts.some((t) => /1 lap left on these tyres/.test(t)), "1 lap");
+  } finally { game.io.to = io0; }
+});
+
+test("endurance races wear tyres half as fast", () => {
+  const mk = (mode) => { const r = new game.Room("EW" + mode, false); r.setRandomTrack("normal", "regular"); r.players.set("me", { id: "me", name: "Me", up: {}, level: 1, xp: 0 });
+    Object.assign(r.settings, { ai: 3, quali: 0, laps: 10, mode, enduroMin: 20 }); r.ensureRoster(3); r.startRace(); r.startLights(); return r; };
+  const e = mk("endur"), est = e.enduro.est;
+  assert.ok(Math.abs(e.wearPerLap * game.tireLifeLaps(est) - 0.5) < 1e-9, "half the normal wear for a race that long");
 });
