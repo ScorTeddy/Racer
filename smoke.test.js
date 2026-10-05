@@ -1757,3 +1757,42 @@ test("the pit stop minigame comes up every time a player pits, qualifying includ
   assert.ok(games >= 1, "the minigame started in qualifying");
   assert.ok(!game.UPGRADES || !game.UPGRADES.pit, "Pro Pit Crew is gone");
 });
+
+test("trades: several items (and coins) on each side, all checked again on accept", async () => {
+  const a = (await accounts.signUp("MultiA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("MultiB", "Turbo-Fox-Lane-42")).u;
+  await accounts.friendAdd(a, "MultiB"); await accounts.friendAccept(b, a.id);
+  a.coins = 500; b.coins = 500; a.owned.push("glow_cyan", "glow_pink", "wing_duck"); b.owned.push("glow_gold", "glow_green");
+  assert.match((await accounts.offerTrade(a, b.id, { items: ["glow_cyan", "glow_gold"] }, { items: ["glow_green"] })).error, /own/, "can't offer what you don't have");
+  assert.ok((await accounts.offerTrade(a, b.id, { coins: 100, items: ["glow_cyan", "glow_pink", "wing_duck"] }, { coins: 50, items: ["glow_gold", "glow_green"] })).ok);
+  const t = accounts.publicUser(b).trades[0];
+  assert.deepEqual(t.give.items.sort(), ["glow_cyan", "glow_pink", "wing_duck"]); assert.equal(t.want.items.length, 2);
+  assert.ok((await accounts.answerTrade(b, t.id, true)).ok);
+  for (const id of ["glow_cyan", "glow_pink", "wing_duck"]) assert.ok(b.owned.includes(id) && !a.owned.includes(id), id + " moved to B");
+  for (const id of ["glow_gold", "glow_green"]) assert.ok(a.owned.includes(id) && !b.owned.includes(id), id + " moved to A");
+  assert.equal(a.coins, 450); assert.equal(b.coins, 550);
+  // an old one-item offer (saved before this change) still works
+  a.giftAt = 0; b.tradesIn = [{ id: "old1", from: a.id, fromName: a.name, give: { coins: 0, item: "glow_gold" }, want: { coins: 10, item: null }, at: Date.now() }];
+  assert.ok((await accounts.answerTrade(b, "old1", true)).ok); assert.ok(b.owned.includes("glow_gold"));
+});
+
+test("suggestions: anyone can send one, only the owner's account (ScorTeddy) gets the alert and can read them", { timeout: 30000 }, async () => {
+  const boss = (await accounts.signUp("ScorTeddy", "Turbo-Fox-Lane-42")).u || await accounts.getUser("u_scorteddy");
+  const other = (await accounts.signUp("NotTheBoss", "Turbo-Fox-Lane-42")).u;
+  assert.ok(accounts.isSuggestAdmin(boss) && !accounts.isSuggestAdmin(other));
+  assert.match((await accounts.addSuggestion({ name: "Ann" }, "hi")).error, /more/);
+  const r = await accounts.addSuggestion({ name: "Ann" }, "Add lightning in night rain races", "idea");
+  assert.ok(r.ok && r.admin && r.admin.id === boss.id);
+  assert.equal(accounts.suggestionsOf(other), null, "nobody else can read them");
+  assert.equal(accounts.suggestionsOf(boss)[0].text, "Add lightning in night rain races");
+  assert.equal(accounts.publicUser(boss).suggestAdmin.unread, 1); assert.equal(accounts.publicUser(other).suggestAdmin, null);
+  accounts.suggestMark(boss, "all"); assert.equal(accounts.suggestUnread(boss), 0);
+  // over the socket: a guest sends one, and the owner (signed in) gets a notification straight away
+  const s = io(base, { transports: ["websocket"], forceNew: true }); await new Promise((ok) => s.once("connect", ok));
+  const res = new Promise((ok) => s.once("suggestResult", ok));
+  s.emit("suggest", { text: "Please add a drift mode", kind: "idea", name: "Bo" });
+  assert.ok((await res).ok);
+  const top = accounts.suggestionsOf(boss)[0]; assert.equal(top.text, "Please add a drift mode"); assert.equal(top.name, "Bo (guest)");
+  const again = new Promise((ok) => s.once("suggestResult", ok)); s.emit("suggest", { text: "and another thing please" });
+  assert.match((await again).error, /minute/, "one a minute");
+  s.close();
+});

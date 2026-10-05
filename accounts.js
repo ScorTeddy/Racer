@@ -1706,13 +1706,18 @@ function dmPush(a, b, m) {
 }
 function giftCooldown(u) { const left = (u.giftAt || 0) + GIFT_COOLDOWN - Date.now(); return left > 0 ? Math.ceil(left / 1000) : 0; }
 function coinsGivenToday(u) { if (u.giftDay !== dayNo()) { u.giftDay = dayNo(); u.giftCoins = 0; } return u.giftCoins || 0; }
+// one side of a gift or trade: coins and any number of items (up to 10). Older offers had a single `item`.
+const TRADE_MAX_ITEMS = 10;
+const sideItems = (side) => [...new Set((Array.isArray(side?.items) ? side.items : side?.item ? [side.item] : []).map(String))];
 function checkSide(u, side, who) {
-  const coins = Math.max(0, Math.floor(Number(side?.coins) || 0)), item = side?.item ? String(side.item) : null;
+  const coins = Math.max(0, Math.floor(Number(side?.coins) || 0)), items = sideItems(side);
   if (coins > 100000) return { error: "That's too many coins" };
+  if (items.length > TRADE_MAX_ITEMS) return { error: `Up to ${TRADE_MAX_ITEMS} items each side` };
   if (u.coins < coins) return { error: `${who} ${who === "You" ? "don't" : "doesn't"} have ${coins} coins` };
-  if (item) { const it = STORE_BY_ID.get(item); if (!it || !u.owned.includes(item)) return { error: `${who} ${who === "You" ? "don't" : "doesn't"} own that item` }; }
-  return { coins, item };
+  for (const id of items) { const it = STORE_BY_ID.get(id); if (!it || !u.owned.includes(id)) return { error: `${who} ${who === "You" ? "don't" : "doesn't"} own ${it ? it.name : "that item"}` }; }
+  return { coins, items, item: items[0] || null };
 }
+const ownsAny = (u, items) => items.find((id) => u.owned.includes(id));
 function moveItem(from, to, id) {
   from.owned = from.owned.filter((x) => x !== id);
   for (const [slot, eq] of Object.entries(from.equipped || {})) if (eq === id) delete from.equipped[slot];
@@ -1724,6 +1729,7 @@ async function sendGift(u, toId, d) {
   const cd = giftCooldown(u); if (cd) return { error: `Gift cooldown: wait ${cd}s` };
   const side = checkSide(u, d, "You"); if (side.error) return side;
   if (!side.coins && !side.item) return { error: "Pick some coins or an item to send" };
+  if (side.items.length > 1) return { error: "One item per gift (or trade for more)" };
   if (side.coins && coinsGivenToday(u) + side.coins > GIFT_DAILY_COINS) return { error: `You can send up to ${GIFT_DAILY_COINS} coins a day (${GIFT_DAILY_COINS - coinsGivenToday(u)} left today)` };
   if (side.item && o.owned.includes(side.item)) return { error: `${o.name} already has that item` };
   u.coins -= side.coins; o.coins += side.coins; u.giftCoins = coinsGivenToday(u) + side.coins;
@@ -1742,14 +1748,14 @@ async function offerTrade(u, toId, give, want) {
   const cd = giftCooldown(u); if (cd) return { error: `Trade cooldown: wait ${cd}s` };
   const g = checkSide(u, give, "You"); if (g.error) return g;
   const w = checkSide(o, want, o.name); if (w.error) return w;
-  if (!g.coins && !g.item) return { error: "Offer something" };
-  if (!w.coins && !w.item) return { error: "Ask for something (or send it as a gift instead)" };
-  if (g.item && o.owned.includes(g.item)) return { error: `${o.name} already has the item you're offering` };
-  if (w.item && u.owned.includes(w.item)) return { error: "You already have the item you're asking for" };
+  if (!g.coins && !g.items.length) return { error: "Offer something" };
+  if (!w.coins && !w.items.length) return { error: "Ask for something (or send it as a gift instead)" };
+  const dupG = ownsAny(o, g.items); if (dupG) return { error: `${o.name} already has ${STORE_BY_ID.get(dupG)?.name || "one of the items you're offering"}` };
+  const dupW = ownsAny(u, w.items); if (dupW) return { error: `You already have ${STORE_BY_ID.get(dupW)?.name || "one of the items you're asking for"}` };
   o.tradesIn = (o.tradesIn || []).filter((t) => t.from !== u.id);
   if (o.tradesIn.length >= 10) return { error: `${o.name} has too many trade offers waiting` };
   const id = crypto.randomBytes(6).toString("hex");
-  const tr = { id, from: u.id, fromName: u.name, give: g, want: w, at: Date.now() };
+  const tr = { id, from: u.id, fromName: u.name, give: { coins: g.coins, items: g.items }, want: { coins: w.coins, items: w.items }, at: Date.now() };
   o.tradesIn.push(tr);
   u.giftAt = Date.now();
   dmPush(u, o, { from: u.id, t: Date.now(), trade: tradeText(tr) });
@@ -1757,7 +1763,7 @@ async function offerTrade(u, toId, give, want) {
   return { ok: true, other: o.id, name: o.name };
 }
 function tradeText(tr) {
-  const s = (x) => [x.coins ? `🪙 ${x.coins}` : "", x.item ? STORE_BY_ID.get(x.item)?.name : ""].filter(Boolean).join(" + ") || "nothing";
+  const s = (x) => [x.coins ? `🪙 ${x.coins}` : "", ...sideItems(x).map((id) => STORE_BY_ID.get(id)?.name || id)].filter(Boolean).join(" + ") || "nothing";
   return `offers ${s(tr.give)} for ${s(tr.want)}`;
 }
 async function answerTrade(u, id, yes) {
@@ -1770,16 +1776,38 @@ async function answerTrade(u, id, yes) {
   // check everything again: things could have changed since the offer
   const g = checkSide(o, tr.give, o.name); if (g.error) { saveSoon(u); return g; }
   const w = checkSide(u, tr.want, "You"); if (w.error) { saveSoon(u); return w; }
-  if (g.item && u.owned.includes(g.item)) { saveSoon(u); return { error: "You already have that item now" }; }
-  if (w.item && o.owned.includes(w.item)) { saveSoon(u); return { error: `${o.name} already has that item now` }; }
+  if (ownsAny(u, g.items)) { saveSoon(u); return { error: "You already have one of those items now" }; }
+  if (ownsAny(o, w.items)) { saveSoon(u); return { error: `${o.name} already has one of those items now` }; }
   o.coins += w.coins - g.coins; u.coins += g.coins - w.coins;
-  if (g.item) moveItem(o, u, g.item);
-  if (w.item) moveItem(u, o, w.item);
+  for (const id of g.items) moveItem(o, u, id);
+  for (const id of w.items) moveItem(u, o, id);
   u.stats.trades = (u.stats.trades || 0) + 1; o.stats.trades = (o.stats.trades || 0) + 1;
   dmPush(u, o, { from: u.id, t: Date.now(), trade: "accepted the trade ✅" });
   saveSoon(u); saveSoon(o);
   return { ok: true, other: o.id, msg: "Trade done!" };
 }
+// ======================= Suggestions =======================
+// Anyone can send one. They're kept on the game owner's account (SUGGEST_ADMIN, default ScorTeddy: the
+// login name), the newest 300, so they last as long as accounts do. Only that account can read them.
+const SUGGEST_ADMIN = String(process.env.SUGGEST_ADMIN || "ScorTeddy").toLowerCase(), SUGGEST_KEEP = 300;
+const SUGGEST_KINDS = ["idea", "bug", "other"];
+const isSuggestAdmin = (u) => !!u && u.id === "u_" + SUGGEST_ADMIN;
+async function addSuggestion(from, text, kind) {
+  const t = String(text || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 1000);
+  if (t.length < 5) return { error: "Write a bit more (at least a few words)" };
+  const s = { id: crypto.randomBytes(5).toString("hex"), at: Date.now(), kind: SUGGEST_KINDS.includes(kind) ? kind : "idea", text: t, name: String(from?.name || "Guest").slice(0, 20), uid: from?.uid || null, read: false };
+  const admin = await getUser("u_" + SUGGEST_ADMIN);
+  if (admin) { admin.suggestions = [s, ...(admin.suggestions || [])].slice(0, SUGGEST_KEEP); saveSoon(admin); }
+  return { ok: true, s, admin };
+}
+function suggestionsOf(u) { return isSuggestAdmin(u) ? (u.suggestions || []) : null; }
+function suggestUnread(u) { return isSuggestAdmin(u) ? (u.suggestions || []).filter((s) => !s.read).length : 0; }
+function suggestMark(u, id, read = true) {
+  if (!isSuggestAdmin(u)) return false;
+  for (const s of u.suggestions || []) if (id === "all" || s.id === id) s.read = read;
+  saveSoon(u); return true;
+}
+function suggestDelete(u, id) { if (!isSuggestAdmin(u)) return false; u.suggestions = (u.suggestions || []).filter((s) => s.id !== id); saveSoon(u); return true; }
 function sendDm(u, o, text) {
   if (!o || !isFriend(u, o.id)) return { error: "You can only message friends" };
   if ((o.blocked || []).includes(u.id)) return { ok: true };
@@ -2022,7 +2050,7 @@ function betsPublic(u) {
   expireBets(u);
   return { in: u.betsIn.map((b) => ({ id: b.id, from: b.from, fromName: b.fromName, amount: b.amount, at: b.at })), live: u.betsLive.map((b) => ({ vs: b.vs, vsName: b.vsName, amount: b.amount, until: b.at + BET_TTL })) };
 }
-function tradesPublic(u) { return (u.tradesIn || []).map((t) => ({ id: t.id, from: t.from, fromName: t.fromName, give: t.give, want: t.want, at: t.at, text: tradeText(t) })); }
+function tradesPublic(u) { return (u.tradesIn || []).map((t) => ({ id: t.id, from: t.from, fromName: t.fromName, give: { coins: t.give?.coins || 0, items: sideItems(t.give) }, want: { coins: t.want?.coins || 0, items: sideItems(t.want) }, at: t.at, text: tradeText(t) })); }
 
 // ======================= Share codes (tracks and replays) =======================
 // Short codes like "K7PQ2M" for a drawn track or a saved replay. Kept in Upstash when it's set up,
@@ -2164,7 +2192,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), ghosts: ghostsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, suggestAdmin: isSuggestAdmin(u) ? { unread: suggestUnread(u) } : null, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), ghosts: ghostsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -2280,4 +2308,5 @@ module.exports = {
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
   rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedCancel, undoOldRankedCharges, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
+  addSuggestion, suggestionsOf, suggestUnread, suggestMark, suggestDelete, isSuggestAdmin, SUGGEST_ADMIN,
 };
