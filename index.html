@@ -431,6 +431,14 @@
     <div class="panel"><div class="meter-label"><span id="lvlText">Team Lv 1</span><span id="xpText">0 / 100</span></div><div class="meter"><div id="xpFill"></div></div></div>
   </div>
   <div class="garage panel" id="garage"></div>
+  <div class="watch-panel panel hidden" id="watchPanel" aria-live="polite">
+    <div class="wp-head"><span class="wp-dot" id="wpDot"></span><b id="wpName"></b><small id="wpLvl"></small></div>
+    <div class="wp-boost"><span>⚡</span><div class="wp-bar"><i id="wpBoost"></i></div><b id="wpBoostTxt"></b></div>
+    <div class="wp-sect">Upgrade cards</div>
+    <div class="wp-cards" id="wpCards"><small class="wp-none">No cards yet</small></div>
+    <div class="wp-sect">Their upgrades</div>
+    <div class="wp-ups" id="wpUps"></div>
+  </div>
   <div class="pit-game hidden" id="pitGame" role="dialog" aria-label="Pit stop minigame">
     <div class="pg-title">🔧 PIT STOP! <span>Hit the arrows in order</span></div>
     <div class="pg-row" id="pgRow"></div>
@@ -686,5 +694,16 @@
 <datalist id="teamList"></datalist>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/game.js"></script>
+  <div class="abandon-fx hidden" id="abandonFx" role="alert" aria-live="assertive">
+    <div class="ab-stripes"></div>
+    <div class="ab-flag left"><i></i></div><div class="ab-flag right"><i></i></div>
+    <div class="ab-core">
+      <div class="ab-kicker">🟥 RACE CONTROL</div>
+      <h2 class="ab-title">RACE<br>ABANDONED</h2>
+      <p class="ab-why" id="abWhy"></p>
+      <div class="ab-win" id="abWin"></div>
+      <small class="ab-skip">tap to see the results</small>
+    </div>
+  </div>
 </body>
 </html>

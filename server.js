@@ -83,9 +83,10 @@ const PIT_TIME = 2.8;
 // a short fingerprint of a drawing: the same track always gets the same key (personal bests, time trial boards)
 function strokeKey(stroke) { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } return "d" + (h >>> 0).toString(36); }
 const ENDURO_MINS = [10, 20, 30];
-const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_MAX = 30;      // track objects the host can place
+const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_LONG = ["tunnel", "stand"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
+const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
 const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 6;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 6 seconds
 const AI_PIT_STOP = 0.72, AI_PIT_LANE = 1.15;   // AI pit stops: 28% shorter standing still, 15% faster down the pit lane
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
@@ -1424,19 +1425,55 @@ class Room {
       const wx = (d.x - t.minX) * SCALE + t.pad, wy = (d.y - t.minY) * SCALE + t.pad;
       let i = 0, bd = Infinity; t.pts.forEach((p, k) => { const q = (p.x - wx) ** 2 + (p.y - wy) ** 2; if (q < bd) { bd = q; i = k; } });
       const n = t.nor[i], side = (wx - t.pts[i].x) * n.x + (wy - t.pts[i].y) * n.y >= 0 ? 1 : -1;
-      return { k: d.k, i, side };
+      // (the far end, for the long ones: how many track points it runs for, along the direction of racing)
+      let len = 0;
+      if (d.end) { const ex = (d.end.x - t.minX) * SCALE + t.pad, ey = (d.end.y - t.minY) * SCALE + t.pad; let j = 0, bj = Infinity; t.pts.forEach((p, q) => { const e = (p.x - ex) ** 2 + (p.y - ey) ** 2; if (e < bj) { bj = e; j = q; } });
+        len = (j - i + t.N) % t.N; if (len > t.N / 2) { i = j; len = t.N - len; } len = Math.min(len, DECOR_MAX_LEN); }
+      return { k: d.k, i, side, len };
     });
   }
-  addDecor(k, x, y) {
+  addDecor(k, x, y, end = null) {
     if (!this.track) return "Draw a track first";
     if (!DECOR.includes(k)) return "Unknown object";
     this.decor = this.decor || []; if (this.decor.length >= DECOR_MAX) return `That's the most objects a track can have (${DECOR_MAX})`;
     const t = this.track, wx = (x - t.minX) * SCALE + t.pad, wy = (y - t.minY) * SCALE + t.pad;
     if (!t.pts.some((p) => (p.x - wx) ** 2 + (p.y - wy) ** 2 < (TRACK_W * 5) ** 2)) return "Put it next to the track";
-    this.decor.push({ k, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+    const o = { k, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+    // tunnels and grandstands run from where you clicked first to where you clicked second
+    if (end && DECOR_LONG.includes(k) && Number.isFinite(end.x) && Number.isFinite(end.y)) o.end = { x: Math.round(end.x * 10) / 10, y: Math.round(end.y * 10) / 10 };
+    this.decor.push(o);
     this.emit("track", this.trackMsg()); this.sendLobby(); return null;
   }
   allTeams() { return [...[...this.players.values()].map((p) => p.team), ...this.roster.slice(0, this.settings.ai).map((r) => r.team)]; }
+  // Reshaping a whole track (wiggle, rotate, flip, resize, road width...): note where the start line, the DRS zones
+  // and the objects are, as a fraction of the way round the lap (and which side of the road, how far off it)...
+  layoutNow() {
+    const t = this.track, sh = this.shape; if (!t || !sh) return null;
+    const B = sh.base, n = B.length;
+    const nearest = (wx, wy) => { let bi = 0, bd = Infinity; B.forEach((p, i) => { const d = (p.x - wx) ** 2 + (p.y - wy) ** 2; if (d < bd) { bd = d; bi = i; } }); return bi; };
+    const nor = (i) => { const a = B[(i - 1 + n) % n], b = B[(i + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: -(b.y - a.y) / L, y: (b.x - a.x) / L }; };
+    const decor = (this.decor || []).map((d) => {
+      const wx = (d.x - sh.minX) * SCALE + sh.pad, wy = (d.y - sh.minY) * SCALE + sh.pad, i = nearest(wx, wy), m = nor(i);
+      return { k: d.k, f: i / n, off: (wx - B[i].x) * m.x + (wy - B[i].y) * m.y, end: d.end ? (() => { const ex = (d.end.x - sh.minX) * SCALE + sh.pad, ey = (d.end.y - sh.minY) * SCALE + sh.pad; return nearest(ex, ey) / n; })() : null };
+    });
+    return { start: t.start / n, reverse: !!t.reverse, drs: (sh.drs || []).map(([a, b]) => [a / n, b / n]), decor };
+  }
+  // ...and put them all back at the same places on the reshaped track
+  applyLayout(L) {
+    if (!L || !this.track) return;
+    const sh = this.shape, B = sh.base, n = B.length, at = (f) => ((Math.round(f * n) % n) + n) % n;
+    const nor = (i) => { const a = B[(i - 1 + n) % n], b = B[(i + 1) % n], len = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len }; };
+    const toBoard = (wx, wy) => ({ x: Math.round(((wx - sh.pad) / SCALE + sh.minX) * 10) / 10, y: Math.round(((wy - sh.pad) / SCALE + sh.minY) * 10) / 10 });
+    this.decor = L.decor.map((d) => {
+      const i = at(d.f), m = nor(i), o = { k: d.k, ...toBoard(B[i].x + m.x * d.off, B[i].y + m.y * d.off) };
+      if (d.end != null) { const j = at(d.end); o.end = toBoard(B[j].x, B[j].y); }
+      return o;
+    });
+    this.shape.drs = L.drs.map(([a, b]) => [at(a), at(b)]);
+    this.track = finalizeTrack(this.shape, at(L.start), L.reverse, this.allTeams());
+    this.track.drs = drsMap(this.track, this.shape.drs);
+    this.emit("track", this.trackMsg()); this.sendLobby();
+  }
   rebuildTrack(start, reverse) {
     this.track = finalizeTrack(this.shape, start, reverse, this.allTeams());
     this.emit("track", this.trackMsg()); this.sendLobby();
@@ -1778,7 +1815,7 @@ class Room {
       }
     }
     this.bestSec = null;
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false; this.bestPass = null; this.passCands = []; if (!this.qualifying) this.predictions = new Map(); this.rf = null; this.rfDone = false; this.crashLog = [];
+    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false; this.bestPass = null; this.passCands = []; if (!this.qualifying) this.predictions = new Map(); this.rf = null; this.rfAt = null; this.rfCount = 0; this.scCount = 0; this.abandoned = null; this.crashLog = [];
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -1801,7 +1838,7 @@ class Room {
     if (endur && !this.ranked && !this.qualifying) {
       const secs = (ENDURO_MINS.includes(s.enduroMin) ? s.enduroMin : 20) * 60, lapT = t.length / (MAX_SPEED * 0.62), est = Math.max(3, Math.round(secs / lapT));
       this.enduro = { secs, est, over: false }; this.enduroRealLaps = s.laps; s.laps = Math.ceil(est * 1.6) + 2;
-      this.wearPerLap = 0.5 / tireLifeLaps(est);          // (half the tyre wear: endurance is about driving, not pitting)
+      this.wearPerLap = 1 / (1.5 * tireLifeLaps(est));    // (tyres last 1.5x longer: endurance is about driving, not pitting)
       // shared cars: who drives which car, in turn
       for (const c of this.cars) {
         const p = c.owner && this.players.get(c.owner); if (!p) continue;
@@ -2052,14 +2089,18 @@ class Room {
     if (this.rf) { this.stepRedFlag(); return; }          // red flag: everything stands still
     this.stepWeather(dt);
     // passive XP every race-second your driver is out there (host picks 10-50)
-    const rate = this.settings.xpRate;
+    // (not on the formation lap: it isn't racing yet, so no XP and no upgrades)
+    const rate = this.settings.xpRate, formation = !!this.sc?.rolling;
     for (const p of this.players.values()) {
       const c = this.carOf(p.id); if (!c || c.finished) continue;
+      if (formation) { p.passiveAt = this.time + 1; continue; }
       if (this.time >= p.passiveAt) { p.passiveAt += 1; this.addXp(p, rate, null); }
     }
     // AI teams level up and pick upgrades too
     for (const c of this.cars) {
-      if (c.owner || c.retiredBy || c.finished || c.aiXpAt === undefined || this.time < c.aiXpAt) continue;
+      if (c.owner || c.retiredBy || c.finished || c.aiXpAt === undefined) continue;
+      if (formation) { c.aiXpAt = this.time + 1; continue; }
+      if (this.time < c.aiXpAt) continue;
       c.aiXpAt += 1; c.aiXp += rate * c.aiXpMul;
       while (c.aiXp >= xpForLevel(c.aiLvl)) { c.aiXp -= xpForLevel(c.aiLvl); c.aiLvl++; this.aiUpgrade(c); }
     }
@@ -2531,6 +2572,7 @@ class Room {
         if (leadAlong < gap && !pulledOut && theirV < speed) targetSpeed = Math.min(targetSpeed, Math.max(0, theirV * (leadAlong < gap * 0.6 ? 0.94 : 1)));
       }
       if (c.punct) targetSpeed = Math.min(targetSpeed, 190);
+      if (this.sc) targetSpeed = Math.min(targetSpeed, this.scLimit(c));       // safety car: actually slow down to it
       // AI boost, used like a real driver would: fire it when flat out with no braking coming up,
       // hold it until the braking zone (no little taps), spend the tank regularly but keep a small
       // reserve for fights, and dump everything on the last lap.
@@ -2947,12 +2989,15 @@ class Room {
   // ---- red flag (with the safety car setting on): everyone stops where they are, the crews fix the damage,
   // then the race restarts in order behind the safety car ----
   redFlag() {
-    if (!this.settings.safetyCar || this.rf || this.rfDone || this.qualifying || this.phase !== "race" || this.time < 8) return;
+    if (!this.settings.safetyCar || this.rf || this.qualifying || this.phase !== "race" || this.time < 8) return;
+    if (this.rfAt != null && this.time - this.rfAt < 30) return;              // (not again straight after a restart)
     const leader = this.standings().find((c) => !c.finished);
     if (!leader || leader.lapsDone >= this.settings.laps - 1) return;
     // the order right before the pile-up started (the order is noted every half second)
     const first = Math.min(...this.crashLog.map((x) => x.t), this.time);
     const snap = [...(this.orderHist || [])].reverse().find((h) => h.t < first - 0.3);
+    this.rfCount = (this.rfCount || 0) + 1;
+    if (this.rfCount >= RF_ABANDON) return this.abandonRace("redFlags");     // a third red flag: that's it, the race is called off
     this.rf = { until: this.time + RED_FLAG_TIME }; this.sc = null; this.crashLog = [];
     for (const c of this.cars) { c.vx = c.vy = 0; c.speed = 0; c.spin = 0; c.crashT = 0; c.nitroOn = false; c.passT = 0; c.unlapping = false; }
     this.regrid(snap ? snap.ids : this.standings().map((c) => c.id));
@@ -2982,17 +3027,32 @@ class Room {
   stepRedFlag() {
     for (const c of this.cars) { c.vx = c.vy = 0; c.speed = 0; c.nitroOn = false; }
     if (this.time < this.rf.until) return;
-    this.rf = null; this.rfDone = true;
+    this.rf = null; this.rfAt = this.time;
     for (const c of this.cars) { c.damage = 0; c.punct = false; c.ghostUntil = this.time + 3; }
     this.scDoneAt = this.time;
     this.emit("feed", { t: "rfRestart" }); this.emit("lightsOut", { restart: true });
+  }
+  // Too chaotic to carry on (3 red flags, or 7 safety cars): the race is called off, and the result is the order right
+  // now. Everyone still running is classified (nobody's a "did not finish" because of it, ranked included).
+  abandonRace(why) {
+    if (this.phase !== "race" || this.abandoned) return;
+    const order = this.standings(), lead = order.find((c) => !c.out);
+    this.abandoned = { why, lap: Math.max(1, (lead?.lapsDone ?? 0) + 1), of: this.settings.laps, winner: lead?.name || null, rf: this.rfCount || 0, sc: this.scCount || 0 };
+    this.rf = null; this.sc = null;
+    order.forEach((c, i) => { if (!c.finished && !c.out) { c.finished = true; c.finishTime = this.time + i * 0.001; } });
+    this.emit("feed", { t: "abandoned", why });
+    this.endRace();
   }
   // ---- safety car (host setting): a big crash bunches the whole field up behind it ----
   deploySafetyCar() {
     if (!this.settings.safetyCar || this.sc || this.qualifying || this.phase !== "race" || this.time < 8 || this.time - this.scDoneAt < 30) return;
     const leader = this.standings().find((c) => !c.finished);
     if (!leader || leader.lapsDone >= this.settings.laps - 1) return;       // never on the final lap
-    this.sc = { since: this.time };
+    // the order when it came out: nobody may pass the car that was ahead of them (even while everyone's a ghost)
+    const order = this.standings().filter((c) => !c.finished && !c.out);
+    this.scCount = (this.scCount || 0) + 1;
+    if (this.scCount >= SC_ABANDON) return this.abandonRace("safetyCars");   // a seventh safety car: called off
+    this.sc = { since: this.time, ahead: new Map(order.map((c, i) => [c.id, i ? order[i - 1].id : null])) };
     for (const c of this.cars) c.ghostUntil = Math.max(c.ghostUntil || 0, this.time + 2);   // 2s of ghosting so the pile-up doesn't turn into another one
     this.emit("feed", { t: "scOut" });
   }
@@ -3003,7 +3063,11 @@ class Room {
     const bunched = order.every((c, i) => !i || !order[i - 1] || (order[i - 1].progress - c.progress) * sp < 125);
     const leader = order[0];
     if (this.sc.rolling) {                    // formation lap: green flag as the leader crosses the line
-      if (!leader || leader.lapsDone >= 0) { this.sc = null; this.scDoneAt = this.time; this.emit("feed", { t: "green" }); this.emit("lightsOut", { rolling: true }); return; }
+      if (!leader || leader.lapsDone >= 0) {
+        // green flag: the formation lap didn't count on any clock (the endurance clock starts now)
+        if (this.enduro) this.enduro.secs += this.time;
+        this.sc = null; this.scDoneAt = this.time; this.emit("feed", { t: "green" }); this.emit("lightsOut", { rolling: true }); return;
+      }
     }
     // lapped cars unlap themselves: they go through the pack as ghosts, a bit quicker, until they're past the leader
     // (back on the lead lap), then join the back of the queue like everyone else
@@ -3026,6 +3090,12 @@ class Room {
     if (!this.sc || c.finished || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut") return Infinity;
     const SC = MAX_SPEED * 0.44, ah = c.ahead;
     if (c.unlapping) return MAX_SPEED * 0.85;          // lapped: through the pack (as a ghost) to unlap
+    // no passing: right behind the car that was ahead when the safety car came out = no faster than them
+    const was = this.sc.ahead && this.sc.ahead.get(c.id), wa = was != null && this.cars.find((o) => o.id === was);
+    if (wa && !wa.finished && !wa.unlapping && !(wa.pitting > 0) && wa.aiMode !== "pitLane" && wa.aiMode !== "pitOut" && !wa.inPit) {
+      const g2 = (wa.progress - c.progress) * this.track.spacing;
+      if (g2 < 45) return Math.max(0, wa.speed * (g2 < 15 ? 0.85 : 0.97));
+    }
     if (!ah || ah.finished) return SC;
     const gap = (ah.progress - c.progress) * this.track.spacing;
     // stragglers sprint up to the pack (almost race speed), braking just in time to slot in behind the last car
@@ -3043,14 +3113,26 @@ class Room {
     });
   }
 
+  // AI teams get dealt 3 cards like a player and pick one (by what that kind of team likes), so anyone watching them
+  // can see what came up and what they took
   aiUpgrade(c) {
     const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, enhance: 1.5, saver: 1 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
     if (!opts.length) return;
-    let r = Math.random() * opts.reduce((a, k) => a + (W[k] || 1), 0);
-    for (const k of opts) { r -= W[k] || 1; if (r <= 0) { c.up[k]++; break; } }
+    const cards = opts.map((k) => [k, Math.random()]).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([k]) => k);
+    let r = Math.random() * cards.reduce((a, k) => a + (W[k] || 1), 0), pick = cards[0];
+    for (const k of cards) { r -= W[k] || 1; if (r <= 0) { pick = k; break; } }
+    c.up[pick]++;
     c.st = this.stats(c);
+    this.cardsShown(c, cards, pick);
   }
+  // what a car was offered and what it took: for anyone spectating it (the card names, so the screen can show them)
+  cardsShown(c, cards, pick) {
+    const nm = (k) => (RARE_BY_KEY[k] ? { k, name: RARE_BY_KEY[k].name, icon: RARE_BY_KEY[k].icon, rare: RARE_BY_KEY[k].tier } : { k, name: UPGRADES[k]?.name || k });
+    c.lastCards = { cards: cards.map(nm), pick: pick ?? null, at: this.time };
+    this.emit("carCards", { car: c.id, ...c.lastCards, up: c.up, lvl: this.carLevel(c) });
+  }
+  carLevel(c) { const p = c.owner && this.players.get(c.owner); return p ? p.level : c.aiLvl || 1; }
   // ----- XP + upgrade cards -----
   addXp(p, amount, label) {
     // firing your boost earns 1.5x upgrade XP while it's on
@@ -3078,6 +3160,7 @@ class Room {
     p.offer = pick;
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", this.offerMsg(p));
+    const car = this.carOf(p.id); if (car) this.cardsShown(car, pick, null);
   }
   resendOffer(p) {
     if (!this.cars || this.phase === "lobby" || this.phase === "results") return;
@@ -3127,8 +3210,9 @@ class Room {
       for (const u of Object.keys(UPGRADES)) p.up[u] = rare.key === "__max" ? UPGRADES[u].max : Math.min(UPGRADES[u].max, p.up[u] + (rare.key === "__all2" ? 2 : 1));
       if (!p.rare || TIER_RANK[rare.tier] > TIER_RANK[p.rare]) p.rare = rare.tier;
     } else p.up[k]++;
+    const offered = p.offer;
     p.offer = null; p.pendingPicks--;
-    const car = this.carOf(p.id); if (car) car.st = this.stats(car);
+    const car = this.carOf(p.id); if (car) { car.st = this.stats(car); this.cardsShown(car, offered, k); }
     io.to(p.id).emit("picked", { key: k, up: p.up, now: rare ? rare.desc : UPGRADES[k].fx(p.up[k]), name: rare ? rare.name : UPGRADES[k].name, rare: p.rare || null });
     if (rare) {
       // everyone sees it: an announcement, and an aura round the car for the rest of the race
@@ -3180,7 +3264,7 @@ class Room {
     }
     this.dotd = dotd && dotd.car;
     const bp = this.bestPass;
-    this.emit("results", { bestPass: bp ? { an: bp.an, bn: bp.bn, pos: bp.pos, lap: bp.lap } : null, rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
+    this.emit("results", { abandoned: this.abandoned || null, bestPass: bp ? { an: bp.an, bn: bp.bn, pos: bp.pos, lap: bp.lap } : null, rows, champ: this.champOrder(), teamChamp: this.teamOrder(), raceNo: this.raceNo, teams: this.settings.teams, seasonLen: len, season, multi: !!this.multi, dotd: dotd && { name: dotd.name, gained: dotd.gained, grid: dotd.grid, pos: dotd.pos, coins: dotd.car.owner && !this.noCoinsWhy() ? DOTD_COINS : 0 } });
     this.recordStats(order, rows, season);
     this.settlePredictions(order[0]);
     if (this.elimRealLaps != null) { this.settings.laps = this.elimRealLaps; this.elimRealLaps = null; }
@@ -3314,7 +3398,7 @@ class Room {
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
-    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qf: this.qFlag ? 1 : 0, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, enduro: this.enduro ? Math.max(0, Math.ceil(this.enduro.secs - this.time)) : -1, rf: this.rf ? Math.max(1, Math.ceil(this.rf.until - this.time)) : 0, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h), this.sc.i, r2(this.track.elev[this.sc.i] || 0)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
+    this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qf: this.qFlag ? 1 : 0, fl: this.sc?.rolling ? 1 : 0, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, enduro: this.enduro ? Math.max(0, Math.ceil(this.enduro.secs - (this.sc?.rolling ? 0 : this.time))) : -1, rf: this.rf ? Math.max(1, Math.ceil(this.rf.until - this.time)) : 0, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h), this.sc.i, r2(this.track.elev[this.sc.i] || 0)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
     // your own dashboard (boost, sectors, tyres...): half as often as the cars, it's plenty for numbers and bars
     this.meTick = (this.meTick || 0) + 1; if (this.meTick % 2) return;
     const perLap = this.perLapAll();
@@ -3654,7 +3738,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "contest:get": 3, "contest:enter": 10, "contest:vote": 2, "decor:add": 1, "decor:undo": 1, "decor:clear": 2, horn: 1, "predict:list": 2, predict: 3, "ghost:send": 10, "ghost:load": 8, "ghost:beat": 4, "tour:get": 3, "tour:join": 5, "tour:load": 10, "tt:board": 3, teamOrder: 2, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { watchInfo: 2, "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "contest:get": 3, "contest:enter": 10, "contest:vote": 2, "decor:add": 1, "decor:undo": 1, "decor:clear": 2, horn: 1, "predict:list": 2, predict: 3, "ghost:send": 10, "ghost:load": 8, "ghost:beat": 4, "tour:get": 3, "tour:join": 5, "tour:load": 10, "tt:board": 3, teamOrder: 2, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -3820,8 +3904,11 @@ io.on("connection", (socket) => {
   });
   socket.on("track", (d) => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
+    // (keep: the same track, reshaped: the start line, DRS zones and objects stay where they were)
+    const keep = d?.keep && r.track ? r.layoutNow() : null;
     const err = r.setTrack(d?.stroke, d?.map, "drawn");
-    socket.emit("trackResult", { error: err });
+    if (!err && keep) r.applyLayout(keep);
+    socket.emit("trackResult", { error: err, kept: !!keep && !err });
   });
   // the host's drawing in progress, passed on live so everyone can watch the track being drawn
   // (either the whole drawing, or {from, pts}: the new points that carry on from point number `from`)
@@ -3841,7 +3928,7 @@ io.on("connection", (socket) => {
   socket.on("cal:remove", (i) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.raceNo > 0 || !r.calendar) return; const k = Math.round(Number(i)); if (k >= 0 && k < r.calendar.length) { r.calendar.splice(k, 1); r.calLoaded = -1; r.sendLobby(); } });
   socket.on("cal:move", (d) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || r.raceNo > 0 || !r.calendar) return; const a = Math.round(Number(d?.i)), b = a + (d?.dir > 0 ? 1 : -1); if (a >= 0 && b >= 0 && a < r.calendar.length && b < r.calendar.length) { [r.calendar[a], r.calendar[b]] = [r.calendar[b], r.calendar[a]]; r.calLoaded = -1; r.sendLobby(); } });
   socket.on("cal:show", (i) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.calendar) return; const k = Math.round(Number(i)); if (k >= 0 && k < r.calendar.length) r.loadRound(k); });
-  socket.on("decor:add", (d) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; const err = r.addDecor(String(d?.k || ""), Number(d?.x), Number(d?.y)); if (err) socket.emit("toast", err); });
+  socket.on("decor:add", (d) => { const r = room(); if (!r || !isHost() || r.phase !== "lobby") return; const err = r.addDecor(String(d?.k || ""), Number(d?.x), Number(d?.y), d?.end && typeof d.end === "object" ? { x: Number(d.end.x), y: Number(d.end.y) } : null); if (err) socket.emit("toast", err); });
   socket.on("decor:undo", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.decor?.length) return; r.decor.pop(); r.emit("track", r.trackMsg()); });
   socket.on("decor:clear", () => { const r = room(); if (!r || !isHost() || r.phase !== "lobby" || !r.decor?.length) return; r.decor = []; r.emit("track", r.trackMsg()); });
   socket.on("f1Track", (d) => {
@@ -4386,6 +4473,12 @@ io.on("connection", (socket) => {
     }
   });
   socket.on("lastSeason", () => { const r = room(); if (r?.lastSeason) socket.emit("lastSeason", r.lastSeason); });
+  // spectating: everything about the car you're watching that isn't in the race updates
+  socket.on("watchInfo", (id) => {
+    const r = room(); if (!r || !r.cars) return;
+    const c = r.cars.find((x) => x.id === Number(id)); if (!c) return;
+    socket.emit("watchInfo", { car: c.id, up: c.up, lvl: r.carLevel(c), last: c.lastCards || null });
+  });
   socket.on("gridRandomAll", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     for (const p of r.players.values()) p.gridPos = -1;
