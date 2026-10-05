@@ -2736,7 +2736,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -4083,7 +4083,7 @@
   socket.on("mustPit", (d) => {
     S.mustPit = d;
     if (!d) { $("mustPit").classList.add("hidden"); return; }
-    $("mustWhy").textContent = MUST_WHY[d.reason] + (d.reason === "tires" ? ` (${d.tire}% left)` : "");
+    $("mustWhy").textContent = MUST_WHY[d.reason] + (d.reason === "tires" ? ` (${d.laps ? `${d.laps} lap${d.laps === 1 ? "" : "s"} left on them, ` : ""}${d.tire}%)` : "");
     $("mustPit").classList.remove("hidden"); sfx("warn");
   });
   $("mustBox").addEventListener("click", () => { if (!S.box) $("boxBtn").click(); $("mustPit").classList.add("hidden"); });
@@ -4536,9 +4536,35 @@
   function pickCard(i) {
     if (!S.offer || !S.offer.cards[i]) return;
     socket.emit("pick", i);
-    [...$("cardRow").children].forEach((c, j) => c.classList.add(j === i ? "chosen" : "gone"));
+    const cards = [...$("cardRow").children], el0 = cards[i], card = S.offer.cards[i];
     S.offer = null; const seq = offerSeq;
-    setTimeout(() => { if (seq === offerSeq) hideCards(); }, 340);
+    if (reducedMotion || !el0) {
+      cards.forEach((c, j) => c.classList.add(j === i ? "chosen" : "gone"));
+      setTimeout(() => { if (seq === offerSeq) hideCards(); }, 340);
+      return;
+    }
+    // the picked card: flash, pop, half a spin, then it flies off to your upgrades list with a burst of sparks;
+    // the others tumble away to the sides
+    const r = el0.getBoundingClientRect(), g = $("garage").getBoundingClientRect(), col = card.tier ? RARE_TIER[card.tier]?.color || "#ffcc1f" : card.kind === "Driver" ? "#a78bfa" : "#38bdf8";
+    const tx = g.width ? g.left + g.width / 2 : innerWidth - 80, ty = g.height ? g.top + 30 : 120;
+    // (animated as copies laid over the page: the real cards can be put away right away, whatever the server says)
+    const ghostOf = (c) => { const q = c.getBoundingClientRect(), g2 = c.cloneNode(true); g2.classList.add("card-fly"); Object.assign(g2.style, { left: `${q.left}px`, top: `${q.top}px`, width: `${q.width}px`, height: `${q.height}px` }); document.body.appendChild(g2); setTimeout(() => g2.remove(), 950); return g2; };
+    const pickG = ghostOf(el0);
+    pickG.style.setProperty("--fly-x", `${Math.round(tx - (r.left + r.width / 2))}px`); pickG.style.setProperty("--fly-y", `${Math.round(ty - (r.top + r.height / 2))}px`); pickG.style.setProperty("--pick", col);
+    cards.forEach((c, j) => { if (j !== i) { const g2 = ghostOf(c); g2.style.setProperty("--tumble", j < i ? "-1" : "1"); g2.classList.add("tumble"); } });
+    pickG.classList.add("picked");
+    $("cardRow").style.visibility = "hidden"; setTimeout(() => { $("cardRow").style.visibility = ""; }, 900);
+    const burst = document.createElement("div"); burst.className = "card-burst"; burst.style.left = `${r.left + r.width / 2}px`; burst.style.top = `${r.top + r.height / 2}px`;
+    const n = card.tier ? 30 : 18;
+    for (let k = 0; k < n; k++) {
+      const s = document.createElement("i"), a = (k / n) * Math.PI * 2 + Math.random() * 0.4, d = 70 + Math.random() * (card.tier ? 170 : 110);
+      s.style.setProperty("--dx", `${Math.round(Math.cos(a) * d)}px`); s.style.setProperty("--dy", `${Math.round(Math.sin(a) * d)}px`);
+      s.style.background = card.tier ? `hsl(${Math.round(Math.random() * 360)},100%,65%)` : k % 3 ? col : "#fff"; s.style.animationDelay = `${Math.round(Math.random() * 80)}ms`;
+      burst.appendChild(s);
+    }
+    document.body.appendChild(burst); setTimeout(() => burst.remove(), 1100);
+    sfx("level");
+    setTimeout(() => { if (seq === offerSeq) hideCards(); }, 60);
   }
   function hideCards() { S.offer = null; $("cards").classList.add("hidden"); $("upPill").classList.add("hidden"); }
   function renderGarage() {
@@ -5423,16 +5449,27 @@
       }
       // If the target position suddenly jumps (a late update corrected it), don't pop: keep the
       // car where it was drawn and blend the correction in over a few frames.
-      const vx = Bq[23] * mul, vy = Bq[24] * mul;
+      // (where the car should be now = where it was + its speed x how far the DISPLAY clock moved. Not the frame
+      // time: while updates are late the display clock holds still, and using frame time here made a "correction"
+      // that kept the car sliding straight on at full speed, off the track on corners, until it snapped back)
+      const drt = c.trt === undefined ? 0 : Math.max(0, rt - c.trt);
       if (c.tx0 !== undefined && !teleport) {
-        const jx = x - (c.tx0 + vx * dt), jy = y - (c.ty0 + vy * dt);
+        const jx = x - (c.tx0 + Bq[23] * drt), jy = y - (c.ty0 + Bq[24] * drt);
         if (Math.hypot(jx, jy) > 1.5) { c.ex = (c.ex || 0) - jx; c.ey = (c.ey || 0) - jy; }
       }
-      c.tx0 = x; c.ty0 = y;
+      c.tx0 = x; c.ty0 = y; c.trt = rt;
       const k = Math.exp(-dt * 9);
       c.ex = (c.ex || 0) * k; c.ey = (c.ey || 0) * k;
       if (teleport || Math.hypot(c.ex, c.ey) > 160) c.ex = c.ey = 0;
       c.x = x + c.ex; c.y = y + c.ey;
+      // Safety net: a car the server says is ON the road is never drawn off it (whatever the network or the device
+      // is doing). Pulled back to the edge of the road, at the same place along it.
+      if (Bq[12] && !Bq[19] && t && t.pts && t.nor && t.hw && Bq[25] < t.N) {
+        const N = t.N; let bi = Bq[25], bd = Infinity;
+        for (let o = -12; o <= 12; o++) { const i = (Bq[25] + o + N) % N, q = t.pts[i], d = (q.x - c.x) ** 2 + (q.y - c.y) ** 2; if (d < bd) { bd = d; bi = i; } }
+        const P = t.pts[bi], n = t.nor[bi], lat = (c.x - P.x) * n.x + (c.y - P.y) * n.y, lim = t.hw[bi] + 18;
+        if (Math.abs(lat) > lim) { const fix = lat - Math.sign(lat) * lim; c.x -= n.x * fix; c.y -= n.y * fix; c.ex = (c.ex || 0) - n.x * fix; c.ey = (c.ey || 0) - n.y * fix; }
+      }
       // Height comes from where the car is DRAWN on the track (not from the last update), so
       // climbing onto and off a ramp is perfectly smooth. Same for which bridge it's drawn on.
       if (t && t.elev && c.drawIdx !== undefined) {

@@ -1813,7 +1813,7 @@ class Room {
     if (endur && !this.ranked && !this.qualifying) {
       const secs = (ENDURO_MINS.includes(s.enduroMin) ? s.enduroMin : 20) * 60, lapT = t.length / (MAX_SPEED * 0.62), est = Math.max(3, Math.round(secs / lapT));
       this.enduro = { secs, est, over: false }; this.enduroRealLaps = s.laps; s.laps = Math.ceil(est * 1.6) + 2;
-      this.wearPerLap = 1 / tireLifeLaps(est);
+      this.wearPerLap = 0.5 / tireLifeLaps(est);          // (half the tyre wear: endurance is about driving, not pitting)
       // shared cars: who drives which car, in turn
       for (const c of this.cars) {
         const p = c.owner && this.players.get(c.owner); if (!p) continue;
@@ -2288,7 +2288,7 @@ class Room {
     return n;
   }
   // cars that nobody can hit: limping on a puncture, in the pit lane, on the cool-down lap, reversing out of trouble
-  ghost(c) { return this.qualifying || this.time < (c.ghostUntil || 0) || c.punct || c.pitting > 0 || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut" || c.finished || c.reverseT > 0; }
+  ghost(c) { return this.qualifying || (c.unlapping && this.sc) || this.time < (c.ghostUntil || 0) || c.punct || c.pitting > 0 || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut" || c.finished || c.reverseT > 0; }
   level(c) { return this.track.elev[c.idx] || 0; }
 
   drive(c, dt) {
@@ -2301,8 +2301,14 @@ class Room {
     if (p) {
       if (c.aiMode === "race" && p.boxCall && !c.finished) c.aiMode = "wantPit";
       if (c.aiMode === "wantPit" && !p.boxCall && !c.punct) c.aiMode = "race";
-      if (c.tire < 0.3 && p.warned < 1 && !p.boxCall) { p.warned = 1; io.to(p.id).emit("toast", `${c.name}: "Tires are going off, box soon!"`); }
-      if (c.tire < 0.12 && p.warned < 2 && !p.boxCall) { p.warned = 2; io.to(p.id).emit("toast", `${c.name}: "These tires won't last, BOX NOW!"`); }
+      // tyre warnings by LAPS left on them (not %: 30% can be 4 laps on durables), and only if they won't make the flag:
+      // one with 2 laps to go, one with 1
+      { const perLap = c.lapWearMeas || 1 / this.lifeLaps(c, c.compound), tyreLaps = c.tire / Math.max(1e-4, perLap), raceLeft = laps - Math.max(0, c.lapsDone);
+        c.tyreLaps = tyreLaps;
+        if (!this.qualifying && !c.finished && !p.boxCall && c.aiMode === "race" && tyreLaps < raceLeft - 0.2 && this.trackKind !== "tour") {
+          if (tyreLaps <= 2.05 && p.warned < 1) { p.warned = 1; io.to(p.id).emit("toast", `${c.name}: "2 laps left on these tyres. Box soon!"`); }
+          if (tyreLaps <= 1.05 && p.warned < 2) { p.warned = 2; io.to(p.id).emit("toast", `${c.name}: "1 lap left on these tyres: BOX THIS LAP!"`); }
+        } }
       if (this.wet > 0.5 && dryTires && !p.boxCall && p.rainWarn !== true) { p.rainWarn = true; io.to(p.id).emit("toast", `${c.name}: "It's soaking out here, I need wets!"`); }
       if (this.wet < 0.5) p.rainWarn = false;
       // the big "you NEED to pit" warning (only when it really matters)
@@ -2312,9 +2318,9 @@ class Room {
         const perLap = c.lapWearMeas || 1 / this.lifeLaps(c, c.compound);
         if (this.wet >= SLIP_WET && dryTires) must = "rain";
         else if (c.damage > 0.6) must = "damage";
-        else if (c.tire < 0.3 && c.tire < perLap * (lapsLeft - 0.3)) must = "tires";
+        else if (c.tire < perLap * 2.05 && c.tire < perLap * (lapsLeft - 0.3) && this.trackKind !== "tour") must = "tires";
       }
-      if (must !== (p.must || null)) { p.must = must; io.to(p.id).emit("mustPit", must ? { reason: must, tire: Math.round(c.tire * 100) } : null); }
+      if (must !== (p.must || null) || (must === "tires" && Math.ceil(c.tyreLaps ?? 9) !== p.mustLaps)) { p.must = must; p.mustLaps = Math.ceil(c.tyreLaps ?? 9); io.to(p.id).emit("mustPit", must ? { reason: must, tire: Math.round(c.tire * 100), laps: Math.max(1, Math.ceil(c.tyreLaps ?? 1)) } : null); }
     }
     // AI strategy (and players with pit assist on): decide in the last part of the lap (before the pit entry) whether to stop
     if ((!p || (p.assist?.pit && !p.boxCall)) && c.aiMode === "race" && !c.finished) {
@@ -2967,8 +2973,18 @@ class Room {
     const leader = order[0];
     if (this.sc.rolling) {                    // formation lap: green flag as the leader crosses the line
       if (!leader || leader.lapsDone >= 0) { this.sc = null; this.scDoneAt = this.time; this.emit("feed", { t: "green" }); this.emit("lightsOut", { rolling: true }); return; }
-    } else if ((this.time - this.sc.since > 12 && bunched) || this.time - this.sc.since > 35 || !leader || leader.lapsDone >= this.settings.laps - 1) {
-      this.sc = null; this.scDoneAt = this.time; this.emit("feed", { t: "scIn" }); return;
+    }
+    // lapped cars unlap themselves: they go through the pack as ghosts, a bit quicker, until they're past the leader
+    // (back on the lead lap), then join the back of the queue like everyone else
+    const N0 = this.track.N;
+    if (!this.sc.rolling && leader) for (const c of order) {
+      const lapped = c !== leader && c.progress < leader.progress - N0;
+      if (lapped && !c.unlapping) { c.unlapping = true; if (!this.sc.unlapNote) { this.sc.unlapNote = true; this.emit("feed", { t: "unlap" }); } }
+      else if (!lapped && c.unlapping) c.unlapping = false;
+    }
+    const unlapping = order.some((c) => c.unlapping);
+    if (!this.sc.rolling && ((this.time - this.sc.since > 12 && bunched && !unlapping) || this.time - this.sc.since > (unlapping ? 75 : 35) || !leader || leader.lapsDone >= this.settings.laps - 1)) {
+      this.sc = null; this.scDoneAt = this.time; for (const c of this.cars) c.unlapping = false; this.emit("feed", { t: "scIn" }); return;
     }
     // where the safety car itself is: a little way up the road from the leader
     const N = this.track.N, i = (leader.idx + Math.round(110 / sp)) % N, P = this.track.pts[i], T = this.track.tan[i];
@@ -2978,6 +2994,7 @@ class Room {
   scLimit(c) {
     if (!this.sc || c.finished || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut") return Infinity;
     const SC = MAX_SPEED * 0.44, ah = c.ahead;
+    if (c.unlapping) return MAX_SPEED * 0.85;          // lapped: through the pack (as a ghost) to unlap
     if (!ah || ah.finished) return SC;
     const gap = (ah.progress - c.progress) * this.track.spacing;
     // stragglers sprint up to the pack (almost race speed), braking just in time to slot in behind the last car
@@ -3165,7 +3182,11 @@ class Room {
     if (this.teamRanked) {
       this.ranked = false; this.teamRanked = false; this.rankedTier = null;
       this.aiTeamSize = null;
-      if (this.preRanked) { Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public; this.preRanked = null; this.ensureRoster(this.settings.ai); }
+      if (this.preRanked) {
+        Object.assign(this.settings, this.preRanked.settings); this.public = this.preRanked.public;
+        for (const [id, g] of this.preRanked.grid || []) { const p = this.players.get(id); if (p) p.gridPos = g; }
+        this.preRanked = null; this.ensureRoster(this.settings.ai);
+      }
       this.emit("toast", "🏆 Team ranked done! Press Team ranked to go again.");
     }
     if (this.seasonJustOver) { this.seasonJustOver = false; this.resetSeason(); this.emit("toast", "New season! Championship points are reset."); }
@@ -3263,6 +3284,8 @@ class Room {
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
     this.emit("state", { weather, t: Math.round((this.time || 0) * 1000) / 1000, phase: this.phase, ql: this.qualifying ? Math.max(0, Math.ceil(this.qualiEnd - this.time)) : -1, qs: this.qualiKO ? this.qualiKO.stage : 0, paused: !!this.paused, enduro: this.enduro ? Math.max(0, Math.ceil(this.enduro.secs - this.time)) : -1, rf: this.rf ? Math.max(1, Math.ceil(this.rf.until - this.time)) : 0, sc: this.sc && this.sc.x !== undefined ? [Math.round(this.sc.x), Math.round(this.sc.y), r2(this.sc.h), this.sc.i, r2(this.track.elev[this.sc.i] || 0)] : 0, fastest: isFinite(this.fastest) ? r2(this.fastest) : 0, cars, standings: order.map((c) => c.id), gaps: this.gaps(order) });
+    // your own dashboard (boost, sectors, tyres...): half as often as the cars, it's plenty for numbers and bars
+    this.meTick = (this.meTick || 0) + 1; if (this.meTick % 2) return;
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
@@ -3387,6 +3410,7 @@ function startRankedSoon(r, ms, ok) {
 // so a strong player can't drag a team into easy races; every player's team rating moves by how the TEAM did (its
 // average place). After the podium the room is a normal room again.
 const TEAM_RANKED_MIN = 2, TEAM_RANKED_MAX = 4;
+const RANKED_QUALI_TIER = 4;      // Platinum: from here up, ranked has qualifying (below it: a random grid spot)
 async function startTeamRanked(r, socket) {
   const humans = [...r.players.values()].filter((p) => !p.spectator);
   if (humans.length < TEAM_RANKED_MIN || humans.length > TEAM_RANKED_MAX) return `Team ranked needs ${TEAM_RANKED_MIN}-${TEAM_RANKED_MAX} drivers in the room (spectators don't count)`;
@@ -3397,14 +3421,16 @@ async function startTeamRanked(r, socket) {
   const top = Math.max(...users.map((u) => Math.max(accounts.rankedPublic(u, "team").sr, accounts.rankedPublic(u).sr)));
   const F = accounts.rankedField(top), rank = accounts.rankOf(top);
   r.ranked = true; r.teamRanked = true; r.rankedTier = `${rank.label} team`;
-  r.preRanked = { settings: { ...r.settings, points: r.settings.points.slice() }, public: r.public };
+  r.preRanked = { settings: { ...r.settings, points: r.settings.points.slice() }, public: r.public, grid: humans.map((p) => [p.id, p.gridPos]) };
+  const plat = rank.i >= RANKED_QUALI_TIER;
+  if (!plat) for (const p of humans) p.gridPos = -1;
   r.public = false;
   const squad = `${(r.players.get(r.hostId) || humans[0]).name}'s Squad`.slice(0, 20);
   for (const p of humans) p.team = squad;
   // AI teams are the same size as yours (2 of you = AI teams of 2), so the AI count is a multiple of it
   const size = humans.length, ai = Math.min(Math.floor(MAX_AI / size) * size, Math.ceil((F.ai + 2 * (size - 1)) / size) * size);
   r.aiTeamSize = size;
-  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: plat ? 2 : 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);
   r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
@@ -3417,11 +3443,14 @@ function makeRankedRoom(socket, profile, u) {
   r.ranked = true;
   const R = accounts.rankedPublic(u), F = R.field;      // the tier decides AI, laps, map size, wonkiness
   r.rankedTier = R.rank.label;
-  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
+  // below Platinum you start from a random spot on the grid; Platinum and up qualify for it (2 minutes)
+  const plat = R.rank.i >= RANKED_QUALI_TIER;
+  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: plat ? 2 : 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
+  if (!plat) for (const p of r.players.values()) p.gridPos = -1;
   rankedTrack(r, F);
-  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · starting soon`);
+  r.emit("toast", `🏆 Ranked: ${R.rank.label} · ${F.ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps${r.trackName ? ` · ${r.trackName}` : ""} · ${plat ? "2 min qualifying first" : "random grid spot"} · starting soon`);
   startRankedSoon(r, 4000, () => r.players.size);
   return r;
 }
@@ -4629,9 +4658,9 @@ setInterval(() => {
 setInterval(() => {
   for (const r of rooms.values()) {
     if (!r.track) continue;
-    // (big grids: the race state goes out 15 times a second instead of 30. The game smooths between updates
-    // anyway, and it halves the work and the data, which is what made busy races lag on a small server)
-    try { r.tick(); r.sendTick = (r.sendTick || 0) + 1; if (!(r.cars && r.cars.length > 8 && r.sendTick % 2)) r.sendState(); }
+    // (the race state goes out 15 times a second, not 30: the game smooths between updates anyway, and it halves
+    // the work and the data, which matters a lot on a small server where every race shares a tenth of a CPU)
+    try { r.tick(); r.sendTick = (r.sendTick || 0) + 1; if (!(r.sendTick % 2)) r.sendState(); }
     catch (e) { console.error("room", r.code, e); r.phase = "lobby"; r.cars = null; if (r.elimRealLaps != null) { r.settings.laps = r.elimRealLaps; r.elimRealLaps = null; } r.sendLobby(); r.emit("toast", "Something went wrong in that race. Back to the lobby."); }
   }
 }, 1000 / 30);
@@ -4643,4 +4672,4 @@ if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP:
 if (require.main === module && process.env.RENDER_EXTERNAL_URL) setInterval(() => {
   if (io.engine.clientsCount > 0) fetch(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "") + "/favicon.svg", { method: "HEAD" }).catch(() => {});
 }, 10 * 60e3).unref();
-module.exports = { voidRankedRaces, weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+module.exports = { tireLifeLaps, voidRankedRaces, weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
