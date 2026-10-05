@@ -1599,16 +1599,23 @@ function rankedFinish(u, pos, of, finished, mode, won) {
   const sr0 = R.live.sr0, peak0 = R.peak || 0; delete R.live;
   const d = finished ? rankedDelta(sr0, pos, of) : -RANKED_DNF;
   const before = rankOf(sr0);
-  R.sr = Math.max(0, sr0 + d); R.peak = Math.max(peak0, R.sr); R.games++; if ((won ?? pos === 1) && finished) R.wins++;
+  R.sr = Math.max(0, sr0 + d);
+  // Rank shield: the first time a result would drop you out of your rank (Gold to Silver, say), the shield takes
+  // the hit and you stay at the bottom of your rank. One per rank: you get a fresh one each time you're promoted.
+  let shield = false;
+  if (before.i > 0 && rankOf(R.sr).i < before.i && R.shieldUsed !== before.i) { R.sr = before.i * 300; R.shieldUsed = before.i; shield = true; }
+  if (rankOf(R.sr).i > before.i) delete R.shieldUsed;
+  R.peak = Math.max(peak0, R.sr); R.games++; if ((won ?? pos === 1) && finished) R.wins++;
   const coins = rankUpCoins(peak0, R.sr);
   if (coins) { u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; }
   R.hist = [...(R.hist || []), { d, pos: Math.round(pos * 10) / 10, of, at: Date.now() }].slice(-10);
   const after = rankOf(R.sr);
   putRankBoard(u, mode);
   saveSoon(u);
-  return { mode: mode === "team" ? "team" : "solo", delta: R.sr - sr0, sr: R.sr, before, after, coins, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
+  return { mode: mode === "team" ? "team" : "solo", delta: R.sr - sr0, sr: R.sr, before, after, coins, shield, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
 }
-function rankedPublic(u, mode) { const R = rankedState(u, mode); return { sr: R.sr, peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
+const shieldReady = (R) => { const i = rankOf(R.sr).i; return i > 0 && R.shieldUsed !== i; };
+function rankedPublic(u, mode) { const R = rankedState(u, mode); return { sr: R.sr, shield: shieldReady(R), peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
 async function putRankBoard(u, mode) { const k = RKEY(mode), B = await boards(); B[k] = B[k] || []; putBoard(B[k], { id: u.id, name: u.name, v: u[k].sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
 
 // ======================= Track of the week =======================

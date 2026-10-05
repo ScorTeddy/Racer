@@ -2738,7 +2738,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix", sMultiEndur: "multiEndur" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -2981,7 +2981,7 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" || key === "dayNight" ? (s[key] ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
+      $(id).value = key === "teamColors" || key === "teams" || key === "safetyCar" || key === "drs" || key === "reverseGrid" || key === "dayNight" || key === "multiEndur" ? (s[key] ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
     $("smoothBtn").setAttribute("aria-pressed", String(!!s.smooth));
@@ -2998,7 +2998,7 @@
     $("multiOpts").classList.toggle("hidden", !multi);
     if (multi) renderClassCards(l);
     renderCalendar(l, mode === "champ" && !l.ranked);
-    $("enduroOpts").classList.toggle("hidden", mode !== "endur" || !!l.ranked);
+    $("enduroOpts").classList.toggle("hidden", !(mode === "endur" || (multi && s.multiEndur)) || !!l.ranked);
     if (document.activeElement !== $("sEnduro")) $("sEnduro").value = String(s.enduroMin || 20); $("sEnduro").disabled = !S.host || l.phase !== "lobby";
     $("ttOpts").classList.toggle("hidden", mode !== "tt" || !!l.ranked);
     if (mode === "tt" && !l.ranked && S.ttKey !== (l.trackName || "") + (S.track?.length || 0)) { S.ttKey = (l.trackName || "") + (S.track?.length || 0); socket.emit("tt:board"); }
@@ -6098,6 +6098,7 @@
     b.append(el("span", "rb-ic", rank.icon), el("b", "", rank.label));
     return b;
   }
+  const TIER_NAME = (rk) => String(rk.label || "").replace(/\s+(I|II|III)$/, "").replace(/\s*\(\d+\)$/, "");
   function renderRanked(u) {
     const box = $("hubRanked"); box.textContent = "";
     if (!u) { box.appendChild(el("p", "preset-note", "Sign in to play ranked. Your skill rating goes up when you finish near the front and down when you don't.")); return; }
@@ -6108,6 +6109,7 @@
     tx.append(el("b", "", `${R.sr} SR`), el("small", "", R.rank.i === 7 ? "Overdrive Elite: the very top. Keep climbing the leaderboard!" : `${R.rank.into} / 100 to the next division`));
     if (R.rank.i < 7) { const bar = el("div", "ach-bar"); const f = el("i"); f.style.width = R.rank.into + "%"; bar.appendChild(f); tx.appendChild(bar); }
     tx.appendChild(el("small", "", `Peak ${R.peakRank.label} · ${R.games} ranked races · ${R.wins} wins`));
+    if (R.rank.i > 0) tx.appendChild(el("small", "", R.shield ? `🛡️ Rank shield ready: the first time you'd drop out of ${TIER_NAME(R.rank)}, it keeps you in` : "🛡️ Rank shield used: get promoted to earn a new one"));
     tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, ${R.field.laps} laps${R.field.real ? ", a random track or a real circuit" : ", a random track"}`));
     const go = el("button", "btn go", "🏁 Play ranked"); go.type = "button"; go.addEventListener("click", playRanked);
     top.append(tx, go); box.appendChild(top);
@@ -6144,6 +6146,7 @@
     S.rankedRes = r; renderRankedRes();
     if (r.up) setTimeout(() => { banner(`RANK UP! ${r.after.icon} ${r.after.label}`, r.after.color); sfx("win"); }, 2400);
     if (r.coins) setTimeout(() => popup(`🪙 +${r.coins} coins: first time reaching ${r.after.label}!`), 3200);
+    else if (r.shield) setTimeout(() => popup(`🛡️ Rank shield! It blocked the drop: you're still ${r.after.icon} ${TIER_NAME(r.after)}. (A fresh one comes with your next promotion.)`), 2400);
     else if (r.down) setTimeout(() => popup(`Down to ${r.after.label}. You'll get it back!`, true), 2400);
   });
   function renderRankedRes() {
@@ -6154,6 +6157,7 @@
     d.append(rankBadge(r.after), el("b", "rr-delta " + (r.delta >= 0 ? "up" : "down"), `${r.delta >= 0 ? "+" : ""}${r.delta} SR${r.mode === "team" ? " (team)" : ""}`),
       el("small", "", r.dnf ? "You left the race: that counts as last." : r.mode === "team" ? `You finished P${r.pos} · your team's average place: ${r.teamPos} of ${r.of} · team rating ${r.sr} SR` : `P${r.pos} of ${r.of} · now ${r.sr} SR`));
     if (r.coins) d.appendChild(el("b", "rr-coins", `🪙 +${r.coins} (new rank reached)`));
+    if (r.shield) d.appendChild(el("b", "rr-coins", "🛡️ Rank shield used: no drop this time"));
     const row = el("div", "sec-row");
     if (r.mode === "team") { box.append(d, el("small", "", "You'll be back in your room in a moment: the host can press 👥 Team ranked to go again.")); return; }
     const again = el("button", "btn go", "🏁 Race ranked again"); again.type = "button"; again.addEventListener("click", playRanked);

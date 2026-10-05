@@ -167,10 +167,6 @@
               <button type="button" class="mode-card" data-mode="endur" role="radio"><b>⏳ Endurance</b><small>Race the clock (10-30 min). Teammates share one car and swap at every pit stop.</small></button>
             </div>
             <p class="elim-note hidden" id="elimNote" role="status"></p>
-            <div class="champ-opts hidden" id="enduroOpts">
-              <label class="f">Race length <select id="sEnduro"><option value="10">10 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select></label>
-              <p class="preset-note">With teams on, players on the same team share one car: one drives, the other watches, and you swap every time the car pits. When the clock runs out, the leader's next lap is the last.</p>
-            </div>
             <div class="champ-opts hidden" id="ttOpts">
               <div class="sect">⏱️ This track's best times</div>
               <ol class="tt-list" id="ttList"><li class="preset-note">Loading...</li></ol>
@@ -187,6 +183,11 @@
               <div class="sect">Your class <small>(everyone picks their own)</small></div>
               <div class="class-cards" id="classCards" role="radiogroup" aria-label="Your class"></div>
               <label class="f">AI class mix <select id="sMix"><option value="0.33">Mostly Hypers (1 in 3 AI is a GT)</option><option value="0.5">Half and half</option><option value="0.67">Mostly GTs (2 in 3 AI are GTs)</option></select></label>
+              <label class="f">⏳ Endurance <select id="sMultiEndur"><option value="off">Off: a normal race (laps)</option><option value="on">On: race the clock, like Endurance mode</option></select></label>
+            </div>
+            <div class="champ-opts hidden" id="enduroOpts">
+              <label class="f">Race length <select id="sEnduro"><option value="10">10 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select></label>
+              <p class="preset-note">With teams on, players on the same team share one car: one drives, the other watches, and you swap every time the car pits. When the clock runs out, the leader's next lap is the last.</p>
             </div>
           </div>
       </section>

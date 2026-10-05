@@ -87,7 +87,7 @@ const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_MAX = 30;      // t
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
 const RED_FLAG_CARS = 4, RED_FLAG_TIME = 6;      // red flag: 4+ cars crashing within 4 seconds stops the race for 6 seconds
-const AI_PIT_STOP = 0.65, AI_PIT_LANE = 1.2;   // AI pit stops: 35% shorter standing still, 20% faster down the pit lane
+const AI_PIT_STOP = 0.72, AI_PIT_LANE = 1.15;   // AI pit stops: 28% shorter standing still, 15% faster down the pit lane
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
 // Multiclass racing: two kinds of car share the track, each racing for its own class win (like Le Mans).
@@ -1296,7 +1296,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false, mode: "normal", mix: 0.5, start: "standing", dayNight: false, enduroMin: 20 };
+    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false, mode: "normal", mix: 0.5, start: "standing", dayNight: false, enduroMin: 20, multiEndur: false };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -1675,7 +1675,9 @@ class Room {
     this.paused = false;
     // endurance with teams: teammates share ONE car and take turns (the swap happens at every pit stop)
     for (const p of this.players.values()) p.coDriver = null;
-    const shareCars = s.mode === "endur" && s.teams && !this.ranked && !grid;
+    // (endurance: its own mode, or multiclass with the endurance switch on)
+    const endur = s.mode === "endur" || (s.mode === "multi" && !!s.multiEndur);
+    const shareCars = endur && s.teams && !this.ranked && !grid;
     if (shareCars) {
       const byTeam = new Map();
       for (const p of this.players.values()) if (!p.spectator && p.team) { if (!byTeam.has(p.team)) byTeam.set(p.team, p); else p.coDriver = byTeam.get(p.team).id; }
@@ -1795,7 +1797,7 @@ class Room {
     // Endurance: a race against the clock (10-30 minutes). When time's up, the leader's next lap is the last one.
     this.enduro = null;
     if (this.enduroRealLaps != null) { s.laps = this.enduroRealLaps; this.enduroRealLaps = null; }
-    if (s.mode === "endur" && !this.ranked && !this.qualifying) {
+    if (endur && !this.ranked && !this.qualifying) {
       const secs = (ENDURO_MINS.includes(s.enduroMin) ? s.enduroMin : 20) * 60, lapT = t.length / (MAX_SPEED * 0.62), est = Math.max(3, Math.round(secs / lapT));
       this.enduro = { secs, est, over: false }; this.enduroRealLaps = s.laps; s.laps = Math.ceil(est * 1.6) + 2;
       this.wearPerLap = 1 / tireLifeLaps(est);
@@ -1966,7 +1968,13 @@ class Room {
     const beforeLine = c.lapsDone >= 0 && c.idx >= this.track.pitLane.entry;
     const laps = this.settings.laps, done = Math.max(0, c.lapsDone + (beforeLine ? 1 : 0)), R = laps - done;
     if (R <= 0) { c.planComp = c.compound || "inter"; c.stintEnd = laps; return; }
-    if (this.wet > 0.45) { c.planComp = "wet"; c.stintEnd = laps; return; }
+    if (this.wet > 0.45) {
+      // wet race: wets all the way, with as many stops as they need (they don't last forever either)
+      const L = Math.max(1, Math.floor(this.safeLaps(c, "wet")));
+      c.planComp = "wet"; c.stopsLeft = Math.max(0, Math.ceil(R / L) - 1);
+      c.stintEnd = c.stopsLeft ? done + clamp(Math.max(Math.min(L, R - 1), R - L * c.stopsLeft), 1, R - 1) : laps;
+      return;
+    }
     const lapT = this.track.length / (MAX_SPEED * 0.62), pitLoss = PIT_TIME * Math.pow(0.75, c.up.pit) + 5;
     let best = null;
     for (let stops = 0; stops <= 3; stops++) {
@@ -2304,7 +2312,10 @@ class Room {
         // won't make it: to the next pit window, or (if no more stops were planned) to the flag
         const toGo = left - 1 + toEntry / N;                                  // laps still to drive from here
         const noWear = this.trackKind === "tour";                             // (tournament track: tyres never wear)
-        const critical = !noWear && c.tire < perLap * (noMoreStops ? toGo * 1.1 : Math.min(toGo, 1) * 1.1 + 0.1);
+        // ("to the flag" only if a fresh set could actually get there: otherwise stopping now just means stopping
+        // again a lap later, over and over. Then it's only when this set won't last another lap.)
+        const toFlag = noMoreStops && perLap * toGo * 1.1 < 1;
+        const critical = !noWear && c.tire < perLap * (toFlag ? toGo * 1.1 : Math.min(toGo, 1) * 1.1 + 0.1);
         const wrongTires = (this.wet > 0.55 && dryTires) || (this.wet < 0.2 && !dryTires);
         const planned = !noWear && c.lapsDone + 1 >= (c.stintEnd ?? laps);
         // undercut: the car just ahead is pitting and my stop is due soon anyway? go now too
@@ -3379,7 +3390,7 @@ async function startTeamRanked(r, socket) {
   // AI teams are the same size as yours (2 of you = AI teams of 2), so the AI count is a multiple of it
   const size = humans.length, ai = Math.min(Math.floor(MAX_AI / size) * size, Math.ceil((F.ai + 2 * (size - 1)) / size) * size);
   r.aiTeamSize = size;
-  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai, aiLevel: F.aiLevel, quali: 0, teams: true, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(ai);
   rankedTrack(r, F);
   r.emit("toast", `🏆 Team ranked: ${rank.label} (the highest rank on the team) · ${humans.length} of you vs ${ai} ${({ overdrive: "OVERDRIVE", elite: "ELITE", rookie: "Rookie" })[F.aiLevel] || F.aiLevel.toUpperCase()} AI · ${F.laps} laps · starting soon`);
@@ -3392,7 +3403,7 @@ function makeRankedRoom(socket, profile, u) {
   r.ranked = true;
   const R = accounts.rankedPublic(u), F = R.field;      // the tier decides AI, laps, map size, wonkiness
   r.rankedTier = R.rank.label;
-  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 15, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
+  Object.assign(r.settings, { laps: F.laps, ai: F.ai, aiLevel: F.aiLevel, quali: 0, teams: false, season: 0, speed: 1, wear: "normal", smooth: false, safetyCar: false, teamColors: false, xpRate: 50, drs: true, reverseGrid: false, mode: "normal", ...rankedLook() });
   r.ensureRoster(F.ai);
   r.addPlayer(socket, profile);
   rankedTrack(r, F);
@@ -3696,6 +3707,7 @@ io.on("connection", (socket) => {
     if (s?.xpRate !== undefined && Number.isFinite(Number(s.xpRate))) S.xpRate = clamp(Math.round(Number(s.xpRate)), XP_RATE_MIN, XP_RATE_MAX);
     if (WEATHERS.includes(s?.weather)) S.weather = s.weather;
     if (ENDURO_MINS.includes(Number(s?.enduroMin))) S.enduroMin = Number(s.enduroMin);
+    if (s?.multiEndur !== undefined) S.multiEndur = s.multiEndur === true || s.multiEndur === "on";
     if (["normal", "multi", "elim", "practice", "champ", "tt", "koth", "endur"].includes(s?.mode) && s.mode !== S.mode) {
       // championship mode sets the season length to the calendar; leaving it puts your old setting back
       if (s.mode === "champ") { S.seasonBefore = S.season; S.season = S.champN || 4; r.resetSeason(); }
