@@ -232,14 +232,13 @@ const DESIGN = /^[0-9a-f.]{288}$/;   // car paint job: 24 x 12 pixels, one palet
 const UPGRADES = {
   corner:  { kind: "Driver", name: "Corner Master",  desc: "+6% corner speed per level",             max: 5, fx: (n) => `+${6 * n}% corner speed` },
   late:    { kind: "Driver", name: "Late Braker",    desc: "Brakes 8% later, +2% corner speed",      max: 4, fx: (n) => `+${8 * n}% later braking` },
-  craft:   { kind: "Driver", name: "Racecraft",      desc: "Slipstream from further back, attacks harder", max: 4, fx: (n) => `+${(0.1 * n).toFixed(1)}s slipstream reach` },
+  craft:   { kind: "Driver", name: "Racecraft",      desc: "Better at overtaking: spots gaps sooner, +2% speed while passing, gets past defenders", max: 4, fx: (n) => `+${2 * n}% speed while overtaking` },
   focus:   { kind: "Driver", name: "Focus",          desc: "40% fewer mistakes",                     max: 3, fx: (n) => `${pct(1 - Math.pow(0.6, n))}% fewer mistakes` },
   whisper: { kind: "Driver", name: "Tire Whisperer", desc: "Wears tires 15% slower",                 max: 4, fx: (n) => `${pct(1 - Math.pow(0.85, n))}% less tire wear` },
   engine:  { kind: "Car",    name: "Big Engine",     desc: "+7% top speed per level",                max: 5, fx: (n) => `+${7 * n}% top speed` },
   turbo:   { kind: "Car",    name: "Turbo",          desc: "+25% acceleration per level",            max: 4, fx: (n) => `+${25 * n}% acceleration` },
   grip:    { kind: "Car",    name: "Sticky Setup",   desc: "+30% grip, +2% corner speed, catches slides at the edge sooner", max: 4, fx: (n) => `+${30 * n}% grip` },
   brakes:  { kind: "Car",    name: "Carbon Brakes",  desc: "+50% braking power, brakes with a safety margin", max: 3, fx: (n) => `+${50 * n}% braking` },
-  pit:     { kind: "Car",    name: "Pro Pit Crew",   desc: "Pit stops 25% faster",                   max: 3, fx: (n) => `${pct(1 - Math.pow(0.75, n))}% faster pit stops` },
   refill:  { kind: "Car",    name: "Nitro Refill",   desc: "+5% boost back every lap",               max: 3, fx: (n) => `${pct(NITRO_LAP_REFILL + 0.05 * n)}% boost back per lap` },
   pitlane: { kind: "Car",    name: "Pit Lane Rocket", desc: "Drives 25% faster down the pit lane",   max: 3, fx: (n) => `+${25 * n}% pit lane speed` },
   saver:   { kind: "Car",    name: "Nitro Saver",    desc: "Boost drains 3% slower per level",       max: 4, fx: (n) => `${3 * n}% slower boost drain` },
@@ -1990,13 +1989,13 @@ class Room {
     return {
       maxSpeed: MAX_SPEED * (1 + 0.07 * u.engine) * (c.power || 1), accel: ACCEL * (1 + 0.25 * u.turbo), grip: GRIP * (1 + 0.3 * u.grip),
       wear: Math.pow(0.85, u.whisper), brake: BRAKE * (1 + 0.5 * u.brakes),
-      pitTime: PIT_TIME * Math.pow(0.75, u.pit) * (ai ? AI_PIT_STOP : 1),
+      pitTime: PIT_TIME * (ai ? AI_PIT_STOP : 1),
       cornerPace: 1 + 0.06 * u.corner + 0.02 * u.late + 0.02 * u.grip,
       gripMul: 1 + 0.25 * u.grip,
       // drivers plan to use 72% of the brakes (Late Braker: up to 94%); Carbon Brakes add more power than
       // the driver plans to use, so they also stop with room to spare
       planBrake: BRAKE * (1 + 0.38 * u.brakes) * (0.72 + 0.055 * u.late),
-      slipTime: SLIP_TIME + 0.1 * u.craft,
+      slipTime: SLIP_TIME,
       nitroPow: NITRO_POWER, nitroDrain: NITRO_DRAIN * (1 - 0.03 * (u.saver || 0)), nitroRefill: NITRO_LAP_REFILL + 0.05 * u.refill,
       pitLimit: PIT_LIMIT * (1 + 0.25 * u.pitlane) * (ai ? AI_PIT_LANE : 1),
       mistakes: Math.pow(0.6, u.focus),
@@ -2050,7 +2049,7 @@ class Room {
       c.stintEnd = c.stopsLeft ? done + clamp(Math.max(Math.min(L, R - 1), R - L * c.stopsLeft), 1, R - 1) : laps;
       return;
     }
-    const lapT = this.track.length / (MAX_SPEED * 0.62), pitLoss = PIT_TIME * Math.pow(0.75, c.up.pit) + 5;
+    const lapT = this.track.length / (MAX_SPEED * 0.62), pitLoss = PIT_TIME + 5;
     let best = null;
     for (let stops = 0; stops <= 3; stops++) {
       const stint = Math.ceil(R / (stops + 1));
@@ -2457,7 +2456,7 @@ class Room {
             const box = lanePoint(t, c.laneKey), bi = (pl.entry + Math.round(c.laneKey)) % N;
             c.x = box.x; c.y = box.y; c.heading = Math.atan2(t.tan[bi].y, t.tan[bi].x);
             c.pitting = st.pitTime * (c.punct ? 1.4 : 1); c.aiMode = "pitting";
-            if (p && p.assist?.pitGame === true && (!this.qualifying || this.practice)) this.startPitGame(c, p);   // players: the arrow-key pit stop
+            if (p) this.startPitGame(c, p);   // players: the arrow-key pit stop, every time (races, qualifying, ranked)
             else if (Math.random() < PIT_MISTAKE_CHANCE * (p ? 1 : 0.5)) {     // the crew fumbles a wheel nut (AI crews half as often)
               c.pitting += PIT_MISTAKE_TIME;
               this.emit("feed", { t: "pitSlow", name: c.name, id: c.id });
@@ -2490,7 +2489,8 @@ class Room {
       // everyone near me, measured along the track (works through corners)
       const nn = this.around(c, Math.ceil((speed * 1.3 + 260) / t.spacing), Math.ceil(120 / t.spacing));
       const near = [];
-      for (let q = 0; q < nn; q++) { const o = NEAR_O[q]; if (!this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45) near.push(o, NEAR_D[q]); }
+      // (a lapped car unlapping itself under the safety car is a ghost driving through the pack: nobody to follow)
+      if (!(c.unlapping && this.sc)) for (let q = 0; q < nn; q++) { const o = NEAR_O[q]; if (!this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45) near.push(o, NEAR_D[q]); }
       let lead = null, leadAlong = Infinity, alongside = null, pressure = null;
       for (let q = 0; q < near.length; q += 2) {
         const o = near[q], along = near[q + 1];
@@ -2510,7 +2510,7 @@ class Room {
       if (!calm && !cooldown && !c.punct && lead && c.passT <= 0.25 && !(c.passWait > 0) && !(c.teamOrder === "hold" && lead.team === c.team)) {
         const theirV = lead.speed, closing = speed - theirV;
         // (a defending car is much harder to get a run on: you need to be closer, and a lot quicker)
-        const reach = ((0.45 + 0.12 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0) + (c.drsOpen ? DRS_REACH : 0)) * (lead.defending ? 0.55 : 1);   // DRS open: go for it
+        const reach = ((0.45 + 0.15 * c.up.craft) * c.aggr + (c.slip ? 0.25 : 0) + (c.drsOpen ? DRS_REACH : 0)) * (lead.defending ? 0.55 + 0.08 * c.up.craft : 1);   // DRS open: go for it. Racecraft: sees the gap sooner, defenders bother it less
         if (gapT < reach || (closing > (lead.defending ? 110 : 60) && gapT < 1.1)) {
           const cornerNear = (apex - c.idx + N) % N * t.spacing < 500;
           const first = cornerNear ? inside : (lead.lat > 0 ? -1 : 1);
@@ -2600,6 +2600,7 @@ class Room {
       if (cooldown) targetSpeed = Math.min(targetSpeed, 240);
       if (saving) targetSpeed = Math.min(targetSpeed, speed * 0.96);
       if (c.yielding) targetSpeed *= 0.95;
+      if (c.passT > 0 && c.up.craft) targetSpeed *= 1 + 0.02 * c.up.craft;     // Racecraft: commits to the move
       if (c.teamOrder === "push") targetSpeed *= 1.03; else if (c.teamOrder === "hold") targetSpeed *= 0.985;   // pit wall orders
       // don't drive into the back of someone: follow close, matching their speed
       if (lead) {
@@ -2916,7 +2917,7 @@ class Room {
   endPitGame(c, keys) {
     const G = c.pitGame; if (!G) return;
     c.pitGame = null;
-    const crew = (c.st?.pitTime || PIT_TIME) / PIT_TIME * (c.punct ? 1.4 : 1);   // Pro Pit Crew still helps, punctures take longer
+    const crew = (c.st?.pitTime || PIT_TIME) / PIT_TIME * (c.punct ? 1.4 : 1);   // (GT3s have a slower crew), punctures take longer
     let i = 0, misses = 0;
     for (const k of Array.isArray(keys) ? keys.slice(0, 40) : []) { if (i >= G.seq.length) break; if (k === G.seq[i]) i++; else misses++; }
     const wall = Math.min(PIT_GAME_MAX, (Date.now() - G.t0) / 1000), done = i >= G.seq.length;
@@ -3110,7 +3111,8 @@ class Room {
     // (back on the lead lap), then join the back of the queue like everyone else
     const N0 = this.track.N;
     if (!this.sc.rolling && leader) for (const c of order) {
-      const lapped = c !== leader && c.progress < leader.progress - N0;
+      // (still a ghost until it's well clear of the leader and the safety car, so it doesn't land on them)
+      const lapped = c !== leader && c.progress < leader.progress - N0 + (c.unlapping ? 300 / sp : 0);
       if (lapped && !c.unlapping) { c.unlapping = true; if (!this.sc.unlapNote) { this.sc.unlapNote = true; this.emit("feed", { t: "unlap" }); } }
       else if (!lapped && c.unlapping) c.unlapping = false;
     }
@@ -3157,7 +3159,7 @@ class Room {
   // AI teams get dealt 3 cards like a player and pick one (by what that kind of team likes), so anyone watching them
   // can see what came up and what they took
   aiUpgrade(c) {
-    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, pit: 1, enhance: 1.5, saver: 1 };
+    const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, enhance: 1.5, saver: 1 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
     if (!opts.length) return;
     const cards = opts.map((k) => [k, Math.random()]).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([k]) => k);

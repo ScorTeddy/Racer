@@ -290,10 +290,10 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   weekly contest (`contestState` etc.; the winner's track overrides `totw()` via `refreshContestTotw`).
 
 ## Pit stop minigame
-When a player's car stops in its box (and Settings > Assists > Pit stop minigame is on: `assist.pitGame`), the server
+When a player's car stops in its box (always: races, qualifying and ranked; there is no setting to turn it off), the server
 picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`). The client shows them FNF-style
 (`#pitGame`; arrow keys / WASD / buttons on touch) and sends the keys pressed. `endPitGame` replays them against the
-sequence and times it on the server: stop = (0.5 + 0.75 × seconds taken + 0.45 per wrong key) × crew (Pro Pit Crew,
+sequence and times it on the server: stop = (0.5 + 0.75 × seconds taken + 0.45 per wrong key) × crew (GT3 class,
 punctures), at least 1.3 s. Giving up, or 8 s (`PIT_GAME_MAX`), means a slow stop. AI crews take 2.8 s.
 
 ## Race commentator
@@ -600,10 +600,10 @@ f1-circuits, MIT License, Copyright (c) 2019-2025 Tomislav Bacinger (unofficial,
 
 **Upgrades (`UPGRADES`, each has `fx(level)` text shown on cards as "Now → Next"):** Corner
 Master +6% corner speed, Late Braker (brakes use 72% → up to 94% of the car's braking), Racecraft
-(+0.1s slipstream reach, overtakes more), Focus, Tire Whisperer, Quick Reflexes, Big Engine +7%
+(better overtaking: goes for gaps sooner, +2% speed while passing, less bothered by defenders), Focus, Tire Whisperer, Quick Reflexes, Big Engine +7%
 top speed, Turbo +25% accel, Sticky Setup +15% grip, Hard Compound, Carbon Brakes +30%,
-Pro Pit Crew, Nitro Refill (+5% boost back per lap, max 3), Pit Lane Rocket (+25% pit lane speed, max 3).
-(Nitro Power and Nitro Tank were removed.)
+Nitro Refill (+5% boost back per lap, max 3), Pit Lane Rocket (+25% pit lane speed, max 3).
+(Nitro Power, Nitro Tank and Pro Pit Crew were removed: you do your own pit stops in the minigame.)
 (Hard Compound was removed: Tire Whisperer is the one tire-wear upgrade, max 4.)
 `stats(c)` turns levels into numbers.
 
