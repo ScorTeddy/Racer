@@ -1364,7 +1364,7 @@
     if (!$("authBox").classList.contains("hidden")) { closeAuth(); popup(`Signed in as ${u.name}!`); }
     if (!$("hub").classList.contains("hidden")) renderHub();
   });
-  socket.on("signedOut", () => { A.user = null; A.friends = null; try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); renderMenuFriends(); if (!$("hub").classList.contains("hidden")) renderHub(); });
+  socket.on("signedOut", () => { A.user = null; A.friends = null; $("suggestInboxBtn").classList.add("hidden"); try { localStorage.removeItem("tb-token"); } catch (e) {} renderAcct(); renderMenuFriends(); if (!$("hub").classList.contains("hidden")) renderHub(); });
   // ======================= Sign up / log in / 2FA / forgot password =======================
   // modes: signup, login, code (2FA step), reset (forgot password)
   let authMode = "signup", lastAuth = null, ticket2fa = null;
@@ -3085,7 +3085,7 @@
   $("copyBtn").addEventListener("click", async () => {
     const url = location.origin + location.pathname + "?room=" + S.code;
     try { await navigator.clipboard.writeText(url); $("copyBtn").textContent = "Copied!"; } catch (e) { $("copyBtn").textContent = S.code; }
-    setTimeout(() => ($("copyBtn").textContent = "Copy invite link"), 1800);
+    setTimeout(() => ($("copyBtn").textContent = document.body.classList.contains("builder") ? "🔗 Invite" : "🔗 Copy invite link"), 1800);
   });
   // side panel tabs
   document.querySelectorAll(".rc-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => {
@@ -7004,6 +7004,35 @@
     for (const id of [...ids].sort((a, b) => itemName(a).localeCompare(itemName(b)))) { const o = document.createElement("option"); o.value = id; o.textContent = itemName(id); sel.appendChild(o); }
     return sel;
   }
+  // pick any number of items (tap to select): a filterable grid of chips, with the price shown as a rough value
+  function itemPicker(ids, label, empty, max = 10) {
+    const box = el("div", "ipick"), sel = new Set(), cat = (id) => A.catalog?.store.find((x) => x.id === id);
+    const head = el("div", "ipick-head"), count = el("small", "ipick-n", ""), q = document.createElement("input");
+    q.type = "search"; q.placeholder = `Search ${label.toLowerCase()}...`; q.setAttribute("aria-label", "Search " + label);
+    const grid = el("div", "ipick-grid"); grid.setAttribute("role", "group"); grid.setAttribute("aria-label", label);
+    const list = [...ids].sort((a, b) => itemName(a).localeCompare(itemName(b)));
+    const upd = () => { const v = [...sel].reduce((t, id) => t + (cat(id)?.price || 0), 0); count.textContent = sel.size ? `${sel.size} picked${v ? ` · worth ~🪙 ${v.toLocaleString()} in the store` : ""}` : ""; };
+    const draw = () => {
+      grid.textContent = ""; const f = q.value.trim().toLowerCase();
+      if (!list.length) { grid.appendChild(el("small", "preset-note", empty)); return; }
+      for (const id of list) {
+        if (f && !itemName(id).toLowerCase().includes(f) && !sel.has(id)) continue;
+        const it = cat(id), b = el("button", "ipick-item" + (sel.has(id) ? " on" : "")); b.type = "button"; b.setAttribute("aria-pressed", String(sel.has(id)));
+        if (it?.slot) b.appendChild(el("small", "ipick-slot", it.slot));
+        b.appendChild(el("span", "", itemName(id)));
+        if (it?.price) b.appendChild(el("small", "ipick-price", `🪙 ${it.price}`));
+        b.addEventListener("click", () => {
+          if (sel.has(id)) sel.delete(id); else if (sel.size >= max) return popup(`Up to ${max} items each side`, true); else sel.add(id);
+          b.classList.toggle("on", sel.has(id)); b.setAttribute("aria-pressed", String(sel.has(id))); upd(); sfx("tick");
+        });
+        grid.appendChild(b);
+      }
+    };
+    q.addEventListener("input", draw);
+    head.append(q, count); box.append(head, grid); draw();
+    box.picked = () => [...sel];
+    return box;
+  }
   function coinInput(label) { const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.step = "10"; i.placeholder = "0"; i.inputMode = "numeric"; i.setAttribute("aria-label", label); return i; }
   function renderFriend() {
     const f = FR.who, u = A.user, box = $("friendBody"); if (!f || !u) return;
@@ -7076,14 +7105,22 @@
     box.appendChild(el("p", "preset-note", `Offer something, ask for something back. ${f.name} gets the offer in their Friends tab and can accept or decline. Everything is checked again when they accept.`));
     const g = el("div", "trade-grid");
     const colA = el("div", "trade-side"), colB = el("div", "trade-side");
-    const gc = coinInput("Coins you give"), gi = itemSelect(mine, "Item you give", "No item");
-    const wc = coinInput("Coins you want"), wi = itemSelect((theirs || []).filter((id) => !u.owned.includes(id)), "Item you want", theirs ? "No item" : "Loading their items...");
+    const gc = coinInput("Coins you give"), gi = itemPicker((mine || []).filter((id) => !(theirs || []).includes(id)), "Your items", "You don't have any items they don't already have.");
+    const wc = coinInput("Coins you want"), wi = itemPicker((theirs || []).filter((id) => !u.owned.includes(id)), `${f.name}'s items`, theirs ? `${f.name} has nothing you don't already own.` : "Loading their items...");
     const lab = (t, x) => { const l = el("label", "f", t + " "); l.appendChild(x); return l; };
-    colA.append(el("b", "", "You give"), lab("Coins", gc), lab("Item", gi));
-    colB.append(el("b", "", `${f.name} gives`), lab("Coins", wc), lab("Item", wi));
+    colA.append(el("b", "", "You give"), lab(`Coins (you have 🪙 ${u.coins.toLocaleString()})`, gc), el("small", "f", "Items (tap to pick, up to 10)"), gi);
+    colB.append(el("b", "", `You ask ${f.name} for`), lab("Coins", wc), el("small", "f", "Items (tap to pick, up to 10)"), wi);
     g.append(colA, el("span", "trade-x", "⇄"), colB);
     const go = el("button", "btn go", cd ? `Cooldown ${cd}s` : "🤝 Send offer"); go.type = "button"; go.disabled = !!cd;
-    go.addEventListener("click", () => socket.emit("trade:offer", { to: f.id, give: { coins: gc.value, item: gi.value || null }, want: { coins: wc.value, item: wi.value || null } }));
+    go.addEventListener("click", () => {
+      const give = { coins: Math.max(0, Math.floor(Number(gc.value) || 0)), items: gi.picked() }, want = { coins: Math.max(0, Math.floor(Number(wc.value) || 0)), items: wi.picked() };
+      if (!give.coins && !give.items.length) return popup("Pick something to give", true);
+      if (!want.coins && !want.items.length) return popup("Ask for something back (or send a gift instead)", true);
+      const say = (x) => [x.coins ? `🪙 ${x.coins.toLocaleString()}` : "", x.items.length ? `${x.items.length} item${x.items.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" + ");
+      if (go.dataset.sure !== "1") { go.dataset.sure = "1"; go.textContent = `Give ${say(give)} for ${say(want)}? Click again`; return; }
+      go.dataset.sure = ""; go.textContent = "🤝 Send offer";
+      socket.emit("trade:offer", { to: f.id, give, want });
+    });
     box.append(g, go); if (cd) tickCd(go, "🤝 Send offer");
   }
   // ---- weekend tournament (hub tab) ----
@@ -7147,10 +7184,66 @@
     }
     return sec;
   }
+  // ======================= Suggestions =======================
+  // Anyone can send one. The game owner's account also gets an inbox here (and a notification for each new one).
+  const SG = { kind: "idea", tab: "send", list: null };
+  function openSuggest(tab = "send") {
+    const admin = !!A.user?.suggestAdmin;
+    SG.tab = admin ? tab : "send";
+    $("suggestBox").classList.remove("hidden");
+    $("suggestTabs").classList.toggle("hidden", !admin);
+    $("suggestNameRow").classList.toggle("hidden", !!A.user);
+    if (!A.user && !$("suggestName").value) $("suggestName").value = (typeof prof !== "undefined" && prof.name) || "";
+    renderSuggest();
+    if (SG.tab === "inbox") socket.emit("suggest:list"); else setTimeout(() => $("suggestText").focus(), 50);
+  }
+  function renderSuggest() {
+    document.querySelectorAll("#suggestKinds .chip").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.kind === SG.kind)));
+    document.querySelectorAll("#suggestKinds .chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.kind === SG.kind)));
+    document.querySelectorAll("#suggestTabs .chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.stab === SG.tab)));
+    $("suggestForm").classList.toggle("hidden", SG.tab !== "send"); $("suggestInbox").classList.toggle("hidden", SG.tab !== "inbox");
+    const n = A.user?.suggestAdmin?.unread || 0; $("suggestUnread").textContent = n ? String(n) : "";
+    if (SG.tab !== "inbox") return;
+    const box = $("suggestInbox"); box.textContent = "";
+    if (!SG.list) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
+    if (!SG.list.length) { box.appendChild(el("p", "preset-note", "No suggestions yet. They'll show up here (and you get a notification for each one).")); return; }
+    const row = el("div", "sec-row"), all = el("button", "btn ghost", "✔ Mark all read"); all.type = "button"; all.addEventListener("click", () => socket.emit("suggest:read", "all")); row.appendChild(all); box.appendChild(row);
+    for (const sg of SG.list) {
+      const d = el("article", "sg-item" + (sg.read ? "" : " new")), h = el("header");
+      h.append(el("b", "", `${sg.kind === "bug" ? "🐞" : sg.kind === "other" ? "💬" : "💡"} ${sg.name}`), el("small", "", new Date(sg.at).toLocaleString()));
+      if (!sg.read) h.appendChild(el("small", "", "· NEW"));
+      const bs = el("div", "sec-row");
+      const rd = el("button", "btn ghost", sg.read ? "Mark unread" : "Mark read"); rd.type = "button"; rd.addEventListener("click", () => socket.emit(sg.read ? "suggest:unread" : "suggest:read", sg.id));
+      const del = el("button", "btn ghost", "🗑 Delete"); del.type = "button";
+      del.addEventListener("click", () => { if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Delete? Click again"; return; } socket.emit("suggest:delete", sg.id); });
+      bs.append(rd, del); d.append(h, el("p", "", sg.text), bs); box.appendChild(d);
+    }
+  }
+  $("suggestLink").addEventListener("click", (e) => { e.preventDefault(); openSuggest("send"); });
+  $("suggestInboxBtn").addEventListener("click", () => openSuggest("inbox"));
+  $("suggestClose").addEventListener("click", () => $("suggestBox").classList.add("hidden"));
+  $("suggestBox").addEventListener("click", (e) => { if (e.target.id === "suggestBox") $("suggestBox").classList.add("hidden"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("suggestBox").classList.contains("hidden")) $("suggestBox").classList.add("hidden"); });
+  document.querySelectorAll("#suggestKinds .chip").forEach((b) => b.addEventListener("click", () => { SG.kind = b.dataset.kind; renderSuggest(); }));
+  document.querySelectorAll("#suggestTabs .chip").forEach((b) => b.addEventListener("click", () => { SG.tab = b.dataset.stab; renderSuggest(); if (SG.tab === "inbox") socket.emit("suggest:list"); }));
+  $("suggestText").addEventListener("input", () => { $("suggestCount").textContent = `${$("suggestText").value.length} / 1000`; });
+  $("suggestForm").addEventListener("submit", (e) => {
+    e.preventDefault(); const text = $("suggestText").value.trim();
+    if (text.length < 5) return popup("Write a bit more first", true);
+    $("suggestSend").disabled = true; socket.emit("suggest", { text, kind: SG.kind, name: $("suggestName").value });
+  });
+  socket.on("suggestResult", (r) => {
+    $("suggestSend").disabled = false;
+    if (r.error) return popup(r.error, true);
+    $("suggestText").value = ""; $("suggestCount").textContent = "0 / 1000"; $("suggestBox").classList.add("hidden");
+    banner("💡 THANKS! SUGGESTION SENT", "#3ecf6a"); sfx("level");
+  });
+  socket.on("suggestions", (list) => { SG.list = list || []; renderSuggest(); });
+  socket.on("account", (u) => { const n = u?.suggestAdmin; const b = $("suggestInboxBtn"); b.classList.toggle("hidden", !n); b.textContent = n?.unread ? `💡 Suggestions (${n.unread})` : "💡 Suggestions"; if (!$("suggestBox").classList.contains("hidden")) renderSuggest(); });
   function tradesBlock(u) {
     if (!u?.trades?.length) return null;
     const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", `🤝 Trade offers (${u.trades.length})`));
-    const nm = (x) => [x.coins ? `🪙 ${x.coins}` : "", x.item ? itemName(x.item) : ""].filter(Boolean).join(" + ") || "nothing";
+    const nm = (x) => [x.coins ? `🪙 ${x.coins.toLocaleString()}` : "", ...(x.items || (x.item ? [x.item] : [])).map(itemName)].filter(Boolean).join(" + ") || "nothing";
     for (const t of u.trades) {
       const d = el("div", "friend");
       const tx = el("div"); tx.append(el("b", "", t.fromName), el("small", "", `gives you ${nm(t.give)} · wants ${nm(t.want)}`));
@@ -7224,11 +7317,129 @@
   new MutationObserver(applyDesk).observe(document.body, { attributes: true, attributeFilter: ["class"] });
   applyDesk();
 
+  // ======================= The track builder (wide screens) =======================
+  // Three steps instead of six tabs (1 Track › 2 Race rules › 3 Grid & teams), one tool rail on the left, the
+  // drawing tool's options floating over the board, undo/redo and reverse in a pill at the bottom, and a Track
+  // panel on the right: where to start from, scenery, objects, and the race at a glance. Phones keep their own
+  // layout: everything that moves here is put back exactly where it was when the window gets narrow.
+  const BLD = { on: false, step: null, moved: [] };
+  const STEPS = [["track", "Track"], ["rules", "Race rules"], ["grid", "Grid & teams"]];
+  const STEP_TABS = { rules: ["mode", "race"], grid: ["drivers", "standings"] };
+  const bmk = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
+  // the new pieces (made once, shown only in this layout)
+  const stepsBar = bmk("nav", "rc-steps"); stepsBar.setAttribute("aria-label", "Setting up the race");
+  STEPS.forEach(([k, label], i) => {
+    if (i) stepsBar.appendChild(bmk("span", "rc-step-arrow", "›"));
+    const b = bmk("button", "rc-step"); b.type = "button"; b.dataset.step = k; b.dataset.label = `${i + 1}. ${label}`; b.setAttribute("aria-label", `Step ${i + 1}: ${label}`); b.append(bmk("i", "", String(i + 1)), document.createTextNode(label));
+    b.addEventListener("click", () => { setStep(k); sfx("tick"); }); stepsBar.appendChild(b);
+  });
+  document.querySelector(".rc-name")?.after(stepsBar);
+  const ctxBar = bmk("div", "ctx-bar panel"); ctxBar.setAttribute("aria-label", "Drawing options");
+  const ctxLabel = bmk("b", "ctx-label", ""); ctxBar.appendChild(ctxLabel);
+  const pill = bmk("div", "board-pill"); pill.setAttribute("aria-label", "Undo and direction");
+  const wrap = document.querySelector(".board-wrap"); wrap?.append(ctxBar, pill);
+  const trackPane = bmk("section", "rc-pane track-pane"); trackPane.dataset.pane = "track"; trackPane.hidden = true;
+  const card = (title, extra) => { const c = bmk("div", "tp-card"), h = bmk("h3", "tp-h"); h.append(bmk("span", "", title)); if (extra) h.appendChild(extra); c.appendChild(h); trackPane.appendChild(c); return c; };
+  const startCard = card("Start from"), startGrid = bmk("div", "tp-start"); startCard.appendChild(startGrid);
+  const sceneCard = card("Scenery"), sceneRow = bmk("div", "tp-swatches"); sceneRow.setAttribute("role", "radiogroup"); sceneRow.setAttribute("aria-label", "Track theme"); sceneCard.appendChild(sceneRow);
+  const objCount = bmk("small", "tp-count", ""), objCard = card("Objects", objCount), objGrid = bmk("div", "tp-objs"); objCard.appendChild(objGrid);
+  const editRules = bmk("button", "tp-link", "Edit rules ›"); editRules.type = "button"; editRules.addEventListener("click", () => setStep("rules"));
+  const glanceCard = card("Race at a glance", editRules), glance = bmk("div", "tp-glance"); glanceCard.appendChild(glance);
+  document.querySelector(".rc-body")?.prepend(trackPane);
+  const nextBtn = bmk("button", "btn step-next hidden", ""); nextBtn.type = "button";
+  nextBtn.addEventListener("click", () => { const i = STEPS.findIndex(([k]) => k === BLD.step); if (i >= 0 && i < STEPS.length - 1) setStep(STEPS[i + 1][0]); });
+  $("startBtn").before(nextBtn);
+  // scenery swatches: the same choices as the Track theme setting
+  for (const o of $("sTheme").options) {
+    const b = bmk("button", "tp-sw"); b.type = "button"; b.dataset.theme = o.value; b.title = o.textContent; b.setAttribute("role", "radio"); b.setAttribute("aria-label", o.textContent);
+    b.style.background = (THEMES[o.value] || THEMES.grass).ground;
+    b.addEventListener("click", () => { if (!S.host || $("sTheme").disabled) return; $("sTheme").value = o.value; $("sTheme").dispatchEvent(new Event("change", { bubbles: true })); renderBuilder(); sfx("tick"); });
+    sceneRow.appendChild(b);
+  }
+  // move a piece into the new layout (and remember exactly where it came from)
+  function bMove(node, into) { if (!node || !into) return; const mark = document.createComment("bld"); node.before(mark); BLD.moved.push([node, mark]); into.appendChild(node); }
+  function bRestore() { for (const [node, mark] of BLD.moved.reverse()) { mark.before(node); mark.remove(); } BLD.moved = []; }
+  function builderLayout(on) {
+    if (on === BLD.on) return;
+    BLD.on = on; document.body.classList.toggle("builder", on);
+    if (on) {
+      for (const id of ["randomBtn", "f1Btn", "presetBtn", "totwBtn", "commBtn", "loadCodeBtn", "shareTrackBtn"]) bMove($(id), startGrid);
+      bMove($("wonkTools"), startCard);
+      for (const b of document.querySelectorAll("[data-decor]")) bMove(b, objGrid);
+      bMove($("decorUndo"), objGrid); bMove($("decorClear"), objGrid);
+      bMove($("widthTools"), ctxBar); bMove($("snapBtn"), ctxBar);
+      bMove($("undoTools"), pill); bMove($("reverseBtn"), pill);
+      bMove($("stampPick"), wrap); bMove($("moreTools"), wrap);          // (they open beside the rail)
+      document.querySelector(".dock")?.setAttribute("data-dsec", "all");
+      for (const [id, t] of [["copyBtn", "🔗 Invite"], ["garageBtn", "🏎️ Car"]]) { const b = $(id); if (b) { b.dataset.bldOrig = b.innerHTML; b.textContent = t; } }
+      setStep(BLD.step || (S.host ? "track" : "grid"), true);
+    } else {
+      bRestore(); setDockSec(DESK.dsec || "draw");
+      for (const id of ["copyBtn", "garageBtn"]) { const b = $(id); if (b?.dataset.bldOrig !== undefined) { b.innerHTML = b.dataset.bldOrig; delete b.dataset.bldOrig; } }
+      document.querySelector(".rc-tabs").hidden = false; trackPane.hidden = true;
+      document.querySelectorAll(".rc-tabs [data-tab]").forEach((b) => (b.hidden = false));
+      const cur = document.querySelector(".rc-tabs [aria-selected=true]");
+      if (cur) cur.click();
+    }
+    requestAnimationFrame(() => { if (S.screen === "lobby") sizeBoard(); });
+  }
+  function setStep(k, quiet) {
+    BLD.step = k;
+    stepsBar.querySelectorAll(".rc-step").forEach((b) => { b.setAttribute("aria-current", String(b.dataset.step === k)); b.classList.toggle("on", b.dataset.step === k); });
+    if (!BLD.on) return;
+    const tabs = document.querySelector(".rc-tabs");
+    if (k === "track") {
+      tabs.hidden = true; document.querySelectorAll(".rc-pane").forEach((p) => (p.hidden = p !== trackPane));
+    } else {
+      tabs.hidden = false; trackPane.hidden = true;
+      const show = STEP_TABS[k];
+      tabs.querySelectorAll("[data-tab]").forEach((b) => (b.hidden = !show.includes(b.dataset.tab)));
+      const cur = tabs.querySelector("[aria-selected=true]")?.dataset.tab;
+      const want = show.includes(cur) ? cur : show[k === "rules" ? 1 : 0];
+      tabs.querySelector(`[data-tab="${want}"]`)?.click();
+    }
+    if (!quiet && !reducedMotion) { const side = document.querySelector(".rc-body"); side.classList.remove("step-in"); void side.offsetWidth; side.classList.add("step-in"); }
+    renderBuilder();
+  }
+  // the bits that change: which tool is on, the theme, the objects count, the race summary, the Next button
+  function renderBuilder() {
+    if (!BLD.on) return;
+    const l = S.lobby, st = l?.settings || {};
+    const dm = document.querySelector('#drawMode [aria-pressed="true"]');
+    ctxLabel.textContent = dm ? dm.textContent.trim() : "Draw";
+    ctxBar.classList.toggle("hidden", !S.host || l?.phase !== "lobby");
+    pill.classList.toggle("hidden", !S.host || l?.phase !== "lobby");
+    sceneRow.querySelectorAll(".tp-sw").forEach((b) => { const on = b.dataset.theme === (st.theme || $("sTheme").value); b.setAttribute("aria-checked", String(on)); b.classList.toggle("on", on); b.disabled = !S.host; });
+    objCount.textContent = `${S.track?.decor?.length || 0} / 30`;
+    startCard.classList.toggle("hidden", !S.host); objCard.classList.toggle("hidden", !S.host);
+    const lvl = { easy: "Easy", medium: "Medium", hard: "Hard", extreme: "EXTREME" }[st.aiLevel] || st.aiLevel || "";
+    const wx = { sunny: "☀ Sunny", rain: "🌧 Rain", dynamic: "⛅ Changeable", fog: "🌫 Fog" }[st.weather] || "";
+    glance.textContent = "";
+    for (const [k, v] of [["Laps", st.laps ?? "-"], ["AI drivers", `${st.ai ?? 0}${lvl ? " · " + lvl : ""}`], ["Weather", wx || "-"], ["Start", st.start === "rolling" ? "🟡 Rolling" : "🚦 Standing"]]) { const d = bmk("div", "tp-q"); d.append(bmk("small", "", k), bmk("b", "", "")); d.lastChild.textContent = String(v); glance.appendChild(d); }
+    const i = STEPS.findIndex(([k]) => k === BLD.step);
+    nextBtn.classList.toggle("hidden", !S.host || i >= STEPS.length - 1 || l?.phase !== "lobby");
+    if (i < STEPS.length - 1) nextBtn.textContent = `Next: ${STEPS[i + 1][1]} ›`;
+  }
+  document.querySelectorAll("#drawMode [data-dm]").forEach((b) => b.addEventListener("click", () => setTimeout(renderBuilder, 0)));
+  // a new room: the host starts on the Track step, everyone else on Grid & teams
+  socket.on("lobby", (l) => setTimeout(() => { if (BLD.room !== l.code) { BLD.room = l.code; BLD.step = S.host && l.phase === "lobby" ? "track" : "grid"; if (BLD.on) setStep(BLD.step, true); } else renderBuilder(); }, 0));
+  socket.on("track", () => setTimeout(renderBuilder, 0));
+  const bldCheck = () => builderLayout(DESK.on);
+  window.addEventListener("resize", bldCheck);
+  new MutationObserver(bldCheck).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  bldCheck();
+
   // ======================= What's new (shown once after each update) =======================
   // Add a new entry at the TOP for every update (change "v" to anything new, like the date).
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-05g", date: "5 Oct", title: "New track builder, bigger trades, suggestions", items: [
+      "🛠️ A new track builder on computers: three steps at the top (1 Track › 2 Race rules › 3 Grid & teams), every drawing tool in one rail on the left, the road width and snap floating over the board, undo/redo and reverse at the bottom, and a Track panel with where to start from, scenery, objects and the race at a glance.",
+      "🤝 Trades: pick as many items as you like to give AND to ask for (up to 10 each side), plus coins. Search your items, see roughly what they're worth, and check it all before you send.",
+      "💡 Suggest an idea: a new link at the bottom of the menu. Ideas, bugs, anything: they go straight to the person who makes the game.",
+      "Small stuff: the room tabs no longer get squashed to nothing in narrow windows.",
+    ] },
     { v: "u-2026-10-05f", date: "5 Oct", title: "Pit stops are all yours, unlapping fixed", items: [
       "🎮 The pit stop minigame now comes up every time you pit: races, qualifying and ranked (there's no setting to skip it any more).",
       "🔧 Pro Pit Crew is gone (you do your own stops now). Pit Lane Rocket stays, so you still drive faster down the pit lane.",

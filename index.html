@@ -56,6 +56,7 @@
         <button type="button" class="btn" data-hub="store">🛒 Store</button>
         <button type="button" class="btn" data-hub="custom">🎨 Customize</button>
         <button type="button" class="btn" data-hub="ranked">🏆 Rank</button>
+        <button type="button" class="btn hidden" id="suggestInboxBtn">💡 Suggestions</button>
         <button type="button" class="btn ghost hidden" id="signOutBtn">Sign out</button>
         <button type="button" class="btn ghost hidden" id="signOutAllBtn" title="Log out on every phone and computer (use it if someone else might know your password)">🔒 Sign out everywhere</button>
       </div>
@@ -111,7 +112,7 @@
     <p class="err" id="menuErr" role="alert"></p>
     </section>
     <div class="bc-ticker" id="bcTicker" aria-hidden="true"><span class="bc-live">Live</span><div class="bc-roll"><div class="bc-items" id="bcItems"></div></div></div>
-    <footer class="menu-foot"><a href="#" id="newsLink">📰 What's new</a><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
+    <footer class="menu-foot"><a href="#" id="suggestLink">💡 Suggest an idea</a><a href="#" id="newsLink">📰 What's new</a><a href="/faq">❓ FAQ</a><a href="/privacy">🔒 Privacy policy</a><span>Free · no ads · made by Emmett</span></footer>
   </form>
 </div>
 
@@ -546,6 +547,20 @@
     <header class="hub-head"><h2 id="newsTitle">📰 What's new</h2><button type="button" class="x" id="newsClose" aria-label="Close">✕</button></header>
     <div class="news-list" id="newsList"></div>
     <button type="button" class="btn go" id="newsOk">Let's race!</button>
+  </div>
+</div>
+<div id="suggestBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="suggestTitle">
+  <div class="preset-card panel suggest-card">
+    <header class="hub-head"><h2 id="suggestTitle">💡 Suggestions</h2><button type="button" class="x" id="suggestClose" aria-label="Close">✕</button></header>
+    <div class="chips hidden" id="suggestTabs" role="tablist"><button type="button" class="chip" data-stab="send" role="tab">✍️ Send one</button><button type="button" class="chip" data-stab="inbox" role="tab">📥 Inbox <b id="suggestUnread"></b></button></div>
+    <form id="suggestForm" novalidate>
+      <p class="preset-note">Got an idea, found a bug, or want something changed? Tell the person who makes the game. Every one gets read.</p>
+      <div class="chips" id="suggestKinds" role="radiogroup" aria-label="What is it?"><button type="button" class="chip" data-kind="idea" role="radio">💡 Idea</button><button type="button" class="chip" data-kind="bug" role="radio">🐞 Bug</button><button type="button" class="chip" data-kind="other" role="radio">💬 Other</button></div>
+      <label class="f" id="suggestNameRow">Your name (optional) <input type="text" id="suggestName" maxlength="12" autocomplete="off"></label>
+      <label class="f">Your suggestion <textarea id="suggestText" maxlength="1000" rows="6" placeholder="e.g. Add a night race in the rain with lightning"></textarea></label>
+      <div class="sec-row"><small id="suggestCount">0 / 1000</small><button type="submit" class="btn go" id="suggestSend">📨 Send</button></div>
+    </form>
+    <div class="suggest-inbox hidden" id="suggestInbox"></div>
   </div>
 </div>
 <div id="presetBox" class="hidden" role="dialog" aria-modal="true" aria-labelledby="presetTitle">

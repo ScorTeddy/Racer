@@ -3660,6 +3660,25 @@ function menuInfo() {
 }
 setInterval(() => { if (menuDirty) { menuDirty = false; io.to("menu").emit("menuInfo", menuInfo()); } }, 1500);
 
+// ======================= Suggestions by email =======================
+// Each new suggestion is emailed to SUGGEST_EMAIL using Resend (resend.com, free: 100 emails a day) when
+// RESEND_API_KEY is set. Both are Render environment variables, never in the code (the repo is public).
+// Without them, suggestions still go to the owner's in-game inbox.
+const SUGGEST_DAILY_MAX = 300, suggestDay = { day: 0, n: 0 };
+async function emailSuggestion(s) {
+  const key = process.env.RESEND_API_KEY, to = process.env.SUGGEST_EMAIL;
+  if (!key || !to || typeof fetch !== "function") return false;
+  const kind = s.kind === "bug" ? "Bug report" : s.kind === "other" ? "Message" : "Suggestion";
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: process.env.SUGGEST_FROM || "Scribble GP <onboarding@resend.dev>", to: [to], subject: `💡 Scribble GP ${kind.toLowerCase()} from ${s.name}`,
+        text: `${kind} from ${s.name}${s.uid ? ` (account ${s.uid.replace(/^u_/, "")})` : ""}\n${new Date(s.at).toUTCString()}\n\n${s.text}\n\n(Read them all in the game: sign in as ${accounts.SUGGEST_ADMIN} and open 💡 Suggestions.)` }),
+    });
+    if (!res.ok) console.log("Suggestion email failed:", res.status);
+    return res.ok;
+  } catch (e) { console.log("Suggestion email failed:", e.message); return false; }
+}
 // ======================= Connections =======================
 // who's online (signed-in players): account id -> socket ids
 const online = new Map();
@@ -3781,7 +3800,7 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 // ---- rate limits: tokens refill every second; each event costs tokens (heavy ones cost more) ----
-const EVENT_COST = { watchInfo: 2, "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "contest:get": 3, "contest:enter": 10, "contest:vote": 2, "decor:add": 1, "decor:undo": 1, "decor:clear": 2, horn: 1, "predict:list": 2, predict: 3, "ghost:send": 10, "ghost:load": 8, "ghost:beat": 4, "tour:get": 3, "tour:join": 5, "tour:load": 10, "tt:board": 3, teamOrder: 2, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
+const EVENT_COST = { suggest: 10, "suggest:list": 2, "suggest:read": 1, "suggest:unread": 1, "suggest:delete": 1, watchInfo: 2, "teamRanked:start": 15, drs: 0.5, assists: 1, "community:list": 3, "community:publish": 10, "community:vote": 2, "community:remove": 4, "pass:prestige": 5, "account:kickOther": 10, "drs:add": 3, "drs:set": 4, "drs:auto": 4, "ranked:play": 15, "totw:load": 20, "totw:info": 2, "track:share": 8, "track:load": 10, "replay:share": 30, "replay:get": 10, "pass:buy": 5, "crate:open": 4, "gift:send": 6, "trade:offer": 6, "trade:answer": 4, "bet:offer": 6, "bet:answer": 4, "contest:get": 3, "contest:enter": 10, "contest:vote": 2, "decor:add": 1, "decor:undo": 1, "decor:clear": 2, horn: 1, "predict:list": 2, predict: 3, "ghost:send": 10, "ghost:load": 8, "ghost:beat": 4, "tour:get": 3, "tour:join": 5, "tour:load": 10, "tt:board": 3, teamOrder: 2, "carPresets:save": 4, "carPresets:delete": 2, "carPresets:apply": 3, "carPresets:get": 2, "cal:add": 4, "cal:remove": 2, "cal:move": 2, "cal:show": 6, "wheel:spin": 3, "slots:play": 2, "bj:deal": 2, "bj:act": 1, "dm:send": 1, "dm:get": 2, "friends:items": 3, "friends:addPid": 5, quickPlay: 15, rejoin: 8, "friends:add": 5, "friends:invite": 5, report: 5, block: 3, "lb:get": 2, "auth:delete": 15, "auth:2fa": 10, "auth:reset": 15, "auth:changePassword": 10, "2fa:setup": 10, "2fa:enable": 8, "2fa:disable": 10, "2fa:newCodes": 10, randomTrack: 20, f1Track: 10, track: 5, create: 15, join: 8, "auth:login": 10, "auth:signup": 15, "auth:google": 10, "auth:resume": 5, "store:open": 4, "store:buy": 3, "presets:save": 5, "setPresets:save": 5, emote: 2, draft: 0.2, nitro: 0.2, chat: 1, "chat:report": 3, "chat:history": 2 };
 const BUCKET_MAX = 60, BUCKET_REFILL = 30;   // up to 60 at once, 30 per second after that
 // ---- sign-in protection per IP: exponential backoff, a proof-of-work "CAPTCHA" after 3 failures,
 // max 5 new accounts per IP per hour, and every failure is logged (never the password) ----
@@ -4426,6 +4445,31 @@ io.on("connection", (socket) => {
   };
   socket.on("pass:buy", () => acctAction((u) => { const r = accounts.buyPass(u); if (r.ok) socket.emit("toast", r.msg); return r; }));
   socket.on("crate:open", (key) => acctAction((u) => { const r = accounts.openCrate(u, String(key)); if (r.ok) socket.emit("boxResult", { item: r.item, rarity: r.rarity, dup: r.dup, refund: r.refund, box: r.box }); return r; }));
+  // ---- suggestions: anyone can send one. It's emailed to the game's owner (if set up) and the owner's
+  // account (SUGGEST_ADMIN, default ScorTeddy) gets a notification and keeps them in its suggestions inbox ----
+  let suggestAt = 0;
+  socket.on("suggest", async (d) => {
+    if (Date.now() - suggestAt < 60e3) return socket.emit("suggestResult", { error: "One suggestion a minute, please" });
+    if (suggestDay.n >= SUGGEST_DAILY_MAX && suggestDay.day === Math.floor(Date.now() / 864e5)) return socket.emit("suggestResult", { error: "Lots of suggestions today already! Try again tomorrow." });
+    const u = socket.data.uid ? await accounts.getUser(socket.data.uid) : null;
+    const text = String(d?.text || "");
+    if (nameFilter.isBad(text)) return socket.emit("suggestResult", { error: "Keep it friendly! That wasn't sent." });
+    let guest = String(d?.name || "").replace(/\s+/g, " ").trim().slice(0, 12); if (!guest || nameFilter.isBad(guest)) guest = "Guest";
+    const r = await accounts.addSuggestion(u ? { uid: u.id, name: u.name } : { name: guest + " (guest)" }, text, d?.kind);
+    if (r.error) return socket.emit("suggestResult", { error: r.error });
+    suggestAt = Date.now(); const today = Math.floor(Date.now() / 864e5); if (suggestDay.day !== today) { suggestDay.day = today; suggestDay.n = 0; } suggestDay.n++;
+    socket.emit("suggestResult", { ok: true });
+    emailSuggestion(r.s);
+    if (r.admin) {
+      notifyUid(r.admin.id, { icon: "💡", title: `New ${r.s.kind === "bug" ? "bug report" : "suggestion"} from ${r.s.name}`, text: r.s.text.slice(0, 120), key: "suggest_" + r.s.id });
+      for (const sid of online.get(r.admin.id) || []) io.to(sid).emit("account", accounts.publicUser(r.admin));
+    }
+  });
+  const adminDo = async (fn) => { const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u || !accounts.isSuggestAdmin(u)) return; fn(u); socket.emit("suggestions", accounts.suggestionsOf(u)); socket.emit("account", accounts.publicUser(u)); };
+  socket.on("suggest:list", () => adminDo(() => {}));
+  socket.on("suggest:read", (id) => adminDo((u) => accounts.suggestMark(u, String(id || ""), true)));
+  socket.on("suggest:unread", (id) => adminDo((u) => accounts.suggestMark(u, String(id || ""), false)));
+  socket.on("suggest:delete", (id) => adminDo((u) => accounts.suggestDelete(u, String(id || ""))));
   // ---- gifts, trades and messages (friends only) ----
   const tellOther = async (id, ev, data, note) => { const o = await accounts.getUser(id); if (!o) return; for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); } if (note) notifyUid(id, note); };
   socket.on("gift:send", (d) => acctAction(async (u) => {

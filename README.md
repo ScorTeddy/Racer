@@ -296,6 +296,18 @@ picks 6 arrows (`startPitGame`) and holds the car (`c.pitGame`, `pitting = 99`).
 sequence and times it on the server: stop = (0.5 + 0.75 × seconds taken + 0.45 per wrong key) × crew (GT3 class,
 punctures), at least 1.3 s. Giving up, or 8 s (`PIT_GAME_MAX`), means a slow stop. AI crews take 2.8 s.
 
+## Suggestions
+Anyone can send one from the menu (💡 Suggest an idea): an idea, a bug or anything else, up to 1000 characters,
+one a minute per player and 300 a day for the whole server. They're kept on the owner's account (`SUGGEST_ADMIN`,
+default `ScorTeddy`, the login name), newest 300. That account gets a notification for each new one and a
+💡 Suggestions inbox on the menu (mark read/unread, delete). Nobody else can read them.
+
+Email (optional): set these Render environment variables (never put them in the code, the repo is public):
+- `RESEND_API_KEY`: from resend.com (free: 100 emails a day). Sign up there with the address you want the emails sent to.
+- `SUGGEST_EMAIL`: where to send them (that same address).
+- `SUGGEST_FROM` (optional): the sender. Defaults to `Scribble GP <onboarding@resend.dev>`, Resend's test sender, which
+  can only send to the address you signed up to Resend with. That's all a suggestion box needs.
+
 ## Race commentator
 Recorded clips in `public/commentary/`, made offline with the Kokoro neural TTS model (voice `af_heart`, its
 best-rated one) by `tools/commentary_gen.py`:
