@@ -573,6 +573,7 @@ test("assists: DRS, boost and pit stops done for the player", { timeout: 120000 
     const r = new game.Room("ASSIST" + quali, false);
     r.setF1Track("it-1922");
     const p = { id: "s-as", name: "Me", up: {}, level: 1, xp: 0, assist: { drs: true, boost: true, pit: true } }; r.players.set(p.id, p);
+    const play = r.startPitGame.bind(r); r.startPitGame = (c, pl) => { play(c, pl); r.endPitGame(c, c.pitGame.seq); };   // (the pit minigame always comes up now: play it perfectly)
     r.settings.ai = 4; r.settings.quali = quali; r.settings.laps = 6; r.settings.wear = "high"; r.settings.weather = "sunny"; r.ensureRoster(4);
     r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
     const mine = r.cars.find((c) => c.owner === p.id), out = { drsOpen: 0, drsWaiting: 0, boosted: 0, mine };
@@ -689,7 +690,7 @@ test("defend mode: costs boost, no slipstream for the car behind, turns itself o
 
 test("Sticky Setup and Carbon Brakes are much stronger now", () => {
   const r = new game.Room("UPGRD", false); r.setRandomTrack("normal", "regular");
-  const base = { engine: 0, corner: 0, turbo: 0, grip: 0, brakes: 0, late: 0, craft: 0, refill: 0, pitlane: 0, focus: 0, whisper: 0, pit: 0, enhance: 0, saver: 0 };
+  const base = { engine: 0, corner: 0, turbo: 0, grip: 0, brakes: 0, late: 0, craft: 0, refill: 0, pitlane: 0, focus: 0, whisper: 0, enhance: 0, saver: 0 };
   const s0 = r.stats({ up: base }), s1 = r.stats({ up: { ...base, grip: 4, brakes: 3 } });
   assert.ok(s1.grip / s0.grip >= 2.19 && s1.gripMul / s0.gripMul >= 1.99, "grip x2.2, turning grip x2");
   assert.ok(s1.brake / s0.brake >= 2.49, "braking x2.5");
@@ -1727,4 +1728,32 @@ test("room names, number styles, a 3-2-1 countdown with friends, and cheering on
   a.emit("cheer", bobCar.id);
   assert.equal((await heard).from, "Ann"); const e = await bubble; assert.equal(e.e, "📣"); assert.equal(e.car, bobCar.id);
   a.close(); b.close();
+});
+
+test("safety car: a lapped car stuck at the back of a tight queue still ghosts through it and unlaps", { timeout: 120000 }, () => {
+  const r = new game.Room("UNLAP2", false); r.setRandomTrack("normal", "regular");
+  r.players.set("ul", { id: "ul", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 9, quali: 0, laps: 12, weather: "sunny", safetyCar: true }); r.ensureRoster(9);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 25; n++) r.step(1 / 60);
+  r.deploySafetyCar(); assert.ok(r.sc, "safety car out");
+  for (let n = 0; n < 60 * 20; n++) { r.sc.since = r.time; r.step(1 / 60); }  // the queue closes right up (the safety car stays out)
+  const order = r.standings().filter((c) => !c.finished), back = order[order.length - 1];
+  back.lapsDone -= 1; back.maxLaps = back.lapsDone; back.progress -= r.track.N;     // ...and the last car in it is a lap down
+  r.sc.since = r.time;                                                               // (fresh, so the safety car doesn't go in meanwhile)
+  let unlapped = false;
+  for (let n = 0; n < 60 * 30 && r.sc; n++) { r.step(1 / 60); const L = r.standings().find((c) => !c.finished); if (back !== L && back.progress > L.progress - r.track.N + 200 / r.track.spacing) { unlapped = true; break; } }
+  assert.ok(unlapped, "through the whole queue and past the leader, quickly (not stuck crawling behind the cars in it)");
+});
+
+test("the pit stop minigame comes up every time a player pits, qualifying included (no way to skip it)", { timeout: 120000 }, () => {
+  const r = new game.Room("PGQUALI", false); r.setF1Track("it-1922");
+  const p = { id: "s-pq", name: "Me", up: {}, level: 1, xp: 0, assist: { pit: true } }; r.players.set(p.id, p);     // (no pitGame flag at all)
+  Object.assign(r.settings, { ai: 2, quali: 5, laps: 6, wear: "high", weather: "sunny" }); r.ensureRoster(2);
+  let games = 0; const play = r.startPitGame.bind(r); r.startPitGame = (c, pl) => { games++; play(c, pl); r.endPitGame(c, c.pitGame.seq); };
+  r.startRace(); r.startLights(); assert.ok(r.qualifying, "qualifying");
+  r.phase = "race"; r.launchCars && r.launchCars();
+  for (let n = 0; n < 60 * 60 * 4 && r.qualifying && !games; n++) { if (n % 60 === 0) p.boxCall = true; r.step(1 / 60); }      // (the player calls the car in: B)
+  assert.ok(games >= 1, "the minigame started in qualifying");
+  assert.ok(!game.UPGRADES || !game.UPGRADES.pit, "Pro Pit Crew is gone");
 });

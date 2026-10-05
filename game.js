@@ -77,7 +77,6 @@
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asBoost", label: "⚡ Boost assist", hint: "Fires your boost for you on the straights, saving some for fights. Holding the boost key still works too.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
-    { tab: "assists", key: "asPitGame", label: "🎮 Pit stop minigame", hint: "When your car stops in the pits, hit 6 arrows in order (arrow keys or WASD) as fast as you can. Fast and clean beats the AI crews; off = a normal stop.", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asDefend", label: "🛡️ Defend assist", hint: "Turns on Defend for you in the last 2 laps when someone's right behind (it uses your boost, like pressing it yourself).", def: "off", opts: [["on", "On"], ["off", "Off"]] },
     { tab: "assists", key: "asDrs", label: "🟩 DRS assist", hint: "Opens DRS the moment it's available, so you never miss it.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
   ];
@@ -1464,7 +1463,7 @@
     const b = document.createElement("b"); b.textContent = a.name; tx.append(sm, b); d.append(ic, tx);
     if (a.secret) { d.classList.add("secret"); setTimeout(() => { banner(`🤫 SECRET: ${a.name}!`, "#ff3b8a"); sfx("win"); }, 200); }
     // queue them so several at once don't pile up
-    const q = (A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("level"); setTimeout(() => { d.remove(); res(); }, 4300); })));
+    const q = (A.popQ = (A.popQ || Promise.resolve()).then(() => new Promise((res) => { document.body.appendChild(d); sfx("level"); setTimeout(() => burstFrom(d.querySelector(".ic"), a.secret ? "#ff3b8a" : "#ffcc1f", 12, 60), 380); setTimeout(() => { d.remove(); res(); }, 4300); })));
   });
   fetch("/auth/config").then((r) => r.json()).then((cfg) => {
     A.cfg = cfg; renderAcct();
@@ -2571,7 +2570,7 @@
       const wear = document.createElement("div"); wear.className = "wear";
       if (est) { wear.textContent = `~${Math.round(est * 100)}% per lap `; const sm = document.createElement("small"); sm.textContent = `(lasts ~${(1 / est).toFixed(1)} laps)`; wear.appendChild(sm); }
       b.append(nm, stat("Speed", T.speed), stat(k === "wet" ? "Rain grip" : "Grip", T.grip), stat("Lasts", T.life), wear, note);
-      b.addEventListener("click", () => { S.startPick = k; socket.emit("compound", k); markPick(); sfx("tick"); });
+      b.addEventListener("click", () => { const again = S.startPick === k; S.startPick = k; socket.emit("compound", k); markPick(); sfx("tick"); if (!again) pickPop(row, b, T.color); });
       row.appendChild(b);
     }
     markPick();
@@ -2832,7 +2831,7 @@
     { const rb = $("rfBox"); rb.classList.toggle("hidden", !st.rf); if (st.rf) $("rfSecs").textContent = st.rf; }
     if (S.myCar) {
       const pos = S.standings.indexOf(S.myCar) + 1;
-      if (pos && S.lastPos !== 99 && pos !== S.lastPos) { if (pos < S.lastPos) crowdRoar(pos <= 3 ? 1 : 0.6); sfx(pos < S.lastPos ? "pass" : "lost"); const el = $("posText"); el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+      if (pos && S.lastPos !== 99 && pos !== S.lastPos) { if (pos < S.lastPos) crowdRoar(pos <= 3 ? 1 : 0.6); sfx(pos < S.lastPos ? "pass" : "lost"); const el = $("posText"); el.classList.remove("bump", "flip"); void el.offsetWidth; el.classList.add(pos < S.lastPos ? "flip" : "bump"); if (pos < S.lastPos) burstFrom(el, pos <= 3 ? "#ffcc1f" : "#3ecf6a", 9, 50); }
       S.lastPos = pos;
     }
   }
@@ -2855,7 +2854,7 @@
     if (f.t === "classWin" && CLASSES[f.cls]) { setTimeout(() => banner(`🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!`, CLASSES[f.cls].col), 600); sfx("level"); }
     if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
     if (f.t === "scIn") { banner("🟢 GREEN FLAG!", "#3ecf6a"); sfx("level"); }
-    if (f.t === "photo") { setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600); setTimeout(() => photoStill(f), 120); }
+    if (f.t === "photo") { setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600); photoShot(f); }
     if (f.t === "crash" && S.track) {           // flying debris where it happened (and sparks, and a marshal with a yellow flag)
       marshalAt(f.x, f.y); for (let k = 0; k < (f.big ? 4 : 2); k++) spark(f.x, f.y, Math.random() * 6.3, 6);
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
@@ -4716,7 +4715,7 @@
         const life = document.createElement("div"); life.className = "life";
         const note = document.createElement("small"); note.textContent = k === "wet" ? "For rain" : k === "fast" ? "Quickest" : k === "durable" ? "Slowest" : "Middle";
         b.append(nm, life, note);
-        b.addEventListener("click", () => { socket.emit("compound", k); S.nextComp = k; renderNextTires(); markPitPick(); sfx("tick"); });
+        b.addEventListener("click", () => { const again = S.nextComp === k; socket.emit("compound", k); S.nextComp = k; renderNextTires(); markPitPick(); sfx("tick"); if (!again) pickPop(row, b, T.color); });
         row.appendChild(b);
       }
     }
@@ -4803,6 +4802,25 @@
   function openCards() { if (!S.offer) { socket.emit("wantOffer"); return; } S.cardsLater = false; showCards(S.offer); }
   $("laterBtn").addEventListener("click", laterCards);
   $("upPill").addEventListener("click", openCards);
+  // the same sparks as picking an upgrade card, for the other good moments (a smaller burst by default)
+  function sparkBurst(x, y, col = "#ffcc1f", n = 12, reach = 70) {
+    if (reducedMotion) return;
+    const burst = document.createElement("div"); burst.className = "card-burst"; burst.style.left = `${Math.round(x)}px`; burst.style.top = `${Math.round(y)}px`;
+    for (let k = 0; k < n; k++) {
+      const sp = document.createElement("i"), a = (k / n) * Math.PI * 2 + Math.random() * 0.4, d = reach * (0.6 + Math.random() * 0.7);
+      sp.style.setProperty("--dx", `${Math.round(Math.cos(a) * d)}px`); sp.style.setProperty("--dy", `${Math.round(Math.sin(a) * d)}px`);
+      sp.style.background = k % 3 ? col : "#fff"; sp.style.color = col; sp.style.animationDelay = `${Math.round(Math.random() * 60)}ms`;
+      burst.appendChild(sp);
+    }
+    document.body.appendChild(burst); setTimeout(() => burst.remove(), 1100);
+  }
+  const burstFrom = (elx, col, n, reach) => { if (!elx) return; const q = elx.getBoundingClientRect(); if (q.width) sparkBurst(q.left + q.width / 2, q.top + q.height / 2, col, n, reach); };
+  // picking from a row of choices (tyres): the pick pops, flips and flashes in its colour; the rest dip back
+  function pickPop(row, b, col) {
+    if (reducedMotion || !b) return;
+    row.querySelectorAll(":scope > button").forEach((o) => { o.classList.remove("pick-pop", "pick-dip"); void o.offsetWidth; o.classList.add(o === b ? "pick-pop" : "pick-dip"); });
+    b.style.setProperty("--pick", col); burstFrom(b, col, 10, 60);
+  }
   function pickCard(i) {
     if (!S.offer || !S.offer.cards[i]) return;
     socket.emit("pick", i);
@@ -4939,6 +4957,14 @@
     } catch (e) { S.photoStill = null; }
   }
   socket.on("race", () => { S.photoStill = null; });
+  // (the camera jumps to the two cars at the line for one frame, so the picture is of them, then goes back)
+  function photoShot(f) {
+    const c = [...S.cars.values()].find((o) => o.name === f.other) || [...S.cars.values()].find((o) => o.name === f.name);
+    if (!c || c.x === undefined || PH.on) { setTimeout(() => photoStill(f), 120); return; }
+    const was = S.camTarget, wx = cam.x, wy = cam.y;
+    S.camTarget = c.id; cam.x = c.x; cam.y = c.y;
+    requestAnimationFrame(() => requestAnimationFrame(() => { photoStill(f); if (S.camTarget === c.id) { S.camTarget = was; cam.x = wx; cam.y = wy; } }));
+  }
   function showPhotoStill() {
     const P = S.photoStill, box = $("photoStill"); box.classList.toggle("hidden", !P); if (!P) return;
     $("photoStillImg").src = P.url; $("photoStillCap").textContent = "📸 " + P.cap; $("photoStillDl").href = P.url;
@@ -4946,7 +4972,9 @@
   function showResults(r) {
     showPhotoStill();
     if (r.abandoned && !S.replaying) showAbandoned(r.abandoned);
-    { const me = (r.rows || []).findIndex((x) => x.owner === S.me); if (me >= 0 && me < 3 && !S.replaying) setTimeout(() => confettiBurst(me === 0 ? 140 : 80), r.abandoned ? 5400 : 400); }
+    { const me = (r.rows || []).findIndex((x) => x.owner === S.me); if (me >= 0 && me < 3 && !S.replaying) setTimeout(() => confettiBurst(me === 0 ? 140 : 80), r.abandoned ? 5400 : 400);
+      // your own row: once it has slid in, it pops and flashes like a picked card (sparks if you're on the podium)
+      if (me >= 0 && !S.replaying) setTimeout(() => { const tr = $("resBody").querySelector("tr.me"); if (!tr) return; tr.classList.add("you-pop"); setTimeout(() => tr.classList.remove("you-pop"), 1000); if (me < 3) burstFrom(tr.children[1] || tr, ["#ffd75a", "#dfe6ee", "#e0915a"][me], 14, 90); }, (r.abandoned ? 5000 : 0) + 900 + me * 60); }
     S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
     { const rb = $("rematchBtn"); rb.classList.toggle("hidden", !!S.race?.ranked); rb.disabled = false; rb.textContent = S.host ? "🔁 Rematch now" : "🔁 Vote for a rematch"; }
     $("replaySaveRes").classList.toggle("hidden", RP.buf.length < 30); $("replayShareRes").classList.toggle("hidden", RP.buf.length < 30 || !A.user);
@@ -6228,7 +6256,7 @@
     $("boostBtn").classList.toggle("on", on);
   }
   // ---- assists: tell the server (it does the pit calls / boost / DRS) ----
-  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on", defend: settings.asDefend === "on", pitGame: settings.asPitGame !== "off" }); }
+  function sendAssists() { socket.emit("assists", { pit: settings.asPit === "on", boost: settings.asBoost === "on", drs: settings.asDrs === "on", defend: settings.asDefend === "on" }); }
   socket.on("connect", sendAssists); socket.on("joined", sendAssists); socket.on("race", sendAssists);
   keyHints();
   // ======================= Commentator =======================
@@ -6356,6 +6384,7 @@
     res.textContent = !r.done ? `😬 Too slow! The crew finished without you: ${r.stop.toFixed(2)}s` : `${good ? "⚡ PERFECT STOP" : bad ? "🐢 Slow stop" : "✅ Good stop"}: ${r.stop.toFixed(2)}s (AI crews: ${r.ai.toFixed(1)}s)`;
     if (good) say("pitGood", null, 1); else if (bad) say("pitBad", null, 1);
     sfx(good ? "level" : "tick");
+    if (r.done && !bad) { res.classList.add("pick-pop"); res.style.setProperty("--pick", good ? "#3ecf6a" : "#5ab0ff"); if (good) burstFrom(res, "#3ecf6a", 14, 80); }
     setTimeout(() => $("pitGame").classList.add("hidden"), 1800);
   });
   socket.on("race", () => { PG.on = false; clearInterval(PG.timer); $("pitGame").classList.add("hidden"); });
@@ -7200,6 +7229,14 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-05f", date: "5 Oct", title: "Pit stops are all yours, unlapping fixed", items: [
+      "🎮 The pit stop minigame now comes up every time you pit: races, qualifying and ranked (there's no setting to skip it any more).",
+      "🔧 Pro Pit Crew is gone (you do your own stops now). Pit Lane Rocket stays, so you still drive faster down the pit lane.",
+      "⚔️ Racecraft is now about overtaking: your driver spots gaps sooner, goes 2% faster per level while passing, and gets past defending cars more easily. (It doesn't add slipstream any more.)",
+      "👻 Safety car: lapped cars really do drive through the queue now and unlap themselves, then join the back. They used to get stuck behind the cars in front of them.",
+      "✨ Picking your tyres, gaining a place, a great pit stop, an achievement and your row on the results get the same pop, flash and sparks as picking an upgrade card.",
+      "📸 The photo-finish picture is now taken of the cars at the line (not wherever the camera happened to be).",
+    ] },
     { v: "u-2026-10-05e", date: "5 Oct", title: "Marshals, birds, puddles and fireworks", items: [
       "🚩 Marshals: one runs out with a yellow flag next to every crash, and one waves the chequered flag at the line on the last lap.",
       "🔧 Pit crews: five little people in your team colours jump on the car at every stop.",

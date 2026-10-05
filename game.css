@@ -1739,6 +1739,28 @@ body.touch .pg-pad { display: flex; }
 /* room name (lobby header) */
 .rc-name { display: flex; flex-direction: column; gap: 2px; line-height: 1; padding: 0.2rem 0.6rem; min-width: 0; }
 .rc-name small { font-size: 0.62rem; letter-spacing: 0.15em; color: var(--soft); font-weight: 700; text-transform: uppercase; }
-.rc-name input { width: 15ch; max-width: 100%; font: 700 0.95rem 'Chakra Petch', sans-serif; background: transparent; border: 1px dashed var(--edge); border-radius: 8px; padding: 3px 6px; color: inherit; }
+.rc-name input { width: 19ch; max-width: 100%; font: 700 0.95rem 'Chakra Petch', sans-serif; background: transparent; border: 1px dashed var(--edge); border-radius: 8px; padding: 3px 6px; color: inherit; }
 .rc-name input[readonly] { border-color: transparent; }
 .wp-cheer { width: 100%; margin-top: 6px; padding: 5px 8px; font-size: 13px; }
+/* the card-pick feel, for other moments: a pop, a flip and a flash of light in the pick's colour (short, once) */
+@media (prefers-reduced-motion: no-preference) {
+  .pick-pop { position: relative; animation: pickPop 560ms cubic-bezier(.3,.7,.3,1) both; }
+  .pick-pop::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at 50% 50%, #fff 0%, var(--pick, #ffcc1f) 38%, transparent 72%); animation: cardFlash 420ms ease-out both; }
+  @keyframes pickPop {
+    0% { transform: none; }
+    30% { transform: translateY(-6px) scale(1.1) rotateY(0deg); box-shadow: 0 0 0 3px var(--pick, #ffcc1f), 0 0 26px var(--pick, #ffcc1f); }
+    70% { transform: translateY(-3px) scale(1.04) rotateY(360deg); }
+    100% { transform: none; }
+  }
+  .pick-dip { animation: pickDip 380ms ease both; }
+  @keyframes pickDip { 40% { transform: translateY(4px) scale(0.96); opacity: 0.65; } }
+  /* gaining a place: the position flips over like a scoreboard */
+  #posText { display: inline-block; transform-origin: center; }
+  #posText.flip { animation: posFlip 620ms cubic-bezier(.3,.7,.3,1); }
+  @keyframes posFlip { 0% { transform: none; } 45% { transform: scale(1.25) rotateX(180deg); color: #ffe066; text-shadow: 0 0 16px rgba(255,204,31,0.9); } 100% { transform: rotateX(360deg); } }
+  /* results: your row pops and a light sweeps across it */
+  .res tbody tr.you-pop td { animation: youPop 700ms cubic-bezier(.2,1.4,.4,1) both, youSweep 900ms ease-out both; background-image: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%); background-size: 250% 100%; }
+  @keyframes youPop { 35% { transform: scale(1.05); } }
+  @keyframes youSweep { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+}
+.photo-still a.btn { color: inherit; text-decoration: none; }
