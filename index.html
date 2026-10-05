@@ -38,6 +38,7 @@
       <h1 class="logo display">Scribble <span>GP</span></h1>
       <p class="tag">Team Boss</p>
       <div class="online" id="onlineLine" role="status"><span class="live"></span><span id="onlineText">Connecting...</span></div>
+      <p class="tip-day" id="tipDay"></p>
     </div>
     <div class="acct-bar" id="acctBar">
       <div class="acct-who" id="acctWho">
@@ -73,6 +74,7 @@
     <div class="bc-stats hidden" id="bcStats"></div>
     <div><div class="f" style="margin-bottom:0.25rem">Car color</div><div class="swatches" id="swatches"></div></div>
     <div><div class="f" style="margin-bottom:0.25rem">Livery</div><div class="chips" id="liveries"></div></div>
+    <div><div class="f" style="margin-bottom:0.25rem">Number style</div><div class="chips" id="numFonts"></div></div>
     <button type="button" class="btn" id="carPresetBtn">🚗 Car presets: save or swap your whole look</button>
     <details class="paint-box" id="paintBox">
       <summary>🎨 Paint your own design</summary>
@@ -118,6 +120,7 @@
   <header class="rc-top panel">
     <div class="rc-brand display">Scribble <span>GP</span><small>Race control</small></div>
     <div class="rc-code"><small>Room code</small><span class="code" id="roomCode">ABCD</span></div>
+    <label class="rc-name"><small>Room name</small><input type="text" id="roomNameIn" maxlength="30" autocomplete="off" spellcheck="false" placeholder="Name your room"></label>
     <button type="button" class="btn" id="copyBtn">🔗 Copy invite link</button>
     <button type="button" class="btn" id="pubToggle" title="Public rooms show up in everyone's lobby list">🔒 Private</button>
     <div class="rc-avatars" id="avatars" aria-label="Players in this room"></div>
@@ -434,6 +437,7 @@
   <div class="watch-panel panel hidden" id="watchPanel" aria-live="polite">
     <div class="wp-head"><span class="wp-dot" id="wpDot"></span><b id="wpName"></b><small id="wpLvl"></small></div>
     <div class="wp-boost"><span>⚡</span><div class="wp-bar"><i id="wpBoost"></i></div><b id="wpBoostTxt"></b></div>
+    <button type="button" class="btn wp-cheer hidden" id="wpCheer">📣 Cheer them on</button>
     <div class="wp-sect">Upgrade cards</div>
     <div class="wp-cards" id="wpCards"><small class="wp-none">No cards yet</small></div>
     <div class="wp-sect">Their upgrades</div>
@@ -461,13 +465,14 @@
     <p class="dotd hidden" id="dotdLine"></p>
     <p class="dotd hidden" id="bestPassLine"></p>
     <p class="dotd hidden" id="champRoundLine"></p>
+    <figure class="photo-still hidden" id="photoStill"><img id="photoStillImg" alt="Photo finish: the moment the cars crossed the line"><figcaption><span id="photoStillCap"></span> <a class="btn" id="photoStillDl" download="photo-finish.jpg">💾 Save</a></figcaption></figure>
     <div class="lap-chart hidden" id="lapChartBox"><canvas id="lapChart" role="img" aria-label="Lap chart: everyone's position on every lap"></canvas><p class="lc-tip hidden" id="lapChartTip"></p></div>
     <table class="res"><thead><tr><th>Pos</th><th>Driver</th><th>Team</th><th class="n">Best lap</th><th class="n">Pits</th><th class="n">Pts</th></tr></thead><tbody id="resBody"></tbody></table>
     <div id="resTeamsBox"><div class="sect">Team standings</div>
     <table class="res"><tbody id="resTeams"></tbody></table></div>
     <div id="seasonBox"></div>
     <div class="ranked-res hidden" id="rankedRes" role="status"></div>
-    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn replay-btn hidden" id="bestPassBtn">🏎️ Watch the overtake of the race</button><button type="button" class="btn replay-btn hidden" id="reelBtn">🎞️ Highlights</button><button type="button" class="btn hidden" id="reelShareBtn">🔗 Share highlights</button><button type="button" class="btn hidden" id="lapChartBtn">📈 Lap chart</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button><button type="button" class="btn go hidden" id="rematchBtn">🔁 Rematch</button></div>
+    <div class="res-btns"><button type="button" class="btn replay-btn hidden" id="replayBtn">🎬 Watch the finish again</button><button type="button" class="btn replay-btn hidden" id="bestPassBtn">🏎️ Watch the overtake of the race</button><button type="button" class="btn replay-btn hidden" id="reelBtn">🎞️ Highlights</button><button type="button" class="btn hidden" id="reelShareBtn">🔗 Share highlights</button><button type="button" class="btn hidden" id="lapChartBtn">📈 Lap chart</button><button type="button" class="btn go hidden" id="myFinishBtn">🏁 Watch YOUR finish</button><button type="button" class="btn hidden" id="replaySaveRes">💾 Save replay</button><button type="button" class="btn hidden" id="replayShareRes">🔗 Share replay</button><button type="button" class="btn go hidden" id="rematchBtn">🔁 Rematch</button><button type="button" class="btn gg-btn" id="ggBtn">🤝 GG</button></div>
     <div class="back" id="backText">Back to the garage in 12s</div>
   </div>
 </div>
@@ -512,7 +517,7 @@
   <div class="chat-list" id="chatList" aria-live="polite"></div>
   <form class="chat-foot" id="chatForm"><input type="text" id="chatIn" maxlength="140" placeholder="Say something nice..." autocomplete="off" spellcheck="true" aria-label="Chat message"><button type="submit" class="btn go">Send</button></form>
 </div>
-<div class="net-veil hidden" id="netVeil" role="alert"><div class="panel"><div class="spinner" aria-hidden="true"></div><b id="netMsg">Reconnecting...</b><small>Your car is kept for 2 minutes, you'll get it back.</small></div></div>
+<div class="net-veil hidden" id="netVeil" role="alert"><div class="panel"><div class="spinner" aria-hidden="true"></div><b id="netMsg">Reconnecting...</b><small>Your car is kept for 2 minutes, you'll get it back.</small><p class="tip-day" id="tipVeil"></p></div></div>
 <div class="invite-box hidden" id="inviteBox" role="alert"><span id="inviteText"></span><button type="button" class="btn go" id="inviteJoin">Join</button><button type="button" class="btn ghost" id="inviteNo">Not now</button></div>
 
 <!-- ============ Saved tracks ============ -->

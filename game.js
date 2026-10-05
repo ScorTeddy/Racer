@@ -10,6 +10,8 @@
   const CAR_LEN = 46, CAR_WID = 24;
   const KMH = 0.36;
   const COLORS = ["#ffcc1f", "#e53935", "#fb8c00", "#43a047", "#00acc1", "#1e88e5", "#8e24aa", "#ec407a", "#f5f5f5", "#263238"];
+  // how the number on your car is written: [key, name, canvas font]
+  const NUM_FONTS = [["race", "Racing", "700 9px 'Chakra Petch', sans-serif"], ["block", "Block", "400 9px 'Russo One', sans-serif"], ["classic", "Classic", "700 9.5px Georgia, 'Times New Roman', serif"], ["digital", "Digital", "700 9px 'Courier New', monospace"], ["script", "Script", "italic 700 10px 'Brush Script MT', 'Segoe Script', cursive"]];
   const LIVERIES = [["plain", "Plain"], ["stripes", "Stripes"], ["split", "Two-tone"], ["flames", "Flames"], ["checker", "Checker"]];
   const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
   const THEMES = {
@@ -447,45 +449,82 @@
   }
   function crowdRoar(k = 1) {
     if (!crowd || !actx || crowdVol() <= 0) return;
-    cheer(k, 0.8);
     const t = actx.currentTime, g = crowd.g.gain, base = 0.018 * crowdVol();
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(base + 0.09 * k * crowdVol(), t + 0.35); g.setTargetAtTime(base, t + 0.9, 1.1);
     crowd.f.frequency.cancelScheduledValues(t); crowd.f.frequency.setValueAtTime(1500, t); crowd.f.frequency.setTargetAtTime(1100, t + 0.6, 1);
   }
-  // A crowd that sounds like PEOPLE: a vowel-shaped roar, a dozen voices going "woooo!" (each its own pitch, wobble and
-  // timing), a few whistles, and applause (lots of little claps). k = how big (0-1.5), vol = how close you are.
+  // A crowd: hundreds of quiet voices together (a vowel-shaped hum, each part swelling on its own) plus a few you can
+  // just pick out going "yeah!". Only now and then: when something happens beside a stand, a win, a photo finish.
   function cheer(k = 1, vol = 1) {
-    const a = actx; if (!a || crowdVol() <= 0 || vol <= 0.02) return;
-    const out = fxOut(a), t0 = a.currentTime, V = crowdVol() * vol * Math.min(1.5, k), dur = 1.6 + k * 1.2;
-    // roar: noise through two vowel formants ("aaah"), swelling then fading
-    { const n = noise(a), f1 = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
-      f1.type = "bandpass"; f1.frequency.value = 720; f1.Q.value = 4; f2.type = "bandpass"; f2.frequency.value = 1180; f2.Q.value = 5;
-      const m = a.createGain(); n.connect(f1).connect(m); n.connect(f2).connect(m); m.connect(g).connect(out);
-      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.11 * V, t0 + 0.35); g.gain.setTargetAtTime(0, t0 + dur * 0.55, dur * 0.3);
-      n.start(t0); n.stop(t0 + dur + 1.5); }
-    // voices: "woooo!" (a buzzy voice through an "oo" formant, sliding up then down, with vibrato)
-    const voices = Math.round(6 + 8 * Math.min(1, k));
+    const a = actx; if (!a || crowdVol() <= 0 || vol <= 0.03) return;
+    const t0 = a.currentTime; if (t0 - (cheer.last || 0) < 3) return; cheer.last = t0;
+    const out = fxOut(a), V = crowdVol() * Math.min(1, vol) * Math.min(1.3, k), dur = 1.6 + k * 0.9;
+    const bed = a.createGain(); bed.gain.setValueAtTime(0, t0); bed.gain.linearRampToValueAtTime(0.045 * V, t0 + 0.45); bed.gain.setTargetAtTime(0, t0 + dur * 0.6, dur * 0.28); bed.connect(out);
+    for (const [f, q] of [[480, 3], [760, 4], [1120, 5], [2300, 7]]) {
+      const n = noise(a), bp = a.createBiquadFilter(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+      bp.type = "bandpass"; bp.frequency.value = f * (0.9 + Math.random() * 0.2); bp.Q.value = q; g.gain.value = 0.55;
+      lfo.frequency.value = 2.5 + Math.random() * 4; lg.gain.value = 0.3; lfo.connect(lg).connect(g.gain);
+      n.connect(bp).connect(g).connect(bed); n.start(t0); n.stop(t0 + dur + 1.5); lfo.start(t0); lfo.stop(t0 + dur + 1.5);
+    }
+    const vowels = [[700, 1200], [530, 1850], [350, 900]];                     // "ah", "eh", "oo"
+    const voices = Math.round(10 + 14 * Math.min(1, k));
     for (let v = 0; v < voices; v++) {
-      const st = t0 + Math.random() * 0.5, len = 0.5 + Math.random() * 0.9, f0 = 170 + Math.random() * 260;
-      const o = a.createOscillator(), vib = a.createOscillator(), vg = a.createGain(), f = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
-      o.type = "sawtooth"; o.frequency.setValueAtTime(f0, st); o.frequency.linearRampToValueAtTime(f0 * (1.35 + Math.random() * 0.4), st + len * 0.35); o.frequency.linearRampToValueAtTime(f0 * 1.05, st + len);
-      vib.frequency.value = 5 + Math.random() * 2; vg.gain.value = f0 * 0.03; vib.connect(vg).connect(o.frequency);
-      f.type = "bandpass"; f.frequency.value = 380 + Math.random() * 120; f.Q.value = 6; f2.type = "bandpass"; f2.frequency.value = 900 + Math.random() * 200; f2.Q.value = 7;
-      const m = a.createGain(); o.connect(f).connect(m); o.connect(f2).connect(m); m.connect(g).connect(out);
-      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime(0.06 * V, st + 0.08); g.gain.setTargetAtTime(0, st + len * 0.7, len * 0.2);
-      o.start(st); vib.start(st); o.stop(st + len + 0.6); vib.stop(st + len + 0.6);
+      const st = t0 + 0.1 + Math.random() * 0.9, len = 0.3 + Math.random() * 0.45, f0 = Math.random() < 0.5 ? 120 + Math.random() * 90 : 210 + Math.random() * 140, [F1, F2] = vowels[v % 3];
+      const o = a.createOscillator(), f = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain(), m = a.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(f0, st); o.frequency.linearRampToValueAtTime(f0 * (1.2 + Math.random() * 0.25), st + len * 0.4); o.frequency.linearRampToValueAtTime(f0, st + len);
+      f.type = "bandpass"; f.frequency.value = F1; f.Q.value = 5; f2.type = "bandpass"; f2.frequency.value = F2; f2.Q.value = 7;
+      o.connect(f).connect(m); o.connect(f2).connect(m); m.connect(g).connect(out);
+      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime(0.014 * V, st + 0.06); g.gain.setTargetAtTime(0, st + len * 0.6, len * 0.2);
+      o.start(st); o.stop(st + len + 0.5);
     }
-    // whistles
-    for (let w = 0; w < (k > 0.7 ? 3 : 1); w++) {
-      const st = t0 + 0.2 + Math.random() * 0.8, o = a.createOscillator(), g = a.createGain(), f0 = 1900 + Math.random() * 900;
-      o.type = "sine"; o.frequency.setValueAtTime(f0, st); o.frequency.linearRampToValueAtTime(f0 * 1.25, st + 0.18); o.frequency.linearRampToValueAtTime(f0 * 0.9, st + 0.45);
-      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime(0.03 * V, st + 0.03); g.gain.setTargetAtTime(0, st + 0.35, 0.06);
-      o.connect(g).connect(out); o.start(st); o.stop(st + 0.7);
+  }
+  // something happened at (x, y): the stand next to it (if any) jumps up, and you hear them if the camera's close
+  function standEvent(x, y, k = 1) {
+    if (!S.track || x === undefined) return;
+    let best = null, bd = 1e12;
+    for (const s2 of autoStands(S.track)) { const d = (s2.x - x) ** 2 + (s2.y - y) ** 2; if (d < bd) { bd = d; best = s2; } }
+    if (!best || bd > 650 * 650) return;
+    best.hype = performance.now();
+    const fc = (S.camTarget && S.cars?.get(S.camTarget)) || S.cars?.get(S.myCar); if (!fc) return;
+    const dc = Math.hypot(fc.x - best.x, fc.y - best.y);
+    if (dc < 1100) cheer(k, 1 - dc / 1100);
+  }
+  // your tyres: a squeal when the car's sliding, a brrrrr over the kerbs (faster the faster you go)
+  let tyreSnd = null;
+  function tyreSound(c, on) {
+    const want = on && !!c && fxVol() > 0, a = want ? audio() : actx; if (!a) return;
+    if (!tyreSnd && want) {
+      const so = a.createOscillator(), wob = a.createOscillator(), wg = a.createGain(), sn = noise(a), sbp = a.createBiquadFilter(), sg = a.createGain();
+      so.type = "triangle"; so.frequency.value = 1750; wob.frequency.value = 7; wg.gain.value = 70; wob.connect(wg).connect(so.frequency);
+      sbp.type = "bandpass"; sbp.frequency.value = 2400; sbp.Q.value = 9; sg.gain.value = 0;
+      const sm = a.createGain(); sm.gain.value = 0.35; so.connect(sm).connect(sg); sn.connect(sbp).connect(sg); sg.connect(fxOut(a));
+      const ko = a.createOscillator(), klp = a.createBiquadFilter(), kg = a.createGain();
+      ko.type = "square"; ko.frequency.value = 30; klp.type = "lowpass"; klp.frequency.value = 260; kg.gain.value = 0;
+      ko.connect(klp).connect(kg).connect(fxOut(a));
+      so.start(); wob.start(); sn.start(); ko.start(); tyreSnd = { sg, so, kg, ko };
     }
-    // applause: hundreds of short claps (noise bursts), thinning out
-    { if (!cheer.clap) { const n = Math.floor(a.sampleRate * 0.03); cheer.clap = a.createBuffer(1, n, a.sampleRate); const d = cheer.clap.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.12)); }
-      const claps = Math.round(60 * dur * Math.min(1.2, k + 0.3)), hp = a.createBiquadFilter(), g = a.createGain(); hp.type = "highpass"; hp.frequency.value = 900; g.gain.value = 0.05 * V; hp.connect(g).connect(out);
-      for (let c2 = 0; c2 < claps; c2++) { const s2 = a.createBufferSource(); s2.buffer = cheer.clap; s2.playbackRate.value = 0.8 + Math.random() * 0.6; s2.connect(hp); s2.start(t0 + Math.pow(Math.random(), 1.6) * dur); }
+    if (!tyreSnd) return;
+    const t = a.currentTime, sp = want ? Math.abs(c.speed || 0) : 0;
+    const slide = want && !c.ghost && (c.slide || (c.crashed && sp > 40)) && sp > 60 && c.surf !== 2 && c.surf !== 3;
+    tyreSnd.sg.gain.setTargetAtTime(slide ? 0.05 * fxVol() * Math.min(1, sp / 300) : 0, t, slide ? 0.04 : 0.12);
+    tyreSnd.so.frequency.setTargetAtTime(1500 + Math.min(600, sp * 0.8), t, 0.1);
+    const kerb = want && c.surf === 1 && sp > 60;
+    tyreSnd.kg.gain.setTargetAtTime(kerb ? 0.07 * fxVol() * Math.min(1, sp / 350) : 0, t, 0.03);
+    tyreSnd.ko.frequency.setTargetAtTime(18 + sp * 0.07, t, 0.05);
+  }
+  // a snare drumroll while the start lights come on, building up until they go out
+  let roll = null;
+  function drumroll(on) {
+    const a = on ? audio() : actx; if (!a) return;
+    if (on && !roll && fxVol() > 0) {
+      const n = noise(a), bp = a.createBiquadFilter(), am = a.createGain(), lfo = a.createOscillator(), lg = a.createGain(), g = a.createGain(), t = a.currentTime;
+      bp.type = "bandpass"; bp.frequency.value = 1900; bp.Q.value = 0.9; am.gain.value = 0.5; lfo.type = "square"; lfo.frequency.value = 15; lg.gain.value = 0.5;
+      lfo.connect(lg).connect(am.gain); g.gain.setValueAtTime(0.012 * fxVol(), t); g.gain.linearRampToValueAtTime(0.07 * fxVol(), t + 5);
+      n.connect(bp).connect(am).connect(g).connect(fxOut(a)); n.start(); lfo.start(); roll = { n, lfo, g };
+    } else if (!on && roll) {
+      const r = roll, t = a.currentTime; roll = null;
+      r.g.gain.cancelScheduledValues(t); r.g.gain.setValueAtTime(r.g.gain.value, t); r.g.gain.linearRampToValueAtTime(0, t + 0.06);
+      r.n.stop(t + 0.1); r.lfo.stop(t + 0.1);
     }
   }
   // horns (H): synthesized, quieter the further the car is from your screen
@@ -727,7 +766,7 @@
     if (car.cls && X.num !== "neon") { c.strokeStyle = CLASSES[car.cls]?.col || "#fff"; c.lineWidth = 1.8; c.stroke(); }
     if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
     c.save(); c.translate(nx, 0); c.rotate(Math.PI / 2); if (open) c.scale(0.75, 0.75);
-    c.fillStyle = NP[1]; c.font = "700 9px 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
+    c.fillStyle = NP[1]; c.font = (NUM_FONTS.find((f) => f[0] === car.numFont) || NUM_FONTS[0])[2]; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
     c.restore();
     if (car.dmg > 0.08) drawDamage(c, car.dmg, car.id || 1, L, Wd, B);
     if (opts.glow) { c.strokeStyle = "rgba(255,204,31,0.9)"; c.lineWidth = 2.5; rrect(c, -L / 2 - 4, -Wd / 2 - 4, L + 8, Wd + 8, 10); c.stroke(); }
@@ -1097,7 +1136,14 @@
     b.addEventListener("click", () => { prof.livery = k; refreshGarage(); saveProfile(); sfx("tick"); });
     lv.appendChild(b);
   }
+  const nf = $("numFonts");
+  for (const [k, t, f] of NUM_FONTS) {
+    const b = document.createElement("button"); b.className = "chip"; b.textContent = "#" + t; b.type = "button"; b.dataset.k = k; b.style.font = f.replace(/[\d.]+px/, "15px");
+    b.addEventListener("click", () => { prof.numFont = k; refreshGarage(); saveProfile(); sfx("tick"); });
+    nf.appendChild(b);
+  }
   function refreshGarage() {
+    nf.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === (prof.numFont || "race"))));
     sw.querySelectorAll(".swatch").forEach((b) => b.setAttribute("aria-pressed", String(b.style.background && rgbToHex(b.style.background) === prof.color.toLowerCase())));
     lv.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === prof.livery)));
   }
@@ -1122,7 +1168,7 @@
     const c = paintCtx, W = paintCv.width, H = paintCv.height, cw = W / DW, ch = H / DH;
     c.clearRect(0, 0, W, H);
     // the car underneath, stretched to fill the canvas
-    c.save(); c.translate(W / 2, H / 2); c.scale(W / CAR_LEN, H / CAR_WID); drawCar(c, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number }, 0, 0, 0, 1); c.restore();
+    c.save(); c.translate(W / 2, H / 2); c.scale(W / CAR_LEN, H / CAR_WID); drawCar(c, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, numFont: prof.numFont }, 0, 0, 0, 1); c.restore();
     for (let i = 0; i < paintPix.length; i++) { const v = paintPix[i]; if (v === ".") continue; c.fillStyle = PAINT[parseInt(v, 16)]; c.fillRect((i % DW) * cw, Math.floor(i / DW) * ch, cw + 0.5, ch + 0.5); }
     c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1; c.beginPath();
     for (let x = 1; x < DW; x++) { c.moveTo(x * cw, 0); c.lineTo(x * cw, H); }
@@ -1215,7 +1261,7 @@
     pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pv.width, pv.height);
     const k = pv.width / 300; pctx.setTransform(k, 0, 0, k, 0, 0);          // (the canvas is 2x for a sharp big preview: same car)
     const spin = reducedMotion ? -0.35 : -0.35 + Math.sin(now / 900) * 0.25;
-    drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, design: prof.design, extras: A.extras }, 150, 92, spin, 3.2, { trailPreview: true });
+    drawCar(pctx, { color: prof.color, livery: prof.livery, number: numIn.value || prof.number, numFont: prof.numFont, design: prof.design, extras: A.extras }, 150, 92, spin, 3.2, { trailPreview: true });
   }
 
   // ======================= Networking + state =======================
@@ -2272,7 +2318,7 @@
     for (const L of m.lobbies) {
       const row = document.createElement("div"); row.className = "lob";
       const who = document.createElement("div"); who.className = "who";
-      const b = document.createElement("b"); b.textContent = `${L.host}'s room`;
+      const b = document.createElement("b"); b.textContent = L.name || `${L.host}'s room`;
       const sm = document.createElement("small"); sm.textContent = `${L.phase === "lobby" ? (L.track ? "Track ready" : "Drawing a track") : "Racing now"} · ${L.laps} laps · ${L.ai} AI`;
       who.append(b, sm);
       const cnt = document.createElement("span"); cnt.className = "cnt"; cnt.textContent = `${L.players}/${L.max}`;
@@ -2309,7 +2355,7 @@
     { const on = screen === "menu" ? $("menu") : screen === "lobby" ? $("lobby") : screen === "race" ? $("hud") : null;     // (a little entrance)
       if (on && S.lastShown !== screen) { on.classList.remove("enter"); void on.offsetWidth; on.classList.add("enter"); } S.lastShown = screen; }
     $("results").classList.toggle("hidden", screen !== "results");
-    if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); if (S.photoOn) photoMode(false); }
+    if (screen !== "race") { engineSound(0, false); tyreSound(null, false); drumroll(false); $("weatherPill").classList.add("hidden"); if (S.photoOn) photoMode(false); }
     if (screen === "menu") socket.emit("totw:info");
     if (screen === "lobby") requestAnimationFrame(sizeBoard);
     if (screen === "menu") { socket.emit("menuInfo"); if (A.user) socket.emit("friends:get"); }
@@ -2341,6 +2387,26 @@
   // keep the "come back here" note fresh (and remember the room so the host can rebuild it after an update)
   setInterval(() => { if (S.code) saveRejoin({ code: S.code, host: !!S.host, pub: !!S.lobby?.public, settings: S.lobby?.settings || null, stroke: S.host ? S.lobby?.stroke || null : null }); }, 5000);
   // ---- dropped connection / server restart: reconnect and take your car back ----
+  // tip of the day: a new one every day on the menu, and a random one while you wait to reconnect
+  const TIPS = [
+    () => `Hold ${keyName(KEY("boost"))} for boost, and press it the moment the lights go out for a flying start.`,
+    () => `Press ${keyName(KEY("box"))} to box this lap: fresh tyres and the damage fixed.`,
+    () => `Press ${keyName(KEY("drs"))} in a DRS zone when you're within 1 second of the car ahead: +7% top speed.`,
+    () => `Tuck in behind another car on a straight to get a slipstream, even from a car in another class.`,
+    () => `Press ${keyName(KEY("defend"))} to defend: your driver covers the car behind (it uses boost).`,
+    () => `Press ${keyName(KEY("horn"))} to honk. Pick your horn in Settings.`,
+    () => `Press ${keyName(KEY("photo"))} for photo mode: move the camera anywhere and take a picture.`,
+    () => "Gravel and grass slow a car right down. Stay on the road!",
+    () => "No overtaking behind the safety car. Everyone bunches up, so it's a fresh start.",
+    () => "Click anyone on the leaderboard to watch them: their boost, upgrades and the cards they pick.",
+    () => "Tyres wear out. When the warning comes up, it's time to box.",
+    () => "Click the room code in the lobby to copy it, then send it to a friend.",
+    () => "Building a track? Add grandstands, banners, bridges and tunnels next to the track.",
+    () => "Pick an engine sound in Settings: V8 rumble, V12 scream or electric whine.",
+  ];
+  const tipText = (k) => "💡 " + TIPS[((k % TIPS.length) + TIPS.length) % TIPS.length]();
+  try { $("tipDay").textContent = tipText(Math.floor(Date.now() / 864e5)); } catch (e) {}
+  socket.on("disconnect", () => { try { $("tipVeil").textContent = tipText(Math.floor(Math.random() * TIPS.length)); } catch (e) {} });
   socket.on("disconnect", () => { if (S.code && !S.idleKicked) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔄 The server is restarting. Back in a moment..." : "📡 Connection lost. Reconnecting..."; } });
   // (once we're connected again, that restart is over: a later dropped connection is just a dropped connection)
   socket.on("connect", () => { setTimeout(() => { S.restarting = false; }, 20000); });
@@ -2573,11 +2639,11 @@
   socket.on("lights", ({ n }) => {
     const bulbs = $("lights").querySelectorAll(".bulb");
     for (let i = 0; i < bulbs.length; i++) bulbs[i].classList.toggle("on", i < n);
-    sfx("light");
+    sfx("light"); if (n > 0) drumroll(true);
   });
   socket.on("lightsOut", () => { setTimeout(() => tut("boost"), 2500); });
   socket.on("lightsOut", (d) => {
-    S.lightsOutAt = performance.now();
+    S.lightsOutAt = performance.now(); drumroll(false);
     if (d?.rolling) { sfx("go"); banner("🟢 GREEN FLAG!", "#3ecf6a"); $("goBtn").classList.add("hidden"); return; }
     if (d?.restart) { sfx("go"); banner("GO! RESTART", "#3ecf6a"); return; }
     $("lights").querySelectorAll(".bulb").forEach((b) => b.classList.remove("on"));
@@ -2783,14 +2849,15 @@
   socket.on("feed", (f) => {
     if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
-    if (f.t === "lastLap") { banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
+    if (f.t === "lastLap") { if (S.track) tlFor(S.track).lastLap = true; banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
     if (f.t === "qko") banner(`Q${f.stage}!`, "#ffcc1f");
     if (f.t === "elim" && f.id !== S.myCar) { banner(`💥 ${f.name} OUT!`, "#ff6b61"); sfx("jump"); }
     if (f.t === "classWin" && CLASSES[f.cls]) { setTimeout(() => banner(`🏁 ${f.name} WINS ${CLASSES[f.cls].name.toUpperCase()}!`, CLASSES[f.cls].col), 600); sfx("level"); }
     if (f.t === "scOut") { banner("🚨 SAFETY CAR", "#ffcc1f"); sfx("tick"); }
     if (f.t === "scIn") { banner("🟢 GREEN FLAG!", "#3ecf6a"); sfx("level"); }
-    if (f.t === "photo") setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600);
-    if (f.t === "crash" && S.track) {           // flying debris where it happened
+    if (f.t === "photo") { setTimeout(() => banner("📸 PHOTO FINISH!", "#9ad0ff"), 2600); setTimeout(() => photoStill(f), 120); }
+    if (f.t === "crash" && S.track) {           // flying debris where it happened (and sparks, and a marshal with a yellow flag)
+      marshalAt(f.x, f.y); for (let k = 0; k < (f.big ? 4 : 2); k++) spark(f.x, f.y, Math.random() * 6.3, 6);
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
@@ -2843,6 +2910,9 @@
       S.camTarget = w.id; S.winnerCamUntil = performance.now() + 4000;
       if (!reducedMotion) for (let k = 0; k < 5; k++) setTimeout(() => fireworks.push({ x: w.x + (Math.random() - 0.5) * 300, y: w.y + (Math.random() - 0.5) * 220, t: performance.now(), hue: Math.floor(Math.random() * 360) }), k * 450);
     }
+    // and a proper show over the main grandstand
+    const ms = S.track && autoStands(S.track)[0];
+    if (ms && !reducedMotion) for (let k = 0; k < 12; k++) setTimeout(() => fireworks.push({ x: ms.x + (Math.random() - 0.5) * 260, y: ms.y + (Math.random() - 0.5) * 160, t: performance.now(), hue: Math.floor(Math.random() * 360) }), 300 + k * 380);
   });
 
   // ======================= Lobby =======================
@@ -2990,6 +3060,21 @@
     if (raceRunning()) { document.body.classList.toggle("spectating", !S.myCar); show("race"); return; }    // left the race: go back and watch it
     socket.emit("start");
   });
+  // the host pressed start with friends in the room: 3, 2, 1 on everyone's screen
+  socket.on("lobbyCount", ({ n }) => {
+    let o = document.getElementById("lobbyCount"); if (!o) { o = el("div", "lobby-count"); o.id = "lobbyCount"; document.body.appendChild(o); }
+    for (let k = 0; k < n; k++) setTimeout(() => { o.textContent = String(n - k); o.classList.remove("show"); void o.offsetWidth; o.classList.add("show"); sfx("tick"); tone(520 + k * 80, 0.12, "triangle", 0.16); }, k * 1000);
+    setTimeout(() => o.classList.remove("show"), n * 1000);
+  });
+  $("roomNameIn").addEventListener("change", () => { if (S.host) socket.emit("roomName", $("roomNameIn").value); });
+  $("roomNameIn").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); setTimeout(() => e.target.blur(), 0); } });
+  // click the room code: it's copied, with a little "Copied!" pop
+  $("roomCode").addEventListener("click", () => {
+    const code = $("roomCode").textContent.trim(); if (!code) return;
+    const done = () => { const rc = $("roomCode"), p = el("span", "copied-pop", "Copied!"); rc.parentElement.style.position = "relative"; rc.parentElement.appendChild(p); setTimeout(() => p.remove(), 1200); sfx("tick"); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code).then(done, () => popup(`Room code: ${code}`));
+    else popup(`Room code: ${code}`);
+  });
   $("leaveBtn").addEventListener("click", () => { try { sessionStorage.removeItem("tb-rejoin"); } catch (e) {} socket.emit("leave"); S.code = null; S.track = null; hideCards(); show("menu"); });
   $("garageBtn").addEventListener("click", () => { $("menu").classList.remove("hidden"); $("soloBtn").classList.add("hidden"); $("createBtn").parentElement.classList.add("hidden"); document.querySelector(".sep-or").classList.add("hidden"); addDoneBtn(); });
   function addDoneBtn() {
@@ -3033,7 +3118,8 @@
   }
   function renderLobby() {
     const l = S.lobby; if (!l) return;
-    $("roomCode").textContent = l.code;
+    $("roomCode").textContent = l.code; $("roomCode").title = "Click to copy";
+    { const rn = $("roomNameIn"); rn.readOnly = !S.host; rn.placeholder = S.host ? "Name your room" : "No name"; if (document.activeElement !== rn) rn.value = l.name || ""; }
     $("aiCount").textContent = l.settings.ai;
     const av = $("avatars"); av.textContent = "";
     for (const p of l.players) { const cv = document.createElement("canvas"); cv.width = 92; cv.height = 56; cv.title = p.name; drawCar(cv.getContext("2d"), p, 46, 28, 0, 1.55); av.appendChild(cv); }
@@ -3363,11 +3449,9 @@
     return (t._stands = out);
   }
   function drawAutoStands(c, t) {
-    const fc = (S.camTarget && S.cars?.get(S.camTarget)) || S.cars?.get(S.myCar), now = performance.now();
+    const now = performance.now();
     for (const s2 of autoStands(t)) {
-      drawStand(c, s2.x, s2.y, s2.rot, s2.i, standEx(s2.x, s2.y));
-      // the car you're watching goes past: they cheer (and you hear it)
-      if (fc && fc.x !== undefined && !S.replaying && now - s2.cheerAt > 9000 && (fc.x - s2.x) ** 2 + (fc.y - s2.y) ** 2 < 300 * 300) { s2.cheerAt = now; cheer(0.75, 0.9); }
+      drawStand(c, s2.x, s2.y, s2.rot, s2.i, now - (s2.hype || -1e9) < 2500 ? 1 : standEx(s2.x, s2.y));
     }
   }
   const TUNNEL_LEN = 16;          // (how many track points a one-click tunnel covers; two clicks: start to end)
@@ -4081,9 +4165,18 @@
     socket.emit("emote", b.dataset.emote);
     document.querySelectorAll("[data-emote]").forEach((x) => { x.disabled = true; setTimeout(() => (x.disabled = false), 1500); });
   }));
+  // a "GG" bubble that floats up the results screen
+  function ggFloat(name) {
+    const b = el("div", "gg-float"); b.append(el("b", "", "GG"), el("small", "", String(name).slice(0, 16)));
+    b.style.left = 10 + Math.random() * 80 + "%"; document.body.appendChild(b); setTimeout(() => b.remove(), 2600);
+  }
+  // results: one tap to say GG to everyone in the room
+  $("ggBtn").addEventListener("click", () => { socket.emit("emote", "GG"); $("ggBtn").disabled = true; $("ggBtn").textContent = "🤝 GG sent!"; });
+  socket.on("results", () => { $("ggBtn").disabled = false; $("ggBtn").textContent = "🤝 GG"; });
   socket.on("emote", (m) => {
     if (localBlocked().includes(String(m.name).toLowerCase())) return;       // blocked: you don't see their emotes
     if (m.car && S.screen === "race") S.emotes.set(m.car, { e: m.e, until: performance.now() + 2600 });
+    else if (m.e === "GG" && S.screen === "results") ggFloat(m.pid === S.me ? "You" : m.name);
     else popup(`${m.name}: ${m.e}`);
     if (m.pid !== S.me) sfx("tick");
   });
@@ -4830,7 +4923,28 @@
     const done = () => { fx.classList.add("out"); setTimeout(() => fx.classList.add("hidden"), 500); fx.removeEventListener("click", done); };
     fx.addEventListener("click", done); setTimeout(done, 5200);
   }
+  // photo finish: a still of the moment, with the gap written on it. Shown with the results and kept (the last 3) on this device
+  function photoStill(f) {
+    try {
+      const W = Math.min(720, view.width), H = Math.round(W * view.height / view.width), cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      const c = cv.getContext("2d"); c.drawImage(view, 0, 0, W, H);
+      c.fillStyle = "rgba(0,0,0,0.55)"; c.fillRect(0, H - 44, W, 44);
+      c.fillStyle = "#9ad0ff"; c.font = "700 20px 'Russo One', sans-serif"; c.textBaseline = "middle"; c.fillText("📸 PHOTO FINISH", 14, H - 22);
+      c.fillStyle = "#fff"; c.font = "700 15px 'Chakra Petch', sans-serif"; c.textAlign = "right"; c.fillText(`${f.name} beat ${f.other} by ${Number(f.gap).toFixed(3)}s`, W - 14, H - 22);
+      const url = cv.toDataURL("image/jpeg", 0.8), cap = `${f.name} beat ${f.other} by ${Number(f.gap).toFixed(3)}s`;
+      S.photoStill = { url, cap };
+      let all = []; try { all = JSON.parse(localStorage.getItem("tb-photos") || "[]"); } catch (e) {}
+      all = [{ url, cap, at: Date.now() }, ...all].slice(0, 3);
+      try { localStorage.setItem("tb-photos", JSON.stringify(all)); } catch (e) { try { localStorage.setItem("tb-photos", JSON.stringify(all.slice(0, 1))); } catch (e2) {} }
+    } catch (e) { S.photoStill = null; }
+  }
+  socket.on("race", () => { S.photoStill = null; });
+  function showPhotoStill() {
+    const P = S.photoStill, box = $("photoStill"); box.classList.toggle("hidden", !P); if (!P) return;
+    $("photoStillImg").src = P.url; $("photoStillCap").textContent = "📸 " + P.cap; $("photoStillDl").href = P.url;
+  }
   function showResults(r) {
+    showPhotoStill();
     if (r.abandoned && !S.replaying) showAbandoned(r.abandoned);
     { const me = (r.rows || []).findIndex((x) => x.owner === S.me); if (me >= 0 && me < 3 && !S.replaying) setTimeout(() => confettiBurst(me === 0 ? 140 : 80), r.abandoned ? 5400 : 400); }
     S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
@@ -5700,6 +5814,120 @@
     return (headSprite = cv);
   }
 
+  // ======================= little life round the track =======================
+  // puddles when it's wet, marshals waving flags (yellow by a crash, chequered on the last lap), pit crews at work,
+  // and birds that sit in the grass and fly off when the cars come by
+  const TL = { t: null, puddles: [], birds: [], yellow: [], lastLap: false };
+  function tlFor(t) {
+    if (TL.t === t) return TL;
+    TL.t = t; TL.yellow = []; TL.lastLap = false; TL.puddles = []; TL.birds = [];
+    let sd = (t.N * 7919 + Math.round(t.pts[0].x) * 31) % 233280; const rnd = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+    // puddles: the same spots on the road every time for this track
+    for (let k = 0; k < Math.min(28, Math.floor(t.N / 25)); k++) {
+      const i = Math.floor(rnd() * t.N); if (t.elev?.[i] > 0) continue;
+      const p = t.pts[i], n = t.nor[i], a = t.tan[i], off = (rnd() - 0.5) * t.hw[i] * 1.2;
+      TL.puddles.push({ x: p.x + n.x * off, y: p.y + n.y * off, rx: 20 + rnd() * 30, ry: 9 + rnd() * 11, rot: Math.atan2(a.y, a.x) + (rnd() - 0.5) * 0.7 });
+    }
+    // birds: little flocks on the grass, never on (or right next to) the road
+    for (let f = 0, tries = 0; f < 9 && tries < 80; tries++) {
+      const i = Math.floor(rnd() * t.N), side = rnd() < 0.5 ? -1 : 1, p = t.pts[i], n = t.nor[i], off = t.hw[i] + 120 + rnd() * 220;
+      const x = p.x + n.x * off * side, y = p.y + n.y * off * side;
+      if (x < 60 || y < 60 || x > t.W - 60 || y > t.H - 60) continue;
+      let clear = true; for (let j = 0; j < t.N && clear; j += 3) if (Math.hypot(t.pts[j].x - x, t.pts[j].y - y) < t.hw[j] + 90) clear = false;
+      if (!clear) continue;
+      f++; const m = 3 + Math.floor(rnd() * 5);
+      for (let b = 0; b < m; b++) { const hx = x + (rnd() - 0.5) * 60, hy = y + (rnd() - 0.5) * 40; TL.birds.push({ hx, hy, x: hx, y: hy, h: rnd() * 6.3, fly: 0, vx: 0, vy: 0, ph: rnd() * 6 }); }
+    }
+    return TL;
+  }
+  // a crash: a marshal runs out beside it and waves a yellow flag for a while
+  function marshalAt(x, y) {
+    const t = S.track; if (!t || !Number.isFinite(x)) return; tlFor(t);
+    let bi = 0, bd = Infinity; for (let j = 0; j < t.N; j += 2) { const d = (t.pts[j].x - x) ** 2 + (t.pts[j].y - y) ** 2; if (d < bd) { bd = d; bi = j; } }
+    const p = t.pts[bi], n = t.nor[bi], side = (x - p.x) * n.x + (y - p.y) * n.y >= 0 ? -1 : 1, off = t.hw[bi] + 34;
+    TL.yellow.push({ x: p.x + n.x * off * side, y: p.y + n.y * off * side, rot: Math.atan2(n.y * side, n.x * side), until: performance.now() + 9000 });
+    if (TL.yellow.length > 6) TL.yellow.shift();
+  }
+  // a marshal from above: head, shoulders, an arm waving the flag
+  function drawMarshal(c, x, y, rot, flag, now) {
+    const wave = Math.sin(now / 130) * 0.9;
+    c.save(); c.translate(x, y); c.rotate(rot);
+    c.fillStyle = "rgba(0,0,0,0.25)"; c.beginPath(); c.ellipse(2, 3, 8, 6, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#ff7a1a"; c.beginPath(); c.ellipse(0, 0, 5, 8, 0, 0, Math.PI * 2); c.fill();          // orange overalls
+    c.fillStyle = "#f1c27d"; c.beginPath(); c.arc(0, 0, 3.6, 0, Math.PI * 2); c.fill();
+    c.rotate(wave); c.strokeStyle = "#ff7a1a"; c.lineWidth = 2.4; c.beginPath(); c.moveTo(0, -5); c.lineTo(-2, -14); c.stroke();
+    c.strokeStyle = "#ddd"; c.lineWidth = 1.2; c.beginPath(); c.moveTo(-2, -14); c.lineTo(-2, -30); c.stroke();
+    const fw = 18, fh = 12, fl = Math.sin(now / 90) * 2;
+    if (flag === "cheq") { for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) { c.fillStyle = (a + b) % 2 ? "#111" : "#fff"; c.fillRect(-2 - fw + a * fw / 4, -30 + b * fh / 3 + fl * (a / 4), fw / 4 + 0.3, fh / 3 + 0.3); } }
+    else { c.fillStyle = "#ffd60a"; c.beginPath(); c.moveTo(-2, -30); c.lineTo(-2 - fw, -30 + fl); c.lineTo(-2 - fw, -18 + fl); c.lineTo(-2, -18); c.fill(); }
+    c.restore();
+  }
+  // pit crew: four on the wheels and one on the front jack, in the team colour, busy while the car's stopped
+  function drawPitCrew(c, car, now) {
+    const fx = Math.cos(car.h), fy = Math.sin(car.h), busy = Math.sin(now / 70);
+    const spots = [[16, 1], [16, -1], [-16, 1], [-16, -1]].map(([a, s]) => [a, s * 24]).concat([[36, 0]]);
+    spots.forEach(([a, b], k) => {
+      const x = car.x + fx * a - fy * b, y = car.y + fy * a + fx * b, j = k < 4 ? busy * 1.5 * (k % 2 ? 1 : -1) : 0;
+      c.fillStyle = "rgba(0,0,0,0.25)"; c.beginPath(); c.arc(x + 2, y + 2, 6, 0, Math.PI * 2); c.fill();
+      c.fillStyle = car.color || "#888"; c.beginPath(); c.ellipse(x + fx * j, y + fy * j, 4.6, 6.4, car.h + (k === 4 ? 0 : Math.PI / 2), 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#e5e7eb"; c.beginPath(); c.arc(x + fx * j, y + fy * j, 3.2, 0, Math.PI * 2); c.fill();
+    });
+  }
+  function drawPuddles(c, t, wet, visible) {
+    const a = clamp((wet - 0.25) * 1.5, 0, 0.75); if (a <= 0) return;
+    const now = performance.now();
+    for (const p of tlFor(t).puddles) {
+      if (!visible(p, 60)) continue;
+      c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = a;
+      c.fillStyle = "rgba(70,95,135,0.75)"; c.beginPath(); c.ellipse(0, 0, p.rx, p.ry, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "rgba(200,220,255,0.35)"; c.lineWidth = 1.2; c.beginPath(); c.ellipse(-p.rx * 0.2, -p.ry * 0.25, p.rx * 0.5, p.ry * 0.35, 0, Math.PI * 1.1, Math.PI * 1.8); c.stroke();
+      if (S.weather?.raining && !reducedMotion) { const k = ((now / 900) + p.rx) % 1; c.globalAlpha = a * (1 - k); c.beginPath(); c.ellipse(p.rx * 0.3 * Math.sin(p.rx), 0, 3 + k * 10, 2 + k * 5, 0, 0, Math.PI * 2); c.stroke(); }
+      c.restore();
+    }
+  }
+  function drawTrackLife(c, t, dt, now, visible) {
+    const L = tlFor(t);
+    if (S.phase !== "race") { L.lastLap = false; L.yellow = []; }
+    L.yellow = L.yellow.filter((m) => m.until > now);
+    for (const m of L.yellow) if (visible(m, 60)) drawMarshal(c, m.x, m.y, m.rot, "yellow", now);
+    if (L.lastLap || [...S.cars.values()].some((o) => o.fin)) {
+      const pl = t.pitLane, side = pl ? -pl.side : 1, p = t.pts[0], n = t.nor[0], off = t.hw[0] + 30, m = { x: p.x + n.x * off * side, y: p.y + n.y * off * side };
+      if (visible(m, 60)) drawMarshal(c, m.x, m.y, Math.atan2(n.y * side, n.x * side), "cheq", now);
+    }
+    for (const car of S.cars.values()) if (car.pit >= 0 && car.x !== undefined && visible(car)) drawPitCrew(c, car, now);
+  }
+  // birds: sitting about pecking, then off they go when a car comes close; back a while later
+  function drawBirds(c, t, dt, now, visible) {
+    const L = tlFor(t); dt = Math.min(dt, 0.1);
+    for (const b of L.birds) {
+      if (b.fly === 0) {
+        if (S.phase === "race") for (const car of S.cars.values()) {
+          if (car.x === undefined || Math.abs(car.speed || 0) < 60) continue;
+          const dx = b.x - car.x, dy = b.y - car.y, d = Math.hypot(dx, dy);
+          if (d < 300) { const sp = 160 + Math.random() * 120, a = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.2; b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; b.fly = now; break; }
+        }
+      } else {
+        const age = (now - b.fly) / 1000;
+        if (age < 7) { b.x += b.vx * dt; b.y += b.vy * dt; b.vy -= 8 * dt; }
+        else if (age > 25) { b.x = b.hx; b.y = b.hy; b.fly = 0; b.back = now; }
+      }
+      if (!visible(b, 40)) continue;
+      const age = b.fly ? (now - b.fly) / 1000 : 0, fade = b.fly ? clamp(1 - (age - 4) / 3, 0, 1) : b.back ? clamp((now - b.back) / 1500, 0, 1) : 1;
+      if (fade <= 0) continue;
+      c.globalAlpha = fade; c.fillStyle = "#2b2b33"; c.strokeStyle = "#2b2b33";
+      if (!b.fly) { const peck = Math.sin(now / 300 + b.ph * 3) > 0.85 ? 1.5 : 0; c.beginPath(); c.ellipse(b.x, b.y, 4, 2.6, b.h, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(b.x + Math.cos(b.h) * (4 + peck), b.y + Math.sin(b.h) * (4 + peck), 1.8, 0, Math.PI * 2); c.fill(); }
+      else {
+        const h = Math.atan2(b.vy, b.vx), flap = Math.sin(now / 60 + b.ph) * 4, s = 1 + Math.min(1, age) * 0.5, fx = Math.cos(h), fy = Math.sin(h);
+        c.lineWidth = 1.6; c.beginPath();
+        for (const sd of [-1, 1]) { c.moveTo(b.x, b.y); c.quadraticCurveTo(b.x - fy * sd * 5 * s - fx * 3, b.y + fx * sd * 5 * s - fy * 3, b.x - fy * sd * (8 + flap) * s - fx * 5, b.y + fx * sd * (8 + flap) * s - fy * 5); }
+        c.stroke();
+      }
+    }
+    c.globalAlpha = 1;
+  }
+  function spark(x, y, h, n = 3) {
+    for (let k = 0; k < n && S.particles.length < 340; k++) { const a = h + Math.PI + (Math.random() - 0.5) * 1.1, v = 180 + Math.random() * 260; S.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.18 + Math.random() * 0.2, age: 0, r: 1.4, spark: 1, color: Math.random() < 0.6 ? "#ffd166" : "#ff8a3d" }); }
+  }
   function renderRace(dt, now) {
     const { w, h, dpr } = scr, t = S.track;
     if (!t) return;
@@ -5757,9 +5985,12 @@
       }
     }
     const visible = (c, m = 80) => c.x > vx0 - m && c.x < vx1 + m && c.y > vy0 - m && c.y < vy1 + m;
-    // skid marks (painted into the tiles)
+    if (S.weather) drawPuddles(ctx, t, S.weather.wet || 0, visible);
+    // skid marks (painted into the tiles): sliding, spinning, or locking up hard on the brakes
     if (settings.skids === "on" && S.phase === "race" && !PH.on) {
-      for (const c of S.cars.values()) if (c.slide && c.lvl < 0.05 && !c.ghost) {
+      for (const c of S.cars.values()) {
+        const lock = c._psp !== undefined && dt > 0 && (c._psp - c.speed) / dt > 700 && c.speed > 120; c._psp = c.speed;
+        if (!((c.slide || (c.crashed && c.speed > 30) || lock) && c.lvl < 0.05 && !c.ghost)) continue;
         const fx = Math.cos(c.h), fy = Math.sin(c.h);
         for (const s of [-1, 1]) addSkid(c.x - fx * 15 - fy * s * 10, c.y - fy * 15 + fx * s * 10);
       }
@@ -5779,10 +6010,20 @@
         S.particles.push({ x: c.x - Math.cos(c.h) * 18, y: c.y - Math.sin(c.h) * 18, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, life: 0.25, age: 0, r: 2, color: Math.random() < 0.5 ? "#ffcc1f" : "#ff7043" });
       }
       if (c.slide && Math.random() < 0.35 * fxLevel) puff(c, smokeCol(c.extras?.smoke));
+      // sparks: bottoming out over the kerbs flat out, or a battered car scraping along
+      if ((c.surf === 1 && c.speed > 300 && Math.random() < 0.3 * fxLevel) || (c.dmg > 0.6 && c.speed > 150 && Math.random() < 0.25 * fxLevel)) spark(c.x - Math.cos(c.h) * 18, c.y - Math.sin(c.h) * 18, c.h, 2);
+      // dust clouds: a big billow off the gravel and the dry grass
+      if ((c.surf === 3 || (c.surf === 2 && !(S.weather?.wet > 0.3))) && c.speed > 150 && S.particles.length < 300 && Math.random() < 0.18 * fxLevel)
+        S.particles.push({ x: c.x - Math.cos(c.h) * 26, y: c.y - Math.sin(c.h) * 26, vx: (Math.random() - 0.5) * 40 - Math.cos(c.h) * 30, vy: (Math.random() - 0.5) * 40 - Math.sin(c.h) * 30, life: 1.4, age: 0, r: 14 + Math.random() * 8, color: c.surf === 3 ? "rgba(196,170,120,0.32)" : "rgba(170,160,110,0.22)" });
+      // splashing through a puddle
+      if (S.weather?.wet > 0.35 && c.speed > 140 && S.particles.length < 300) for (const p of TL.t === t ? TL.puddles : []) if (Math.abs(p.x - c.x) < p.rx && Math.abs(p.y - c.y) < p.rx) {
+        for (let k = 0; k < 3; k++) { const a = c.h + Math.PI / 2 * (k % 2 ? 1 : -1) + (Math.random() - 0.5) * 0.8, v = 90 + Math.random() * 120; S.particles.push({ x: c.x, y: c.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.45, age: 0, r: 3, color: "rgba(210,225,245,0.6)" }); }
+        break;
+      }
       if (c.mistake && Math.random() < 0.6 * fxLevel) puff(c, "rgba(240,240,240,0.6)");
       if (c.dmg > 0.05 && Math.random() < 0.25 * c.dmg) puff(c, "rgba(60,60,60,0.45)");
     }
-    if (!PH.on) S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape) q.r += 20 * dt; return q.age < q.life; });
+    if (!PH.on) S.particles = S.particles.filter((q) => { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.shape && !q.spark) q.r += 20 * dt; return q.age < q.life; });
     for (const q of S.particles) {
       if (q.shape) { trailShape(ctx, q.shape, q.x, q.y, 7 * (1 - 0.4 * q.age / q.life), 1 - q.age / q.life, q.k); continue; }
       ctx.globalAlpha = 1 - q.age / q.life; ctx.fillStyle = q.color; ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
@@ -5877,10 +6118,12 @@
       if (inT >= 0) S.tunK = inT;
       S.tun = clamp((S.tun || 0) + (inT >= 0 ? 1 : -1) * Math.min(dt, 0.1) * 3, 0, 1); setEcho(S.replaying ? 0 : S.tun); }
     drawAutoStands(ctx, t);
+    drawTrackLife(ctx, t, dt, now, visible);
     drawObjects(ctx, t, "ground");
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
     drawObjects(ctx, t, "top", (S.camTarget && S.cars.get(S.camTarget)) || S.cars.get(S.myCar));
+    drawBirds(ctx, t, dt, now, visible);
     // fireworks (in the world, around the winner)
     fireworks = fireworks.filter((fw) => {
       const k = (now - fw.t) / 1300; if (k > 1) return false;
@@ -5943,6 +6186,7 @@
     let near = null;
     if (mine) { let k = 0, sp = 0; for (const c of S.cars.values()) { if (c === mine || c.x === undefined) continue; const d = Math.hypot(c.x - mine.x, c.y - mine.y); if (d < 650) { const w = 1 - d / 650; k += w; if (w > 0.3) sp = Math.max(sp, c.speed || 0); } } near = { k, speed: sp }; }
     engineSound(mine ? mine.speed : 0, S.screen === "race" && S.phase === "race" && !!mine && !S.photoOn, !!(mine && mine.nitroOn), near);
+    tyreSound(mine, S.screen === "race" && S.phase === "race" && !S.photoOn && !S.replaying);
   }
   // store: tyre smoke colour (rainbow cycles, stardust sparkles gold and white)
   function smokeCol(s) {
@@ -6047,10 +6291,10 @@
   socket.on("race", () => { COMM.queue.length = 0; COMM.leader = null; COMM.half = false; ["l_start_0.mp3", "l_start_1.mp3", "l_start_2.mp3"].forEach((f) => COMM.man && commClip(f)); });
   socket.on("feed", (f) => {
     const mine = (nm) => S.cars.get(S.myCar)?.name === nm;
-    if (f.t === "crash") { crowdRoar(f.big ? 1 : 0.5); markMoment(f.big ? 3 : 1, `💥 ${f.name} and ${f.other} crash`, 2); if (f.big) say("crashBig", null, 2, 8000); else say("crash", null, 1, 15000); }
-    else if (f.t === "winner" && (crowdRoar(1.3), markMoment(2, `🏁 ${f.name} wins`), true)) say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
+    if (f.t === "crash") { crowdRoar(f.big ? 1 : 0.5); standEvent(f.x, f.y, f.big ? 1 : 0.6); markMoment(f.big ? 3 : 1, `💥 ${f.name} and ${f.other} crash`, 2); if (f.big) say("crashBig", null, 2, 8000); else say("crash", null, 1, 15000); }
+    else if (f.t === "winner" && (crowdRoar(1.3), cheer(1.2, 0.9), markMoment(2, `🏁 ${f.name} wins`), true)) say(mine(f.name) ? "winYou" : S.race?.elim ? "standing" : "win", mine(f.name) ? null : f.name, 3);
     else if (f.t === "classWin" && !mine(f.name)) say("classWin", f.name, 3);
-    else if (f.t === "photo") { crowdRoar(1.3); markMoment(4, "📸 Photo finish!"); say("photo", null, 2); }
+    else if (f.t === "photo") { crowdRoar(1.3); cheer(1.3, 1); markMoment(4, "📸 Photo finish!"); say("photo", null, 2); }
     else if (f.t === "lastLap") say("lastLap", null, 1);
     else if (f.t === "scOut") say("scOut", null, 2);
     else if (f.t === "scIn") say("scIn", null, 2);
@@ -6071,7 +6315,7 @@
   function commLeader(st) {
     if (!S.race || S.race.quali || st.phase !== "race") return;
     const lead = st.standings?.[0], c = S.cars.get(lead);
-    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) { crowdRoar(0.9); markMoment(3, `🥇 ${c.name} takes the lead`); }
+    if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) { crowdRoar(0.9); standEvent(c.x, c.y, 0.9); markMoment(3, `🥇 ${c.name} takes the lead`); }
     if (COMM.leader != null && lead !== COMM.leader && S.t > 8 && c && !c.fin && !c.out) say(lead === S.myCar ? "leadYou" : "lead", lead === S.myCar ? null : c.name, lead === S.myCar ? 2 : 1, 15000);
     COMM.leader = lead;
     // halfway, and a close fight for the lead
@@ -6271,6 +6515,8 @@
     $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${S.qf ? "🏁 finishing laps" : `${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left`}${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : S.fl ? "🟡 Formation lap" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);
+    // a new personal best (not your first lap): the best time sparkles
+    if (me.best && S.bestShown !== me.best) { if (S.bestShown && me.best < S.bestShown && S.bestFor === me.id) { const bt = $("bestText"); bt.classList.remove("pb"); void bt.offsetWidth; bt.classList.add("pb"); clearTimeout(S.pbT); S.pbT = setTimeout(() => bt.classList.remove("pb"), 2600); sfx("card"); } S.bestShown = me.best; S.bestFor = me.id; }
     renderSectors(me);
     if (S.stratBox && me.id === S.myCar && me.laps + 1 === S.stratBox && !S.box && !me.fin && S.stratTold !== S.stratBox) { S.stratTold = S.stratBox; popup(`📋 The plan says: box this lap! Press ${keyName(KEY("box"))}.`); sfx("tick"); }
     const spd = Math.max(0, me.speed || 0) * KMH * (settings.units === "mph" ? 0.621 : 1);
@@ -6402,8 +6648,17 @@
     const c = S.cars.get(id); if (!c) return;
     if (WP.id !== id) { WP.id = id; WP.up = null; WP.last = null; renderWatchCards(false); renderWatchUps(); socket.emit("watchInfo", id); panel.classList.remove("swap"); void panel.offsetWidth; panel.classList.add("swap"); }
     $("wpDot").style.background = c.color || "#fff"; $("wpName").textContent = c.name || ""; $("wpLvl").textContent = `Team Lv ${WP.lvl}`;
+    $("wpCheer").classList.toggle("hidden", !c.owner || c.owner === S.me);
     const n = Math.round(c.nitro ?? 0); $("wpBoost").style.width = n + "%"; $("wpBoost").classList.toggle("on", !!c.nitroOn); $("wpBoostTxt").textContent = n + "%";
   }
+  $("wpCheer").addEventListener("click", () => {
+    if (WP.id === null) return; socket.emit("cheer", WP.id);
+    const b = $("wpCheer"); b.disabled = true; setTimeout(() => (b.disabled = false), 5000);
+  });
+  socket.on("cheered", (d) => {
+    if (localBlocked().includes(String(d.from).toLowerCase())) return;
+    banner(`📣 ${String(d.from).slice(0, 12).toUpperCase()} IS CHEERING YOU ON!`, "#ff8ad8"); cheer(0.8, 0.8);
+  });
   socket.on("watchInfo", (d) => { if (d.car !== WP.id) return; WP.up = d.up; WP.lvl = d.lvl; WP.last = d.last; renderWatchCards(false); renderWatchUps(); });
   socket.on("carCards", (d) => {
     if (d.car !== WP.id) return;
@@ -6945,9 +7200,28 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-05e", date: "5 Oct", title: "Marshals, birds, puddles and fireworks", items: [
+      "🚩 Marshals: one runs out with a yellow flag next to every crash, and one waves the chequered flag at the line on the last lap.",
+      "🔧 Pit crews: five little people in your team colours jump on the car at every stop.",
+      "🐦 Birds sit about in the grass and fly off when the cars come by.",
+      "🌧️ Puddles on the track when it's wet, and cars splash through them. Sparks off the kerbs and from battered cars, big dust clouds off the gravel, and skid marks when cars lock up or spin too.",
+      "🎆 Fireworks over the main grandstand when someone wins.",
+      "🔊 Tyres squeal when you slide, the kerbs go brrrr, and there's a drumroll while the start lights come on.",
+      "📣 The crowd is quieter now: no more clapping. You only hear them now and then, when something happens next to a stand (lots of quiet voices cheering together).",
+      "🚇 Random tracks sometimes come with a tunnel.",
+      "🟡 Safety car fix: the whole field doesn't crawl along at walking speed behind a crashed car any more.",
+      "✨ A new personal best lap sparkles gold.",
+      "⏱️ With friends in the room, the host's start button gives everyone a big 3-2-1 first.",
+      "📋 Click the room code to copy it (\"Copied!\"). Hosts can give their room a name, and it shows in the public room list.",
+      "💡 A tip of the day on the menu, and one while you're reconnecting.",
+      "🔢 Number styles for your car: Racing, Block, Classic, Digital or Script.",
+      "🤝 A GG button on the results screen.",
+      "📸 A photo finish takes a picture of the moment, shown with the results with a Save button.",
+      "📣 Watching a friend race? Hit \"Cheer them on\": they get a shout-out and a 📣 pops up over their car.",
+    ] },
     { v: "u-2026-10-05d", date: "5 Oct", title: "Stadiums, spectator info, called-off races", items: [
       "🏟️ Every track now has its own stadiums: grandstands full of little people round the outside of the corners and on the main straight. They jump up and cheer when cars go by.",
-      "📣 The crowd sounds like real people now: a roar, voices going \"woooo!\", whistles and applause, when you pass a stand and at the big moments.",
+      "📣 Crowds cheer now when something big happens near their stand.",
       "👁 Watching someone? You see their team level, their boost, every upgrade they have, and the 3 cards they're offered and which one they pick. AI teams too.",
       "🟥 3 red flags or 7 safety cars in one race and it's called off: a big RACE ABANDONED screen, and everyone's classified as they stood (nobody gets a DNF for it).",
       "🛠️ Wiggle, rotate, flip, resize and road width keep your objects, DRS zones, start line and direction now (they used to wipe them).",
