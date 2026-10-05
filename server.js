@@ -1270,6 +1270,7 @@ function makeCode() {
   let c; do { c = Array.from({ length: 4 }, () => L[Math.floor(Math.random() * L.length)]).join(""); } while (rooms.has(c));
   return c;
 }
+const NUM_FONTS = ["race", "block", "classic", "digital", "script"];      // how the number on your car is written
 function cleanProfile(p) {
   let name = typeof p?.name === "string" ? p.name.trim().slice(0, 12) : "";
   if (nameFilter.isBad(name)) name = "Racer" + Math.floor(100 + Math.random() * 900);
@@ -1280,6 +1281,7 @@ function cleanProfile(p) {
     number: clamp(Math.round(Number(p?.number) || 7), 0, 99),
     team: cleanTeam(p?.team) || `${name || "Racer"} Racing`,
     design: typeof p?.design === "string" && DESIGN.test(p.design) && /[0-9a-f]/.test(p.design) ? p.design : null,
+    numFont: NUM_FONTS.includes(p?.numFont) ? p.numFont : "race",
   };
 }
 function cleanTeam(t) { const v = typeof t === "string" ? t.trim().replace(/\s+/g, " ").slice(0, 20) : ""; return nameFilter.isBad(v) ? "" : v; }
@@ -1346,8 +1348,8 @@ class Room {
   hostName() { return this.players.get(this.hostId)?.name || "Someone"; }
   lobbyMsg() {
     return {
-      code: this.code, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null, team: !!this.teamRanked } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, cls: p.cls === "gt" ? "gt" : "hyper", extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
+      code: this.code, name: this.roomName || null, hostId: this.hostId, phase: this.phase, settings: this.qualifying ? { ...this.settings, laps: this.realLaps } : this.settings, raceNo: this.raceNo, public: this.public, hasLastSeason: !!this.lastSeason, ranked: this.ranked ? { tier: this.rankedTier || null, team: !!this.teamRanked } : null, totw: this.totwWeek || 0, trackKind: this.trackKind || null,
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, livery: p.livery, number: p.number, numFont: p.numFont || "race", level: p.level, team: p.team, design: p.design, gridPos: p.gridPos || 0, cls: p.cls === "gt" ? "gt" : "hyper", extras: p.extras || null, signedIn: !!p.uid, spectator: !!p.spectator })),
       trackName: this.trackName,
       cal: this.settings.mode === "champ" ? { n: this.settings.champN || 4, list: (this.calendar || []).map((e) => ({ label: e.label, km: e.km, thumb: e.thumb })), round: this.raceNo, loaded: this.calLoaded ?? -1 } : null,
       stroke: this.stroke, champ: this.champOrder(), teamChamp: this.teamOrder(),
@@ -1509,6 +1511,27 @@ class Room {
     this.sendLobby();
     return null;
   }
+  // Random tracks sometimes come with a tunnel: a flat bit of the lap (no bridges, no pit lane, not right at the start)
+  // where no other bit of road runs close by. Returns true if it put one in.
+  autoTunnel() {
+    const t = this.track; if (!t) return false;
+    const N = t.N, sp = t.spacing || 6, len = Math.max(30, Math.min(DECOR_MAX_LEN, Math.round((500 + Math.random() * 450) / sp), Math.floor(N * 0.15)));
+    const pl = t.pitLane, inPit = (k) => pl && ((k - pl.entry + N) % N) <= pl.len + 10;
+    const near = (k) => { const p = t.pts[k], r = (t.hw[k] || TRACK_W / 2) * 2 + 90;
+      for (let j = 0; j < N; j++) { const d = Math.min((j - k + N) % N, (k - j + N) % N); if (d < len + 25) continue; const q = t.pts[j]; if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 < r * r) return true; }
+      return false; };
+    for (let tries = 0; tries < 25; tries++) {
+      const i = Math.floor(N * 0.15 + Math.random() * (N * 0.7 - len)); let ok = i > 0;
+      for (let d = -6; ok && d <= len + 6; d++) { const k = (i + d + N) % N; if ((t.elev[k] || 0) > 0 || inPit(k)) ok = false; }
+      for (let d = 0; ok && d <= len; d += 4) if (near((i + d) % N)) ok = false;
+      if (!ok) continue;
+      const bd = (p) => ({ x: Math.round(((p.x - t.pad) / SCALE + t.minX) * 10) / 10, y: Math.round(((p.y - t.pad) / SCALE + t.minY) * 10) / 10 });
+      const a = bd(t.pts[i]); this.decor = this.decor || [];
+      this.decor.push({ k: "tunnel", x: a.x, y: a.y, end: bd(t.pts[(i + len) % N]), auto: true });
+      return true;
+    }
+    return false;
+  }
   setRandomTrack(map, wonk) { return this.useRandomTrack(makeRandomTrack(MAP_SIZES[map] || MAP_SIZES.normal, wonk), map, wonk); }
   // the same, but made a slice at a time so the other races on the server don't freeze while it's made
   async setRandomTrackSoon(map, wonk) {
@@ -1537,11 +1560,12 @@ class Room {
       this.stroke = r.stroke.map((q) => [q[0], q[1], q[2]]); this.trackKey = strokeKey(this.stroke);
       this.settings.map = MAP_SIZES[map] ? map : "normal";
       this.setDrs(autoDrs(this.track));
+      if (Math.random() < 0.35) this.autoTunnel();
       this.emit("track", this.trackMsg()); this.sendLobby();
       return null;
     }
     const err = this.setTrack(r.stroke, map, "random");
-    if (!err) this.wonk = wk;
+    if (!err) { this.wonk = wk; if (Math.random() < 0.35 && this.autoTunnel()) { this.emit("track", this.trackMsg()); this.sendLobby(); } }
     return err;
   }
   // Track of the Week: the same random track for everyone, all week (made from the week number)
@@ -1577,7 +1601,7 @@ class Room {
     if (Array.isArray(d.start) && d.start.length === 2) this.setStart(Number(d.start[0]), Number(d.start[1]));
     if (d.reverse) this.rebuildTrack(this.track.start, true);
     if (Array.isArray(d.drs)) this.applyDrsBoard(d.drs);
-    this.decor = Array.isArray(d.decor) ? d.decor.filter((o) => DECOR.includes(o?.k) && Number.isFinite(o.x) && Number.isFinite(o.y)).slice(0, DECOR_MAX).map((o) => ({ k: o.k, x: o.x, y: o.y })) : [];
+    this.decor = Array.isArray(d.decor) ? d.decor.filter((o) => DECOR.includes(o?.k) && Number.isFinite(o.x) && Number.isFinite(o.y)).slice(0, DECOR_MAX).map((o) => ({ k: o.k, x: o.x, y: o.y, ...(DECOR_LONG.includes(o.k) && Number.isFinite(o.end?.x) && Number.isFinite(o.end?.y) ? { end: { x: o.end.x, y: o.end.y } } : {}) })) : [];
     this.emit("track", this.trackMsg());
     return null;
   }
@@ -1862,7 +1886,7 @@ class Room {
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, numFont: c.owner ? this.players.get(c.owner)?.numFont || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -3092,9 +3116,13 @@ class Room {
     if (c.unlapping) return MAX_SPEED * 0.85;          // lapped: through the pack (as a ghost) to unlap
     // no passing: right behind the car that was ahead when the safety car came out = no faster than them
     const was = this.sc.ahead && this.sc.ahead.get(c.id), wa = was != null && this.cars.find((o) => o.id === was);
-    if (wa && !wa.finished && !wa.unlapping && !(wa.pitting > 0) && wa.aiMode !== "pitLane" && wa.aiMode !== "pitOut" && !wa.inPit) {
+    // (unless they're in trouble: crashed, spinning, off the road, wrecked or barely moving. You can always go past a wreck)
+    const stuck = wa && (wa.crashT > 0 || wa.spin || !wa.onTrack || wa.damage > 0.6 || wa.punct || wa.speed < MAX_SPEED * 0.25);
+    if (wa && !stuck && !wa.finished && !wa.unlapping && !(wa.pitting > 0) && wa.aiMode !== "pitLane" && wa.aiMode !== "pitOut" && !wa.inPit) {
+      // (follow them at a steady gap: their speed, a bit less if too close, a bit more if not. Never a fraction of
+      // their speed, which compounded down a long queue until everyone was crawling)
       const g2 = (wa.progress - c.progress) * this.track.spacing;
-      if (g2 < 45) return Math.max(0, wa.speed * (g2 < 15 ? 0.85 : 0.97));
+      if (g2 < 45) return Math.max(Math.min(wa.speed, MAX_SPEED * 0.2), wa.speed + (g2 - 28) * 3);
     }
     if (!ah || ah.finished) return SC;
     const gap = (ah.progress - c.progress) * this.track.spacing;
@@ -3610,7 +3638,7 @@ function menuInfo() {
   for (const r of rooms.values()) {
     inRooms += r.players.size;
     if (r.phase !== "lobby") racing += r.players.size;
-    if (r.public && r.players.size) list.push({ code: r.code, host: r.hostName(), players: r.players.size, max: MAX_PLAYERS, phase: r.phase, track: !!r.track, laps: r.settings.laps, ai: r.settings.ai });
+    if (r.public && r.players.size) list.push({ code: r.code, name: r.roomName || null, host: r.hostName(), players: r.players.size, max: MAX_PLAYERS, phase: r.phase, track: !!r.track, laps: r.settings.laps, ai: r.settings.ai });
   }
   list.sort((a, b) => (a.phase === "lobby" ? 0 : 1) - (b.phase === "lobby" ? 0 : 1) || b.players - a.players);
   return { online: io.engine.clientsCount, inRooms, racing, lobbies: list.slice(0, 30), event: eventPublic() };
@@ -4159,6 +4187,13 @@ io.on("connection", (socket) => {
     r.emit("emote", { e, name: p.name, pid: p.id, car: c ? c.id : null });
     if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "emotes"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
   });
+  // the host can name the room (shown in the lobby and the public room list)
+  socket.on("roomName", (n) => {
+    const r = room(); if (!r || !isHost()) return;
+    const v = String(n ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
+    if (v && (nameFilter.isBad(v) || LINKY.test(v))) { socket.emit("toast", "Pick a friendlier room name"); r.sendLobby(); return; }
+    r.roomName = v || null; r.sendLobby();
+  });
   socket.on("spectate", (on) => { const r = room(), p = me(); if (!r || !p || r.phase !== "lobby") return; p.spectator = !!on; r.sendLobby(); });
   socket.on("pause", (on) => { const r = room(); if (!r || !isHost() || r.phase !== "race") return; r.setPaused(on === undefined ? !r.paused : !!on); });
   // ---- leaderboards ----
@@ -4479,6 +4514,16 @@ io.on("connection", (socket) => {
     const c = r.cars.find((x) => x.id === Number(id)); if (!c) return;
     socket.emit("watchInfo", { car: c.id, up: c.up, lvl: r.carLevel(c), last: c.lastCards || null });
   });
+  // cheering on a friend you're watching: they get a shout-out, and a 📣 pops up over their car for everyone
+  let cheerAt = 0;
+  socket.on("cheer", (id) => {
+    const r = room(), p = me(); if (!r || !p || !r.cars || r.phase !== "race" || Date.now() - cheerAt < 5000) return;
+    const c = r.cars.find((x) => x.id === Number(id)); if (!c || !c.owner || c.owner === p.id || !r.players.has(c.owner)) return;
+    cheerAt = Date.now();
+    io.to(c.owner).emit("cheered", { from: p.name });
+    r.emit("emote", { e: "📣", name: p.name, pid: p.id, car: c.id });
+    socket.emit("toast", `📣 You cheered on ${c.name}!`);
+  });
   socket.on("gridRandomAll", () => {
     const r = room(); if (!r || !isHost() || r.phase !== "lobby") return;
     for (const p of r.players.values()) p.gridPos = -1;
@@ -4597,7 +4642,14 @@ io.on("connection", (socket) => {
     if (r.track) assignBoxes(r.track.pitLane, r.allTeams());
     r.sendLobby();
   });
-  socket.on("start", () => { const r = room(); if (r && isHost()) r.startRace(); });
+  // with friends in the room: a 3-2-1 countdown on everyone's screen first (on your own it starts straight away)
+  socket.on("start", () => {
+    const r = room(); if (!r || !isHost()) return;
+    if (r.players.size < 2 || r.phase !== "lobby" || !r.track) return r.startRace();
+    if (r.countT) return;
+    r.emit("lobbyCount", { n: 3 });
+    r.countT = setTimeout(() => { r.countT = null; if (rooms.get(r.code) === r && r.phase === "lobby") r.startRace(); }, 3000);
+  });
   socket.on("react", (ms) => { const r = room(), p = me(); if (r && p) r.react(p, ms); });
   socket.on("nitro", (on) => { const p = me(); if (p) p.nitroHeld = on === true; });
   socket.on("defend", (on) => { const p = me(); if (p) p.defendOn = on === true; });

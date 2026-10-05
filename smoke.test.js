@@ -1359,7 +1359,7 @@ test("lap chart: everyone's position after every lap is in the results", { timeo
 });
 
 test("track objects: placed next to the track, snapped to it, kept in share codes, cleared by a new track", () => {
-  const r = new game.Room("DECOR", false); r.setRandomTrack("normal", "regular");
+  const r = new game.Room("DECOR", false); r.setRandomTrack("normal", "regular"); r.decor = [];
   const t = r.track, sc = r.trackMsg().scale, p = t.pts[40], bx = (p.x - t.pad) / sc + t.minX, by = (p.y - t.pad) / sc + t.minY;
   assert.equal(r.addDecor("stand", bx, by), null); assert.equal(r.addDecor("tunnel", bx, by), null);
   assert.match(r.addDecor("stand", t.minX - 900, t.minY - 900), /next to the track/);
@@ -1367,7 +1367,7 @@ test("track objects: placed next to the track, snapped to it, kept in share code
   const msg = r.trackMsg().decor; assert.equal(msg.length, 2); assert.ok(Math.abs(msg[0].i - 40) <= 2, "snapped to the nearest bit of track");
   const share = r.shareData(); assert.equal(share.decor.length, 2);
   const r2 = new game.Room("DECOR2", false); r2.setSharedTrack(share); assert.equal(r2.trackMsg().decor.length, 2, "a share code brings them along");
-  r.setRandomTrack("normal", "regular"); assert.equal(r.trackMsg().decor.length, 0, "a new track starts with none");
+  r.setRandomTrack("normal", "regular"); assert.equal(r.trackMsg().decor.filter((d) => d.k !== "tunnel").length, 0, "a new track starts with none (bar maybe its own tunnel)"); assert.ok(r.decor.length <= 1);
 });
 
 test("weekly track contest: enter, vote (not your own), and the winner becomes next week's Track of the Week", async () => {
@@ -1594,7 +1594,7 @@ test("endurance: teammates can share one car (swap at stops) or both race", () =
 });
 
 test("reshaping a track (wiggle, rotate...) keeps the objects, DRS zones, start line and direction", () => {
-  const r = new game.Room("KEEPLAY", false); r.setRandomTrack("normal", "regular");
+  const r = new game.Room("KEEPLAY", false); r.setRandomTrack("normal", "regular"); r.decor = [];      // (random tracks sometimes come with a tunnel)
   const st = r.stroke.map((q) => q.slice());
   const pt = (f) => st[Math.floor(st.length * f)];
   assert.equal(r.addDecor("banner", pt(0.3)[0], pt(0.3)[1]), null); assert.equal(r.addDecor("tunnel", pt(0.5)[0], pt(0.5)[1], { x: pt(0.56)[0], y: pt(0.56)[1] }), null);
@@ -1672,4 +1672,59 @@ test("3 red flags or 7 safety cars: the race is called off and classified as it 
   B.r.sc = null; B.r.scDoneAt = -99; B.r.deploySafetyCar();
   assert.equal(B.r.phase, "results", "the seventh safety car: called off");
   assert.equal(B.got().abandoned.why, "safetyCars");
+});
+
+test("safety car after a crash: the field doesn't get stuck crawling behind the wreck", { timeout: 120000 }, () => {
+  const r = new game.Room("SCWRECK", false); r.setRandomTrack("normal", "regular");
+  r.players.set("sw", { id: "sw", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 15, quali: 0, laps: 14, weather: "sunny", safetyCar: true }); r.ensureRoster(15);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
+  const o = r.standings(), a = o[3], b = o[4];
+  r.crash(a, b, game.CRASH_SPEED + 350, 1, 0); a.spin = 8; a.vx = a.vy = 0; b.vx = b.vy = 0;
+  assert.ok(r.sc, "the crash brought the safety car out");
+  let sum = 0, k = 0;
+  for (let n = 0; n < 60 * 20 && r.sc; n++) { r.step(1 / 60); if (n > 60 * 6 && n % 15 === 0) { const sp = r.cars.filter((c) => !c.inPit && !(c.pitting > 0) && c.aiMode === "race" && !c.finished).map((c) => c.speed); sum += sp.reduce((x, y) => x + y, 0) / sp.length; k++; } }
+  assert.ok(k === 0 || sum / k > 300, `the field keeps going at safety car pace (average ${Math.round(sum / Math.max(1, k))})`);
+});
+
+test("random tracks sometimes get a tunnel on a flat bit away from the pits and the start", { timeout: 120000 }, () => {
+  let got = 0;
+  for (let n = 0; n < 12; n++) {
+    const r = new game.Room("TUN" + n, false); r.setRandomTrack("normal", "regular");
+    r.decor = []; if (!r.autoTunnel()) continue; got++;
+    const [d] = r.decorMsg(), t = r.track;
+    assert.strictEqual(d.k, "tunnel"); assert.ok(d.len >= 30 && d.len <= 140, "length " + d.len);
+    for (let k = 0; k <= d.len; k++) { const i = (d.i + k) % t.N; assert.ok(!(t.elev[i] > 0), "no bridges in the tunnel"); assert.ok(((i - t.pitLane.entry + t.N) % t.N) > t.pitLane.len, "not in the pit lane"); }
+  }
+  assert.ok(got >= 6, "most random tracks have room for a tunnel (" + got + "/12)");
+});
+
+test("room names, number styles, a 3-2-1 countdown with friends, and cheering on a friend", { timeout: 60000 }, async () => {
+  const a = io(base, { transports: ["websocket"], forceNew: true }), b = io(base, { transports: ["websocket"], forceNew: true });
+  const got = (s, ev) => new Promise((ok) => s.once(ev, ok));
+  const lobbyWhere = (s, f) => new Promise((ok) => { const h = (l) => { if (f(l)) { s.off("lobby", h); ok(l); } }; s.on("lobby", h); });
+  await Promise.all([got(a, "connect"), got(b, "connect")]);
+  a.emit("create", { name: "Ann", numFont: "script" }, {});
+  const j = await got(a, "joined");
+  b.emit("join", { code: j.code, profile: { name: "Bo", numFont: "nope" } });
+  await got(b, "joined");
+  const r = game.rooms.get(j.code);
+  assert.equal(r.players.get(b.id).numFont, "race", "unknown number styles fall back to the normal one");
+  b.emit("profile", { name: "Bo", numFont: "digital" }); await lobbyWhere(a, (l) => l.players.some((p) => p.name === "Bo" && p.numFont === "digital"));
+  // only the host can name the room, and it's filtered
+  b.emit("roomName", "Bo's room"); a.emit("roomName", "  Friday   Night  Racing  ");
+  const l = await lobbyWhere(b, (x) => x.name); assert.equal(l.name, "Friday Night Racing");
+  const bad = got(a, "toast"); a.emit("roomName", "visit www.spam.com"); assert.match(await bad, /friendlier/); assert.equal(r.roomName, "Friday Night Racing");
+  // start with friends: everyone sees 3-2-1 first
+  a.emit("settings", { ai: 1, laps: 2, speed: 3, map: "small", weather: "sunny", quali: 0 }); a.emit("randomTrack", { map: "small" }); await got(a, "trackResult");
+  for (const s of [a, b]) s.on("tirePick", () => s.emit("compound", "fast"));
+  const count = got(b, "lobbyCount"), t0 = Date.now(); a.emit("start");
+  assert.equal((await count).n, 3); const race = await got(a, "race"); assert.ok(Date.now() - t0 > 2500, "the race starts after the countdown");
+  assert.equal(race.cars.find((c) => c.name === "Bo").numFont, "digital");
+  while (r.phase !== "race") await new Promise((ok) => setTimeout(ok, 100));
+  const bobCar = r.carOf(b.id), heard = got(b, "cheered"), bubble = got(a, "emote");
+  a.emit("cheer", bobCar.id);
+  assert.equal((await heard).from, "Ann"); const e = await bubble; assert.equal(e.e, "📣"); assert.equal(e.car, bobCar.id);
+  a.close(); b.close();
 });
