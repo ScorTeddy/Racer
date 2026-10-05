@@ -205,6 +205,7 @@ function fix(u) {
   u.stats = Object.assign(blankStats(), u.stats || {});
   u.ach = u.ach || {}; u.owned = u.owned || []; u.equipped = u.equipped || {}; u.coins = u.coins || 0;
   u.stats.realTracks = u.stats.realTracks || [];
+  undoOldRankedCharges(u);
   return migrateAch(u);
 }
 function blankStats() {
@@ -871,6 +872,26 @@ const PASS_SLOTS = [
 ];
 for (const T of PASS_THEMES) for (const [slot, word, rarity] of PASS_SLOTS)
   STORE.push({ id: `bp_${T.key}_${slot}`, slot, name: `${T.name} ${word}`, look: T[slot], loot: true, rarity, box: "pass", pass: T.key });
+// Every theme has its own elusive MYTHIC: an animated livery in the theme's colours, only from that theme's crates,
+// and only rarely (CRATE_MYTHIC). New themes get one automatically. Haunted has its own hand-made set instead.
+const THEME_MYTHICS = {
+  haunted: [
+    { slot: "livery", name: "Phantom livery (animated)", look: "phantom" },
+    { slot: "glow", name: "Witching Hour underglow (animated)", look: "witching" },
+    { slot: "flame", name: "Possessed boost flame (animated)", look: "possessed" },
+  ],
+};
+for (const T of PASS_THEMES) {
+  const list = THEME_MYTHICS[T.key] || [{ slot: "livery", name: `${T.name} Mythic livery (animated)`, look: "tm_" + T.key }];
+  list.forEach((m, i) => STORE.push({ id: `bp_${T.key}_mythic${i ? i + 1 : ""}`, slot: m.slot, name: m.name, look: m.look, loot: true, rarity: "mythic", box: "pass", pass: T.key }));
+}
+// more Haunted crate items (Halloween)
+STORE.push(
+  { id: "bp_haunted_decal", slot: "decal", name: "Jack-o'-lantern decal", look: "jackol", loot: true, rarity: "epic", box: "pass", pass: "haunted" },
+  { id: "bp_haunted_trail2", slot: "trail", name: "Haunting ghosts trail (animated)", look: "ghosts", loot: true, rarity: "legendary", box: "pass", pass: "haunted" },
+  { id: "bp_haunted_badge2", slot: "badge", name: "Haunted house badge", look: "🏚️", loot: true, rarity: "legendary", box: "pass", pass: "haunted" },
+  { id: "bp_haunted_rims2", slot: "rims", name: "Candy corn rims", look: "#ffb000", loot: true, rarity: "rare", box: "pass", pass: "haunted" },
+);
 // rarity: set on the item, or from its store price
 // ---- the Motion pack: everything here moves ----
 STORE.push(
@@ -903,6 +924,37 @@ STORE.push(
   { id: "liv_storm", slot: "livery", name: "Thunderstorm livery (animated)", look: "storm", loot: true, rarity: "legendary" },
   { id: "liv_disco", slot: "livery", name: "Disco Floor livery (animated)", look: "discoL", loot: true, rarity: "legendary" },
   { id: "liv_hyperdrive", slot: "livery", name: "Hyperdrive livery (animated)", look: "hyperdrive", loot: true, rarity: "mythic", box: "legend" },
+);
+// ---- Halloween shop drop ----
+STORE.push(
+  { id: "glow_pumpkin", slot: "glow", name: "Pumpkin orange underglow", look: "#ff6a00", price: 100 },
+  { id: "glow_witch", slot: "glow", name: "Witch purple underglow", look: "#7e22ce", price: 100 },
+  { id: "glow_slime", slot: "glow", name: "Slime green underglow", look: "#39ff14", price: 110 },
+  { id: "glow_candle", slot: "glow", name: "Candlelight underglow (animated)", look: "candle", price: 170 },
+  { id: "flame_witchfire", slot: "flame", name: "Witchfire boost flame", look: "#a855f7", price: 90 },
+  { id: "flame_goblin", slot: "flame", name: "Goblin green boost flame", look: "#84cc16", price: 80 },
+  { id: "rims_coffin", slot: "rims", name: "Coffin black rims", look: "#141414", price: 60 },
+  { id: "rims_bone", slot: "rims", name: "Bone rims", look: "#e7e2d3", price: 60 },
+  { id: "rims_rust", slot: "rims", name: "Rusty rims", look: "#9a3412", price: 55 },
+  { id: "helmet_pumpkin", slot: "helmet", name: "Pumpkin helmet", look: "#ea580c", price: 35 },
+  { id: "helmet_warlock", slot: "helmet", name: "Warlock helmet", look: "#4c1d95", price: 40 },
+  { id: "helmet_ghostly", slot: "helmet", name: "Ghostly white helmet", look: "#f1f5f9", price: 35 },
+  { id: "smoke_brew", slot: "smoke", name: "Witch's brew smoke", look: "#6d28d9", price: 70 },
+  { id: "smoke_toxicfog", slot: "smoke", name: "Toxic fog smoke", look: "#bef264", price: 70 },
+  { id: "smoke_mist", slot: "smoke", name: "Graveyard mist smoke", look: "#9ca3af", price: 60 },
+  { id: "badge_bat", slot: "badge", name: "Bat badge", look: "🦇", price: 90 },
+  { id: "badge_witch", slot: "badge", name: "Witch badge", look: "🧙", price: 110 },
+  { id: "badge_spider", slot: "badge", name: "Spider badge", look: "🕷️", price: 90 },
+  { id: "badge_vampire", slot: "badge", name: "Vampire badge", look: "🧛", price: 140 },
+  { id: "badge_zombie", slot: "badge", name: "Zombie badge", look: "🧟", price: 120 },
+  { id: "badge_candy", slot: "badge", name: "Candy badge", look: "🍬", price: 70 },
+  { id: "badge_crystal", slot: "badge", name: "Crystal ball badge", look: "🔮", price: 160 },
+  { id: "badge_web", slot: "badge", name: "Cobweb badge", look: "🕸️", price: 80 },
+  { id: "trail_bats", slot: "trail", name: "Bat swarm trail (animated)", look: "bats", price: 240 },
+  { id: "trail_pumpkins", slot: "trail", name: "Pumpkin trail", look: "pumpkins", price: 200 },
+  { id: "decal_web", slot: "decal", name: "Spider web decal", look: "web", price: 110 },
+  // this drop's elusive MYTHIC: only from chests (Legendary and Mythic)
+  { id: "trail_souls", slot: "trail", name: "Lost Souls trail (animated)", look: "souls", loot: true, rarity: "mythic", box: "legend" },
 );
 // ---- Mythic chest exclusives (only from the Mythic chest) ----
 STORE.push(
@@ -1501,14 +1553,18 @@ function buyPass(u) {
   return { ok: true, msg: `🎟️ Premium pass unlocked!${P.tier ? ` You got the premium rewards for tiers 1-${P.tier} too.` : ""}` };
 }
 // themed crates: one of that month's items, favouring ones you don't have
+const CRATE_MYTHIC = 0.015;
 function openCrate(u, key) {
   u.crates = u.crates || {};
   if (!(u.crates[key] > 0)) return { error: "You don't have that crate" };
-  const pool = STORE.filter((x) => x.pass === key); if (!pool.length) return { error: "Unknown crate" };
+  const all = STORE.filter((x) => x.pass === key); if (!all.length) return { error: "Unknown crate" };
   u.crates[key]--; if (!u.crates[key]) delete u.crates[key];
+  // the theme's mythic is elusive: a CRATE_MYTHIC chance per crate, whatever else you already own
+  const myth = all.filter((x) => x.rarity === "mythic"), rest = all.filter((x) => x.rarity !== "mythic");
+  const pool = myth.length && (Math.random() < CRATE_MYTHIC || !rest.length) ? myth : rest;
   const fresh = pool.filter((x) => !u.owned.includes(x.id));
   const from = fresh.length ? fresh : pool, item = from[Math.floor(Math.random() * from.length)];
-  const dup = u.owned.includes(item.id), refund = dup ? 250 : 0;
+  const dup = u.owned.includes(item.id), refund = dup ? (item.rarity === "mythic" ? 1500 : 250) : 0;
   if (dup) { u.coins += refund; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + refund; } else u.owned.push(item.id);
   u.stats.boxes = (u.stats.boxes || 0) + 1;
   const got = checkAch(u, { pos: 99, of: 0, grid: 0 });
@@ -1591,6 +1647,19 @@ function rankUpCoins(oldPeak, newSr) {
   let coins = 0;
   for (let d = divIdx(oldPeak) + 1; d <= divIdx(newSr); d++) coins += d === 21 ? RANK_UP_COINS.oe : d % 3 === 0 ? RANK_UP_COINS.tier : RANK_UP_COINS.div;
   return coins;
+}
+// a ranked race the server couldn't finish (it restarted: an update, or the host rebooting it) doesn't count:
+// the "left the race" loss charged at the start is given back
+function rankedCancel(u, mode) {
+  const R = rankedState(u, mode);
+  if (!R.live) return false;
+  R.sr = R.live.sr0; delete R.live; saveSoon(u);
+  return true;
+}
+// (a charge from before this server started can only be from a race that restart cut short: give it back too)
+const BOOT = Date.now();
+function undoOldRankedCharges(u) {
+  for (const k of ["ranked", "rankedTeam"]) { const R = u[k]; if (R && R.live && !(R.live.at >= BOOT)) { R.sr = R.live.sr0; delete R.live; } }
 }
 // (team ranked: pos is the team's average place, won = someone on the team won)
 function rankedFinish(u, pos, of, finished, mode, won) {
@@ -2209,6 +2278,6 @@ module.exports = {
   contestState, contestWinner, contestEnter, contestVote, contestPublic, CONTEST_THEMES, saveSoon, saveCarPreset, deleteCarPreset, applyCarLook, putTtLap, recordH2H, addGhostChallenge, ghostsPublic, ghostBeat, GHOST_BEAT_COINS, tourState, tourJoin, tourLap, tourPublic, tourTimes, resolveTour, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
-  rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
+  rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedCancel, undoOldRankedCharges, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
 };

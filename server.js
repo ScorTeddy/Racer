@@ -3137,6 +3137,7 @@ class Room {
     this.settlePredictions(order[0]);
     if (this.elimRealLaps != null) { this.settings.laps = this.elimRealLaps; this.elimRealLaps = null; }
     if (this.commCode && this.settings.laps >= 3) communityPlayed(this.commCode, order.filter((c) => c.finished && c.owner).map((c) => this.players.get(c.owner)?.uid).filter(Boolean));
+    if (this.ranked && this.rankedVoided) { this.rankedVoided = false; this.emit("toast", "🔧 The server restarted during this ranked race, so it doesn't count: nobody gained or lost SR."); }
     if (this.ranked && this.rankedEntries?.length) {
       const entries = this.rankedEntries; this.rankedEntries = null;
       const team = !!this.teamRanked, of = order.length;
@@ -3571,8 +3572,21 @@ function restoreRoom(code) {
 }
 // the server is about to restart (Render sends SIGTERM on every update): save, tell everyone, then stop
 let restarting = false;
+// ranked races still running when the server stops don't count: everyone gets their SR back (and the race, if it
+// carries on after the restart, still won't count)
+async function voidRankedRaces() {
+  const jobs = [];
+  for (const r of rooms.values()) {
+    if (!r.ranked || !r.rankedEntries?.length) continue;
+    const mode = r.teamRanked ? "team" : "solo";
+    for (const e of r.rankedEntries) jobs.push(accounts.getUser(e.uid).then((u) => { if (u) accounts.rankedCancel(u, mode); }).catch(() => {}));
+    r.rankedEntries = null; r.rankedVoided = true;
+  }
+  await Promise.all(jobs);
+}
 async function shutdown() {
   if (restarting) return; restarting = true;
+  try { await voidRankedRaces(); } catch (e) { console.log("ranked void failed", e.message); }
   try { await saveRooms(); } catch (e) { console.log("room save failed", e.message); }
   io.emit("serverRestart");
   try { await accounts.flush(); } catch (e) {}
@@ -4623,4 +4637,10 @@ setInterval(() => {
 }, 1000 / 30);
 
 if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP: Team Boss running at http://localhost:${PORT}`));
-module.exports = { weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
+// Render's free plan puts a server to sleep after ~15 minutes without new web requests, and players racing over an
+// open connection may not count. So while anyone's online, the server visits its own page every 10 minutes to stay
+// awake (it still sleeps when nobody's playing). RENDER_EXTERNAL_URL is set by Render itself.
+if (require.main === module && process.env.RENDER_EXTERNAL_URL) setInterval(() => {
+  if (io.engine.clientsCount > 0) fetch(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "") + "/favicon.svg", { method: "HEAD" }).catch(() => {});
+}, 10 * 60e3).unref();
+module.exports = { voidRankedRaces, weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
