@@ -516,6 +516,8 @@
       case "supernova": return [`hsl(${42 + 12 * Math.sin(t * 7)},100%,${68 + 18 * Math.sin(t * 3.3)}%)`, 0.8];
       case "sunsetG": return [`hsl(${(330 + 60 * (0.5 + 0.5 * Math.sin(t * 1.2))) % 360},100%,58%)`, 0.55];
       case "wildfire": return [`hsl(${12 + 26 * Math.abs(Math.sin(t * 13))},100%,55%)`, 0.5 + 0.2 * Math.abs(Math.sin(t * 17))];
+      case "candle": return [`hsl(${32 + 8 * Math.sin(t * 9)},100%,${55 + 6 * Math.sin(t * 23)}%)`, 0.4 + 0.18 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 11.1))];
+      case "witching": { const ph = (Math.sin(t * 1.6) + 1) / 2, flick = Math.sin(t * 31) > 0.9; return [flick ? "#39ff14" : `hsl(${24 + ph * 250},100%,${52 + 8 * ph}%)`, flick ? 0.85 : 0.55 + 0.15 * Math.sin(t * 4)]; }   // MYTHIC (Haunted)
       default: return [g, 0.55];
     }
   }
@@ -528,6 +530,7 @@
       case "toxic": return `hsl(${85 + 25 * Math.sin(t * 11)},100%,55%)`;
       case "hellfire": return Math.random() < 0.5 ? "#ff2a00" : "#ffc400";
       case "horizon": return Math.random() < 0.45 ? "#1a0b2e" : `hsl(${270 + 25 * Math.sin(t * 8)},100%,66%)`;
+      case "possessed": return Math.random() < 0.5 ? `rgba(120,255,140,${0.45 + 0.4 * Math.random()})` : `hsl(${275 + 20 * Math.sin(t * 9)},100%,${55 + 15 * Math.random()}%)`;   // MYTHIC (Haunted)
       default: return f || "#3aa0ff";
     }
   }
@@ -768,6 +771,11 @@
       case "paw": c.fillStyle = "#2b2118"; c.beginPath(); c.ellipse(-1, 0, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill(); for (const [px, py] of [[2.6, -3.6], [3.6, -1.2], [3.6, 1.2], [2.6, 3.6]]) { c.beginPath(); c.arc(px, py, 1.2, 0, Math.PI * 2); c.fill(); } break;
       case "rocket": c.fillStyle = "#f5f5f5"; c.strokeStyle = "#1b1f26"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(6, 0); c.quadraticCurveTo(2, -3, -4, -2); c.lineTo(-4, 2); c.quadraticCurveTo(2, 3, 6, 0); c.fill(); c.stroke(); c.fillStyle = "#e53935"; c.beginPath(); c.moveTo(-3, -2); c.lineTo(-6, -4); c.lineTo(-5, -1.5); c.fill(); c.beginPath(); c.moveTo(-3, 2); c.lineTo(-6, 4); c.lineTo(-5, 1.5); c.fill(); c.fillStyle = "#38bdf8"; c.beginPath(); c.arc(1.5, 0, 1.2, 0, Math.PI * 2); c.fill(); c.fillStyle = "#ffb020"; c.beginPath(); c.moveTo(-4, -1.2); c.lineTo(-7.5, 0); c.lineTo(-4, 1.2); c.fill(); break;
       case "hoodflame": for (const [col, s2] of [["#ff5722", 1], ["#ffca28", 0.6]]) { c.fillStyle = col; c.beginPath(); c.moveTo(7, -6 * s2); for (let k = 0; k <= 6; k++) c.lineTo(7 - (k % 2 ? 12 : 5) * s2, -6 * s2 + (k / 6) * 12 * s2); c.lineTo(7, 6 * s2); c.closePath(); c.fill(); } break;
+      case "web": c.strokeStyle = "rgba(235,235,240,0.9)"; c.lineWidth = 0.5; for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a) * 6, Math.sin(a) * 6); c.stroke(); }
+        for (const r of [2, 3.8, 5.6]) { c.beginPath(); for (let k = 0; k <= 8; k++) { const a = (k / 8) * Math.PI * 2; c.lineTo(Math.cos(a) * r, Math.sin(a) * r); } c.stroke(); } break;
+      case "jackol": c.fillStyle = "#ff7a00"; c.beginPath(); c.ellipse(0, 0, 4.6, 5.6, 0, 0, Math.PI * 2); c.fill(); c.fillStyle = "#3f6212"; c.fillRect(-5.8, -0.8, 1.6, 1.6);
+        c.fillStyle = `rgba(255,${200 + Math.round(40 * Math.sin(performance.now() / 120))},60,1)`; c.beginPath(); c.moveTo(2.6, -3); c.lineTo(0.6, -1.6); c.lineTo(2.6, -0.6); c.fill(); c.beginPath(); c.moveTo(2.6, 3); c.lineTo(0.6, 1.6); c.lineTo(2.6, 0.6); c.fill();
+        c.beginPath(); c.moveTo(-1, -3); c.lineTo(-2.6, -1.5); c.lineTo(-1.6, 0); c.lineTo(-2.6, 1.5); c.lineTo(-1, 3); c.lineTo(-1.9, 0); c.closePath(); c.fill(); break;
       case "skull": c.fillStyle = "#f2f2f2"; c.beginPath(); c.arc(1, 0, 4.4, 0, Math.PI * 2); c.fill(); c.fillRect(-4.6, -2.6, 3, 5.2);
         c.fillStyle = "#111"; c.beginPath(); c.arc(2, -1.7, 1.2, 0, Math.PI * 2); c.arc(2, 1.7, 1.2, 0, Math.PI * 2); c.fill(); c.fillRect(-4, -1.6, 0.8, 0.8); c.fillRect(-4, 0.8, 0.8, 0.8); break;
       case "stripes": c.fillStyle = "rgba(255,255,255,0.92)"; c.fillRect(-L * 0.6, -3.2, L * 0.75, 2); c.fillRect(-L * 0.6, 1.2, L * 0.75, 2); break;
@@ -806,7 +814,32 @@
     const x0 = -L / 2, y0 = -Wd / 2;
     const lin = (stops, vert) => { const g = vert ? c.createLinearGradient(0, y0, 0, -y0) : c.createLinearGradient(x0, 0, -x0, 0); stops.forEach((col, i) => g.addColorStop(i / (stops.length - 1), col)); return g; };
     const R = seeded(kind.length * 97);
+    // a season pass theme's MYTHIC livery: the theme's colours flowing over the car, a shine sweeping across, and its
+    // icon riding on the roof (works for any theme, new ones too)
+    if (typeof kind === "string" && kind.startsWith("tm_")) {
+      const T = (A.catalog?.passThemes || []).find((x) => x.key === kind.slice(3)), col = T?.c || ["#ffd24a", "#ff4fd8"], t = performance.now() / 1000;
+      const g = c.createLinearGradient(x0 + Math.sin(t * 0.9) * L * 0.3, y0, -x0 + Math.sin(t * 0.9) * L * 0.3, -y0);
+      g.addColorStop(0, col[0]); g.addColorStop(0.5, col[1]); g.addColorStop(1, col[0]); c.fillStyle = g; c.fillRect(x0, y0, L, Wd);
+      const sx = x0 + ((t * 0.7) % 1.6) * L - L * 0.3, sh = c.createLinearGradient(sx - 6, 0, sx + 6, 0);
+      sh.addColorStop(0, "rgba(255,255,255,0)"); sh.addColorStop(0.5, "rgba(255,255,255,0.75)"); sh.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = sh; c.fillRect(x0, y0, L, Wd);
+      c.strokeStyle = "rgba(255,226,120,0.95)"; c.lineWidth = 0.9; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
+      if (T?.icon) { c.save(); c.font = `${Math.round(Wd * 0.44)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.globalAlpha = 0.85 + 0.15 * Math.sin(t * 3); c.fillText(T.icon, -x0 - L * 0.13, 0); c.restore(); }
+      return;
+    }
     switch (kind) {
+      case "phantom": {   // MYTHIC (Haunted), animated: ghosts drifting along a dark car, glowing eyes, mist
+        const t = performance.now() / 1000;
+        c.fillStyle = lin(["#0d0118", "#2a0a45", "#0d0118"], true); c.fillRect(x0, y0, L, Wd);
+        for (let k = 0; k < 8; k++) { c.fillStyle = `rgba(160,120,255,${0.08 + 0.06 * Math.sin(t * 2 + k)})`; c.beginPath(); c.ellipse(x0 + ((k * 9 + t * 6) % L), y0 + Wd * (0.2 + 0.6 * ((k * 0.37) % 1)), 6, 2, 0, 0, Math.PI * 2); c.fill(); }
+        for (let k = 0; k < 3; k++) {
+          const gx = -x0 - ((t * 9 + k * L / 3) % (L + 8)) + 4, gy = Math.sin(t * 2.4 + k * 2) * Wd * 0.22, a = 0.55 + 0.35 * Math.sin(t * 3 + k);
+          c.fillStyle = `rgba(235,240,255,${a})`; c.beginPath(); c.arc(gx, gy, 3, Math.PI, 0); c.lineTo(gx + 3, gy + 3.2);
+          for (let w = 0; w < 3; w++) c.lineTo(gx + 2 - w * 2, gy + (w % 2 ? 2.2 : 3.4)); c.lineTo(gx - 3, gy + 3.2); c.closePath(); c.fill();
+          c.fillStyle = "#39ff14"; c.fillRect(gx - 1.6, gy - 0.6, 0.9, 0.9); c.fillRect(gx + 0.7, gy - 0.6, 0.9, 0.9);
+        }
+        c.strokeStyle = "rgba(255,122,0,0.85)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
+        break;
+      }
       case "pinstripe": c.fillStyle = "#e8c34a"; for (const y of [-6.5, -2.5, 1.5, 5.5]) c.fillRect(x0, y, L, 0.9); break;
       case "chevron": c.fillStyle = "rgba(255,255,255,0.9)"; for (let k = 0; k < 3; k++) { const x = x0 + 10 + k * 9; c.beginPath(); c.moveTo(x, y0); c.lineTo(x + 6, 0); c.lineTo(x, -y0); c.lineTo(x - 3, -y0); c.lineTo(x + 3, 0); c.lineTo(x - 3, y0); c.fill(); } break;
       case "splatter": for (let k = 0; k < 16; k++) { c.fillStyle = ["#ff2bd6", "#22e6ff", "#ffe066"][k % 3]; c.beginPath(); c.arc(x0 + R() * L, y0 + R() * Wd, 1 + R() * 2.6, 0, Math.PI * 2); c.fill(); } break;
@@ -917,7 +950,23 @@
   // store trails: little sparks / hearts / stars left behind the car
   function trailShape(c, kind, x, y, r, alpha, k) {
     c.save(); c.globalAlpha = Math.max(0, alpha); c.translate(x, y);
-    if (kind === "hearts") {
+    if (kind === "bats") {   // animated: flapping bats
+      const f = Math.sin(performance.now() / 70 + k * 1.7); c.fillStyle = "#2e1748"; c.strokeStyle = "rgba(190,140,255,0.95)"; c.lineWidth = 0.9;
+      c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(-r * 0.7, -r * (0.2 + 0.7 * f), -r * 1.5, -r * 0.1 * f); c.quadraticCurveTo(-r * 0.8, r * 0.1, 0, r * 0.25);
+      c.quadraticCurveTo(r * 0.8, r * 0.1, r * 1.5, -r * 0.1 * f); c.quadraticCurveTo(r * 0.7, -r * (0.2 + 0.7 * f), 0, 0); c.fill(); c.stroke();
+      c.beginPath(); c.arc(0, 0, r * 0.28, 0, Math.PI * 2); c.fill();
+    } else if (kind === "pumpkins") {
+      c.rotate(k * 0.4); c.fillStyle = "#ff7a00"; c.beginPath(); c.ellipse(0, 0, r * 0.75, r * 0.6, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#c2410c"; c.lineWidth = 0.6; c.beginPath(); c.ellipse(0, 0, r * 0.3, r * 0.6, 0, 0, Math.PI * 2); c.stroke(); c.fillStyle = "#3f6212"; c.fillRect(-r * 0.1, -r * 0.8, r * 0.2, r * 0.3);
+    } else if (kind === "ghosts") {   // animated: little ghosts that wobble and fade
+      const w = Math.sin(performance.now() / 160 + k); c.translate(w * r * 0.3, 0); c.fillStyle = "rgba(240,244,255,0.9)"; c.shadowColor = "#b48cff"; c.shadowBlur = 6;
+      c.beginPath(); c.arc(0, -r * 0.2, r * 0.6, Math.PI, 0); c.lineTo(r * 0.6, r * 0.6); c.lineTo(r * 0.3, r * 0.4); c.lineTo(0, r * 0.6); c.lineTo(-r * 0.3, r * 0.4); c.lineTo(-r * 0.6, r * 0.6); c.closePath(); c.fill();
+      c.shadowBlur = 0; c.fillStyle = "#1a1025"; c.fillRect(-r * 0.3, -r * 0.35, r * 0.18, r * 0.25); c.fillRect(r * 0.12, -r * 0.35, r * 0.18, r * 0.25);
+    } else if (kind === "souls") {   // MYTHIC, animated: blue-green soul flames rising and twisting
+      const t = performance.now() / 1000; c.translate(Math.sin(t * 4 + k) * r * 0.35, -((t * 1.2 + k * 0.3) % 1) * r * 0.8);
+      const g = c.createRadialGradient(0, r * 0.2, 0, 0, 0, r * 1.1); g.addColorStop(0, "rgba(220,255,250,0.95)"); g.addColorStop(0.4, "rgba(60,230,200,0.75)"); g.addColorStop(1, "rgba(40,80,255,0)");
+      c.fillStyle = g; c.shadowColor = "#3ce6c8"; c.shadowBlur = 10; c.beginPath(); c.moveTo(0, -r * 1.2); c.quadraticCurveTo(r * 0.9, 0, 0, r * 0.7); c.quadraticCurveTo(-r * 0.9, 0, 0, -r * 1.2); c.fill();
+    } else if (kind === "hearts") {
       c.fillStyle = "#ff4f7b"; c.beginPath(); c.moveTo(0, r * 0.9);
       c.bezierCurveTo(-r * 1.4, -r * 0.2, -r * 0.6, -r * 1.2, 0, -r * 0.4); c.bezierCurveTo(r * 0.6, -r * 1.2, r * 1.4, -r * 0.2, 0, r * 0.9); c.fill();
     } else if (kind === "stars") {
@@ -2229,14 +2278,16 @@
       if (R.host && S.host !== false) {       // we're the host: put the room back how it was
         setTimeout(() => { if (R.settings) socket.emit("settings", R.settings); if (R.stroke) setTimeout(() => socket.emit("track", { stroke: R.stroke, map: R.settings?.map || "normal" }), 300); }, 300);
       }
-      popup("Back! The update ended the race, but your room is back.", false);
+      popup("Back! The restart ended the race, but your room is back.", false);
     }
   });
   // keep the "come back here" note fresh (and remember the room so the host can rebuild it after an update)
   setInterval(() => { if (S.code) saveRejoin({ code: S.code, host: !!S.host, pub: !!S.lobby?.public, settings: S.lobby?.settings || null, stroke: S.host ? S.lobby?.stroke || null : null }); }, 5000);
   // ---- dropped connection / server restart: reconnect and take your car back ----
-  socket.on("disconnect", () => { if (S.code && !S.idleKicked) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔧 The game is updating. Back in a minute..." : "📡 Connection lost. Reconnecting..."; } });
-  socket.on("serverRestart", () => { S.restarting = true; if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔧 The game is updating. Back in a minute..."; } else popup("The game is updating: back in a minute!", true); });
+  socket.on("disconnect", () => { if (S.code && !S.idleKicked) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = S.restarting ? "🔄 The server is restarting. Back in a moment..." : "📡 Connection lost. Reconnecting..."; } });
+  // (once we're connected again, that restart is over: a later dropped connection is just a dropped connection)
+  socket.on("connect", () => { setTimeout(() => { S.restarting = false; }, 20000); });
+  socket.on("serverRestart", () => { S.restarting = true; if (S.code) { $("netVeil").classList.remove("hidden"); $("netMsg").textContent = "🔄 The server is restarting. Back in a moment..."; } else popup("The server is restarting: back in a moment!", true); });
   // Every connection starts with the server's version. Running old code (the game just updated)?
   // Reload to get the new version: you land straight back in your room, and your race.
   const myBuild = (() => { const v = (sel, attr) => { try { return new URL(document.querySelector(sel)?.[attr] || "", location.href).searchParams.get("v"); } catch (e) { return null; } }; const a = v('script[src*="game.js"]', "src"), b = v('link[href*="game.css"]', "href"); return a && b ? `${a}-${b}` : null; })();
@@ -2271,7 +2322,7 @@
       return;
     }
     // the room is there but our seat isn't (reloaded in a lobby, or the host already rebuilt it after an update): join again
-    if (why === "expired" && rj) { saveProfile(); if (was) popup("Back! The update ended the race, but your room is back.", false); socket.emit("join", { code: rj.code, profile: prof }); return; }
+    if (why === "expired" && rj) { saveProfile(); if (was) popup("Back! The restart ended the race, but your room is back.", false); socket.emit("join", { code: rj.code, profile: prof }); return; }
     $("netVeil").classList.add("hidden");
     if (was) { show("menu"); menuErr.textContent = "That room's gone (it ended while you were away)."; }
     S.restarting = false;

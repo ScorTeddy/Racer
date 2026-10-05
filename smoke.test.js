@@ -1475,3 +1475,37 @@ test("rank shield: the first drop out of a rank is blocked, a fresh shield comes
   u.ranked = { sr: 1050, peak: 1050, games: 0, wins: 0, shieldUsed: 3 };   // Gold shield used, now in Gold II: a division drop is not a rank drop
   res = race(6); assert.ok(!res.shield && res.after.key === "gold");
 });
+
+test("an update mid ranked race gives the SR back (and the race doesn't count)", async () => {
+  await accounts.signUp("MidUpdate", "Turbo-Fox-Lane-44");
+  const u = await accounts.getUser("u_midupdate");
+  u.ranked = { sr: 700, peak: 700, games: 0, wins: 0 };
+  accounts.rankedStart(u);
+  assert.equal(u.ranked.sr, 655, "charged at the lights");
+  const r = new game.Room("RKVOID", false); r.ranked = true; r.rankedEntries = [{ car: 1, uid: u.id, pid: "x" }];
+  game.rooms.set("RKVOID", r);
+  try { await game.voidRankedRaces(); } finally { game.rooms.delete("RKVOID"); }
+  assert.equal(u.ranked.sr, 700, "given back");
+  assert.ok(!u.ranked.live && !r.rankedEntries && r.rankedVoided, "and the race won't count when it finishes");
+  assert.equal(accounts.rankedFinish(u, 6, 6, true), null, "finishing it changes nothing");
+  // a charge left over from before the server started (it crashed): given back when the account loads
+  u.ranked.live = { sr0: 700, at: Date.now() - 86400000 }; u.ranked.sr = 655;
+  accounts.undoOldRankedCharges(u);
+  assert.ok(u.ranked.sr === 700 && !u.ranked.live, "an old charge is given back");
+  accounts.rankedStart(u); accounts.undoOldRankedCharges(u);
+  assert.ok(u.ranked.live && u.ranked.sr === 655, "but not one from a race running right now");
+});
+
+test("Halloween: new shop items, more Haunted crate items, and every theme has an elusive mythic", () => {
+  const S = accounts.STORE, ids = new Set();
+  for (const x of S) { assert.ok(!ids.has(x.id), "no duplicate " + x.id); ids.add(x.id); }
+  for (const id of ["glow_pumpkin", "glow_candle", "trail_bats", "trail_pumpkins", "decal_web", "badge_witch", "badge_vampire"]) assert.ok(S.find((x) => x.id === id && x.price > 0), id + " in the shop");
+  assert.equal(S.find((x) => x.id === "trail_souls").rarity, "mythic", "the drop's mythic");
+  for (const T of accounts.PASS_THEMES) assert.ok(S.some((x) => x.pass === T.key && x.rarity === "mythic"), T.key + " has a mythic");
+  assert.equal(S.filter((x) => x.pass === "haunted" && x.rarity === "mythic").length, 3, "Haunted has 3");
+  assert.ok(S.filter((x) => x.pass === "haunted").length >= 14, "more Haunted items");
+  // mythics are elusive: about 1.5% of crates
+  const u = { id: "u_cratetest", coins: 0, owned: [], stats: {}, ach: {}, crates: { haunted: 4000 }, equipped: {} };
+  let m = 0; for (let i = 0; i < 4000; i++) { const r = accounts.openCrate(u, "haunted"); if (r.item.rarity === "mythic") m++; }
+  assert.ok(m > 20 && m < 110, `mythics in 4000 crates: ${m}`);
+});
