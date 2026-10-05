@@ -781,7 +781,7 @@ test("knockout qualifying: Q1, Q2, Q3 with the slowest knocked out, and the grid
   r.startRace();
   assert.ok(r.qualifying && r.qualiKO && r.qualiEnd === 120, "Q1 is 2 minutes");
   r.startLights(); r.phase = "race"; r.launchCars();
-  for (let n = 0; n < 60 * 320 && r.qualifying; n++) r.step(1 / 60);
+  for (let n = 0; n < 60 * 480 && r.qualifying; n++) r.step(1 / 60);       // (each stage runs on until the laps in progress are done)
   assert.deepEqual(feed.map((f) => [f.stage, f.out.length]), [[2, 3], [3, 3]], "3 out after Q1, 3 more after Q2");
   assert.ok(res && res.rows.length === 10);
   assert.deepEqual(res.rows.map((x) => x.q), [...Array(4).fill("Q3"), ...Array(3).fill("Q2"), ...Array(3).fill("Q1")], "grid: Q3 runners, then Q2 and Q1 knock-outs");
@@ -1162,27 +1162,39 @@ test("rolling start: a formation lap behind the safety car, green flag at the li
   assert.ok(r.cars.every((c) => !isFinite(c.bestLap)), "no lap time from the formation lap");
 });
 
-test("red flag: a big pile-up stops everyone, the damage is fixed and the race restarts in order", { timeout: 60000 }, () => {
-  const r = new game.Room("REDFLAG", false); r.setRandomTrack("normal", "regular");
-  r.players.set("rf", { id: "rf", name: "Me", up: {}, level: 1, xp: 0 });
-  Object.assign(r.settings, { ai: 7, quali: 0, laps: 5, weather: "sunny", safetyCar: true }); r.ensureRoster(7);
-  const feed = []; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); return emit(ev, d); };
-  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
-  for (let n = 0; n < 60 * 12; n++) r.step(1 / 60);
-  const [a, b, c, d] = r.cars;
-  r.crash(a, b, 200, 1, 0); assert.ok(!r.rf, "one crash: no red flag");
-  r.crash(c, d, 200, 1, 0);
-  assert.ok(r.rf && feed.includes("redFlag"), "4 cars in a pile-up: red flag");
-  const order = r.standings().map((x) => x.id), pos = r.cars.map((x) => [x.x, x.y]);
+test("red flag: only a BIG pile-up; everyone back to the grid in the order before the crash, standing restart", { timeout: 60000 }, () => {
+  const mk = (mode) => {
+    const r = new game.Room("REDFLAG" + mode, false); r.setRandomTrack("normal", "regular");
+    r.players.set("rf", { id: "rf", name: "Me", up: {}, level: 1, xp: 0, cls: "gt" });
+    Object.assign(r.settings, { ai: 11, quali: 0, laps: 6, weather: "sunny", safetyCar: true, mode, mix: 0.5 }); r.ensureRoster(11);
+    const feed = []; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); return emit(ev, d); };
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 20; n++) r.step(1 / 60);
+    return { r, feed };
+  };
+  const { r, feed } = mk("normal"), hard = game.CRASH_SPEED + 400;
+  const before = [...r.orderHist].reverse().find((h) => h.t < r.time - 0.3).ids;      // the order just before the pile-up
+  const [a, b, c, d, e, f] = r.cars;
+  r.crash(a, b, 200, 1, 0); r.crash(c, d, 200, 1, 0);
+  assert.ok(!r.rf, "4 cars, gentle: no red flag any more");
+  r.crash(e, f, hard, 1, 0); r.crash(a, c, hard, 1, 0);
+  assert.ok(r.rf && feed.includes("redFlag"), "6 cars with hard hits: red flag");
+  const grid = r.cars.slice().sort((x, y) => y.progress - x.progress);
+  assert.deepEqual(grid.map((x) => x.id), before, "on the grid in the order from before the crash");
+  const N = r.track.N; assert.ok(r.cars.every((x) => x.idx > N * 0.8), "back at the start line");
   for (let n = 0; n < 60 * 3; n++) r.step(1 / 60);
-  assert.ok(r.cars.every((x, i) => x.x === pos[i][0] && x.y === pos[i][1]), "everyone stands still");
-  for (let n = 0; n < 60 * 4; n++) r.step(1 / 60);
-  assert.ok(!r.rf && feed.includes("rfRestart") && r.sc, "restart behind the safety car");
-  assert.deepEqual(r.standings().map((x) => x.id).slice(0, 3), order.slice(0, 3), "in the same order");
+  assert.ok(r.cars.every((x) => x.speed === 0), "everyone stands still on the grid");
+  for (let n = 0; n < 60 * 5; n++) r.step(1 / 60);
+  assert.ok(!r.rf && feed.includes("rfRestart") && !r.sc, "standing restart (no safety car)");
   assert.ok(r.cars.every((x) => x.damage === 0), "crews fixed the damage");
-  r.crash(a, b, 200, 1, 0); r.crash(c, d, 200, 1, 0); assert.ok(!r.rf, "only one red flag a race");
+  assert.ok(r.cars.some((x) => x.speed > 50), "and they're off");
+  // multiclass: each class together, Hypers first
+  const M = mk("multi"), R2 = M.r, order2 = R2.standings();
+  R2.regrid(order2.map((x) => x.id));
+  const g2 = R2.cars.slice().sort((x, y) => y.progress - x.progress), firstGt = g2.findIndex((x) => x.cls === "gt");
+  assert.ok(firstGt > 0 && g2.slice(firstGt).every((x) => x.cls === "gt"), "all Hypers ahead of all GT3s");
+  assert.deepEqual(g2.filter((x) => x.cls === "gt").map((x) => x.id), order2.filter((x) => x.cls === "gt").map((x) => x.id), "each class in its own order");
 });
-
 test("cold tyres: less grip at the start and out of the pits, warm after a lap", { timeout: 60000 }, () => {
   const r = new game.Room("TYRETEMP", false); r.setRandomTrack("normal", "regular");
   Object.assign(r.settings, { ai: 2, quali: 0, laps: 5, weather: "sunny" }); r.ensureRoster(2);
@@ -1551,4 +1563,32 @@ test("endurance races wear tyres half as fast", () => {
     Object.assign(r.settings, { ai: 3, quali: 0, laps: 10, mode, enduroMin: 20 }); r.ensureRoster(3); r.startRace(); r.startLights(); return r; };
   const e = mk("endur"), est = e.enduro.est;
   assert.ok(Math.abs(e.wearPerLap * game.tireLifeLaps(est) - 0.5) < 1e-9, "half the normal wear for a race that long");
+});
+
+test("qualifying: when the clock runs out, everyone on a lap gets to finish it first", { timeout: 120000 }, () => {
+  const r = new game.Room("QFLAG", false); r.setRandomTrack("normal", "regular");
+  r.players.set("qf", { id: "qf", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 5, quali: 1, laps: 5, weather: "sunny" }); r.ensureRoster(5);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  assert.ok(r.qualifying);
+  let ended = null; const eq = r.endQuali.bind(r); r.endQuali = () => { ended = r.time; };
+  while (r.time < r.qualiEnd + 0.05) r.step(1 / 60);
+  assert.ok(r.qFlag && r.qFlag.wait.size > 0 && ended === null, "time's up, but laps are still being finished");
+  const laps = new Map(r.cars.map((c) => [c.id, c.lapsDone]));
+  for (let n = 0; n < 60 * 120 && ended === null; n++) r.step(1 / 60);
+  assert.ok(ended !== null, "then qualifying ends");
+  assert.ok(r.cars.filter((c) => !c.inPit && c.aiMode === "race").every((c) => c.lapsDone > laps.get(c.id) || !r.qFlag), "after everyone crossed the line");
+  r.endQuali = eq;
+});
+
+test("endurance: teammates can share one car (swap at stops) or both race", () => {
+  const mk = (share) => {
+    const r = new game.Room("ENDSH" + share, false); r.setRandomTrack("normal", "regular");
+    for (const id of ["a", "b"]) r.players.set(id, { id, name: "P" + id, up: {}, level: 1, xp: 0, team: "Squad" });
+    Object.assign(r.settings, { ai: 2, quali: 0, laps: 5, mode: "endur", teams: true, enduroShare: share }); r.ensureRoster(2);
+    r.startRace(); r.startLights(); return r;
+  };
+  const shared = mk(true), both = mk(false);
+  assert.equal(shared.cars.filter((c) => c.owner).length, 1, "share: one car for the team");
+  assert.equal(both.cars.filter((c) => c.owner).length, 2, "both race: a car each");
 });

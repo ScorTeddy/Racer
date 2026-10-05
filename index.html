@@ -187,7 +187,8 @@
             </div>
             <div class="champ-opts hidden" id="enduroOpts">
               <label class="f">Race length <select id="sEnduro"><option value="10">10 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select></label>
-              <p class="preset-note">With teams on, players on the same team share one car: one drives, the other watches, and you swap every time the car pits. When the clock runs out, the leader's next lap is the last.</p>
+              <label class="f">Teammates <select id="sEnduroShare"><option value="on">Share one car: swap drivers at every pit stop</option><option value="off">Both race: each of you has your own car</option></select></label>
+              <p class="preset-note">With teams on and "Share one car", players on the same team share one car: one drives, the other watches, and you swap every time the car pits. When the clock runs out, the leader's next lap is the last.</p>
             </div>
           </div>
       </section>
@@ -262,7 +263,7 @@
     <div class="board-hint panel" id="boardHint">Draw your track in one loop</div>
     <div class="dock panel" aria-label="Track tools">
       <button type="button" class="btn done-btn" id="doneEditBtn">✓ Done</button>
-      <div class="dock-group hidden" id="undoTools"><button type="button" class="tool undo-all" id="trackUndo" title="Undo (Ctrl+Z): drawing, deleting, rotating, resizing, anything"><span>↩️</span>Undo</button></div>
+      <div class="dock-group hidden" id="undoTools"><button type="button" class="tool undo-all" id="trackUndo" title="Undo (Ctrl+Z): drawing, deleting, rotating, resizing, anything"><span>↩️</span>Undo</button><button type="button" class="tool undo-all hidden" id="trackRedo" title="Redo (Ctrl+Y): bring back what you just undid"><span>↪️</span>Redo</button></div>
       <div class="dock-group" id="drawMode">
         <span class="dock-label">Draw</span>
         <button type="button" class="tool" data-dm="free" aria-pressed="true" title="Drag to draw. Hold Shift for a straight bit"><span>✏️</span>Freehand</button>
@@ -352,6 +353,7 @@
 <div id="hud" class="hidden">
   <div class="flash" id="flash"></div>
   <div class="standing panel"><div class="pos display" id="posText">P1<small>/6</small></div><div class="laps"><span class="big" id="lapText">Lap 1/5</span><span class="t" id="timeText">0:00.0</span><span class="t" id="bestText">Best --</span><span class="gapline"><span class="a" id="gapAhead"></span><span class="b" id="gapBehind"></span></span><span class="sectors" id="sectors"><span></span><span></span><span></span></span></div><div class="lap-delta hidden" id="lapDelta" title="This lap vs your best lap, at the same point on the track"><small>vs best</small><b id="lapDeltaVal">--</b></div></div>
+  <button type="button" class="watch-chip hidden" id="watchChip"></button>
   <div class="standings panel" id="standings"><div class="head"><span>Gap</span><span>Tires</span></div><ol id="standList"></ol></div>
   <canvas id="minimap" class="panel" role="img" aria-label="Mini map of the track with every car's position"></canvas>
   <div class="feed" id="feed" aria-live="polite"></div>
