@@ -557,6 +557,7 @@ test("ranked races grow with your tier: even Iron gets big tracks, the top is hu
     s.emit("ranked:play", { name: "RankTracks" });
     const j = await got("joined"), r = game.rooms.get(j.code);
     for (let i = 0; i < 100 && (r.makingTrack || !r.track); i++) await new Promise((ok) => setTimeout(ok, 50));   // (random tracks are made in slices)
+    assert.equal(r.settings.xpRate, 50, "ranked gives 50 XP a second");
     assert.ok(check(r), `SR ${sr}: ${r.trackKind} ${r.settings.map} ${r.wonk} ${r.settings.ai} AI ${r.settings.laps} laps`);
     assert.ok(!(r.settings.weather === "fog" && ["night", "neon"].includes(r.settings.theme)), "never night + fog");
     s.emit("leave"); await new Promise((ok) => setTimeout(ok, 1200));
@@ -1427,6 +1428,52 @@ test("this week's special tracks are saved once made, and come back identical af
   const raw = JSON.parse(await accounts.getShared("tour", game.weekCode(w)));
   const again = game.buildTrack(raw.stroke, game.MAP_SIZES[raw.map]);
   assert.deepEqual(again.base, made.shape.base, "rebuilt from the saved drawing: the very same track");
+});
+
+test("AI in the rain: wets with a sensible number of stops, not a stop every lap", { timeout: 120000 }, () => {
+  const r = new game.Room("WETSTOPS", false); r.setRandomTrack("normal", "regular");
+  r.players.set("ws", { id: "ws", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 7, quali: 0, laps: 12, weather: "rain", safetyCar: false }); r.ensureRoster(7);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 60 * 20 && r.phase === "race"; n++) r.step(1 / 60);
+  const ai = r.cars.filter((c) => !c.owner);
+  assert.ok(ai.every((c) => c.compound === "wet"), "on wets in the rain");
+  assert.ok(ai.every((c) => c.pits <= 2), "at most 2 stops in 12 wet laps: " + ai.map((c) => c.pits).join(" "));
+});
+
+test("multiclass can also be an endurance race", () => {
+  const r = new game.Room("MULTIEND", false); r.setRandomTrack("normal", "regular");
+  r.players.set("me", { id: "me", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 5, mode: "multi", multiEndur: true, enduroMin: 10 }); r.ensureRoster(5);
+  r.startRace(); r.startLights();
+  assert.ok(r.multi, "still multiclass");
+  assert.ok(r.enduro && r.enduro.secs === 600, "and a 10 minute endurance race");
+  const r2 = new game.Room("MULTINOR", false); r2.setRandomTrack("normal", "regular");
+  r2.players.set("me", { id: "me", name: "Me", up: {}, level: 1, xp: 0 });
+  Object.assign(r2.settings, { ai: 5, quali: 0, laps: 5, mode: "multi" }); r2.ensureRoster(5);
+  r2.startRace(); r2.startLights();
+  assert.ok(r2.multi && !r2.enduro, "switch off: a normal multiclass race");
+});
+
+test("rank shield: the first drop out of a rank is blocked, a fresh shield comes with the next promotion", async () => {
+  await accounts.signUp("ShieldGuy", "Turbo-Fox-Lane-43");
+  const u = await accounts.getUser("u_shieldguy");
+  const race = (pos) => { accounts.rankedStart(u); return accounts.rankedFinish(u, pos, 6, true); };
+  u.ranked = { sr: 905, peak: 905, games: 0, wins: 0 };                   // Gold, just above Silver
+  assert.equal(accounts.rankedPublic(u).shield, true, "shield ready");
+  let res = race(6);
+  assert.ok(res.shield && u.ranked.sr === 900 && res.after.key === "gold", "blocked: still Gold, at the bottom");
+  assert.equal(accounts.rankedPublic(u).shield, false, "used up");
+  res = race(6);
+  assert.ok(!res.shield && res.after.key === "silver", "the next drop goes through");
+  u.ranked.sr = 895; res = race(1);
+  assert.equal(res.after.key, "gold", "promoted back to Gold");
+  assert.equal(accounts.rankedPublic(u).shield, true, "with a fresh shield");
+  u.ranked = { sr: 230, peak: 230, games: 0, wins: 0 };                    // Iron: nothing to drop to
+  assert.equal(accounts.rankedPublic(u).shield, false);
+  res = race(6); assert.ok(!res.shield);
+  u.ranked = { sr: 1050, peak: 1050, games: 0, wins: 0, shieldUsed: 3 };   // Gold shield used, now in Gold II: a division drop is not a rank drop
+  res = race(6); assert.ok(!res.shield && res.after.key === "gold");
 });
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
