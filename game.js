@@ -447,9 +447,46 @@
   }
   function crowdRoar(k = 1) {
     if (!crowd || !actx || crowdVol() <= 0) return;
+    cheer(k, 0.8);
     const t = actx.currentTime, g = crowd.g.gain, base = 0.018 * crowdVol();
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(base + 0.09 * k * crowdVol(), t + 0.35); g.setTargetAtTime(base, t + 0.9, 1.1);
     crowd.f.frequency.cancelScheduledValues(t); crowd.f.frequency.setValueAtTime(1500, t); crowd.f.frequency.setTargetAtTime(1100, t + 0.6, 1);
+  }
+  // A crowd that sounds like PEOPLE: a vowel-shaped roar, a dozen voices going "woooo!" (each its own pitch, wobble and
+  // timing), a few whistles, and applause (lots of little claps). k = how big (0-1.5), vol = how close you are.
+  function cheer(k = 1, vol = 1) {
+    const a = actx; if (!a || crowdVol() <= 0 || vol <= 0.02) return;
+    const out = fxOut(a), t0 = a.currentTime, V = crowdVol() * vol * Math.min(1.5, k), dur = 1.6 + k * 1.2;
+    // roar: noise through two vowel formants ("aaah"), swelling then fading
+    { const n = noise(a), f1 = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
+      f1.type = "bandpass"; f1.frequency.value = 720; f1.Q.value = 4; f2.type = "bandpass"; f2.frequency.value = 1180; f2.Q.value = 5;
+      const m = a.createGain(); n.connect(f1).connect(m); n.connect(f2).connect(m); m.connect(g).connect(out);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.11 * V, t0 + 0.35); g.gain.setTargetAtTime(0, t0 + dur * 0.55, dur * 0.3);
+      n.start(t0); n.stop(t0 + dur + 1.5); }
+    // voices: "woooo!" (a buzzy voice through an "oo" formant, sliding up then down, with vibrato)
+    const voices = Math.round(6 + 8 * Math.min(1, k));
+    for (let v = 0; v < voices; v++) {
+      const st = t0 + Math.random() * 0.5, len = 0.5 + Math.random() * 0.9, f0 = 170 + Math.random() * 260;
+      const o = a.createOscillator(), vib = a.createOscillator(), vg = a.createGain(), f = a.createBiquadFilter(), f2 = a.createBiquadFilter(), g = a.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(f0, st); o.frequency.linearRampToValueAtTime(f0 * (1.35 + Math.random() * 0.4), st + len * 0.35); o.frequency.linearRampToValueAtTime(f0 * 1.05, st + len);
+      vib.frequency.value = 5 + Math.random() * 2; vg.gain.value = f0 * 0.03; vib.connect(vg).connect(o.frequency);
+      f.type = "bandpass"; f.frequency.value = 380 + Math.random() * 120; f.Q.value = 6; f2.type = "bandpass"; f2.frequency.value = 900 + Math.random() * 200; f2.Q.value = 7;
+      const m = a.createGain(); o.connect(f).connect(m); o.connect(f2).connect(m); m.connect(g).connect(out);
+      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime(0.06 * V, st + 0.08); g.gain.setTargetAtTime(0, st + len * 0.7, len * 0.2);
+      o.start(st); vib.start(st); o.stop(st + len + 0.6); vib.stop(st + len + 0.6);
+    }
+    // whistles
+    for (let w = 0; w < (k > 0.7 ? 3 : 1); w++) {
+      const st = t0 + 0.2 + Math.random() * 0.8, o = a.createOscillator(), g = a.createGain(), f0 = 1900 + Math.random() * 900;
+      o.type = "sine"; o.frequency.setValueAtTime(f0, st); o.frequency.linearRampToValueAtTime(f0 * 1.25, st + 0.18); o.frequency.linearRampToValueAtTime(f0 * 0.9, st + 0.45);
+      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime(0.03 * V, st + 0.03); g.gain.setTargetAtTime(0, st + 0.35, 0.06);
+      o.connect(g).connect(out); o.start(st); o.stop(st + 0.7);
+    }
+    // applause: hundreds of short claps (noise bursts), thinning out
+    { if (!cheer.clap) { const n = Math.floor(a.sampleRate * 0.03); cheer.clap = a.createBuffer(1, n, a.sampleRate); const d = cheer.clap.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.12)); }
+      const claps = Math.round(60 * dur * Math.min(1.2, k + 0.3)), hp = a.createBiquadFilter(), g = a.createGain(); hp.type = "highpass"; hp.frequency.value = 900; g.gain.value = 0.05 * V; hp.connect(g).connect(out);
+      for (let c2 = 0; c2 < claps; c2++) { const s2 = a.createBufferSource(); s2.buffer = cheer.clap; s2.playbackRate.value = 0.8 + Math.random() * 0.6; s2.connect(hp); s2.start(t0 + Math.pow(Math.random(), 1.6) * dur); }
+    }
   }
   // horns (H): synthesized, quieter the further the car is from your screen
   function hornSound(type, vol = 1) {
@@ -1252,7 +1289,7 @@
       : "Make an account to save your stats, earn coins and unlock car parts.";
     const av = $("acctAv"); av.textContent = "";
     if (u?.picture) { const im = document.createElement("img"); im.src = u.picture; im.alt = `${u.name}'s profile picture`; im.referrerPolicy = "no-referrer"; av.appendChild(im); } else av.textContent = u ? "🏎️" : "👤";
-    $("acctCoins").classList.toggle("hidden", !u); $("acctCoins").textContent = `🪙 ${u ? u.coins : 0}`;
+    $("acctCoins").classList.toggle("hidden", !u); countCoins($("acctCoins"), u ? u.coins : 0);
     $("hubCoins").textContent = `🪙 ${u ? u.coins : 0}`; $("hubCoins").classList.toggle("hidden", !u);
     $("signOutBtn").classList.toggle("hidden", !u); $("signOutAllBtn").classList.toggle("hidden", !u);
     $("signUpBtn").classList.toggle("hidden", !!u); $("logInBtn").classList.toggle("hidden", !!u);
@@ -2269,6 +2306,8 @@
     document.body.classList.toggle("in-race", screen === "race");
     if (typeof renderChat === "function") renderChat();
     $("hud").classList.toggle("hidden", screen !== "race");
+    { const on = screen === "menu" ? $("menu") : screen === "lobby" ? $("lobby") : screen === "race" ? $("hud") : null;     // (a little entrance)
+      if (on && S.lastShown !== screen) { on.classList.remove("enter"); void on.offsetWidth; on.classList.add("enter"); } S.lastShown = screen; }
     $("results").classList.toggle("hidden", screen !== "results");
     if (screen !== "race") { engineSound(0, false); $("weatherPill").classList.add("hidden"); if (S.photoOn) photoMode(false); }
     if (screen === "menu") socket.emit("totw:info");
@@ -2697,7 +2736,7 @@
   }
   function onState(st) {
     S.t = st.t; S.phase = st.phase; S.fastest = st.fastest; S.sc = st.sc || null; S.standings = st.standings; S.gaps = st.gaps || [];
-    S.ql = st.ql ?? -1; S.qs = st.qs || 0; S.qf = !!st.qf;
+    S.ql = st.ql ?? -1; S.qs = st.qs || 0; S.qf = !!st.qf; S.fl = !!st.fl;
     commLeader(st);
     if (!!st.paused !== !!S.paused) setPausedUi(!!st.paused, S.pausedBy);
     pushSnap(st);
@@ -2755,7 +2794,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "qFlag" ? "🏁 Time's up! Anyone on a lap gets to finish it" : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "qFlag" ? "🏁 Time's up! Anyone on a lap gets to finish it" : f.t === "abandoned" ? `🟥 RACE ABANDONED: ${f.why === "redFlags" ? "too many red flags" : "too many safety cars"}` : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -3265,20 +3304,87 @@
   }
   // ---- track objects: grandstands (beside the track), banners (an arch over it), tunnels and bridges (over the
   // cars). "ground" ones are drawn under the cars, the rest on top. In a tunnel your own car shows as an arrow.
-  const TUNNEL_LEN = 16;          // (how many track points a tunnel covers)
+  // ---- stadiums: grandstands full of little people, who jump up and cheer when cars go by ----
+  const STAND_COLS = ["#ef4444", "#3b82f6", "#facc15", "#22c55e", "#f472b6", "#f8fafc", "#a855f7", "#fb923c"], SKIN = ["#f1c27d", "#e0ac69", "#c68642", "#8d5524", "#ffdbac"];
+  function drawStand(c, x, y, rot, seed, ex) {
+    const t = performance.now() / 1000;
+    c.save(); c.translate(x, y); c.rotate(rot);
+    c.fillStyle = "#3b4150"; c.fillRect(-90, -30, 180, 60);
+    c.fillStyle = "rgba(255,255,255,0.07)"; for (let r = 0; r < 4; r++) c.fillRect(-90, -24 + r * 11, 180, 1.4);
+    c.fillStyle = "#e5e7eb"; c.fillRect(-90, 24, 180, 6);
+    for (let r = 0; r < 4; r++) for (let k = 0; k < 15; k++) {
+      const ph = seed * 31 + r * 15 + k, col = STAND_COLS[(ph * 7 + r) % STAND_COLS.length];
+      const jump = ex * Math.max(0, Math.sin(t * (8 + (ph % 5)) + ph * 1.7)) * 3.2 + Math.sin(t * 1.3 + ph) * 0.45;
+      const px = -82 + k * 11.5, py = -19 + r * 11 - jump;
+      if (ex > 0.3 && ph % 3) { c.strokeStyle = col; c.lineWidth = 1.5; c.beginPath(); c.moveTo(px - 2.6, py + 2); c.lineTo(px - 4.6, py - 3.5 - jump * 0.4); c.moveTo(px + 2.6, py + 2); c.lineTo(px + 4.6, py - 3.5 - jump * 0.4); c.stroke(); }
+      c.fillStyle = col; c.fillRect(px - 3.1, py + 1.2, 6.2, 4.6);
+      c.fillStyle = SKIN[ph % SKIN.length]; c.beginPath(); c.arc(px, py - 0.6, 2.5, 0, Math.PI * 2); c.fill();
+      if (ph % 13 === 0) { const w = Math.sin(t * 7 + ph) * 2.5; c.strokeStyle = "#ddd"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(px + 3, py + 2); c.lineTo(px + 4, py - 7); c.stroke(); c.fillStyle = STAND_COLS[(ph + 3) % STAND_COLS.length]; c.beginPath(); c.moveTo(px + 4, py - 7); c.lineTo(px + 10, py - 6 + w); c.lineTo(px + 4, py - 3); c.fill(); }
+    }
+    c.fillStyle = "#ff2d55"; c.fillRect(-90, -36, 180, 6);
+    c.restore();
+  }
+  // how excited a stand is: cars close by = on their feet (eased, so it builds and calms down)
+  const STAND_EX = new Map();
+  function standEx(x, y) {
+    const key = Math.round(x) + "," + Math.round(y); let near = 1e9;
+    if (S.cars) for (const c of S.cars.values()) if (c.x !== undefined) near = Math.min(near, (c.x - x) ** 2 + (c.y - y) ** 2);
+    const want = near < 340 * 340 ? 1 : 0.12, cur = STAND_EX.get(key) ?? 0.12, v = cur + (want - cur) * (want > cur ? 0.25 : 0.03);
+    STAND_EX.set(key, v); if (STAND_EX.size > 400) STAND_EX.clear();
+    return v;
+  }
+  // every track gets its own stadiums: one on the main straight (across from the pits), the rest round the outside of
+  // the twistiest corners. Only where there's room: never on the road, the pits, the map edge or your own objects.
+  function autoStands(t) {
+    if (t._stands) return t._stands;
+    const N = t.N, out = [], pl = t.pitLane;
+    if (!N || !t.pts || !t.nor || !t.tan || !t.hw) return (t._stands = out);
+    const inPit = (i, side) => pl && side === pl.side && ((i - pl.entry + N) % N) <= pl.len + 10;
+    const turn = (i) => { const a = t.tan[(i - 5 + N) % N], b = t.tan[(i + 5) % N]; return a.x * b.y - a.y * b.x; };
+    const ok = (i, side) => {
+      if (inPit(i, side)) return null;
+      const p = t.pts[i], n = t.nor[i], off = t.hw[i] + 62, x = p.x + n.x * off * side, y = p.y + n.y * off * side;
+      if (x < 130 || y < 130 || x > t.W - 130 || y > t.H - 130) return null;
+      for (let j = 0; j < N; j += 2) { let di = Math.abs(j - i); di = Math.min(di, N - di); if (di < 8) continue; if (Math.hypot(t.pts[j].x - x, t.pts[j].y - y) < t.hw[j] + 115) return null; }
+      for (const s2 of out) if (Math.hypot(s2.x - x, s2.y - y) < 260) return null;
+      for (const d of t.decor || []) { const q = t.pts[d.i]; if (q && Math.hypot(q.x - x, q.y - y) < 260) return null; }
+      const a = t.tan[i]; return { i, side, x, y, rot: Math.atan2(a.y, a.x) + (side < 0 ? Math.PI : 0), cheerAt: 0 };
+    };
+    const startSide = pl ? -pl.side : 1;
+    for (const i of [N - 9, N - 20]) { const s2 = ok(((i % N) + N) % N, startSide); if (s2) { out.push(s2); break; } }
+    const cand = []; for (let i = 0; i < N; i += Math.max(3, Math.floor(N / 70))) cand.push(i);
+    cand.sort((a, b) => Math.abs(turn(b)) - Math.abs(turn(a)));
+    for (const i of cand) {
+      if (out.length >= 7) break;
+      if (out.some((s2) => { let di = Math.abs(s2.i - i); di = Math.min(di, N - di); return di < N / 10; })) continue;
+      const side = turn(i) > 0 ? -1 : 1;                     // the outside of the corner
+      const s2 = ok(i, side) || ok(i, -side); if (s2) out.push(s2);
+    }
+    return (t._stands = out);
+  }
+  function drawAutoStands(c, t) {
+    const fc = (S.camTarget && S.cars?.get(S.camTarget)) || S.cars?.get(S.myCar), now = performance.now();
+    for (const s2 of autoStands(t)) {
+      drawStand(c, s2.x, s2.y, s2.rot, s2.i, standEx(s2.x, s2.y));
+      // the car you're watching goes past: they cheer (and you hear it)
+      if (fc && fc.x !== undefined && !S.replaying && now - s2.cheerAt > 9000 && (fc.x - s2.x) ** 2 + (fc.y - s2.y) ** 2 < 300 * 300) { s2.cheerAt = now; cheer(0.75, 0.9); }
+    }
+  }
+  const TUNNEL_LEN = 16;          // (how many track points a one-click tunnel covers; two clicks: start to end)
+  const DECOR_LONG = ["tunnel", "stand"];
+  const decorLen = (d) => (d.len > 0 ? d.len : d.k === "tunnel" ? TUNNEL_LEN : 0);
   function drawObjects(c, T, layer, me = null, board = false) {
     const D = T?.decor; if (!D || !D.length) return;
     const N = T.N, P = (i) => T.pts[((i % N) + N) % N], Nn = (i) => T.nor[((i % N) + N) % N], ang = (i) => { const q = T.tan[((i % N) + N) % N]; return Math.atan2(q.y, q.x); };
     for (const d of D) {
       const i = d.i, p = P(i), n = Nn(i), hw = hwAt(T, i), a = ang(i);
       if (d.k === "stand" && layer === "ground") {
-        const off = hw + 62, x = p.x + n.x * off * d.side, y = p.y + n.y * off * d.side;
-        c.save(); c.translate(x, y); c.rotate(a + (d.side < 0 ? Math.PI : 0));
-        c.fillStyle = "#3b4150"; c.fillRect(-90, -30, 180, 60); c.fillStyle = "#e5e7eb"; c.fillRect(-90, 24, 180, 6);
-        const cols = ["#ef4444", "#3b82f6", "#facc15", "#22c55e", "#f472b6", "#f8fafc"];
-        for (let r = 0; r < 4; r++) for (let k = 0; k < 15; k++) { c.fillStyle = cols[(r * 7 + k * 3 + i) % cols.length]; c.beginPath(); c.arc(-82 + k * 11.5, -20 + r * 11, 3.6, 0, Math.PI * 2); c.fill(); }
-        c.fillStyle = "#ff2d55"; c.fillRect(-90, -36, 180, 6);
-        c.restore();
+        // a grandstand (two clicks: a whole row of them, from where you started to where you ended)
+        const L0 = decorLen(d), step = 9, list = L0 > 0 ? Array.from({ length: Math.max(1, Math.floor(L0 / step) + 1) }, (_, q) => i + q * step) : [i];
+        for (const si of list) {
+          const sp = P(si), sn = Nn(si), sa = ang(si), off = hwAt(T, ((si % N) + N) % N) + 62, x = sp.x + sn.x * off * d.side, y = sp.y + sn.y * off * d.side;
+          drawStand(c, x, y, sa + (d.side < 0 ? Math.PI : 0), si, board ? 0.2 : standEx(x, y));
+        }
       } else if (d.k === "banner" && layer === "top") {
         c.save(); c.translate(p.x, p.y); c.rotate(a);
         const w = hw + 14; c.fillStyle = "#1f2937"; c.fillRect(-5, -w - 6, 10, 10); c.fillRect(-5, w - 4, 10, 10);
@@ -3286,7 +3392,7 @@
         c.rotate(Math.PI / 2); c.fillStyle = "#fff"; c.font = "900 15px 'Titillium Web', 'Chakra Petch', sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("SCRIBBLE GP", 0, 1);
         c.restore();
       } else if (d.k === "tunnel" && layer === "top") {
-        const len = TUNNEL_LEN, L = [], R = [];
+        const len = decorLen(d), L = [], R = [];
         for (let k = 0; k <= len; k++) { const q = P(i + k), m = Nn(i + k), h = hwAt(T, (i + k) % N) + 16; L.push([q.x + m.x * h, q.y + m.y * h]); R.push([q.x - m.x * h, q.y - m.y * h]); }
         const tube = () => { c.beginPath(); L.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); for (let k = R.length - 1; k >= 0; k--) c.lineTo(R[k][0], R[k][1]); c.closePath(); };
         const inside = !board && S.tun > 0 && D.indexOf(d) === S.tunK ? S.tun : 0;
@@ -3384,6 +3490,10 @@
       c.restore();
     }
     drawCutPreview(c);
+    if (S.decorStart && S.decorTool) {  // first click of a tunnel / grandstand
+      c.fillStyle = S.decorTool === "tunnel" ? "#9ca3af" : "#ff2d55"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
+      c.beginPath(); c.arc(S.decorStart[0], S.decorStart[1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
+    }
     if (drsMode && drsMode.a) {         // first click of a new DRS zone
       c.fillStyle = "#3ee06a"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
       c.beginPath(); c.arc(drsMode.a[0], drsMode.a[1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
@@ -3556,10 +3666,10 @@
     if (k < 1) scale(k * 0.98);
     bx = box(); const dx = bx.x0 < m ? m - bx.x0 : bx.x1 > B.bw - m ? B.bw - m - bx.x1 : 0, dy = bx.y0 < m ? m - bx.y0 : bx.y1 > B.bh - m ? B.bh - m - bx.y1 : 0;
     pts = pts.map((q) => [q[0] + dx, q[1] + dy, q[2]]);
-    P.steps = []; if (S.track.reverse) P.steps.push(() => socket.emit("reverse"));
+    P.steps = [];                             // (the server keeps the direction, start line, DRS zones and objects: keep)
     S.draft = null; S.lastDraft = null; updateDraftUi();
     S.preview = pts; drawBoard();            // show it right away; the server's finished track replaces it in a moment
-    socket.emit("track", { stroke: pts, map: S.lobby.settings.map });
+    socket.emit("track", { stroke: pts, map: S.lobby.settings.map, keep: true });
     boardHint({ rot: "Rotated!", flipx: "Flipped left to right!", flipy: "Flipped upside down!", big: "Bigger!", small: "Smaller!", center: "Centered on the map!", wide: "Wider road!", narrow: "Narrower road!", wiggle: "Added some wiggles! (hit it again for more)" }[kind], false);
   }
   function addStraight(p) {
@@ -3803,9 +3913,9 @@
   $("closeLoop").addEventListener("click", finishDraft);
   document.querySelectorAll("[data-decor]").forEach((b) => b.addEventListener("click", () => {
     if (!S.host) return;
-    S.decorTool = S.decorTool === b.dataset.decor ? null : b.dataset.decor;
+    S.decorTool = S.decorTool === b.dataset.decor ? null : b.dataset.decor; S.decorStart = null;
     document.querySelectorAll("[data-decor]").forEach((x) => x.classList.toggle("on", x.dataset.decor === S.decorTool));
-    if (S.decorTool) boardHint({ stand: "🏟️ Click beside the track to put a grandstand there (on that side).", banner: "🎌 Click on the track for a banner arch over it.", tunnel: "🚇 Click on the track where the tunnel starts.", bridge: "🌉 Click on the track for a bridge over it." }[S.decorTool], false);
+    if (S.decorTool) boardHint({ stand: "🏟️ Click beside the track where the grandstand starts (on that side), then where it ends.", banner: "🎌 Click on the track for a banner arch over it.", tunnel: "🚇 Click on the track where the tunnel starts, then where it ends.", bridge: "🌉 Click on the track for a bridge over it." }[S.decorTool], false);
   }));
   $("decorUndo").addEventListener("click", () => S.host && socket.emit("decor:undo"));
   $("decorClear").addEventListener("click", () => S.host && socket.emit("decor:clear"));
@@ -4303,7 +4413,14 @@
     const p = toBoard(e);
     if (cut) { cutClick(p); return; }
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
-    if (S.decorTool) { socket.emit("decor:add", { k: S.decorTool, x: p[0], y: p[1] }); return; }
+    if (S.decorTool) {
+      // tunnels and grandstands: click where it starts, then where it ends. Banners and bridges: one click.
+      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
+      socket.emit("decor:add", { k: S.decorTool, x: (S.decorStart || p)[0], y: (S.decorStart || p)[1], end: S.decorStart ? { x: p[0], y: p[1] } : null });
+      S.decorStart = null; drawBoard();
+      if (DECOR_LONG.includes(S.decorTool)) boardHint(S.decorTool === "tunnel" ? "🚇 Tunnel built! Click for another one's start." : "🏟️ Grandstand built! Click for another one's start.", false);
+      return;
+    }
     if (drsMode) {
       if (!drsMode.a) { drsMode.a = p; boardHint("Now click where the DRS zone ends (just before the braking point).", false); drawBoard(); }
       else { socket.emit("drs:add", { a: drsMode.a, b: p }); endDrs(); drawBoard(); }
@@ -4646,6 +4763,23 @@
     }
     S.justPicked = null;
   }
+  // coins: count up (or down) to the new amount, with a little bounce
+  function countCoins(elx, to) {
+    const from = Number(elx.dataset.v ?? to); elx.dataset.v = to;
+    if (from === to || reducedMotion) { elx.textContent = `🪙 ${to.toLocaleString()}`; return; }
+    elx.classList.remove("coin-up", "coin-down"); void elx.offsetWidth; elx.classList.add(to > from ? "coin-up" : "coin-down");
+    const t0 = performance.now(), dur = Math.min(1200, 300 + Math.abs(to - from) * 2);
+    const stepC = (now) => { const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); elx.textContent = `🪙 ${Math.round(from + (to - from) * e).toLocaleString()}`; if (k < 1 && elx.dataset.v == to) requestAnimationFrame(stepC); };
+    requestAnimationFrame(stepC);
+  }
+  // a burst of confetti from the top of the screen (a podium finish, a win...)
+  function confettiBurst(n = 90) {
+    if (reducedMotion) return;
+    const box = document.createElement("div"); box.className = "confetti-fx";
+    const cols = ["#ffcc1f", "#ff2d55", "#22d3ee", "#3ee06a", "#a855f7", "#fff"];
+    for (let i = 0; i < n; i++) { const p = document.createElement("i"); p.style.left = Math.random() * 100 + "vw"; p.style.background = cols[i % cols.length]; p.style.setProperty("--dx", (Math.random() - 0.5) * 240 + "px"); p.style.setProperty("--r", Math.random() * 900 - 450 + "deg"); p.style.animationDelay = Math.random() * 600 + "ms"; p.style.animationDuration = 1800 + Math.random() * 1400 + "ms"; box.appendChild(p); }
+    document.body.appendChild(box); setTimeout(() => box.remove(), 4200);
+  }
   function banner(text, color) { const b = $("banner"); b.textContent = text; b.style.color = color || "#fff"; b.classList.remove("show"); void b.offsetWidth; b.classList.add("show"); }
   function popup(text, warn) {
     // outside a race the HUD (and its floating race messages) is hidden: show a readable card instead
@@ -4686,7 +4820,19 @@
     const cur = Math.max(0, ids.indexOf(S.camTarget ?? ids[0])); S.camTarget = ids[(cur + 1) % ids.length];
     const c = S.cars.get(S.camTarget); $("replayCam").textContent = `Follow: ${c?.name || "?"}`;
   });
+  // the race was called off (3 red flags / 7 safety cars): a big moment before the results
+  function showAbandoned(a) {
+    const fx = $("abandonFx");
+    $("abWhy").textContent = `${a.why === "redFlags" ? `${a.rf} red flags` : `${a.sc} safety cars`} · stopped on lap ${a.lap} of ${a.of} · results as they stood`;
+    $("abWin").textContent = a.winner ? `🏆 Winner: ${a.winner}` : "";
+    fx.classList.remove("hidden", "out"); void fx.offsetWidth; fx.classList.add("play");
+    sfx("jump"); addShake?.(14); crowdRoar(1.2);
+    const done = () => { fx.classList.add("out"); setTimeout(() => fx.classList.add("hidden"), 500); fx.removeEventListener("click", done); };
+    fx.addEventListener("click", done); setTimeout(done, 5200);
+  }
   function showResults(r) {
+    if (r.abandoned && !S.replaying) showAbandoned(r.abandoned);
+    { const me = (r.rows || []).findIndex((x) => x.owner === S.me); if (me >= 0 && me < 3 && !S.replaying) setTimeout(() => confettiBurst(me === 0 ? 140 : 80), r.abandoned ? 5400 : 400); }
     S.lastResults = r; $("replayBtn").classList.toggle("hidden", RP.buf.length < 30);
     { const rb = $("rematchBtn"); rb.classList.toggle("hidden", !!S.race?.ranked); rb.disabled = false; rb.textContent = S.host ? "🔁 Rematch now" : "🔁 Vote for a rematch"; }
     $("replaySaveRes").classList.toggle("hidden", RP.buf.length < 30); $("replayShareRes").classList.toggle("hidden", RP.buf.length < 30 || !A.user);
@@ -5727,9 +5873,10 @@
     };
     // in a tunnel? (the car the camera follows) The view and the sound change while you're in there
     { const fc = (S.camTarget && S.cars.get(S.camTarget)) || S.cars.get(S.myCar); let inT = -1;
-      if (fc && fc.drawIdx !== undefined && t.decor) t.decor.forEach((d, k) => { if (d.k === "tunnel" && ((fc.drawIdx - d.i + t.N) % t.N) <= TUNNEL_LEN) inT = k; });
+      if (fc && fc.drawIdx !== undefined && t.decor) t.decor.forEach((d, k) => { if (d.k === "tunnel" && ((fc.drawIdx - d.i + t.N) % t.N) <= decorLen(d)) inT = k; });
       if (inT >= 0) S.tunK = inT;
       S.tun = clamp((S.tun || 0) + (inT >= 0 ? 1 : -1) * Math.min(dt, 0.1) * 3, 0, 1); setEcho(S.replaying ? 0 : S.tun); }
+    drawAutoStands(ctx, t);
     drawObjects(ctx, t, "ground");
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
@@ -6105,6 +6252,7 @@
     f.className = "class-flag " + (danger ? "danger" : close ? "warn" : "") + (msg ? "" : " hidden"); if (msg && f.textContent !== msg) f.textContent = msg;
   }
   function updateHud(now) {
+    try { updateWatchPanel(); } catch (e) {}          // (spectators too: before the "no car of your own" stop below)
     layoutHud();
     const me = S.cars.get(S.myCar) || S.cars.get(S.standings[0]);
     if (!me) return;
@@ -6119,7 +6267,8 @@
     } else { $("posText").append("P" + pos); const sm = document.createElement("small"); sm.textContent = "/" + S.cars.size; $("posText").append(sm); }
     classFlag(me); elimFlag(me);
     { const T3 = "Scribble GP"; const tr = S.ql >= 0 ? `Qualifying · ${T3}` : me.fin ? `Finished · ${T3}` : `P${S.standings.indexOf(S.myCar) + 1} · Lap ${clamp(me.laps + 1, 1, laps)}/${laps} · ${T3}`; if (tr !== S.titleRace) { S.titleRace = tr; if (S.screen === "race") document.title = tr; } }
-    $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${S.qf ? "🏁 finishing laps" : `${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left`}${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
+    if (me.laps !== S.lapShown) { if (S.lapShown !== undefined && me.laps > S.lapShown) { const lt = $("lapText"); lt.classList.remove("bump"); void lt.offsetWidth; lt.classList.add("bump"); } S.lapShown = me.laps; }
+    $("lapText").textContent = S.ql >= 0 ? `${S.race?.practice ? "Practice" : S.qs ? `Q${S.qs}` : "Qualifying"} · ${S.qf ? "🏁 finishing laps" : `${Math.floor(S.ql / 60)}:${String(S.ql % 60).padStart(2, "0")} left`}${me.out ? " (out)" : ""}` : me.out ? "Knocked out" : me.fin ? "Finished!" : S.fl ? "🟡 Formation lap" : `Lap ${clamp(me.laps + 1, 1, laps)}/${laps}`;
     $("timeText").textContent = S.xp ? fmt(Math.max(0, S.t - S.xp.lapStart)) : fmt(S.t);
     $("bestText").textContent = "Best " + fmt(me.best);
     renderSectors(me);
@@ -6168,6 +6317,9 @@
     if (key !== lastHudStand) {
       lastHudStand = key;
       const ol = $("standList"); ol.textContent = "";
+      // places gained / lost: that row flashes green or red for a moment
+      { const now = performance.now(), prev = S.lbNow; S.lbFlash = S.lbFlash || new Map(); S.lbNow = new Map(S.standings.map((id, i) => [id, i]));
+        if (prev) for (const [id, i] of S.lbNow) { const was = prev.get(id); if (was !== undefined && was !== i) S.lbFlash.set(id, { cls: was > i ? "gain" : "loss", until: now + 900 }); } }
       // as many rows as fit (more cars = bigger list); hold Ctrl (or tap the list) to see everyone
       const fit = Math.max(8, Math.floor((window.innerHeight * 0.42) / 19));
       const all = S.lbAll || S.standings.length <= fit + 1;
@@ -6191,6 +6343,7 @@
         const x = document.createElement("span"); x.className = "tw"; x.textContent = c.out ? "OUT" : c.pit >= 0 ? "PIT" : c.fin ? "done" : c.punct ? "FLAT" : c.dmg > 0.3 ? "DMG" : `${Math.round(c.tire * 100)}%`;
         if (c.punct) x.style.color = "#ff8a80";
         if (id === S.camTarget && id !== S.myCar) li.className += " watch";
+        { const f = S.lbFlash?.get(id); if (f && f.until > performance.now()) li.className += " " + f.cls; }
         li.title = id === S.myCar ? "Your car" : `Watch ${c.name}`;
         // click a driver: the camera follows them (click yourself, or the chip, to come back)
         li.addEventListener("click", (e) => { e.stopPropagation(); watchCar(id === S.myCar ? null : id); });
@@ -6215,6 +6368,51 @@
     if (c) chip.textContent = `👁 Watching ${c.name} · back to my car`;
   }
   $("watchChip").addEventListener("click", () => watchCar(null));
+  // ---- watching someone: their level, boost, upgrades, and the cards they're offered (and what they pick), AI too ----
+  const WP = { id: null, up: null, lvl: 1, last: null };
+  function watchedId() {
+    if (S.screen !== "race" || S.replaying || !S.cars?.size) return null;
+    if (S.myCar !== null && S.myCar !== undefined) return S.camTarget && S.camTarget !== S.myCar ? S.camTarget : null;
+    return S.camTarget ?? S.standings?.[0] ?? null;                    // spectating: whoever the camera's on
+  }
+  function renderWatchCards(fresh) {
+    const box = $("wpCards"), L = WP.last; box.textContent = "";
+    if (!L) { box.appendChild(el("small", "wp-none", "No cards yet")); return; }
+    L.cards.forEach((cd, i) => {
+      const d = el("div", "wp-card" + (cd.rare ? " rare" : "") + (L.pick === cd.k ? " picked" : L.pick ? " not" : "") + (fresh ? " deal" : ""));
+      d.style.animationDelay = fresh ? `${i * 90}ms` : "";
+      d.append(el("b", "", `${cd.icon ? cd.icon + " " : ""}${cd.name}`), el("small", "", L.pick === cd.k ? "✔ picked" : L.pick ? "" : "deciding..."));
+      box.appendChild(d);
+    });
+  }
+  function renderWatchUps() {
+    const box = $("wpUps"); box.textContent = ""; if (!WP.up || !S.upInfo) return;
+    for (const [k, info] of Object.entries(S.upInfo).sort((a, b) => (WP.up[b[0]] || 0) - (WP.up[a[0]] || 0))) {     // (what they have first)
+      const lv = WP.up[k] || 0, row = el("div", "wp-up" + (lv ? "" : " zero") + (WP.flash === k ? " flash" : ""));
+      const pips = el("span", "wp-pips"); for (let l = 0; l < info.max; l++) pips.appendChild(el("i", l < lv ? "on" : ""));
+      row.append(el("span", "", info.name), pips); box.appendChild(row);
+    }
+    WP.flash = null;
+  }
+  function updateWatchPanel() {
+    const id = watchedId(), panel = $("watchPanel");
+    panel.classList.toggle("hidden", id === null);
+    $("garage").classList.toggle("dim-under", id !== null && S.myCar !== null && S.myCar !== undefined);
+    if (id === null) { WP.id = null; return; }
+    const c = S.cars.get(id); if (!c) return;
+    if (WP.id !== id) { WP.id = id; WP.up = null; WP.last = null; renderWatchCards(false); renderWatchUps(); socket.emit("watchInfo", id); panel.classList.remove("swap"); void panel.offsetWidth; panel.classList.add("swap"); }
+    $("wpDot").style.background = c.color || "#fff"; $("wpName").textContent = c.name || ""; $("wpLvl").textContent = `Team Lv ${WP.lvl}`;
+    const n = Math.round(c.nitro ?? 0); $("wpBoost").style.width = n + "%"; $("wpBoost").classList.toggle("on", !!c.nitroOn); $("wpBoostTxt").textContent = n + "%";
+  }
+  socket.on("watchInfo", (d) => { if (d.car !== WP.id) return; WP.up = d.up; WP.lvl = d.lvl; WP.last = d.last; renderWatchCards(false); renderWatchUps(); });
+  socket.on("carCards", (d) => {
+    if (d.car !== WP.id) return;
+    const fresh = !WP.last || WP.last.at !== d.at || !d.pick;
+    WP.last = { cards: d.cards, pick: d.pick, at: d.at }; WP.up = d.up; WP.lvl = d.lvl;
+    if (d.pick) WP.flash = d.pick;
+    renderWatchCards(fresh && !d.pick); renderWatchUps();
+    if (d.pick) { const p = $("wpCards").querySelector(".picked"); if (p) { p.classList.add("pop"); } }
+  });
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
     if (e.code === "Escape" && !setEl.classList.contains("hidden")) { closeSettings(); return; }
@@ -6747,6 +6945,19 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-05d", date: "5 Oct", title: "Stadiums, spectator info, called-off races", items: [
+      "🏟️ Every track now has its own stadiums: grandstands full of little people round the outside of the corners and on the main straight. They jump up and cheer when cars go by.",
+      "📣 The crowd sounds like real people now: a roar, voices going \"woooo!\", whistles and applause, when you pass a stand and at the big moments.",
+      "👁 Watching someone? You see their team level, their boost, every upgrade they have, and the 3 cards they're offered and which one they pick. AI teams too.",
+      "🟥 3 red flags or 7 safety cars in one race and it's called off: a big RACE ABANDONED screen, and everyone's classified as they stood (nobody gets a DNF for it).",
+      "🛠️ Wiggle, rotate, flip, resize and road width keep your objects, DRS zones, start line and direction now (they used to wipe them).",
+      "🚇 Tunnels and grandstands: click where it starts, then where it ends.",
+      "🟡 Formation lap: no XP or upgrade cards, the endurance clock waits for the green flag, and the screen says Formation lap instead of Lap 1.",
+      "🚨 Safety car: nobody can overtake while everyone's ghosted as it comes out, and the AI properly slows down to it.",
+      "⏳ Endurance tyres last 1.5x longer (it was 2x).",
+      "✨ Animations everywhere: screens slide in, buttons squish, windows pop open, results rows slide in with a shining podium, confetti for your podium, coins count up, the leaderboard flashes green/red when places change, the lap counter pops, notifications drop in with a timer bar.",
+      "Small stuff: more than one red flag per race now (not straight after a restart) · upgrade lists show what someone has first · \"tap to see the results\" on the abandoned screen.",
+    ] },
     { v: "u-2026-10-05c", date: "5 Oct", title: "Red flag restarts, tunnels, spectating, redo", items: [
       "🟥 Red flags only for a BIG pile-up now (6+ cars, hard hits), and everyone goes back to the starting grid in the order they were in just before the crash. Standing restart, no safety car.",
       "🏎️ Multiclass red flags: each class lines up together (all Hypers, then all GT3s), so you restart where you were in YOUR class.",

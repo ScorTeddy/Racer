@@ -1558,11 +1558,11 @@ test("tyre warnings come with 2 laps and 1 lap left on the tyres (not 4 laps ear
   } finally { game.io.to = io0; }
 });
 
-test("endurance races wear tyres half as fast", () => {
+test("endurance races: tyres last 1.5x longer", () => {
   const mk = (mode) => { const r = new game.Room("EW" + mode, false); r.setRandomTrack("normal", "regular"); r.players.set("me", { id: "me", name: "Me", up: {}, level: 1, xp: 0 });
     Object.assign(r.settings, { ai: 3, quali: 0, laps: 10, mode, enduroMin: 20 }); r.ensureRoster(3); r.startRace(); r.startLights(); return r; };
   const e = mk("endur"), est = e.enduro.est;
-  assert.ok(Math.abs(e.wearPerLap * game.tireLifeLaps(est) - 0.5) < 1e-9, "half the normal wear for a race that long");
+  assert.ok(Math.abs(e.wearPerLap * game.tireLifeLaps(est) - 1 / 1.5) < 1e-9, "tyres last 1.5x longer than normal for a race that long");
 });
 
 test("qualifying: when the clock runs out, everyone on a lap gets to finish it first", { timeout: 120000 }, () => {
@@ -1591,6 +1591,87 @@ test("endurance: teammates can share one car (swap at stops) or both race", () =
   const shared = mk(true), both = mk(false);
   assert.equal(shared.cars.filter((c) => c.owner).length, 1, "share: one car for the team");
   assert.equal(both.cars.filter((c) => c.owner).length, 2, "both race: a car each");
+});
+
+test("reshaping a track (wiggle, rotate...) keeps the objects, DRS zones, start line and direction", () => {
+  const r = new game.Room("KEEPLAY", false); r.setRandomTrack("normal", "regular");
+  const st = r.stroke.map((q) => q.slice());
+  const pt = (f) => st[Math.floor(st.length * f)];
+  assert.equal(r.addDecor("banner", pt(0.3)[0], pt(0.3)[1]), null); assert.equal(r.addDecor("tunnel", pt(0.5)[0], pt(0.5)[1], { x: pt(0.56)[0], y: pt(0.56)[1] }), null);
+  r.setDrs([[10, 40]]); r.rebuildTrack(Math.floor(r.shape.base.length * 0.4), true);
+  const before = r.layoutNow();
+  const rotated = st.map((q) => [800 - (q[1] - 500) + 0, 500 + (q[0] - 800), q[2]]);      // the same track, turned
+  const keep = r.layoutNow(); assert.equal(r.setTrack(rotated, "normal", "drawn"), null); r.applyLayout(keep);
+  const after = r.layoutNow();
+  assert.equal(r.decor.length, 2, "objects kept"); assert.ok(r.decor[1].end, "the tunnel still has its far end");
+  assert.equal(r.shape.drs.length, 1, "DRS zone kept"); assert.ok(r.track.reverse, "direction kept");
+  assert.ok(Math.abs(after.start - before.start) < 0.03, "start line in the same place round the lap");
+  after.decor.forEach((d, k) => assert.ok(Math.abs(d.f - before.decor[k].f) < 0.03, "object in the same place round the lap"));
+  const msg = r.trackMsg().decor.find((d) => d.k === "tunnel");
+  assert.ok(msg.len > 3, "a two-click tunnel runs from start to end: " + msg.len);
+});
+
+test("formation lap: no XP or upgrades, the endurance clock doesn't run, and it isn't a lap", { timeout: 120000 }, () => {
+  const r = new game.Room("FORMLAP", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "fl", name: "Me", up: {}, level: 1, xp: 0, passCd: new Map(), lostCd: new Map(), lastPos: 99 }; r.players.set("fl", p);
+  Object.assign(r.settings, { ai: 5, quali: 0, laps: 5, start: "rolling", mode: "endur", enduroMin: 10 }); r.ensureRoster(5);
+  r.startRace(); r.startLights();
+  assert.ok(r.sc?.rolling, "formation lap behind the safety car");
+  const secs0 = r.enduro.secs; let n = 0;
+  while (r.sc?.rolling && n++ < 60 * 120) r.step(1 / 60);
+  assert.ok(!r.sc, "green flag");
+  assert.equal(p.xp, 0, "no XP on the formation lap"); assert.equal(p.level, 1, "so no upgrades");
+  assert.ok(Math.abs(r.enduro.secs - (secs0 + r.time)) < 0.05, "the endurance clock starts at the green flag");
+  const lead = r.standings()[0]; assert.equal(lead.lapsDone, 0, "the leader is on lap 1 at the green flag");
+  for (let k = 0; k < 60 * 3; k++) r.step(1 / 60);
+  assert.ok(p.xp > 0 || p.level > 1, "XP starts once the race is on");
+});
+
+test("safety car: nobody overtakes while everyone's ghosted at the start of it", { timeout: 120000 }, () => {
+  let checked = 0;
+  for (let run = 0; run < 3; run++) {
+    const r = new game.Room("SCNOPASS" + run, false); r.setRandomTrack("normal", "regular");
+    r.players.set("sp", { id: "sp", name: "Me", up: {}, level: 1, xp: 0 });
+    Object.assign(r.settings, { ai: 13, quali: 0, laps: 12, weather: "sunny", safetyCar: true }); r.ensureRoster(13);
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 25; n++) r.step(1 / 60);
+    r.deploySafetyCar(); assert.ok(r.sc);
+    const racing = (c) => !c.finished && !(c.pitting > 0) && !c.inPit && c.aiMode === "race" && !c.unlapping;
+    const before = r.standings().filter(racing).map((c) => c.id);
+    for (let n = 0; n < 60 * 8; n++) r.step(1 / 60);
+    const now = r.standings().filter((c) => racing(c) && before.includes(c.id)).map((c) => c.id);
+    assert.deepEqual(now, before.filter((id) => now.includes(id)), "same order 8 s into the safety car");
+    checked++;
+  }
+  assert.equal(checked, 3);
+});
+
+test("3 red flags or 7 safety cars: the race is called off and classified as it stood", { timeout: 120000 }, () => {
+  const mk = (code) => {
+    const r = new game.Room(code, false); r.setRandomTrack("normal", "regular");
+    r.players.set("ab", { id: "ab", name: "Me", up: {}, level: 1, xp: 0 });
+    Object.assign(r.settings, { ai: 7, quali: 0, laps: 30, weather: "sunny", safetyCar: true }); r.ensureRoster(7);
+    let res = null; const emit = r.emit.bind(r); r.emit = (ev, d) => { if (ev === "results") res = d; return emit(ev, d); };
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 12; n++) r.step(1 / 60);
+    return { r, got: () => res };
+  };
+  // red flags
+  const A = mk("ABRF");
+  for (let k = 0; k < 2; k++) { A.r.redFlag(); assert.ok(A.r.rf, "red flag " + (k + 1)); for (let n = 0; n < 60 * 40; n++) A.r.step(1 / 60); }
+  assert.equal(A.r.phase, "race", "two red flags: still racing");
+  const order = A.r.standings().map((c) => c.id);
+  A.r.redFlag();
+  assert.equal(A.r.phase, "results", "the third: called off");
+  assert.equal(A.got().abandoned.why, "redFlags");
+  assert.deepEqual(A.got().rows.map((x) => x.name), order.map((id) => A.r.cars.find((c) => c.id === id).name), "results in the order as it stood");
+  assert.ok(A.r.cars.every((c) => c.finished), "everyone classified (no DNFs)");
+  // safety cars
+  const B = mk("ABSC");
+  for (let k = 0; k < 6; k++) { B.r.sc = null; B.r.scDoneAt = -99; B.r.deploySafetyCar(); assert.ok(B.r.sc, "safety car " + (k + 1)); }
+  B.r.sc = null; B.r.scDoneAt = -99; B.r.deploySafetyCar();
+  assert.equal(B.r.phase, "results", "the seventh safety car: called off");
+  assert.equal(B.got().abandoned.why, "safetyCars");
 });
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
