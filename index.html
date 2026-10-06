@@ -328,6 +328,10 @@
         <button type="button" class="tool" data-decor="banner" title="A banner arch over the track"><span>🎌</span>Banner</button>
         <button type="button" class="tool" data-decor="tunnel" title="A tunnel: the cars drive under it"><span>🚇</span>Tunnel</button>
         <button type="button" class="tool" data-decor="bridge" title="A bridge across the track"><span>🌉</span>Bridge</button>
+        <button type="button" class="tool" data-decor="light" title="A floodlight tower: lights the track up in night races"><span>💡</span>Floodlight</button>
+        <button type="button" class="tool" data-decor="tree" title="A clump of trees beside the track"><span>🌳</span>Trees</button>
+        <button type="button" class="tool" data-decor="pit" title="The pit building, with garages"><span>🏢</span>Pit building</button>
+        <button type="button" class="tool" data-decor="board" title="A billboard with your team's name"><span>🪧</span>Billboard</button>
         <button type="button" class="tool" id="decorUndo" title="Take away the last object"><span>↩️</span>Undo obj.</button>
         <button type="button" class="tool" id="decorClear" title="Remove every object"><span>🧹</span>No objects</button>
         <button type="button" class="tool" id="randomBtn"><span>🎲</span>Random</button>
@@ -387,7 +391,9 @@
     <button type="button" class="btn go" id="photoSnap">📸 Take photo</button>
     <button type="button" class="btn ghost" id="photoExit">Exit</button>
   </div>
-  <div class="spec-bar panel" id="specBar"><b>👀 Spectating</b><span>Watching <b id="specName">the leader</b></span><button type="button" class="btn" id="specPrev" aria-label="Watch the car ahead">◀</button><button type="button" class="btn" id="specNext" aria-label="Watch the car behind">▶</button><button type="button" class="btn" id="specLead">Leader</button><button type="button" class="btn go" id="predictBtn">🎲 Predict</button><button type="button" class="btn" id="specStatsBtn">📊 Timing</button></div>
+  <div class="spec-bar panel" id="specBar"><b>👀 Spectating</b><span>Watching <b id="specName">the leader</b></span><button type="button" class="btn" id="specPrev" aria-label="Watch the car ahead">◀</button><button type="button" class="btn" id="specNext" aria-label="Watch the car behind">▶</button><button type="button" class="btn" id="specLead">Leader</button><button type="button" class="btn go" id="predictBtn">🎲 Predict</button><button type="button" class="btn" id="specStatsBtn">📊 Timing</button><button type="button" class="btn" id="tvBtn" aria-pressed="false" title="The camera cuts to the best battles, overtakes and crashes by itself, like on TV">📺 TV camera</button></div>
+  <div class="tv-caption hidden" id="tvCaption" aria-live="polite"><span class="tv-live">● LIVE</span><b id="tvCapText"></b></div>
+  <div class="tv-cut" id="tvCut"></div>
   <div class="spec-stats panel hidden" id="specStats"><table><thead><tr><th>P</th><th>Driver</th><th>Gap</th><th>Tyre</th><th>Age</th><th>Stops</th></tr></thead><tbody id="specStatsBody"></tbody></table></div>
   <div class="intro-card hidden" id="introCard" role="status"><small>🏁 Today's race</small><b id="icName"></b><span id="icSub"></span></div>
   <div class="grid-walk hidden" id="gridWalk" role="status"></div>

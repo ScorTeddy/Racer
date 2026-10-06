@@ -83,7 +83,7 @@ const PIT_TIME = 2.8;
 // a short fingerprint of a drawing: the same track always gets the same key (personal bests, time trial boards)
 function strokeKey(stroke) { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } return "d" + (h >>> 0).toString(36); }
 const ENDURO_MINS = [10, 20, 30];
-const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_LONG = ["tunnel", "stand"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
+const DECOR = ["stand", "banner", "tunnel", "bridge", "light", "tree", "pit", "board"], DECOR_SIDE = ["light", "tree", "pit", "board"], DECOR_LONG = ["tunnel", "stand"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
 const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
@@ -506,6 +506,17 @@ const SFX = {
   thunder2: { text: "Huge thunder: a deep, heavy, low booming thunderclap that echoes and rolls across the sky for a long time. Realistic field recording of a storm, no music.", secs: 8 },
   thunder3: { text: "Lightning strikes nearby with a crackling snap, followed by an enormous booming thunderclap and a long echoing rumble. Realistic, cinematic, deep bass.", secs: 7 },
   thunder4: { text: "Rolling thunder in a heavy storm: a deep low boom, then several rumbling rolls that slowly fade out. Realistic outdoor recording, no music.", secs: 6 },
+  // store horns
+  h_train: { text: "A loud diesel train horn blast, two short honks, realistic recording, no music.", secs: 1.8 },
+  h_ship: { text: "A huge ship's foghorn, one long deep blast, realistic.", secs: 2.4 },
+  h_stadium: { text: "A loud stadium air horn blast, short and punchy, realistic.", secs: 1.5 },
+  h_goose: { text: "An angry goose honking loudly twice, realistic, funny.", secs: 1.4 },
+  h_cow: { text: "A cow mooing loudly, one moo, realistic farm recording.", secs: 1.8 },
+  h_rooster: { text: "A rooster crowing loudly, cock-a-doodle-doo, realistic.", secs: 2.2 },
+  h_bell: { text: "An old bicycle bell ringing twice, ring ring, realistic.", secs: 1.2 },
+  h_goat: { text: "A goat screaming loudly like a human, funny, realistic.", secs: 1.5 },
+  h_laugh: { text: "A deep cartoon villain evil laugh, mwahahaha, short.", secs: 2.2 },
+  h_v12: { text: "A V12 supercar engine revving hard twice, loud, realistic, no music.", secs: 2 },
   rain: { text: "Steady heavy rain falling on asphalt and splashing in puddles, close up, realistic ambient field recording, constant intensity, no thunder, no wind, no music.", secs: 20, loop: true },
 };
 const sfxMem = new Map(), sfxJobs = new Map(); let sfxOffUntil = 0;
@@ -1513,6 +1524,12 @@ class Room {
         // pair that would wrap round nearly the whole lap is read the other way). Grandstands: the shorter way, capped.
         if (d.k === "tunnel") { if (len > t.N * 0.9) { i = j; len = t.N - len; } len = Math.min(len, t.N - 2); }
         else { if (len > t.N / 2) { i = j; len = t.N - len; } len = Math.min(len, DECOR_MAX_LEN); } }
+      // the ones that stand beside the road (floodlights, trees, the pit building, billboards) stay as far off it as
+      // you put them; billboards show the host's team name
+      if (DECOR_SIDE.includes(d.k)) {
+        const off = Math.round(Math.min(t.hw[i] + 320, Math.max(t.hw[i] + 45, Math.abs((wx - t.pts[i].x) * n.x + (wy - t.pts[i].y) * n.y))));
+        return { k: d.k, i, side, len, off, ...(d.k === "board" ? { txt: (this.players.get(this.hostId)?.team || this.hostName() + " Racing").slice(0, 24) } : {}) };
+      }
       return { k: d.k, i, side, len };
     });
   }
@@ -2787,7 +2804,7 @@ class Room {
         c.compound = p ? this.nextTyre(c, p) : c.planComp;
         c.lapWearMeas = 0; c.tireAtLap = undefined;
         if (c.damage > 0 && c.owner) io.to(c.owner).emit("toast", "Crew fixed the damage!");
-        c.tire = 1; c.pits++; c.aiMode = "pitOut"; c.punct = false; c.damage = 0; c.temp = 0.3; c.tyreLap = Math.max(0, c.lapsDone);      // fresh tyres come out cold
+        c.tire = 1; c.pits++; c.aiMode = "pitOut"; c.punct = false; c.damage = 0; c.dz = null; c.temp = 0.3; c.tyreLap = Math.max(0, c.lapsDone);      // fresh tyres come out cold
         if (c.teamOrder === "box") c.teamOrder = null;
         if (c.drivers?.length > 1) this.swapDriver(c);
         if (p) { p.boxCall = false; p.warned = 0; p.compound = c.compound; io.to(p.id).emit("toast", `${COMPOUNDS[c.compound].name} tires on! Go go go!`); }
@@ -3103,6 +3120,11 @@ class Room {
       const side = Math.sign((-Math.sin(c.heading)) * nx * sgn + Math.cos(c.heading) * ny * sgn) || 1;
       c.spin = side * (4 + 6 * k); c.crashT = 0.9 + 0.8 * k; if (c.rs) c.rs.crashes++;
       c.damage = clamp(c.damage + (0.3 + 0.5 * k) * (CAR_CLASSES[c.cls]?.dmg || 1), 0, 1);
+      { // where it got hit (front, rear, left, right), so you can see it: a hanging front wing, a broken rear wing...
+        const dx = nx * sgn, dy = ny * sgn, along = dx * Math.cos(c.heading) + dy * Math.sin(c.heading), across = -dx * Math.sin(c.heading) + dy * Math.cos(c.heading);
+        const z = Math.abs(along) >= Math.abs(across) * 0.8 ? (along > 0 ? "f" : "r") : across > 0 ? "s" : "l";
+        c.dz = c.dz || { f: 0, r: 0, l: 0, s: 0 }; c.dz[z] = Math.min(3, c.dz[z] + 1 + (k > 0.5 ? 1 : 0));
+      }
       if (this.trackKind !== "tour") c.tire = Math.max(0, c.tire - 0.05 - 0.1 * k);
       c.cleanLap = false; c.passT = 0; c.aiNitro = false;
       const p = c.owner && this.players.get(c.owner);
@@ -3183,7 +3205,7 @@ class Room {
     for (const c of this.cars) { c.vx = c.vy = 0; c.speed = 0; c.nitroOn = false; }
     if (this.time < this.rf.until) return;
     this.rf = null; this.rfAt = this.time;
-    for (const c of this.cars) { c.damage = 0; c.punct = false; c.ghostUntil = this.time + 3; }
+    for (const c of this.cars) { c.damage = 0; c.dz = null; c.punct = false; c.ghostUntil = this.time + 3; }
     this.scDoneAt = this.time;
     this.emit("feed", { t: "rfRestart" }); this.emit("lightsOut", { restart: true });
   }
@@ -3599,6 +3621,7 @@ class Room {
       Math.round(c.vx), Math.round(c.vy), c.idx, c.nitroOn ? 1 : 0, Math.round(c.nitro * 100), c.slip ? 1 : 0, this.ghost(c) ? 1 : 0, c.drsOpen ? 2 : c.drsAvail ? 1 : 0, c.defending ? 1 : 0, c.out ? 1 : 0,
       Math.round((c.temp ?? 1) * 100), Math.max(0, c.lapsDone - (c.tyreLap ?? 0)),           // 33: tyre temperature, 34: laps on these tyres
       Math.round((c.leadT || 0) * 10) / 10,                                                    // 35: time in the lead (king of the hill)
+      c.dz ? c.dz.f + c.dz.r * 4 + c.dz.l * 16 + c.dz.s * 64 : 0,                             // 36: where it's damaged (front, rear, left, right: 0-3 each)
     ]);
     const order = this.standings();
     const weather = { raining: this.raining, wet: r2(this.wet), change: -1, trend: this.trendShown || 0, dyn: this.weatherSetting() === "dynamic" };
@@ -4881,7 +4904,9 @@ io.on("connection", (socket) => {
   socket.on("horn", (type) => {
     const r = room(), p = me(); if (!r || !p || !r.cars || Date.now() - hornAt < 1500) return; hornAt = Date.now();
     const c = r.carOf(p.id); if (!c) return;
-    r.emit("horn", { car: c.id, type: HORNS.includes(type) ? type : "classic" });
+    // a horn from the store (equipped) plays for everyone; otherwise the one picked in Settings
+    const eq = (socket.data.extras || p.extras || {}).horn, [clip, built] = typeof eq === "string" ? eq.split("|") : [];
+    r.emit("horn", { car: c.id, type: HORNS.includes(built) ? built : HORNS.includes(type) ? type : "classic", clip: clip && SFX["h_" + clip] ? clip : null });
   });
   // pit wall: tell your AI teammate(s) to push, hold position, or box this lap
   socket.on("teamOrder", (cmd) => {

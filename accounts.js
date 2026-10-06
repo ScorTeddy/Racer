@@ -1010,6 +1010,18 @@ STORE.push(
   { id: "badge_gamepad", slot: "badge", name: "Gamer badge", look: "🎮", price: 70 },
   { id: "badge_gear", slot: "badge", name: "Engineer badge", look: "⚙️", price: 70 },
   { id: "badge_pizza", slot: "badge", name: "Pizza badge", look: "🍕", price: 50 },
+  // ---- horns (H in a race: everyone near your car hears it). Real-sounding clips, made once on the server; each has
+  // a built-in horn to fall back on ("look" is "<clip>|<built-in>") ----
+  { id: "horn_train", slot: "horn", name: "🚂 Train horn", look: "train|air", price: 220 },
+  { id: "horn_ship", slot: "horn", name: "🚢 Ship's foghorn", look: "ship|truck", price: 260 },
+  { id: "horn_stadium", slot: "horn", name: "📯 Stadium air horn", look: "stadium|air", price: 180 },
+  { id: "horn_goose", slot: "horn", name: "🪿 Angry goose", look: "goose|clown", price: 150 },
+  { id: "horn_cow", slot: "horn", name: "🐄 Cow", look: "cow|truck", price: 120 },
+  { id: "horn_rooster", slot: "horn", name: "🐓 Rooster", look: "rooster|tune", price: 140 },
+  { id: "horn_bell", slot: "horn", name: "🔔 Old bike bell", look: "bell|bike", price: 90 },
+  { id: "horn_goat", slot: "horn", name: "🐐 Screaming goat", look: "goat|clown", loot: true, rarity: "epic" },
+  { id: "horn_laugh", slot: "horn", name: "😈 Villain laugh", look: "laugh|tune", loot: true, rarity: "legendary" },
+  { id: "horn_v12", slot: "horn", name: "🏎️ V12 rev", look: "v12|air", price: 300 },
   // ---- fifth wave ----
   { id: "liv_candy", slot: "livery", name: "Candy cane livery", look: "candy", price: 160 },
   { id: "liv_blueprint", slot: "livery", name: "Blueprint livery", look: "blueprint", price: 190 },
