@@ -6102,11 +6102,29 @@
       });
     } else RAIN.lens.length = 0;
     // lightning in a downpour (every 10-25s), thunder a moment later
-    if (wv > 0.7 && S.phase === "race") {
+    if (wv > 0.6 && S.phase === "race") {
       if (!RAIN.nextBolt) RAIN.nextBolt = now + 6000 + Math.random() * 10000;
-      if (now > RAIN.nextBolt) { RAIN.nextBolt = now + 10000 + Math.random() * 15000; RAIN.flash = now; setTimeout(() => thunder(0.6 + Math.random() * 0.4), 500 + Math.random() * 1500); }
+      if (now > RAIN.nextBolt) {
+        RAIN.nextBolt = now + 7000 + Math.random() * 11000; RAIN.flash = now;
+        // a jagged bolt from the top of the screen, forking on the way down
+        const bolt = [], x0 = w * (0.15 + Math.random() * 0.7); let x = x0, y = 0; bolt.push([x, y]);
+        while (y < h * (0.55 + Math.random() * 0.35)) { y += 18 + Math.random() * 34; x += (Math.random() - 0.5) * 70; bolt.push([x, y]); }
+        const fork = bolt.slice(0, 2 + Math.floor(Math.random() * (bolt.length - 2))), last = fork[fork.length - 1]; let fx = last[0], fy = last[1];
+        for (let i = 0; i < 4; i++) { fy += 20 + Math.random() * 25; fx += (Math.random() < 0.5 ? -1 : 1) * (15 + Math.random() * 30); fork.push([fx, fy]); }
+        RAIN.bolt = { pts: bolt, fork: fork.slice(fork.length - 5) };
+        thunder(0.85 + Math.random() * 0.15);
+      }
       const k = (now - RAIN.flash) / 450;
-      if (k >= 0 && k < 1) { const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.42; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h); }
+      if (k >= 0 && k < 1) {
+        const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.5; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h);
+        if (RAIN.bolt && k < 0.6) {
+          const draw = (pts, wd) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.lineWidth = wd; ctx.stroke(); };
+          ctx.save(); ctx.globalAlpha = k < 0.15 ? 1 : k < 0.3 ? 0.4 : 0.9 * (1 - k / 0.6); ctx.lineJoin = "round"; ctx.lineCap = "round";
+          ctx.strokeStyle = "rgba(160,190,255,0.5)"; ctx.shadowColor = "#9cc0ff"; ctx.shadowBlur = 30; draw(RAIN.bolt.pts, 9); draw(RAIN.bolt.fork, 5);
+          ctx.strokeStyle = "#fff"; ctx.shadowBlur = 12; draw(RAIN.bolt.pts, 2.6); draw(RAIN.bolt.fork, 1.4);
+          ctx.restore();
+        }
+      }
     } else RAIN.nextBolt = 0;
   }
   // the rain itself: a steady hiss (louder the harder it rains), and thunder
@@ -6120,12 +6138,31 @@
     }
     if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (0.012 + 0.05 * wet) * fxVol() : 0, a.currentTime, 0.8);
   }
+  // lightning strike: a CRACK right with the flash, then the BOOOOM (a deep hit and a long rolling rumble)
   function thunder(k = 1) {
     const a = actx; if (!a || fxVol() <= 0) return;
-    const t0 = a.currentTime, n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
-    lp.type = "lowpass"; lp.frequency.setValueAtTime(420, t0); lp.frequency.exponentialRampToValueAtTime(90, t0 + 3);
-    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.35 * k * fxVol(), t0 + 0.08); g.gain.setTargetAtTime(0.12 * k * fxVol(), t0 + 0.3, 0.3); g.gain.setTargetAtTime(0, t0 + 1.2, 0.7);
-    n.connect(lp).connect(g).connect(fxOut(a)); n.start(t0); n.stop(t0 + 4.5);
+    const t0 = a.currentTime, V = fxVol() * k;
+    const comp = a.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 6; comp.connect(fxOut(a));      // (loud, but no clipping)
+    // the crack: sharp bursts of bright noise, like the air tearing
+    for (let i = 0; i < 7; i++) {
+      const n = noise(a), hp = a.createBiquadFilter(), g = a.createGain(), st = t0 + Math.random() * 0.22, len = 0.02 + Math.random() * 0.06;
+      hp.type = "highpass"; hp.frequency.value = 1800 + Math.random() * 2500;
+      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime((0.5 + Math.random() * 0.4) * V, st + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, st + len);
+      n.connect(hp).connect(g).connect(comp); n.start(st); n.stop(st + len + 0.05);
+    }
+    // the BOOM: a sub-bass thump that drops away...
+    const b0 = t0 + 0.12, o = a.createOscillator(), og = a.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(78, b0); o.frequency.exponentialRampToValueAtTime(28, b0 + 1.4);
+    og.gain.setValueAtTime(0, b0); og.gain.linearRampToValueAtTime(0.95 * V, b0 + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, b0 + 1.8);
+    o.connect(og).connect(comp); o.start(b0); o.stop(b0 + 1.9);
+    // ...and the rumble rolling away, with a couple of after-rolls
+    const n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(900, b0); lp.frequency.exponentialRampToValueAtTime(70, b0 + 4);
+    g.gain.setValueAtTime(0, b0); g.gain.linearRampToValueAtTime(0.85 * V, b0 + 0.05); g.gain.setTargetAtTime(0.3 * V, b0 + 0.35, 0.25);
+    for (const at of [1.1 + Math.random() * 0.5, 2.0 + Math.random() * 0.8]) { g.gain.setTargetAtTime(0.42 * V, b0 + at, 0.08); g.gain.setTargetAtTime(0.12 * V, b0 + at + 0.25, 0.4); }
+    g.gain.setTargetAtTime(0, b0 + 3.2, 0.6);
+    n.connect(lp).connect(g).connect(comp); n.start(b0); n.stop(b0 + 6);
+    if (S.screen === "race") addShake(16 * k);
   }
   function renderRace(dt, now) {
     const { w, h, dpr } = scr, t = S.track;

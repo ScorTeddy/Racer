@@ -114,6 +114,19 @@ const AI_NAMES = ["Bolt", "Nova", "Rusty", "Vex", "Kira", "Moss", "Blaze", "Juno
   "Willa", "Yusuf", "Zora", "Arlo", "Bex", "Cato", "Dunya", "Enzo", "Freya", "Gus"];
 const AI_COLORS = ["#e53935", "#1e88e5", "#43a047", "#8e24aa", "#fb8c00", "#00acc1", "#ec407a", "#6d4c41", "#546e7a", "#c0ca33"];
 const LIVERIES = ["plain", "stripes", "split", "flames", "checker"];
+// AI cars get kitted out from the store too (a paint job, rims, a spoiler, a helmet, a number plate): always the
+// same look for the same driver. Only the everyday stuff (nothing from chests, no legendaries), so players' rare
+// items still stand out.
+function aiLook(name) {
+  let h = 2166136261; for (const ch of String(name)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909)) >>> 0) / 4294967296;
+  const pool = (slot) => accounts.STORE.filter((it) => it.slot === slot && !it.loot && !it.onlyBody && !["legendary", "mythic"].includes(it.rarity) && it.price);
+  const out = {};
+  for (const [slot, chance] of [["livery", 0.85], ["rims", 0.6], ["helmet", 0.7], ["wing", 0.35], ["num", 0.3]]) {
+    const list = pool(slot); if (list.length && rnd() < chance) out[slot] = list[Math.floor(rnd() * list.length)].look;
+  }
+  return Object.keys(out).length ? out : null;
+}
 // Tire compounds. Wets are only good when the track is wet.
 const COMPOUNDS = {
   durable: { name: "Durable",      short: "D", speed: 0.97,  grip: 0.96, wear: 0.8 },    // lasts longer than inters (~1.25x), a bit slower
@@ -1738,10 +1751,17 @@ class Room {
     for (const p of this.players.values()) p.coDriver = null;
     // (endurance: its own mode, or multiclass with the endurance switch on)
     const endur = s.mode === "endur" || (s.mode === "multi" && !!s.multiEndur);
-    const shareCars = endur && s.teams && s.enduroShare !== false && !this.ranked && !grid;     // (or both race: each their own car)
+    const shareCars = endur && s.teams && s.enduroShare !== false && !this.ranked;     // (or both race: each their own car)
     if (shareCars) {
+      // who takes the first stint (and so does qualifying) is picked at random, not always whoever joined first.
+      // The race after qualifying starts with the same driver who qualified the car.
+      const pool = [...this.players.values()].filter((p) => !p.spectator && p.team);
+      for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+      const keep = grid && this.enduroFirst ? this.enduroFirst : null;
+      if (keep) pool.sort((a, b) => (keep.get(b.team) === b.id) - (keep.get(a.team) === a.id));
       const byTeam = new Map();
-      for (const p of this.players.values()) if (!p.spectator && p.team) { if (!byTeam.has(p.team)) byTeam.set(p.team, p); else p.coDriver = byTeam.get(p.team).id; }
+      for (const p of pool) { if (!byTeam.has(p.team)) byTeam.set(p.team, p); else p.coDriver = byTeam.get(p.team).id; }
+      this.enduroFirst = new Map([...byTeam].map(([team, p]) => [team, p.id]));
     }
     const humans = [...this.players.values()].filter((p) => !p.spectator && !p.coDriver);   // spectators just watch (co-drivers wait their turn)
     this.hadHumans = humans.length > 0;
@@ -1814,7 +1834,7 @@ class Room {
       } else {
         const a = slot.ai, R = this.roster[a];
         Object.assign(base, {
-          owner: null, isAi: true, name: R.name, color: R.color, livery: R.livery, number: R.number, up: blankUp(),
+          owner: null, isAi: true, name: R.name, color: R.color, livery: R.livery, number: R.number, up: blankUp(), aiExtras: aiLook(R.name),
           // (team ranked: AI teams as big as the players' team)
           team: this.aiTeamSize ? AI_TEAMS[Math.floor(a / this.aiTeamSize) % AI_TEAMS.length] + (Math.floor(a / this.aiTeamSize) >= AI_TEAMS.length ? " " + (Math.floor(a / this.aiTeamSize / AI_TEAMS.length) + 1) : "") : R.team,
           // rivals get sharper as the season goes on and as the teams level up
@@ -1885,7 +1905,7 @@ class Room {
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, numFont: c.owner ? this.players.get(c.owner)?.numFont || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, numFont: c.owner ? this.players.get(c.owner)?.numFont || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : c.aiExtras || null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -2433,7 +2453,7 @@ class Room {
     if (c.teamOrder === "box" && c.aiMode === "race" && !c.finished && c.lapsDone >= 0) c.aiMode = "wantPit";      // pit wall: box this lap
     const kNow = laneK(t, c.idx);
     if (c.finished && c.aiMode === "wantPit") c.aiMode = "race";
-    if (c.aiMode === "wantPit" && kNow >= 0 && kNow < 4) { c.aiMode = "pitLane"; c.laneKey = pl.boxes[c.team] ?? Math.round(pl.len / 2); }
+    if (c.aiMode === "wantPit" && kNow >= 0 && kNow < 4) { c.aiMode = "pitLane"; c.laneKey = pl.boxes[c.team] ?? Math.round(pl.len / 2); this.scLeaveQueue(c); }
     c.aiNitro = c.aiNitro && c.aiMode === "race";
 
     let tx, ty, targetSpeed;
@@ -2464,7 +2484,7 @@ class Room {
             this.emit("feed", { t: "pit", name: c.name, id: c.id });
             if (p && c.tire < 0.35 && !c.punct) this.addXp(p, 30, "Well-timed pit stop +30 XP");
           }
-        } else if (k >= pl.len - 1) { c.aiMode = "race"; c.ghostUntil = this.time + 3; }   // 3s pass-through after the pits
+        } else if (k >= pl.len - 1) { c.aiMode = "race"; c.ghostUntil = this.time + 3; this.scJoinQueue(c); }   // 3s pass-through after the pits
       }
     } else {
       const hw = t.hw[c.idx], lim = Math.max(8, hw - 24);
@@ -2681,6 +2701,9 @@ class Room {
     const st = c.st, t = this.track;
     if (c.spin) { c.heading += c.spin * dt; c.spin *= Math.exp(-2.6 * dt); if (Math.abs(c.spin) < 0.3) c.spin = 0; }
     if (c.crashT > 0) c.crashT -= dt;
+    // limping: far below safety car pace (or off the road) for a while. Under the safety car that's a wreck you may
+    // pass. (Not a hairpin: those take everyone less than 2 seconds.)
+    c.stoppedT = (Math.hypot(c.vx, c.vy) < MAX_SPEED * 0.2 || !c.onTrack) && !c.inPit && !(c.pitting > 0) && c.aiMode === "race" ? (c.stoppedT || 0) + dt : 0;
     const fx = Math.cos(c.heading), fy = Math.sin(c.heading);
     let vF = c.vx * fx + c.vy * fy, vS = -c.vx * fy + c.vy * fx;
     if (c.pitting > 0) {
@@ -2755,7 +2778,7 @@ class Room {
     if (input.gas) { if (vF < maxSp) vF += accel * dt * (vF > maxSp * 0.85 ? 0.7 : 1); }
     else if (input.brake) { if (vF > 20) vF -= st.brake * dt; else if (vF > -REVERSE_MAX) vF -= accel * 0.6 * dt; }
     else vF -= vF * 0.55 * dt;
-    if (vF > maxSp) vF -= Math.min(vF - maxSp, (c.surface >= 2 && c.surface < 4 ? 900 : 300) * dt);
+    if (vF > maxSp) vF -= Math.min(vF - maxSp, (c.surface >= 2 && c.surface < 4 ? 900 : this.sc ? 1000 : 300) * dt);
     // How hard the car can turn: steering lock at low speed, tire grip at high speed.
     let gripF = st.gripMul * this.gripOf(c) * this.weatherGrip(c);
     if (c.surface === 2) gripF *= 0.55; else if (c.surface === 3) gripF *= 0.4;
@@ -3154,12 +3177,18 @@ class Room {
     // no passing: right behind the car that was ahead when the safety car came out = no faster than them
     const was = this.sc.ahead && this.sc.ahead.get(c.id), wa = was != null && this.cars.find((o) => o.id === was);
     // (unless they're in trouble: crashed, spinning, off the road, wrecked or barely moving. You can always go past a wreck)
-    const stuck = wa && (wa.crashT > 0 || wa.spin || !wa.onTrack || wa.damage > 0.6 || wa.punct || wa.speed < MAX_SPEED * 0.25);
+    // (only a car that's really in trouble: crashed, spinning, a puncture, or stopped for a couple of seconds.
+    // Not just slow: behind the safety car everyone crawls through the hairpins, and that used to count as stuck)
+    const stuck = wa && (wa.crashT > 0 || wa.spin || wa.punct || wa.damage > 0.6 || (wa.stoppedT || 0) > 2);
     if (wa && !stuck && !wa.finished && !wa.unlapping && !(wa.pitting > 0) && wa.aiMode !== "pitLane" && wa.aiMode !== "pitOut" && !wa.inPit) {
       // (follow them at a steady gap: their speed, a bit less if too close, a bit more if not. Never a fraction of
       // their speed, which compounded down a long queue until everyone was crawling)
       const g2 = (wa.progress - c.progress) * this.track.spacing;
+      if (g2 < 12) return Math.max(MAX_SPEED * 0.15, wa.speed * 0.75);         // alongside or nosed ahead: back off now
       if (g2 < 45) return Math.max(Math.min(wa.speed, MAX_SPEED * 0.2), wa.speed + (g2 - 28) * 3);
+      // closing in on them: never faster than lets you brake down to their speed by the time you get there
+      // (a car sprinting up to the queue used to arrive too fast and slide past)
+      if (g2 < 600) return Math.min(MAX_SPEED * 0.97, Math.sqrt(wa.speed * wa.speed + 2 * 520 * (g2 - 40)));
     }
     if (!ah || ah.finished) return SC;
     const gap = (ah.progress - c.progress) * this.track.spacing;
@@ -3168,12 +3197,49 @@ class Room {
     return Math.min(MAX_SPEED * 0.97, Math.sqrt(tail * tail + 2 * SC_CATCH_DEC * Math.max(0, gap - 70)));
   }
 
+  // ---- safety car: the order is frozen. Nobody can be ranked ahead of the car that was ahead of them when it came
+  // out (unless that car is in trouble, in the pits, or unlapping itself). A car that pits leaves the queue and
+  // joins it again where it comes out. ----
+  scLeaveQueue(c) {
+    const A = this.sc?.ahead; if (!A || !A.has(c.id)) return;
+    const up = A.get(c.id) ?? null;
+    for (const [id, a] of A) if (a === c.id) A.set(id, up);
+    A.set(c.id, null);
+  }
+  scJoinQueue(c) {
+    const A = this.sc?.ahead; if (!A || this.sc.rolling) return;
+    const ord = this.standings(), i = ord.indexOf(c);
+    const front = ord.slice(0, Math.max(0, i)).reverse().find((o) => !o.finished && o !== c && !(o.pitting > 0) && !o.inPit && o.aiMode === "race");
+    A.set(c.id, front ? front.id : null);
+  }
+  scOrder() {
+    const S = this.sc; if (!S || !S.ahead || S.rolling) return null;
+    if (this._scEffT === this.time && this._scEff) return this._scEff;
+    const byId = new Map(this.cars.map((c) => [c.id, c])), eff = new Map();
+    const free = (c) => !c || c.finished || c.out || c.unlapping || c.pitting > 0 || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut" || c.crashT > 0 || c.spin || c.punct || c.damage > 0.6 || (c.stoppedT || 0) > 2;
+    const get = (c, depth) => {
+      if (eff.has(c.id)) return eff.get(c.id);
+      eff.set(c.id, c.progress);                     // (guards against loops)
+      let v = c.progress;
+      if (!free(c) && depth < 90) {
+        let a = byId.get(S.ahead.get(c.id)), hops = 0;
+        while (a && free(a) && hops++ < 90) a = byId.get(S.ahead.get(a.id));
+        if (a && a !== c) v = Math.min(v, get(a, depth + 1) - 0.001);
+      }
+      eff.set(c.id, v); return v;
+    };
+    for (const c of this.cars) get(c, 0);
+    this._scEffT = this.time; this._scEff = eff;
+    return eff;
+  }
   standings() {
     if (this.qualifying) return [...this.cars].sort((a, b) => (!!a.out - !!b.out) || (a.out ? (b.qOutStage - a.qOutStage) || (a.qBest - b.qBest) || 0 : (a.bestLap - b.bestLap) || (b.progress - a.progress)));
+    const eff = this.scOrder();
     return [...this.cars].sort((a, b) => {
       if (a.out || b.out) { if (a.out && b.out) return (b.finishTime - a.finishTime) || (b.progress - a.progress); return a.out ? 1 : -1; }   // knocked out: behind everyone still in, last out first
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
       if (a.finished) return -1; if (b.finished) return 1;
+      if (eff) return eff.get(b.id) - eff.get(a.id);
       return b.progress - a.progress;
     });
   }

@@ -1246,19 +1246,20 @@ test("endurance: a race against the clock, and teammates share a car, swapping a
   const feed = [], swaps = []; let res = null; const emit = r.emit.bind(r);
   r.emit = (ev, d) => { if (ev === "feed") feed.push(d.t); if (ev === "driverSwap") swaps.push(d); if (ev === "results") res = d; return emit(ev, d); };
   r.startRace();
-  const shared = r.cars.find((c) => c.owner === "e1");
-  assert.ok(shared && !r.cars.some((c) => c.owner === "e2"), "one car for the two of them"); assert.deepEqual(shared.drivers, ["e1", "e2"]);
+  const shared = r.cars.find((c) => c.owner === "e1" || c.owner === "e2");
+  assert.ok(shared && r.cars.filter((c) => c.owner === "e1" || c.owner === "e2").length === 1, "one car for the two of them"); assert.deepEqual([...shared.drivers].sort(), ["e1", "e2"]);
+  const [first, second] = shared.owner === "e1" ? [a, b] : [b, a];         // (who starts is random)
   assert.ok(r.enduro && r.enduro.secs === 600 && r.settings.laps > 4, "10 minutes, not 4 laps");
   r.startLights(); r.phase = "race"; r.launchCars();
   r.enduro.secs = 60;                                         // (a short one for the test)
   for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
-  shared.up.engine = 3; shared.up.turbo = 2; a.level = 6; a.xp = 40; b.up = { grip: 1 };
+  shared.up.engine = 3; shared.up.turbo = 2; first.level = 6; first.xp = 40; second.up = { grip: 1 };
   r.swapDriver(shared);
-  assert.equal(shared.owner, "e2", "Bo takes over"); assert.equal(swaps[0].name, "Bo"); assert.equal(a.coDriver, "e2");
+  assert.equal(shared.owner, second.id, "the teammate takes over"); assert.equal(swaps[0].name, second.name); assert.equal(first.coDriver, second.id);
   assert.ok(b.up === shared.up && a.up === shared.up, "both drivers share the car's upgrades now");
-  assert.ok(shared.up.engine === 3 && shared.up.turbo === 2 && shared.up.grip === 1, "Ann's upgrades stay on the car (and Bo's are added)");
-  assert.equal(b.level, 6, "Bo takes over at Ann's team level");
-  const before = shared.st.maxSpeed; b.up.engine++; shared.st = r.stats(shared); assert.ok(shared.st.maxSpeed > before, "a pick by Bo goes on the car");
+  assert.ok(shared.up.engine === 3 && shared.up.turbo === 2 && shared.up.grip === 1, "the first driver's upgrades stay on the car (and the teammate's are added)");
+  assert.equal(second.level, 6, "the teammate takes over at the team level");
+  const before = shared.st.maxSpeed; second.up.engine++; shared.st = r.stats(shared); assert.ok(shared.st.maxSpeed > before, "a pick by Bo goes on the car");
   for (let n = 0; n < 60 * 240 && r.phase === "race"; n++) r.step(1 / 60);
   if (r.phase === "race") r.endRace();
   assert.ok(feed.includes("timeUp"), "time's up was called");
@@ -1643,7 +1644,7 @@ test("safety car: nobody overtakes while everyone's ghosted at the start of it",
     r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
     for (let n = 0; n < 60 * 25; n++) r.step(1 / 60);
     r.deploySafetyCar(); assert.ok(r.sc);
-    const racing = (c) => !c.finished && !(c.pitting > 0) && !c.inPit && c.aiMode === "race" && !c.unlapping;
+    const racing = (c) => !c.finished && !(c.pitting > 0) && !c.inPit && c.aiMode === "race" && !c.unlapping && !(c.crashT > 0) && !c.spin && !(c.damage > 0.6) && !((c.stoppedT || 0) > 2);     // (a wreck may be passed)
     const before = r.standings().filter(racing).map((c) => c.id);
     for (let n = 0; n < 60 * 8; n++) r.step(1 / 60);
     const now = r.standings().filter((c) => racing(c) && before.includes(c.id)).map((c) => c.id);
@@ -1821,4 +1822,43 @@ test("worn tyres slow you down gradually: no sudden cliff at 0% (that made cars 
   for (let w = 0.33; w > 0; w -= 0.01) assert.ok(r.tireSpeed(w) - r.tireSpeed(Math.max(0, w - 0.01)) < 0.06, "no big step at " + w.toFixed(2));
   assert.ok(r.tireSpeed(1) === 1 && r.tireSpeed(0.34) === 1, "full speed with a third left");
   assert.ok(r.tireSpeed(0) >= 0.7, "dead tyres: 70%, not 62%");
+});
+
+test("endurance with shared cars: who qualifies (and starts) is random, and the race starts with the qualifier", () => {
+  const firsts = new Set();
+  for (let k = 0; k < 16; k++) {
+    const r = new game.Room("ENQ" + k, false); r.setRandomTrack("small", "regular");
+    const a = { id: "q1", name: "Ann", up: {}, level: 1, xp: 0, team: "Duo" }, b = { id: "q2", name: "Bo", up: {}, level: 1, xp: 0, team: "Duo" };
+    r.players.set(a.id, a); r.players.set(b.id, b);
+    Object.assign(r.settings, { ai: 2, quali: 1, laps: 4, weather: "sunny", mode: "endur", enduroMin: 10, teams: true }); r.ensureRoster(2);
+    r.startRace(); assert.ok(r.qualifying, "qualifying first");
+    const q = r.cars.filter((c) => c.owner === "q1" || c.owner === "q2"); assert.equal(q.length, 1, "one car for the pair in qualifying");
+    firsts.add(q[0].owner);
+    r.qualiGrid = r.cars.map((c) => c.slotKey); r.phase = "lobby"; r.startRace();
+    const race = r.cars.filter((c) => c.owner === "q1" || c.owner === "q2");
+    assert.equal(race.length, 1, "still one shared car in the race (it used to give them a car each after qualifying)");
+    assert.equal(race[0].owner, q[0].owner, "the qualifier starts the race"); assert.equal(race[0].drivers.length, 2);
+  }
+  assert.equal(firsts.size, 2, "both teammates get to qualify, not always the same one");
+});
+
+test("safety car: overtaking is impossible (the order never changes, unless someone pits, crashes or unlaps)", { timeout: 200000 }, () => {
+  let swaps = 0;
+  for (let s = 0; s < 3; s++) {
+    const r = new game.Room("SCNOPASS" + s, false); r.setRandomTrack("normal", s ? "very" : "regular");
+    Object.assign(r.settings, { ai: 11, quali: 0, laps: 20, weather: "sunny", safetyCar: true }); r.ensureRoster(11);
+    r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+    for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
+    r.deploySafetyCar(); assert.ok(r.sc);
+    const racing = (c) => !c.finished && !(c.pitting > 0) && !c.inPit && c.aiMode === "race" && !c.unlapping && !(c.crashT > 0) && !c.spin && !(c.damage > 0.6) && !((c.stoppedT || 0) > 2);
+    let prev = r.standings().filter(racing).map((c) => c.id);
+    for (let n = 0; n < 60 * 30; n++) {
+      r.sc.since = r.time - 5; r.step(1 / 60);
+      if (n % 10) continue;
+      const now = r.standings().filter(racing).map((c) => c.id), a = now.filter((id) => prev.includes(id)), b = prev.filter((id) => now.includes(id));
+      if (a.join() !== b.join()) swaps++;
+      prev = now;
+    }
+  }
+  assert.equal(swaps, 0, "nobody changed places behind the safety car");
 });
