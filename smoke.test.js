@@ -1185,7 +1185,7 @@ test("red flag: only a BIG pile-up; everyone back to the grid in the order befor
   const N = r.track.N; assert.ok(r.cars.every((x) => x.idx > N * 0.8), "back at the start line");
   for (let n = 0; n < 60 * 3; n++) r.step(1 / 60);
   assert.ok(r.cars.every((x) => x.speed === 0), "everyone stands still on the grid");
-  for (let n = 0; n < 60 * 5; n++) r.step(1 / 60);
+  for (let n = 0; n < 60 * 9; n++) r.step(1 / 60);       // (the stop is 10s now: everyone watches the crash again first)
   assert.ok(!r.rf && feed.includes("rfRestart") && !r.sc, "standing restart (no safety car)");
   assert.ok(r.cars.every((x) => x.damage === 0), "crews fixed the damage");
   assert.ok(r.cars.some((x) => x.speed > 50), "and they're off");
@@ -1665,7 +1665,7 @@ test("3 red flags or 7 safety cars: the race is called off and classified as it 
   };
   // red flags
   const A = mk("ABRF");
-  for (let k = 0; k < 2; k++) { A.r.redFlag(); assert.ok(A.r.rf, "red flag " + (k + 1)); for (let n = 0; n < 60 * 40; n++) A.r.step(1 / 60); }
+  for (let k = 0; k < 2; k++) { A.r.redFlag(); assert.ok(A.r.rf, "red flag " + (k + 1)); for (let n = 0; n < 60 * 45; n++) A.r.step(1 / 60); }
   assert.equal(A.r.phase, "race", "two red flags: still racing");
   const order = A.r.standings().map((c) => c.id);
   A.r.redFlag();

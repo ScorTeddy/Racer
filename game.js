@@ -2928,7 +2928,7 @@
     const all = document.querySelectorAll(".world-toast"); if (all.length > 3) all[0].remove();
     setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 500); }, 6500);
   });
-  socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => tut("done"), 1600); });
+  socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => { TQ.queue = []; if (TQ.cards && TUT_RACE_ORDER.includes(TQ.step)) { TQ.cards = null; $("tutCard").classList.add("hidden"); } tut("results"); }, 1800); });
   // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
   let fireworks = [];
   socket.on("feed", (f) => {
@@ -4292,37 +4292,110 @@
   $("specPrev").addEventListener("click", () => specMove(-1));
   $("specNext").addEventListener("click", () => specMove(1));
   $("specLead").addEventListener("click", () => specMove(0));
-  // ======================= Tutorial: a guided first race =======================
+  // ======================= Tutorial: everything in the game, in about 7 minutes =======================
+  // Three parts: a tour of building a track (in your own room), a short guided race, then a tour of the menu
+  // (account, car, ranked, rewards, friends, gifts, trades, bets). Each card is [title, text, what to point at].
+  // A step can be one card (shown when something happens in the race) or a list (a tour: Next, Next, Next).
+  const TK = (a) => `<b>${keyName(KEY(a))}</b>`;
   const TUT = {
-    lobby: ["👋 Welcome to Scribble GP!", "This is your room. Normally you draw a track here (or roll a random one) - we made one for you. You're the <b>team boss</b>: your AI driver steers, you make the calls. Press <b>Start race</b>!"],
-    tires: ["🛞 Pick your starting tires", "<b>Fast</b> is quickest but wears out fast. <b>Durable</b> lasts longest but is slow. <b>Wets</b> are for rain. For your first race, <b>Intermediate</b> is a safe pick."],
-    lights: ["🚦 Get a rocket start", "Watch the 5 red lights. Press <b>Space</b> (or tap the screen) the moment they go <b>out</b>. Too early = jump start!"],
-    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake. Run it dry and it's locked for 5 seconds, unless you overtake or cross the line. While it's on, you earn <b>1.5x upgrade XP</b>."],
-    upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick one of the cards (keys <b>1 / 2 / 3</b>) to upgrade your car or driver. They stack up during the race."],
-    pit: ["🔧 Tires wearing out", "See the tire bar at the bottom? When it gets low the car slows down and can get a puncture. Press <b>B</b> (Box this lap) to pit for fresh tires - you choose which set on the way in."],
-    afterPit: ["✅ Nice stop!", "Fresh tires! In longer races, timing your stops (and the weather) is how races are won. <b>Tab</b> watches other cars, <b>O</b> opens settings."],
-    done: ["🏁 You're ready!", "That's everything you need. Try <b>⚡ Quick Play</b> to race real people, or <b>Make a room</b> and send the invite link to friends. Make an account to save your stats and earn coins!"],
+    lobby: [
+      ["👋 Welcome to Scribble GP!", "You're the <b>team boss</b>: your AI driver steers, you make the calls (tyres, boost, pit stops, upgrades). This tour shows you <b>everything</b>: building a track (2 min), a short race (3 min), then the menu (2 min). Skip any time."],
+      ["✏️ Drawing a track", "Drag on the board to draw one loop. The tools: <b>Freehand</b>, <b>Straight</b> (click points), <b>Curve</b>, <b>Mirror</b> (a symmetric track) and <b>Shapes</b>. Road width and Snap float over the board, Undo/Redo (Ctrl+Z / Ctrl+Y) sit at the bottom. We rolled a random track for you already.", "#drawMode"],
+      ["🛠️ Changing it", "<b>Edit track</b>: rotate, flip, bigger, smaller, a wider or narrower road, wiggle. <b>Redraw part</b> cuts out a bit to draw again, <b>Smooth</b> tidies it, <b>Start line</b> moves the start (click it, then the track), <b>Reverse</b> flips the direction.", "#moreBtn"],
+      ["🟩 DRS zones and objects", "<b>Add DRS</b>: click where a zone starts, then where it ends (<b>Auto DRS</b> picks the straights). <b>Objects</b>: grandstands, banners, bridges and tunnels. Long ones (tunnels, stands) go from your first click to your second. Inside a tunnel everything echoes!", "[data-decor=\"tunnel\"]"],
+      ["📚 Other tracks", "<b>Random</b> (pick how wonky), <b>Real tracks</b> (F1 circuits and more), <b>My tracks</b> (save yours), <b>Track of the week</b>, <b>Community</b> tracks, and <b>share codes</b> to swap tracks with friends.", "#randomBtn"],
+      ["⚙️ Step 2: Race rules", "Pick a <b>mode</b>: Normal, Multiclass (Hypers vs GT3s), Elimination, Endurance (teammates swap), Championship, Time trial, King of the hill, Practice. Then laps, AI drivers and difficulty, weather, qualifying, safety car, DRS, standing or rolling start, points.", ".rc-step[data-step=\"rules\"], #modeTab"],
+      ["👥 Step 3: Grid & teams", "Team up (tap <b>Join</b>) with friends or AI: teammates share a garage and score together. Invite friends with the room code or <b>Invite</b> link, or make the room <b>Public</b>. Chat with <b>Enter</b>. Now press <b>Start race</b>!", "#startBtn"],
+    ],
+    tires: ["🛞 Pick your starting tyres", "<b>Fast</b> is quickest but wears out fast, <b>Durable</b> lasts longest but is slower, <b>Wets</b> are for rain. <b>Intermediate</b> is a safe first pick. You can change your <b>next</b> set any time in Team radio.", "#tirePick"],
+    lights: ["🚦 Rocket start", `Watch the 5 red lights. Press ${TK("boost")} (or tap) the moment they go <b>out</b>. Too early = jump start!`, "#lights"],
+    boost: ["⚡ Boost", `Hold ${TK("boost")} on straights for extra speed. It refills every lap, a little every second, and after every overtake. While it's on you earn <b>1.5x XP</b>. Tucked right behind another car you also get a <b>slipstream</b> tow.`, "#boostBtn"],
+    upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick a card (<b>1 / 2 / 3</b>): <b>Driver</b> cards (corners, braking, overtaking...) or <b>Car</b> cards (engine, turbo, grip...). They stack. Rare 💎👑🌈 cards upgrade everything!", "#cards"],
+    defend: ["🛡️ Defend", `Someone right behind you? Press ${TK("defend")}: your driver covers the line so they can't get past. It uses boost, so save it for the end.`, "#defendBtn"],
+    slow: ["🐢 Why am I slow?", "The line under your speed tells you what's costing you: worn tyres, dry tyres in the rain, damage, cold tyres. The track map is top right, laps to go at the top, the gaps to the cars around you top left.", "#radio"],
+    drs: ["🟩 DRS is on", `In a green DRS zone and within 1 second of the car ahead? Press ${TK("drs")} for +7% top speed.`],
+    pit: ["🔧 Tyres wearing out", `When the tyre bar gets low the car slows down and can get a puncture. Press ${TK("box")} to pit this lap, and pick your next set (keys <b>1-4</b>).`, "#boxBtn"],
+    pitGame: ["🎮 You're in the pits!", "Hit the arrows in order (arrow keys or WASD) as fast as you can. A quick, clean stop beats the AI crews. Miss one and you lose time!", "#pitGame"],
+    afterPit: ["✅ Nice stop!", "Fresh tyres come out cold: a little less grip for a lap. In longer races, when you stop (and for which tyres, rain or shine) is how races are won."],
+    watch: ["👀 Watch anyone", `Click a driver on the leaderboard (or ${TK("spectate")}) to follow them: you see their boost, tyres, upgrades and the cards they pick. Watching a friend? Hit <b>Cheer them on</b>. Click yourself to come back.`, "#standings"],
+    fun: ["📷 More to try", `${TK("photo")} photo mode, ${TK("horn")} horn, emotes and chat. Rain can come mid-race, a big crash brings out the <b>safety car</b> (no overtaking, lapped cars unlap), a huge pile-up a <b>red flag</b> (back to the grid).`],
+    results: [
+      ["🏁 Results", "Points for the championship, best laps and pit stops. Rewatch the finish, the <b>overtake of the race</b>, the <b>highlights</b> or the lap chart, save or share a replay, say <b>GG</b>, or hit <b>Rematch</b>.", "#ggBtn"],
+      ["🏆 One more part: the menu", "Points carry over race to race in a room (see Standings). Last bit of the tour: the menu, where your account, car, ranked, rewards and friends live.", null, "menu"],
+    ],
+    menu: [
+      ["🏠 The menu", "<b>Quick Play</b> races real people, <b>Race solo</b> is you vs the AI, <b>Make a room</b> for friends, or join one with a code or from the public lobbies.", "#quickBtn"],
+      ["👤 Your account", "Make an account (free) to save your stats, earn <b>coins</b>, get achievements and a rank. It works on any device.", "#signUpBtn, #acctBar"],
+      ["🎨 Your car", "Name, number (and number style), colour, livery, or <b>paint your own design</b>. Save whole looks as car presets. The <b>Store</b> sells underglow, spoilers, rims, horns, trails and more; equip them in <b>Customize</b>.", ".menu-car, #carPreview"],
+      ["🏆 Ranked and events", "<b>Ranked</b>: climb from Iron to Overdrive Elite. <b>Track of the week</b> has its own leaderboard, weekend events double your coins, <b>Tournaments</b> run every weekend, and spectators can <b>predict</b> the winner for coins.", "#rankedBtn"],
+      ["🎟️ Rewards", "The <b>Season pass</b> (60 tiers a month), daily login streak, daily challenges, the daily wheel, crates and achievements. The casino (slots, blackjack, plinko) is in your profile.", "[data-hub=\"pass\"]"],
+      ["👥 Friends", "Profile › <b>Friends</b>: add people by username or friend code, see who's online, chat, and invite them to your room.", "#acctBar [data-hub=\"stats\"]"],
+      ["🤝 Gifts, trades and bets", "On a friend's card: 🎁 <b>gift</b> coins or an item; 🤝 <b>trade</b>: pick as many items (and coins) as you like each side, they accept or decline; ⚔️ <b>bet</b> coins on your next race together; 👻 send them your best lap as a <b>ghost</b> to beat."],
+      ["🎓 That's everything!", "⚙️ Settings has the controls, sound, engine and horn, and <b>assists</b> (pit, boost, DRS, defend) if you want help. 📰 What's new shows every update, and 💡 <b>Suggest an idea</b> goes straight to the person who makes the game. Have fun!", "#suggestLink", "done"],
+    ],
   };
+  const TUT_RACE_ORDER = ["tires", "lights", "boost", "upgrade", "defend", "slow", "drs", "pit", "pitGame", "afterPit", "watch", "fun"];
+  const TQ = { cards: null, i: 0, step: null, queue: [], hl: null };
+  function tutHighlight(sel) {
+    if (TQ.hl) TQ.hl.classList.remove("tut-hl"); TQ.hl = null;
+    if (!sel) return;
+    const el2 = [...document.querySelectorAll(sel)].find((e) => e.offsetParent !== null || getComputedStyle(e).position === "fixed");
+    if (el2) { el2.classList.add("tut-hl"); TQ.hl = el2; el2.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }
+    // never sit on top of the thing we're pointing at: drop to the bottom of the screen if it would
+    const card = $("tutCard"); card.classList.remove("low");
+    if (el2) requestAnimationFrame(() => { const a = card.getBoundingClientRect(), b2 = el2.getBoundingClientRect(); if (a.left < b2.right && b2.left < a.right && a.top < b2.bottom && b2.top < a.bottom) card.classList.add("low"); });
+  }
+  function tutShow() {
+    const [title, body, sel] = TQ.cards[TQ.i], n = TQ.cards.length;
+    $("tutTitle").textContent = title; $("tutBody").innerHTML = body;      // (our own fixed text, never player text)
+    $("tutNext").textContent = TQ.i < n - 1 ? `Next (${TQ.i + 1}/${n}) ›` : TQ.cards[TQ.i][3] === "menu" ? "Show me the menu ›" : "Got it";
+    const card = $("tutCard"); card.classList.remove("hidden"); card.classList.remove("tut-in"); void card.offsetWidth; card.classList.add("tut-in"); sfx("tick");
+    tutHighlight(sel);
+    clearTimeout(S.tutT);
+    // single race tips tidy themselves away (the race goes on); tours wait for Next
+    if (n === 1 && TUT_RACE_ORDER.includes(TQ.step)) S.tutT = setTimeout(tutNext, 16000);
+  }
+  function tutNext() {
+    clearTimeout(S.tutT);
+    const card = TQ.cards && TQ.cards[TQ.i], act = card && card[3];
+    if (TQ.cards && TQ.i < TQ.cards.length - 1) { TQ.i++; tutShow(); return; }
+    $("tutCard").classList.add("hidden"); tutHighlight(null); TQ.cards = null;
+    if (act === "menu") { tutMenu(); return; }
+    if (act === "done") { tutFinish(); return; }
+    if (TQ.queue.length) setTimeout(() => { const nx = TQ.queue.shift(); tutOpen(nx); }, 600);
+  }
+  function tutOpen(step) {
+    const t = TUT[step]; TQ.step = step; TQ.cards = Array.isArray(t[0]) ? t : [t]; TQ.i = 0; tutShow();
+  }
   function tut(step) {
     if (!S.tutorial || !TUT[step] || (S.tutSeen || (S.tutSeen = new Set())).has(step)) return;
+    if (TUT_RACE_ORDER.includes(step) && (S.screen !== "race" || S.replaying)) return;     // (race tips only during the race)
     S.tutSeen.add(step);
-    const [title, body] = TUT[step];
-    $("tutTitle").textContent = title; $("tutBody").innerHTML = body;      // (our own fixed text, never player text)
-    $("tutCard").classList.remove("hidden"); sfx("tick");
-    clearTimeout(S.tutT); if (step !== "done" && step !== "lobby") S.tutT = setTimeout(() => $("tutCard").classList.add("hidden"), 14000);
-    if (step === "done") { try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} S.tutorial = false; }
+    if (TQ.cards) { TQ.queue.push(step); return; }      // one at a time: the next tip waits its turn
+    tutOpen(step);
   }
+  // after the race: out of the room and onto the menu for the last part
+  function tutMenu() {
+    S.tutorial = true;
+    try { $("leaveBtn").click(); } catch (e) {}
+    setTimeout(() => { if (S.screen !== "menu") show("menu"); window.scrollTo(0, 0); S.tutSeen.delete("menu"); tut("menu"); }, 500);
+  }
+  function tutFinish() { try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} S.tutorial = false; TQ.queue = []; $("tutBtn").classList.remove("pulse"); banner("🎓 TUTORIAL DONE!", "#3ecf6a"); sfx("level"); }
   function startTutorial() {
-    saveProfile(); S.solo = true; S.tutorial = true; S.tutSeen = new Set(); S.tutPits = undefined; S.tutSetup = true;
+    saveProfile(); S.solo = true; S.tutorial = true; S.tutSeen = new Set(); S.tutPits = undefined; S.tutSetup = true; TQ.queue = []; TQ.cards = null;
     socket.emit("create", prof);
   }
-  $("tutNext").addEventListener("click", () => $("tutCard").classList.add("hidden"));
-  $("tutQuit").addEventListener("click", () => { S.tutorial = false; $("tutCard").classList.add("hidden"); try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} });
+  $("tutNext").addEventListener("click", tutNext);
+  $("tutQuit").addEventListener("click", () => { S.tutorial = false; TQ.queue = []; TQ.cards = null; clearTimeout(S.tutT); tutHighlight(null); $("tutCard").classList.add("hidden"); try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} });
+  // the race tips that need a moment, rather than an event
+  socket.on("lightsOut", () => { if (!S.tutorial) return; setTimeout(() => tut("defend"), 22000); setTimeout(() => tut("slow"), 34000); setTimeout(() => tut("watch"), 60000); setTimeout(() => tut("fun"), 80000); });
+  socket.on("feed", (f) => { if (f.t === "drs") tut("drs"); });
+  socket.on("pitGame", () => tut("pitGame"));
   // set up the tutorial room: short, easy, dry, one random track
   socket.on("lobby", (l) => {
     if (!S.tutSetup || l.hostId !== S.me) return;
     S.tutSetup = false;
-    socket.emit("settings", { laps: 3, ai: 3, aiLevel: "easy", speed: 1, weather: "sunny", quali: 0, wear: "high", theme: "grass", season: 0 });
+    socket.emit("settings", { laps: 4, ai: 3, aiLevel: "easy", speed: 1, weather: "sunny", quali: 0, wear: "high", theme: "grass", season: 0, safetyCar: false, mode: "normal" });
     setTimeout(() => socket.emit("randomTrack", { map: "small" }), 200);
     setTimeout(() => tut("lobby"), 900);
   });
@@ -7552,6 +7625,21 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06a", date: "6 Oct", title: "No more mystery slowdowns, red flag replays, a full tutorial", items: [
+      "🐢 Fixed cars suddenly losing a third of their speed: completely worn tyres used to drop you straight from 86% to 62% speed. Now worn tyres slow you down gradually (70% when they're totally dead).",
+      "🏎️ A GT3 in a Hypercar's slipstream can keep up with it now, but can't out-drag it any more (the tow used to take a GT3 past a Hyper's top speed).",
+      "🌧️ When it rains and you pit, you get Wets (unless you picked dry tyres in the rain on purpose). Your next tyres used to be stuck on whatever you started on.",
+      "🔎 A new line under your speed tells you what's slowing you down: worn tyres, dry tyres in the rain, damage, cold tyres.",
+      "🟥 Red flag: everyone watches the crash again, then it's back to the grid.",
+      "🌧️ Rain you can't miss: darker skies, streaks blowing in the wind, splashes, drops on the lens, spray off the cars, lightning and thunder in a downpour, and you can hear it.",
+      "🏁 \"Laps to go\" at the top of the screen for everyone (spectators too). Final lap flashes.",
+      "👀 Watching someone? You see their tyres too: which set, how worn, how many laps old, cold or not.",
+      "🖱️ Clicking a driver on the leaderboard to watch them works every time now (clicks used to get lost).",
+      "📣 \"Cheer them on\" works now.",
+      "🔁 Endurance: when your teammate takes over, the car keeps all its upgrades and team level, and both of your picks go on the car.",
+      "🟡 No tyre wear on the formation lap.",
+      "🎓 A new tutorial that shows everything in about 7 minutes: building tracks, every race control, then the menu (account, car, ranked, rewards, friends, gifts, trades and bets).",
+    ] },
     { v: "u-2026-10-05g", date: "5 Oct", title: "New track builder, bigger trades, suggestions", items: [
       "🛠️ A new track builder on computers: three steps at the top (1 Track › 2 Race rules › 3 Grid & teams), every drawing tool in one rail on the left, the road width and snap floating over the board, undo/redo and reverse at the bottom, and a Track panel with where to start from, scenery, objects and the race at a glance.",
       "🤝 Trades: pick as many items as you like to give AND to ask for (up to 10 each side), plus coins. Search your items, see roughly what they're worth, and check it all before you send.",
