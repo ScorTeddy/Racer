@@ -87,7 +87,7 @@ const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_LONG = ["tunnel", "
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
 const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
-const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 6;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 6 seconds
+const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 10;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 10 seconds (everyone watches the crash again first)
 const AI_PIT_STOP = 0.72, AI_PIT_LANE = 1.15;   // AI pit stops: 28% shorter standing still, 15% faster down the pit lane
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
@@ -3057,10 +3057,11 @@ class Room {
     const snap = [...(this.orderHist || [])].reverse().find((h) => h.t < first - 0.3);
     this.rfCount = (this.rfCount || 0) + 1;
     if (this.rfCount >= RF_ABANDON) return this.abandonRace("redFlags");     // a third red flag: that's it, the race is called off
+    const pile = this.crashLog.find((x) => x.big) || this.crashLog[0];     // (for the replay: which car to follow, and when it started)
     this.rf = { until: this.time + RED_FLAG_TIME }; this.sc = null; this.crashLog = [];
     for (const c of this.cars) { c.vx = c.vy = 0; c.speed = 0; c.spin = 0; c.crashT = 0; c.nitroOn = false; c.passT = 0; c.unlapping = false; }
     this.regrid(snap ? snap.ids : this.standings().map((c) => c.id));
-    this.emit("feed", { t: "redFlag", secs: RED_FLAG_TIME });
+    this.emit("feed", { t: "redFlag", secs: RED_FLAG_TIME, car: pile ? pile.a : null, t0: Math.round(first * 100) / 100, at: Math.round(this.time * 100) / 100 });
   }
   // Red flag: everyone back to the starting grid, in the order they were in before the crash (multiclass: each
   // class together, Hypers first). Laps stay fair: lapped cars stay lapped, and nobody gains or loses more than

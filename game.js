@@ -2782,8 +2782,31 @@
     RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at));
     RP.timers.push(setTimeout(stopReplay, clip[clip.length - 1].at + 1500));
   }
+  // red flag: the race stops, and everyone watches the pile-up again (the few seconds before it, from the race
+  // they just watched), then it's back to the live race, already lined up on the grid
+  function rfReplay(f) {
+    if (S.replaying || !S.race || !f.at) return;
+    const clip = RP.buf.filter((m) => m.st.t >= Math.max((f.t0 ?? f.at) - 2.5, f.at - 7) && m.st.t < f.at - 0.01);
+    if (clip.length < 15) return;
+    RP.rf = { cam: S.camTarget };
+    S.replaying = "rf"; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = [];
+    document.body.classList.add("replaying"); $("replayBar").classList.remove("hidden"); $("replaySave").classList.add("hidden");
+    $("replayTitle").textContent = "🟥 RED FLAG · watch the crash again";
+    S.camTarget = f.car ?? null;
+    const t0 = clip[0].at;
+    RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at - t0));
+    RP.timers.push(setTimeout(endRfReplay, clip[clip.length - 1].at - t0 + 800));
+  }
+  function endRfReplay() {
+    if (S.replaying !== "rf") return;
+    RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false;
+    document.body.classList.remove("replaying"); $("replayBar").classList.add("hidden");
+    snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.camTarget = RP.rf?.cam ?? null; RP.rf = null;
+    banner("🟥 BACK TO THE GRID", "#ff2d55");
+  }
   function stopReplay() {
     if (!S.replaying) return;
+    if (S.replaying === "rf") return endRfReplay();
     const saved = S.replaying === "saved";
     if (S.photoOn) photoMode(false);
     RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false; S.camTarget = null;
@@ -6403,7 +6426,7 @@
     else if (f.t === "mistake") say("mistake", null, 0, 20000);
     else if (f.t === "qko") say("qko", null, 2);
     else if (f.t === "timeUp") { say("lastLap", null, 2); banner("⏳ TIME'S UP: LAST LAP!", "#ffc53d"); }
-    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s: everyone back to the grid in the order before the crash${S.race?.multi ? " (each class together)" : ""}`, true); }
+    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s. Here it is again, then everyone goes back to the grid in the order before the crash${S.race?.multi ? " (each class together)" : ""}`, true); setTimeout(() => rfReplay(f), 700); }
     else if (f.t === "rfRestart") popup("Standing restart from the grid!");
   });
   // new leader (from the race state): "Bolt takes the lead!"
