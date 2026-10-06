@@ -259,7 +259,7 @@
     { title: "Airport Lounge", file: "Airport Lounge.mp3", mood: "menu" },
     { title: "Beachfront Celebration", file: "Beachfront Celebration.mp3", mood: "results" },
     { title: "At Launch", file: "At Launch.mp3", mood: "results" },
-  ].map((x) => ({ ...KM, ...x, url: "music/km/" + encodeURIComponent(x.file), alt: IA + encodeURIComponent(x.file) }));   // through our server first, archive.org directly if that fails
+  ].map((x) => ({ ...KM, ...x, url: IA + encodeURIComponent(x.file), alt: "music/km/" + encodeURIComponent(x.file) }));   // straight from archive.org (it costs our server nothing); through our server if that's blocked
   var MUS = { el: null, list: BUILTIN.slice(), cur: null, started: false, now: "", recent: [] };
   fetch("music/music.json").then((r) => (r.ok ? r.json() : [])).then((list) => {
     if (!Array.isArray(list)) return;
@@ -6426,6 +6426,7 @@
   }
   function loadNewThunder() {
     if (WX.loading > 1 || WX.fails > 6) return;
+    if (Object.keys(WX.buf).filter((n) => n.startsWith("thunder")).length >= 3 && (WX.asks = (WX.asks || 0) + 1) % 3) return;   // (a new one every 3rd strike: saves data)
     const left = []; for (let n = 1; n <= THUNDER_N; n++) if (WX.buf["thunder" + n] === undefined) left.push(n);
     if (left.length) loadSfx("thunder" + left[Math.floor(Math.random() * left.length)]);
   }
@@ -8013,6 +8014,9 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06f", date: "6 Oct", title: "Faster loading", items: [
+      "⚡ The game loads faster and uses much less data: its files come squashed, race updates are about 3x smaller, and the music streams straight from archive.org.",
+    ] },
     { v: "u-2026-10-06e", date: "6 Oct", title: "Party mode, clips, famous corners, 100 thunders", items: [
       "🎉 Party mode (Race rules): sabotage cards turn up among your upgrades. 🛢️ Oil Slick (anyone who drives over it spins), ⛈️ Storm Cloud (rain on the bit of track the car ahead is on) and 🦑 Ink Splat (the car behind you can't see for 2 seconds). The AI plays dirty too. Never in ranked.",
       "⚡ Party mode shortcuts: in the track builder, 🎉 Shortcut makes a dirt road straight across from one bit of track to a later one. It's slower dirt, but a lot shorter. They only open in Party mode.",

@@ -373,6 +373,26 @@ function buildIndex() {
   const html = fs.readFileSync(indexFile, "utf8");
   indexHtml = html.replace('src="/game.js"', `src="/game.js?v=${fileHash("game.js")}"`).replace('href="/game.css"', `href="/game.css?v=${fileHash("game.css")}"`);
 }
+// Big text files go out squashed (brotli, or gzip for older browsers): game.js is 750 KB as it is, about 150 KB
+// squashed. Squashed once per version and kept in memory. (Render's free plan only includes so much data a month.)
+const packed = new Map();
+function sendPacked(req, res, key, body, type) {
+  const enc = String(req.headers["accept-encoding"] || ""), kind = /\bbr\b/.test(enc) ? "br" : /\bgzip\b/.test(enc) ? "gzip" : null;
+  res.type(type); res.setHeader("Vary", "Accept-Encoding");
+  if (!kind) return res.send(body);
+  let p = packed.get(key);
+  if (!p || p.body !== body) {
+    p = { body, br: null, gzip: null }; packed.set(key, p);
+  }
+  if (!p[kind]) p[kind] = kind === "br" ? zlib.brotliCompressSync(body, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } }) : zlib.gzipSync(body, { level: 9 });
+  res.setHeader("Content-Encoding", kind); res.send(p[kind]);
+}
+const fileBody = new Map();
+function readCached(fp) {
+  const st = fs.statSync(fp), c = fileBody.get(fp);
+  if (c && c.mtime === st.mtimeMs) return c.body;
+  const body = fs.readFileSync(fp); fileBody.set(fp, { mtime: st.mtimeMs, body }); return body;
+}
 // game.js / game.css: found in public/ OR next to server.js (in case they got uploaded to the wrong folder)
 for (const f of ["game.js", "game.css"]) {
   const spots = [path.join(__dirname, "public", f), path.join(__dirname, f)];
@@ -383,12 +403,12 @@ for (const f of ["game.js", "game.css"]) {
     const fp = spots.find((x) => fs.existsSync(x));
     if (!fp) return res.status(404).type("text/plain").send(`${f} is missing: upload it into the public folder on GitHub.`);
     res.setHeader("Cache-Control", req.query.v ? "public, max-age=31536000, immutable" : "no-cache");
-    res.sendFile(fp);
+    sendPacked(req, res, fp, readCached(fp), f.endsWith(".js") ? "application/javascript" : "text/css");
   });
 }
-app.get("/", (req, res) => { if (!indexHtml || !PROD) buildIndex(); res.setHeader("Cache-Control", "no-cache"); res.type("html").send(indexHtml); });
+app.get("/", (req, res) => { if (!indexHtml || !PROD) buildIndex(); res.setHeader("Cache-Control", "no-cache"); sendPacked(req, res, "index", indexHtml, "html"); });
 // password strength meter for the sign-up form (same zxcvbn the server uses)
-app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.sendFile(path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js")); });
+app.get("/vendor/zxcvbn.js", (req, res) => { res.setHeader("Cache-Control", "public, max-age=604800"); const fp = path.join(__dirname, "node_modules", "zxcvbn", "dist", "zxcvbn.js"); sendPacked(req, res, fp, readCached(fp), "application/javascript"); });
 // ---- small pages + search engine files ----
 // (in public/, or next to server.js if the files were uploaded without the folder)
 const pub = (f) => { const a = path.join(__dirname, "public", f); return fs.existsSync(a) ? a : path.join(__dirname, f); };
@@ -561,7 +581,8 @@ function sfxClip(name) {
     let buf = await accounts.voiceGet(key).catch(() => null);
     if (!buf) {
       if (!elKey() || Date.now() < sfxOffUntil) throw new Error("no sound effects right now");
-      const S = SFX[name], url = `${process.env.ELEVENLABS_URL || "https://api.elevenlabs.io"}/v1/sound-generation?output_format=mp3_44100_128`;
+      // (the extra thunderclaps are made as small files: 22 kHz, 32 kbps is plenty for a deep rumble)
+      const S = SFX[name], fmt = /^thunder\d+$/.test(name) && +name.slice(7) > 4 ? "mp3_22050_32" : "mp3_44100_128", url = `${process.env.ELEVENLABS_URL || "https://api.elevenlabs.io"}/v1/sound-generation?output_format=${fmt}`;
       const ask = async (body) => {
         const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
         try { return await fetch(url, { method: "POST", signal: ctl.signal, headers: { "xi-api-key": elKey(), "Content-Type": "application/json", Accept: "audio/mpeg" }, body: JSON.stringify(body) }); }
@@ -615,7 +636,9 @@ const server = http.createServer(app);
 const ipOf = (req) => (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "?");
 const socketsPerIp = new Map();
 const io = new Server(server, {
-  perMessageDeflate: false,
+  // race updates are squashed too (about 3x smaller). Each message on its own, at the fastest setting, so it costs
+  // very little CPU and no memory per player
+  perMessageDeflate: { threshold: 600, zlibDeflateOptions: { level: 1 }, serverNoContextTakeover: true, clientNoContextTakeover: true },
   maxHttpBufferSize: 400e3,                   // biggest real message is a drawn track (~150 KB)
   // CORS: only pages from this same site may connect (or ALLOWED_ORIGINS, comma separated, if you set it)
   allowRequest: (req, cb) => {
@@ -5202,7 +5225,8 @@ if (require.main === module) server.listen(PORT, () => console.log(`Scribble GP:
 // Render's free plan puts a server to sleep after ~15 minutes without new web requests, and players racing over an
 // open connection may not count. So while anyone's online, the server visits its own page every 10 minutes to stay
 // awake (it still sleeps when nobody's playing). RENDER_EXTERNAL_URL is set by Render itself.
-if (require.main === module && process.env.RENDER_EXTERNAL_URL) setInterval(() => {
-  if (io.engine.clientsCount > 0) fetch(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "") + "/favicon.svg", { method: "HEAD" }).catch(() => {});
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SITE_URL;      // (SITE_URL: set it on other hosts)
+if (require.main === module && SELF_URL) setInterval(() => {
+  if (io.engine.clientsCount > 0) fetch(SELF_URL.replace(/\/$/, "") + "/favicon.svg", { method: "HEAD" }).catch(() => {});
 }, 10 * 60e3).unref();
 module.exports = { CRASH_SPEED, tireLifeLaps, voidRankedRaces, weeklyTrack, weekCode, makeRandomTrackSoon, tourTrack, refreshContestTotw, totw, CAR_CLASSES, aiIsGt, straightRuns, io, IDLE_MS, eventInfo, EVENTS, totw, cleanReplay, AI_LEVELS, rollRareCard, snapRoom, unsnapRoom, saveRooms, restoreRoom, strokeOk, circR, randomStroke, computeElev, Room, rooms, buildTrack, finalizeTrack, makeRandomTrack, bestStart, rateTrack, MAP_SIZES, server };
