@@ -838,6 +838,25 @@ function computeElev(world, tan, hw, spacing) {
   }
   const rampPts = 250 / spacing;
   const bumps = crossings.map((c) => ({ ...c, L: 1, span: ((hw[c.i] + 45) / Math.max(0.35, c.sin) + CAR_HL) / spacing }));
+  // Overlaps: a bit of track drawn right along (on top of) another bit. The lines run side by side instead of
+  // crossing, so the check above only catches where they meet; in between both used to sit on the ground and the
+  // cars ran into each other. The later pass now stays up on a bridge for the whole stretch it overlaps.
+  const near = (i) => { let d = Math.abs(i); d = Math.min(d, N - d); return d; };
+  const ovl = new Array(N).fill(-1);
+  for (let j = 0; j < N; j++) {
+    const p = world[j];
+    for (const i of grid.near(p.x, p.y, (hw[j] || 60) * 2 + 40)) {
+      if (i >= j || near(i - j) < Math.ceil((hw[j] * 2 + 140) / spacing)) continue;          // (the earlier pass only, and not just the road either side of this bit)
+      if (Math.hypot(world[i].x - p.x, world[i].y - p.y) < (hw[i] + hw[j]) * 0.75) { ovl[j] = i; break; }
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    if (ovl[j] < 0 || ovl[(j - 1 + N) % N] >= 0) continue;                                         // the start of an overlapping run
+    let e = j; while (ovl[(e + 1) % N] >= 0 && near(e + 1 - j) < N - 1) e++;
+    const len = e - j, mid = (j + Math.floor(len / 2)) % N;
+    if (len < 3) continue;                                                                          // (a plain crossing: handled above)
+    bumps.push({ i: ovl[mid], j: mid, x: world[mid].x, y: world[mid].y, sin: 0, L: 1, span: len / 2 + (60 + CAR_HL) / spacing, overlap: true });
+  }
   const hAt = (b, k) => {
     let d = Math.abs(k - b.j); d = Math.min(d, N - d);
     return d <= b.span ? b.L : Math.max(0, b.L - (d - b.span) / rampPts);
@@ -4307,7 +4326,7 @@ io.on("connection", (socket) => {
     emoteAt = Date.now();
     const c = r.cars && r.carOf(p.id);
     r.emit("emote", { e, name: p.name, pid: p.id, car: c ? c.id : null });
-    if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "emotes"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
+    if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; if (e === "GG" && r.phase !== "race") accounts.bump(u, "ggs"); const got = accounts.bump(u, "emotes"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
   });
   // the host can name the room (shown in the lobby and the public room list)
   socket.on("roomName", (n) => {
@@ -4526,6 +4545,7 @@ io.on("connection", (socket) => {
     if (!u) return socket.emit("toast", "Sign in first");
     const res = await fn(u);
     if (res?.error) { socket.emit("toast", res.error); return res; }
+    if (res) res.got = [...(res.got || []), ...accounts.recheck(u)];        // (trades, gifts, bets... count towards achievements)
     socket.data.extras = accounts.extrasOf(u);
     socket.emit("account", accounts.publicUser(u));
     for (const a of res?.got || []) socket.emit("achievement", a);
@@ -4547,6 +4567,7 @@ io.on("connection", (socket) => {
     if (r.error) return socket.emit("suggestResult", { error: r.error });
     suggestAt = Date.now(); const today = Math.floor(Date.now() / 864e5); if (suggestDay.day !== today) { suggestDay.day = today; suggestDay.n = 0; } suggestDay.n++;
     socket.emit("suggestResult", { ok: true });
+    if (u) { const got = accounts.bump(u, "suggestions"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }
     emailSuggestion(r.s);
     if (r.admin) {
       notifyUid(r.admin.id, { icon: "💡", title: `New ${r.s.kind === "bug" ? "bug report" : "suggestion"} from ${r.s.name}`, text: r.s.text.slice(0, 120), key: "suggest_" + r.s.id });
@@ -4559,7 +4580,7 @@ io.on("connection", (socket) => {
   socket.on("suggest:unread", (id) => adminDo((u) => accounts.suggestMark(u, String(id || ""), false)));
   socket.on("suggest:delete", (id) => adminDo((u) => accounts.suggestDelete(u, String(id || ""))));
   // ---- gifts, trades and messages (friends only) ----
-  const tellOther = async (id, ev, data, note) => { const o = await accounts.getUser(id); if (!o) return; for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); } if (note) notifyUid(id, note); };
+  const tellOther = async (id, ev, data, note) => { const o = await accounts.getUser(id); if (!o) return; const got = accounts.recheck(o); for (const sid of online.get(id) || []) { io.to(sid).emit("account", accounts.publicUser(o)); if (ev) io.to(sid).emit(ev, data); for (const a of got) io.to(sid).emit("achievement", a); } if (note) notifyUid(id, note); };
   socket.on("gift:send", (d) => acctAction(async (u) => {
     const r = await accounts.sendGift(u, String(d?.to || ""), { coins: d?.coins, item: d?.item, note: nameFilter.isBad(String(d?.note || "")) ? "" : d?.note });
     if (r.ok) { socket.emit("toast", `🎁 Sent ${r.what} to ${r.name}!`); socket.emit("dmThread", { with: r.other, list: accounts.dmThread(u, r.other) }); tellOther(r.other, "dm", { from: u.id, name: u.name, gift: r.what }, { icon: "🎁", title: `${u.name} sent you a gift`, text: r.what }); }
@@ -4668,6 +4689,7 @@ io.on("connection", (socket) => {
     const c = r.cars.find((x) => x.id === Number(id)); if (!c || !c.owner || c.owner === p.id || !r.players.has(c.owner)) return;
     cheerAt = Date.now();
     io.to(c.owner).emit("cheered", { from: p.name });
+    if (p.uid) accounts.getUser(p.uid).then((u) => { if (!u) return; const got = accounts.bump(u, "cheers"); for (const a of got) socket.emit("achievement", a); if (got.length) socket.emit("account", accounts.publicUser(u)); }).catch(() => {});
     r.emit("emote", { e: "📣", name: p.name, pid: p.id, car: c.id });
     socket.emit("toast", `📣 You cheered on ${c.name}!`);
   });

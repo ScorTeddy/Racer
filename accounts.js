@@ -572,6 +572,19 @@ ACH.push(
   family("jump", "🙈", "Itchy Foot", (g) => `Jump the start ${g} times`, "jumpStarts", 2, 500, 8);
   family("slips", "🧊", "Slip 'n' Slide", (g) => `Slide ${g} times on a wet track`, "slips", 5, 5000, 8);
   family("extstreak", "☠️", "Untouchable", (g) => `Win ${g} EXTREME races in a row (8+ cars)`, "bestExtremeStreak", 2, 50, 12);
+  // the social side and the daily rewards (they had one achievement each, or none)
+  family("trades", "🤝", "Deal Maker", (g) => `Complete ${g} trades`, "trades", 1, 2000, 14);
+  family("gifts", "🎁", "Generous Soul", (g) => `Send ${g} gifts`, "gifts", 1, 2000, 14);
+  family("emotes", "💬", "Chatterbox", (g) => `Send ${g} emotes`, "emotes", 25, 50000, 16);
+  family("ggs", "🤝", "Good Sport", (g) => `Say GG after ${g} races`, "ggs", 1, 5000, 14);
+  family("cheers", "📣", "Superfan", (g) => `Cheer on ${g} friends while they race`, "cheers", 1, 5000, 14);
+  family("betsw", "⚔️", "Duel Winner", (g) => `Win ${g} 1v1 bets`, "betsWon", 1, 1000, 12);
+  family("spins", "🎡", "Wheel Spinner", (g) => `Spin the daily wheel ${g} times`, "wheelSpins", 5, 5000, 14);
+  family("daily", "📅", "Daily Grinder", (g) => `Finish ${g} daily challenges`, "dailyDone", 5, 10000, 16);
+  family("weekly", "🗓️", "Week In, Week Out", (g) => `Finish ${g} weekly challenges`, "weeklyDone", 2, 2000, 12);
+  family("sold", "🏷️", "Shopkeeper", (g) => `Sell ${g} items`, "itemsSold", 3, 3000, 12);
+  family("tourw", "🏟️", "Tournament Hero", (g) => `Win ${g} weekend tournaments`, "tourWins", 1, 200, 10);
+  family("ideas", "💡", "Ideas Person", (g) => `Send ${g} suggestions`, "suggestions", 1, 100, 6);
   // every real circuit: win there, podium there, win there 10 times; then all of them
   let tracks = []; try { const T = require("./f1-tracks.json"); tracks = (Array.isArray(T) ? T : T.tracks || []).map((t) => ({ id: t.id, name: t.name })); } catch (e) {}
   for (const t of tracks) {
@@ -997,6 +1010,29 @@ STORE.push(
   { id: "badge_gamepad", slot: "badge", name: "Gamer badge", look: "🎮", price: 70 },
   { id: "badge_gear", slot: "badge", name: "Engineer badge", look: "⚙️", price: 70 },
   { id: "badge_pizza", slot: "badge", name: "Pizza badge", look: "🍕", price: 50 },
+  // ---- fifth wave ----
+  { id: "liv_candy", slot: "livery", name: "Candy cane livery", look: "candy", price: 160 },
+  { id: "liv_blueprint", slot: "livery", name: "Blueprint livery", look: "blueprint", price: 190 },
+  { id: "liv_honeycomb", slot: "livery", name: "Honeycomb livery", look: "honeycomb", price: 170 },
+  { id: "liv_dazzle", slot: "livery", name: "Dazzle camo livery", look: "dazzle", loot: true, rarity: "epic" },
+  { id: "liv_comic", slot: "livery", name: "Comic book livery (animated)", look: "comic", loot: true, rarity: "legendary" },
+  { id: "liv_watercolor", slot: "livery", name: "Watercolour livery (animated)", look: "watercolor", loot: true, rarity: "epic" },
+  { id: "trail_diamonds", slot: "trail", name: "Diamond trail", look: "diamonds", price: 240 },
+  { id: "trail_fireflies", slot: "trail", name: "Firefly trail (animated)", look: "fireflies", price: 200 },
+  { id: "trail_feathers", slot: "trail", name: "Feather trail", look: "feathers", price: 150 },
+  { id: "trail_ufos", slot: "trail", name: "Flying saucer trail", look: "ufos", loot: true, rarity: "epic" },
+  { id: "badge_unicorn", slot: "badge", name: "Unicorn badge", look: "🦄", price: 90 },
+  { id: "badge_guitar", slot: "badge", name: "Rockstar badge", look: "🎸", price: 70 },
+  { id: "badge_ufo", slot: "badge", name: "UFO badge", look: "🛸", price: 80 },
+  { id: "badge_volcano", slot: "badge", name: "Volcano badge", look: "🌋", price: 70 },
+  { id: "badge_brain", slot: "badge", name: "Big brain badge", look: "🧠", price: 60 },
+  { id: "badge_donut", slot: "badge", name: "Donut badge", look: "🍩", price: 50 },
+  { id: "badge_penguin", slot: "badge", name: "Penguin badge", look: "🐧", price: 60 },
+  { id: "badge_dino", slot: "badge", name: "Dino badge", look: "🦖", price: 80 },
+  { id: "badge_surf", slot: "badge", name: "Surfer badge", look: "🏄", price: 60 },
+  { id: "badge_dice", slot: "badge", name: "Lucky dice badge", look: "🎲", price: 70 },
+  { id: "rims_lime", slot: "rims", name: "Lime rims", look: "#a3ff12", price: 90 },
+  { id: "helmet_rosegold", slot: "helmet", name: "Rose gold helmet", look: "#b76e79", price: 110 },
 );
 for (const it of STORE) it.rarity = it.rarity || (it.loot ? "common" : it.price <= 60 ? "common" : it.price <= 120 ? "rare" : it.price <= 200 ? "epic" : "legendary");
 const STORE_BY_ID = new Map(STORE.map((x) => [x.id, x]));

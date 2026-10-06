@@ -990,6 +990,13 @@
         c.strokeStyle = "rgba(255,236,160,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
         break;
       }
+      // ---- fifth wave ----
+      case "candy": { c.fillStyle = "#fff6f6"; c.fillRect(x0, y0, L, Wd); c.save(); c.beginPath(); c.rect(x0, y0, L, Wd); c.clip(); c.fillStyle = "#e11d48"; for (let i = -Wd; i < L + Wd; i += 9) { c.beginPath(); c.moveTo(x0 + i, y0); c.lineTo(x0 + i + 4, y0); c.lineTo(x0 + i + 4 + Wd, -y0); c.lineTo(x0 + i + Wd, -y0); c.fill(); } c.restore(); break; }
+      case "blueprint": { c.fillStyle = "#1d4ed8"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(255,255,255,0.22)"; c.lineWidth = 0.4; for (let i = 0; i < L; i += 3) { c.beginPath(); c.moveTo(x0 + i, y0); c.lineTo(x0 + i, -y0); c.stroke(); } for (let j = 0; j < Wd; j += 3) { c.beginPath(); c.moveTo(x0, y0 + j); c.lineTo(-x0, y0 + j); c.stroke(); } c.strokeStyle = "rgba(255,255,255,0.85)"; c.lineWidth = 0.7; c.strokeRect(x0 + 3, y0 + 2.5, L - 6, Wd - 5); c.beginPath(); c.arc(x0 + L * 0.3, 0, 3.2, 0, Math.PI * 2); c.moveTo(x0 + L * 0.3 - 5, 0); c.lineTo(x0 + L * 0.3 + 5, 0); c.stroke(); break; }
+      case "honeycomb": { c.fillStyle = "#f5b800"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "#7a5200"; c.lineWidth = 0.6; for (let row = 0; row < 5; row++) for (let i = 0; i < 12; i++) { const cx = x0 + i * 4.4 + (row % 2) * 2.2, cy = y0 + 1.5 + row * 3.4; c.beginPath(); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + Math.PI / 6; c.lineTo(cx + Math.cos(a) * 2.2, cy + Math.sin(a) * 2.2); } c.closePath(); c.stroke(); } break; }
+      case "dazzle": { c.fillStyle = "#f2f2f2"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#121212"; c.save(); c.beginPath(); c.rect(x0, y0, L, Wd); c.clip(); for (let k = 0; k < 7; k++) { const sx = x0 + R() * L, a = R() * Math.PI; c.beginPath(); c.moveTo(sx, y0 - 2); c.lineTo(sx + Math.cos(a) * 16, -y0 + 2); c.lineTo(sx + Math.cos(a) * 16 + 4 + R() * 5, -y0 + 2); c.lineTo(sx + 5 + R() * 4, y0 - 2); c.fill(); } c.restore(); break; }
+      case "comic": { const t = performance.now() / 1000; c.fillStyle = "#ffe14d"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(230,40,60,0.55)"; for (let i = 0; i < L; i += 2.4) for (let j = 0; j < Wd; j += 2.4) { const r2 = 0.35 + 0.55 * Math.abs(Math.sin((i + j) / 6 - t * 2)); c.beginPath(); c.arc(x0 + i + 1, y0 + j + 1, r2, 0, Math.PI * 2); c.fill(); } const pop = 1 + 0.12 * Math.sin(t * 6); c.save(); c.translate(L * 0.3, 0); c.rotate(Math.PI / 2); c.scale(pop, pop); c.fillStyle = "#fff"; c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2, rr = k % 2 ? 3.5 : 6.5; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill(); c.stroke(); c.fillStyle = "#e11d48"; c.font = "900 3.6px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("POW", 0, 0.3); c.restore(); break; }
+      case "watercolor": { const t = performance.now() / 1000; c.fillStyle = "#fbf7ef"; c.fillRect(x0, y0, L, Wd); for (const [col, k] of [["rgba(56,189,248,0.85)", 0], ["rgba(244,114,182,0.8)", 1.7], ["rgba(250,204,21,0.8)", 3.1], ["rgba(167,139,250,0.8)", 4.4]]) { const cx = x0 + L * (0.5 + 0.38 * Math.sin(t * 0.5 + k)), cy = Wd * 0.25 * Math.cos(t * 0.7 + k); const g = c.createRadialGradient(cx, cy, 0, cx, cy, 16); g.addColorStop(0, col); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x0, y0, L, Wd); } break; }
       case "eclipse": {   // MYTHIC, animated: a black sun with its golden corona turning, stars around
         const t = performance.now() / 1000, cx = x0 + L * 0.42;
         c.fillStyle = lin(["#020205", "#0d0a1a", "#020205"], true); c.fillRect(x0, y0, L, Wd);
@@ -1104,6 +1111,10 @@
     }
     else if (kind === "rings") { c.strokeStyle = `rgba(150,220,255,${0.9 - (k % 3) * 0.2})`; c.lineWidth = 1.6; c.beginPath(); c.arc(0, 0, r * (0.45 + 0.3 * (k % 3)), 0, Math.PI * 2); c.stroke(); }
     else if (kind === "cash") { c.rotate(k * 0.6); c.fillStyle = "#1f9d55"; c.fillRect(-r * 0.75, -r * 0.42, r * 1.5, r * 0.84); c.strokeStyle = "#c7f9d4"; c.lineWidth = 0.7; c.strokeRect(-r * 0.6, -r * 0.3, r * 1.2, r * 0.6); c.fillStyle = "#eafff1"; c.font = `800 ${Math.round(r * 0.75)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("$", 0, 0.5); }
+    else if (kind === "diamonds") { c.rotate(k * 0.4); const g = c.createLinearGradient(-r, -r, r, r); g.addColorStop(0, "#e0f7ff"); g.addColorStop(0.5, "#7dd3fc"); g.addColorStop(1, "#ffffff"); c.fillStyle = g; c.strokeStyle = "rgba(255,255,255,0.9)"; c.lineWidth = 0.6; c.beginPath(); c.moveTo(0, -r * 0.8); c.lineTo(r * 0.6, -r * 0.2); c.lineTo(0, r * 0.8); c.lineTo(-r * 0.6, -r * 0.2); c.closePath(); c.fill(); c.stroke(); c.beginPath(); c.moveTo(-r * 0.6, -r * 0.2); c.lineTo(r * 0.6, -r * 0.2); c.stroke(); }
+    else if (kind === "fireflies") { const f = 0.5 + 0.5 * Math.sin(performance.now() / 120 + k * 2.3); const g = c.createRadialGradient(0, 0, 0, 0, 0, r * 1.2); g.addColorStop(0, `rgba(250,255,170,${0.95 * f})`); g.addColorStop(0.4, `rgba(190,255,90,${0.5 * f})`); g.addColorStop(1, "rgba(190,255,90,0)"); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r * 1.2, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "feathers") { c.rotate(k * 0.9 + Math.sin(performance.now() / 300 + k) * 0.4); c.fillStyle = k % 2 ? "#f8fafc" : "#fde68a"; c.strokeStyle = "rgba(120,90,40,0.7)"; c.lineWidth = 0.6; c.beginPath(); c.ellipse(0, 0, r * 0.95, r * 0.38, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(-r, 0); c.lineTo(r, 0); c.stroke(); }
+    else if (kind === "ufos") { const bob = Math.sin(performance.now() / 150 + k) * r * 0.15; c.translate(0, bob); c.fillStyle = "rgba(160,255,200,0.35)"; c.beginPath(); c.moveTo(-r * 0.3, r * 0.2); c.lineTo(r * 0.3, r * 0.2); c.lineTo(r * 0.55, r * 1.1); c.lineTo(-r * 0.55, r * 1.1); c.fill(); c.fillStyle = "#9ca3af"; c.beginPath(); c.ellipse(0, 0, r, r * 0.35, 0, 0, Math.PI * 2); c.fill(); c.fillStyle = "#86efac"; c.beginPath(); c.ellipse(0, -r * 0.2, r * 0.45, r * 0.32, 0, Math.PI, 0); c.fill(); }
     else if (kind === "hex") { c.fillStyle = k % 2 ? "#f5b800" : "#ffd84d"; c.strokeStyle = "#8a6200"; c.lineWidth = 0.8; c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; c.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7); } c.closePath(); c.fill(); c.stroke(); }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
@@ -2228,7 +2239,7 @@
   }
   function storeCard(it, u) {
     const slot = it.slot, owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
-    const card = el("div", "item" + (on ? " on" : ""));
+    const card = el("div", "item" + (on ? " on" : "")); card.dataset.item = it.id;
     const rt = el("span", "rtag", RARITY[it.rarity]?.[0] || ""); rt.style.color = RARITY[it.rarity]?.[1];
     card.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
     card.append(itemPreview(it), rt, el("b", "", it.name));
@@ -2239,7 +2250,7 @@
       row.appendChild(el("span", "price", `🪙 ${it.price}`));
       const b = el("button", "btn go", "Buy"); b.type = "button";
       b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
-      b.addEventListener("click", () => socket.emit("store:buy", it.id));
+      b.addEventListener("click", () => { const q = b.getBoundingClientRect(); S.buying = { id: it.id, x: q.left + q.width / 2, y: q.top + q.height / 2, rar: it.rarity }; socket.emit("store:buy", it.id); });
       row.appendChild(b);
     } else {
       row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
@@ -2868,6 +2879,7 @@
   // my own team's numbers (XP, upgrades, tires, boost)
   socket.on("me", (m) => {
 
+    if (S.xp && m.level > S.xp.level && !reducedMotion) { const mt = $("xpFill").parentElement; mt.classList.remove("lvlup"); void mt.offsetWidth; mt.classList.add("lvlup"); }
     S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound; S.sec = m.sec || null;
     if (!!m.defend !== !!S.defendOn && performance.now() - (S.defendAt || 0) > 600) setDefendUi(!!m.defend);
     if ((m.rare || null) !== (S.myRare || null)) { S.myRare = m.rare || null; renderGarage(); }
@@ -4749,6 +4761,8 @@
     const ms = CHAT.msgs[tab];
     if (!ms.length) list.appendChild(el("div", "empty", tab === "global" ? "Chat with everyone playing right now. Be nice!" : tab === "team" ? "Only your team sees this." : "Everyone in this room sees this."));
     for (const m of ms) list.appendChild(m.note ? el("div", "note", m.text) : chatLine(m));
+    if (ms.length && ms.length !== CHAT.shown?.[tab]) { const last = list.lastElementChild; if (last && CHAT.shown?.[tab] !== undefined) last.classList.add("chat-new"); }
+    CHAT.shown = CHAT.shown || {}; CHAT.shown[tab] = ms.length;
     list.scrollTop = list.scrollHeight;
     $("chatIn").placeholder = tab === "global" && !A.user ? "Sign in to chat with everyone" : tab === "team" ? "Message your team..." : "Say something nice...";
   }
@@ -6528,7 +6542,7 @@
     else if (f.t === "scIn") say("scIn", null, 2);
     else if (f.t === "rain") say("rain", null, 1);
     else if (f.t === "puncture") say("puncture", f.name, 1, 8000);
-    else if (f.t === "fastest") say("fastest", f.name, 0, 20000);
+    else if (f.t === "fastest") { say("fastest", f.name, 0, 20000); const me = S.cars.get(S.myCar); if (me && me.name === f.name && !S.replaying) { const bt = $("bestText"); bt.classList.remove("fl"); void bt.offsetWidth; bt.classList.add("fl"); burstFrom(bt, "#b061ff", 12, 60); tone(880, 0.12, "triangle", 0.16); tone(1320, 0.18, "triangle", 0.14, 0, 0.1); } }
     else if (f.t === "elim") say(mine(f.name) ? "elimYou" : "elim", mine(f.name) ? null : f.name, 2);
     else if (f.t === "drs") say("drs", null, 0, 60000);
     else if (f.t === "jump") say("jump", null, 1, 8000);
@@ -7468,6 +7482,13 @@
   });
   socket.on("suggestions", (list) => { SG.list = list || []; renderSuggest(); });
   socket.on("account", (u) => { const n = u?.suggestAdmin; const b = $("suggestInboxBtn"); b.classList.toggle("hidden", !n); b.textContent = n?.unread ? `💡 Suggestions (${n.unread})` : "💡 Suggestions"; if (!$("suggestBox").classList.contains("hidden")) renderSuggest(); });
+  // just bought something: it lands with a burst of sparks in its rarity colour (and the card pops)
+  socket.on("account", (u) => {
+    const B = S.buying; if (!B || !u?.owned?.includes(B.id)) return; S.buying = null;
+    const col = { common: "#cbd5e1", rare: "#38bdf8", epic: "#c084fc", legendary: "#ffc21f", mythic: "#ff3b8a" }[B.rar] || "#ffcc1f";
+    sparkBurst(B.x, B.y, col, B.rar === "legendary" || B.rar === "mythic" ? 26 : 16, 90); sfx("level");
+    setTimeout(() => { const card = document.querySelector(`[data-item="${B.id}"]`); if (card) { card.classList.remove("just-bought"); void card.offsetWidth; card.classList.add("just-bought"); } }, 60);
+  });
   function tradesBlock(u) {
     if (!u?.trades?.length) return null;
     const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", `🤝 Trade offers (${u.trades.length})`));
@@ -7662,6 +7683,16 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06b", date: "6 Oct", title: "No passing under the safety car, bridges that stay up, new gear", items: [
+      "🚨 Safety car: overtaking is now impossible. The order is frozen until it goes in (you can still go past a wrecked or stopped car, and cars in the pits rejoin where they come out).",
+      "🌉 Draw a bit of track right on top of another bit and it stays up on a bridge the whole way now (it used to sink down onto the road below, and cars crashed into each other).",
+      "🔁 Endurance (sharing a car): who qualifies and starts is picked at random, not always the same person. And the race after qualifying keeps you in one shared car (it used to give you a car each).",
+      "🎨 AI cars wear store paint jobs, rims, helmets and spoilers now.",
+      "⚡ Lightning: a CRACK and a huge BOOOOM, the screen shakes, and you can see the bolt.",
+      "🛒 22 new store items: Candy cane, Blueprint, Honeycomb, Dazzle camo, Comic book (animated) and Watercolour (animated) liveries; Diamond, Firefly, Feather and Flying saucer trails; 10 new badges; lime rims and a rose gold helmet.",
+      "🏅 153 new achievements: trades, gifts, emotes, saying GG, cheering friends on, bets, the daily wheel, daily and weekly challenges, selling items, tournaments and suggestions.",
+      "✨ New little moments: buying something bursts with sparks in its rarity colour, a fastest lap pops purple, a team level-up shines along the bar, and new chat messages slide in.",
+    ] },
     { v: "u-2026-10-06a", date: "6 Oct", title: "No more mystery slowdowns, red flag replays, a full tutorial", items: [
       "🐢 Fixed cars suddenly losing a third of their speed: completely worn tyres used to drop you straight from 86% to 62% speed. Now worn tyres slow you down gradually (70% when they're totally dead).",
       "🏎️ A GT3 in a Hypercar's slipstream can keep up with it now, but can't out-drag it any more (the tow used to take a GT3 past a Hyper's top speed).",

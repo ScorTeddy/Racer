@@ -1862,3 +1862,17 @@ test("safety car: overtaking is impossible (the order never changes, unless some
   }
   assert.equal(swaps, 0, "nobody changed places behind the safety car");
 });
+
+test("a bit of track drawn right along another bit goes over it on a bridge for the whole overlap (no crashing into the road underneath)", () => {
+  const r = new game.Room("OVERLAP", false);
+  const P = [[150, 500], [1150, 500], [1250, 400], [1250, 150], [350, 150], [250, 250], [250, 420], [350, 500], [900, 500], [1000, 600], [1000, 800], [150, 800], [60, 700], [60, 560]];
+  const stroke = []; for (let k = 0; k < P.length; k++) { const a = P[k], b = P[(k + 1) % P.length]; for (let s = 0; s < 1; s += 0.05) stroke.push([a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, 130]); }
+  assert.equal(r.setTrack(stroke, "large", "drawn"), null);
+  const t = r.track; let over = 0, same = 0;
+  for (let i = 0; i < t.N; i++) for (let j = 0; j < t.N; j++) {
+    const d = Math.min(Math.abs(i - j), t.N - Math.abs(i - j)); if (d < 60) continue;
+    if (Math.hypot(t.pts[i].x - t.pts[j].x, t.pts[i].y - t.pts[j].y) < (t.hw[i] + t.hw[j]) * 0.6) { over++; if (Math.abs((t.elev[i] || 0) - (t.elev[j] || 0)) < 0.5) same++; }
+  }
+  assert.ok(over > 100, "the test track really does overlap itself");
+  assert.equal(same, 0, "everywhere the road overlaps, one is up on a bridge");
+});
