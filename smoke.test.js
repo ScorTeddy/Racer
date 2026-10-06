@@ -1891,6 +1891,22 @@ test("tunnels can be as long as you like (more than half the lap), in the racing
   const d = r.trackMsg().decor[0];
   assert.ok(d.len > 140 && d.len > t.N * 0.6, "a long tunnel: " + d.len + " of " + t.N + " points");
 });
+
+test("scenery objects (floodlights, trees, pit building, billboards) sit beside the road; billboards show the host's team", () => {
+  const r = new game.Room("SCENERY", false); r.setRandomTrack("normal", "regular"); r.decor = [];
+  const t = r.track, sc = r.trackMsg().scale, at = (i, off) => { const p = t.pts[i], n = t.nor[i]; return [(p.x + n.x * off - t.pad) / sc + t.minX, (p.y + n.y * off - t.pad) / sc + t.minY]; };
+  for (const [k, i, off] of [["light", 10, t.hw[10] + 80], ["tree", 30, -(t.hw[30] + 100)], ["pit", 50, t.hw[50] + 130], ["board", 70, 0]]) assert.equal(r.addDecor(k, ...at(i, off)), null, k);
+  const msg = r.decorMsg();
+  assert.deepEqual(msg.map((d) => d.k), ["light", "tree", "pit", "board"]);
+  for (const d of msg) assert.ok(d.off >= t.hw[d.i] + 45 && d.off <= t.hw[d.i] + 320, `${d.k} stays off the road`);
+  assert.equal(msg[1].side, -1, "the side you clicked");
+  assert.match(msg[3].txt, /Racing/, "a billboard has a team name on it");
+});
+
+test("store horns: only known clips can be asked for", async () => {
+  const r = await fetch(base + "/sfx/h_train"); assert.ok(r.status === 503 || r.status === 200);
+  assert.equal((await fetch(base + "/sfx/h_nope")).status, 404);
+});
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
   const fake = require("http").createServer((req, res) => { req.resume(); req.on("end", () => {

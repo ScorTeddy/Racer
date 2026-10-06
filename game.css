@@ -1929,3 +1929,17 @@ body.builder .rc-step::after { content: attr(data-label); position: absolute; to
   #chatList .chat-new { animation: chatIn 360ms cubic-bezier(.2,1.3,.4,1) both; }
   @keyframes chatIn { from { opacity: 0; translate: 0 10px; } }
 }
+/* 📺 TV camera: a broadcast-style caption, and a quick cut between shots */
+.tv-caption { position: absolute; left: 50%; bottom: calc(10.5rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.9rem 0.4rem 0.5rem; border-radius: 0.4rem; background: linear-gradient(90deg, rgba(8,10,16,0.92), rgba(20,24,36,0.88)); border-left: 4px solid #ff2d55; font: 800 0.92rem "Chakra Petch", sans-serif; letter-spacing: 0.02em; white-space: nowrap; pointer-events: none; box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
+.tv-live { color: #ff2d55; font-size: 0.7rem; letter-spacing: 0.12em; }
+.tv-cut { position: fixed; inset: 0; z-index: 7; pointer-events: none; background: #000; opacity: 0; }
+#tvBtn.on { background: #ff2d55; border-color: #ff2d55; color: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .tv-caption.in { animation: tvIn 420ms cubic-bezier(.2,1.2,.4,1) both; }
+  @keyframes tvIn { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+  .tv-cut.go { animation: tvCut 260ms ease-out both; }
+  @keyframes tvCut { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+  .tv-live { animation: tvBlink 1.2s steps(2) infinite; }
+  @keyframes tvBlink { 50% { opacity: 0.3; } }
+}
+body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-bottom, 0px)); }
