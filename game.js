@@ -2823,6 +2823,13 @@
       if (S.race?.koth) { const top = [...S.cars.values()].filter((c) => c.leadT > 0).sort((a, b) => b.leadT - a.leadT).slice(0, 3); const me = S.cars.get(S.myCar);
         txt = "👑 " + (top.map((c) => `${c.name.split(" ")[0]} ${c.leadT.toFixed(0)}s`).join(" · ") || "Lead the race to start your clock") + (me && !top.includes(me) ? ` · you ${(me.leadT || 0).toFixed(0)}s` : ""); }
       else if (S.race?.enduro && st.enduro >= 0) { const m = Math.floor(st.enduro / 60), sec = String(st.enduro % 60).padStart(2, "0"); txt = st.enduro > 0 ? `⏳ ${m}:${sec} left` : "⏳ Time's up: last lap!"; }
+      // laps to go (for everyone, spectators too): counted from the leader
+      if (!S.race?.enduro && !S.race?.practice && !S.race?.tt && !(st.ql >= 0) && S.phase === "race" && S.race?.laps) {
+        const lead = S.cars.get(S.standings?.[0]), left = lead ? S.race.laps - Math.max(0, lead.laps || 0) : 0;
+        const lt = st.fl ? `🟡 Formation lap · ${S.race.laps} laps` : lead?.fin || left <= 0 ? "🏁 Chequered flag!" : left === 1 ? "🏳️ FINAL LAP" : `🏁 ${left} laps to go`;
+        txt = txt ? `${txt} · ${lt}` : lt;
+        mc.classList.toggle("final", left === 1 && !lead?.fin);
+      } else mc.classList.remove("final");
       mc.classList.toggle("hidden", !txt); mc.textContent = txt; }
     // spectators: live timing (gap, tyres, tyre age, stops)
     if (!S.myCar && S.specStatsOn && (!S.ssAt || performance.now() - S.ssAt > 500)) { S.ssAt = performance.now(); renderSpecStats(st); }
@@ -6619,7 +6626,7 @@
       else {
         if (me.comp !== "wet" && wet > 0.05) { const k = 1 - 0.08 * wet - 0.17 * clamp((wet - 0.5) / 0.4, 0, 1); if (k < 0.97) why.push(`🌧 Dry tyres in the rain −${Math.round((1 - k) * 100)}%: box for Wets (${keyName(KEY("box"))})`); }
         if (me.comp === "wet" && wet < 0.15) why.push("☀ Wets on a dry track −8%");
-        const tk = me.tire <= 0 ? 0.62 : 0.86 + 0.14 * Math.min(1, me.tire * 3); if (tk < 0.97) why.push(`🛞 Worn tyres −${Math.round((1 - tk) * 100)}%`);
+        const tk = 0.7 + 0.3 * Math.sqrt(Math.min(1, Math.max(0, me.tire) * 3)); if (tk < 0.97) why.push(`🛞 Worn tyres −${Math.round((1 - tk) * 100)}%: box (${keyName(KEY("box"))})`);
         if (me.dmg > 0.1) why.push(`🔧 Damage −${Math.round(me.dmg * 14)}%`);
       }
       if (me.temp < 60 && !me.inPit) why.push("❄️ Cold tyres: less grip in corners");
@@ -6695,8 +6702,7 @@
         if (id === S.camTarget && id !== S.myCar) li.className += " watch";
         { const f = S.lbFlash?.get(id); if (f && f.until > performance.now()) li.className += " " + f.cls; }
         li.title = id === S.myCar ? "Your car" : `Watch ${c.name}`;
-        // click a driver: the camera follows them (click yourself, or the chip, to come back)
-        li.addEventListener("click", (e) => { e.stopPropagation(); watchCar(id === S.myCar ? null : id); });
+        li.dataset.id = id;      // (clicking a driver: see the pointerdown handler on the list below)
         li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
       if (!all && myI < fit && S.standings.length > fit) { const m = document.createElement("li"); m.className = "lb-gap"; m.textContent = `+${S.standings.length - fit} more · ${isTouch() ? "tap" : "hold Ctrl"}`; ol.appendChild(m); }
@@ -6708,7 +6714,15 @@
   window.addEventListener("keydown", (e) => { if (e.key === "Control" && S.screen === "race") S.lbAll = true; });
   window.addEventListener("keyup", (e) => { if (e.key === "Control") S.lbAll = false; });
   window.addEventListener("blur", () => { S.lbAll = false; });
-  $("standings").addEventListener("click", () => { S.lbAll = !S.lbAll; });
+  // click a driver: the camera follows them (click yourself, or the chip, to come back). It's done on the press, not
+  // the click: the list is rebuilt many times a second, and a click only counts if the press and the release land
+  // on the same row, so clicks kept getting lost (and then toggled the long list instead)
+  $("standList").addEventListener("pointerdown", (e) => {
+    const li = e.target.closest("li[data-id]"); if (!li) return;
+    const id = Number(li.dataset.id); S.lbPress = performance.now();
+    watchCar(id === S.myCar ? null : id); sfx("tick");
+  });
+  $("standings").addEventListener("click", () => { if (performance.now() - (S.lbPress || 0) < 800) return; S.lbAll = !S.lbAll; });
   // spectate anyone from the leaderboard
   function watchCar(id) {
     if (S.myCar === null || S.myCar === undefined) { S.camTarget = id; const c = id && S.cars.get(id); $("specName").textContent = c ? c.name : "the leader"; lastHudStand = ""; return; }
@@ -6753,6 +6767,12 @@
     if (WP.id !== id) { WP.id = id; WP.up = null; WP.last = null; renderWatchCards(false); renderWatchUps(); socket.emit("watchInfo", id); panel.classList.remove("swap"); void panel.offsetWidth; panel.classList.add("swap"); }
     $("wpDot").style.background = c.color || "#fff"; $("wpName").textContent = c.name || ""; $("wpLvl").textContent = `Team Lv ${WP.lvl}`;
     $("wpCheer").classList.toggle("hidden", !c.owner || c.owner === S.me);
+    // their tyres: which set, how much is left, how many laps on them, cold or warm
+    { const tw = Math.max(0, Math.round((c.tire ?? 1) * 100)), key = c.comp || "inter";
+      if (WP.tyreKey !== key) { WP.tyreKey = key; const b = $("wpTyreBadge"); b.textContent = ""; b.appendChild(badge(key, true)); b.title = TIRES[key]?.name || ""; }
+      const bar = $("wpTyre"); bar.style.width = tw + "%"; bar.style.background = tw < 20 ? "#e53935" : tw < 40 ? "#ffb020" : "#3ecf6a";
+      $("wpTyreTxt").textContent = tw + "%";
+      $("wpTyreNote").textContent = c.punct ? "💥 Puncture!" : `${TIRES[key]?.name || ""} · ${c.tyreAge || 0} lap${c.tyreAge === 1 ? "" : "s"} old${c.temp < 60 ? " · ❄️ cold" : ""}${c.pit >= 0 ? " · 🔧 in the pits" : ""}`; }
     const n = Math.round(c.nitro ?? 0); $("wpBoost").style.width = n + "%"; $("wpBoost").classList.toggle("on", !!c.nitroOn); $("wpBoostTxt").textContent = n + "%";
   }
   $("wpCheer").addEventListener("click", () => {

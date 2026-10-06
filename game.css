@@ -1902,3 +1902,9 @@ body.builder .rc-step::after { content: attr(data-label); position: absolute; to
 .slow-why { font-size: 0.72rem; font-weight: 700; color: #ffd27a; line-height: 1.25; padding: 0.25rem 0.45rem; border-radius: 0.45rem; background: rgba(255,180,40,0.1); }
 .slow-why.bad { color: #ff9a8f; background: rgba(229,57,53,0.16); }
 @media (prefers-reduced-motion: no-preference) { .slow-why.bad { animation: slowPulse 1.6s ease-in-out infinite; } @keyframes slowPulse { 50% { background: rgba(229,57,53,0.32); } } }
+.wp-tyre i { background: #3ecf6a; }
+.wp-tyre-note { color: var(--soft); font-size: 0.7rem; margin-top: -0.15rem; }
+/* laps to go: just under the weather, clear of the "watching" chip */
+.mode-chip { top: calc(2.55rem + env(safe-area-inset-top, 0px)); }
+.mode-chip.final { color: #1b1b1b; background: #fff; border-color: #fff; }
+@media (prefers-reduced-motion: no-preference) { .mode-chip.final { animation: finalPulse 1.2s ease-in-out infinite; } @keyframes finalPulse { 50% { box-shadow: 0 0 0 6px rgba(255,255,255,0.25); } } }

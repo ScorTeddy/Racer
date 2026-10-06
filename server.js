@@ -2673,7 +2673,9 @@ class Room {
   // dry tires in the wet: slower everywhere, and from ~60% wet a LOT slower (about -25% at 100%)
   compoundSpeed(c) { return COMPOUNDS[c.compound].speed * (c.compound === "wet" ? 1 : 1 - 0.08 * this.wet - 0.17 * clamp((this.wet - 0.5) / 0.4, 0, 1)); }
   weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.45 * this.wet); }
-  tireSpeed(w) { return w <= 0 ? 0.62 : 0.86 + 0.14 * Math.min(1, w * 3); }
+  // worn tyres: full speed down to a third left, then slower and slower, down to 70% on completely dead ones
+  // (it used to sit at 86% and then drop straight to 62% at 0%: a sudden "my car lost all its speed")
+  tireSpeed(w) { const k = Math.min(1, Math.max(0, w) * 3); return 0.7 + 0.3 * Math.sqrt(k); }
 
   physics(c, input, dt) {
     const st = c.st, t = this.track;
@@ -2711,10 +2713,15 @@ class Room {
       const nn = this.around(c, Math.ceil(reach / t.spacing) + 1, 0);
       for (let q = 0; q < nn; q++) {
         const o = NEAR_O[q], along = NEAR_D[q];
-        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && !o.defending) { c.slip = true; break; }   // (any class: GT3s can tow behind Hypers and the other way round)
+        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && !o.defending) { c.slip = true; c.slipFrom = o; break; }   // (any class: GT3s can tow behind Hypers and the other way round)
       }
     }
-    if (c.slip && !this.sc) maxSp *= 1 + SLIP_BONUS;
+    if (c.slip && !this.sc) {
+      // a slower class towing behind a faster one (a GT3 behind a Hyper) keeps up with it, but the tow can't
+      // drag it past: before, +30% took a GT3 (82% of a Hyper's top speed) to 107% and it flew by on every straight
+      const o = c.slipFrom, slower = o && c.cls && o.cls && (CAR_CLASSES[c.cls]?.speed || 1) < (CAR_CLASSES[o.cls]?.speed || 1);
+      maxSp = slower ? Math.max(maxSp, Math.min(maxSp * (1 + SLIP_BONUS), (o.st?.maxSpeed || maxSp) * 0.99)) : maxSp * (1 + SLIP_BONUS);
+    }
     c.boosting = this.time < c.boostUntil;           // launch boost off the line
     if (c.boosting) { accel *= 1.8; maxSp *= 1.08; }
     // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
@@ -3020,7 +3027,23 @@ class Room {
     if (was) { was.coDriver = next; io.to(was.id).emit("coDriver", { car: c.id, driver: now.name }); }
     now.coDriver = null; now.lastPos = this.standings().indexOf(c) + 1; now.passCd = now.passCd || new Map(); now.lostCd = now.lostCd || new Map(); now.compound = c.compound;
     c.owner = next;
+    // the car keeps everything it's earned: the driver getting in takes over its upgrades, team level, XP and any
+    // cards still waiting to be picked (and from now on both drivers share the one upgrade list, so a pick by
+    // either of them goes on the car). It used to keep the first driver's list, and the second driver's picks did nothing.
+    const up = c.up || blankUp();
+    for (const k of Object.keys(UPGRADES)) up[k] = Math.max(up[k] || 0, now.up?.[k] || 0);
+    c.up = up; now.up = up; if (was) was.up = up;
+    if (was) {
+      if ((was.level || 1) > (now.level || 1) || ((was.level || 1) === (now.level || 1) && (was.xp || 0) > (now.xp || 0))) { now.level = was.level; now.xp = was.xp; }
+      now.pendingPicks = (now.pendingPicks || 0) + (was.pendingPicks || 0); if (!now.offer && was.offer) { now.offer = was.offer; now.offered = was.offered; }
+      was.pendingPicks = 0; was.offer = null; was.offered = null;
+      if (was.rare && !now.rare) now.rare = was.rare;
+    }
+    c.st = this.stats(c);
     this.emit("driverSwap", { car: c.id, owner: next, name: now.name, from: was?.name || null });
+    const n = Object.values(up).reduce((a, b) => a + b, 0);
+    io.to(now.id).emit("toast", `🔁 You take over at team Lv ${now.level || 1}${n ? ` with all ${n} upgrade level${n === 1 ? "" : "s"}` : ""}${now.pendingPicks ? ` and ${now.pendingPicks} card${now.pendingPicks === 1 ? "" : "s"} to pick` : ""}`);
+    if (now.pendingPicks) this.resendOffer(now);
   }
   // ---- red flag (with the safety car setting on): everyone stops where they are, the crews fix the damage,
   // then the race restarts in order behind the safety car ----

@@ -1252,8 +1252,13 @@ test("endurance: a race against the clock, and teammates share a car, swapping a
   r.startLights(); r.phase = "race"; r.launchCars();
   r.enduro.secs = 60;                                         // (a short one for the test)
   for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
+  shared.up.engine = 3; shared.up.turbo = 2; a.level = 6; a.xp = 40; b.up = { grip: 1 };
   r.swapDriver(shared);
   assert.equal(shared.owner, "e2", "Bo takes over"); assert.equal(swaps[0].name, "Bo"); assert.equal(a.coDriver, "e2");
+  assert.ok(b.up === shared.up && a.up === shared.up, "both drivers share the car's upgrades now");
+  assert.ok(shared.up.engine === 3 && shared.up.turbo === 2 && shared.up.grip === 1, "Ann's upgrades stay on the car (and Bo's are added)");
+  assert.equal(b.level, 6, "Bo takes over at Ann's team level");
+  const before = shared.st.maxSpeed; b.up.engine++; shared.st = r.stats(shared); assert.ok(shared.st.maxSpeed > before, "a pick by Bo goes on the car");
   for (let n = 0; n < 60 * 240 && r.phase === "race"; n++) r.step(1 / 60);
   if (r.phase === "race") r.endRace();
   assert.ok(feed.includes("timeUp"), "time's up was called");
@@ -1809,4 +1814,11 @@ test("next tyres follow the weather: no stale dry pick in the rain, and a pick m
   r.wet = 0; r.pickCompound(p, "fast"); assert.equal(r.nextTyre(c, p), "fast", "your pick counts");
   r.wet = 0.8; assert.equal(r.nextTyre(c, p), "wet", "picked Fast in the dry, now it's pouring: Wets");
   r.pickCompound(p, "durable"); assert.equal(r.nextTyre(c, p), "durable", "picked dry tyres in the rain on purpose: your call");
+});
+
+test("worn tyres slow you down gradually: no sudden cliff at 0% (that made cars randomly lose a third of their speed)", () => {
+  const r = new game.Room("TYCLIFF", false);
+  for (let w = 0.33; w > 0; w -= 0.01) assert.ok(r.tireSpeed(w) - r.tireSpeed(Math.max(0, w - 0.01)) < 0.06, "no big step at " + w.toFixed(2));
+  assert.ok(r.tireSpeed(1) === 1 && r.tireSpeed(0.34) === 1, "full speed with a third left");
+  assert.ok(r.tireSpeed(0) >= 0.7, "dead tyres: 70%, not 62%");
 });
