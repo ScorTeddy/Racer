@@ -1896,3 +1896,9 @@ body.builder .rc-name input { min-width: 9ch; }
 body.builder .rc-step { position: relative; }
 body.builder .rc-step::after { content: attr(data-label); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 3px 8px; border-radius: 6px; background: #000; color: #fff; font: 700 11px "Chakra Petch", sans-serif; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 120ms ease; z-index: 30; }
 @media (max-width: 1550px) { body.builder .rc-step:hover::after, body.builder .rc-step:focus-visible::after { opacity: 1; } }
+/* (the race HUD ignores clicks except where it says so: the watch panel has a button now) */
+.watch-panel { pointer-events: auto; }
+/* why am I slow? (under the speed) */
+.slow-why { font-size: 0.72rem; font-weight: 700; color: #ffd27a; line-height: 1.25; padding: 0.25rem 0.45rem; border-radius: 0.45rem; background: rgba(255,180,40,0.1); }
+.slow-why.bad { color: #ff9a8f; background: rgba(229,57,53,0.16); }
+@media (prefers-reduced-motion: no-preference) { .slow-why.bad { animation: slowPulse 1.6s ease-in-out infinite; } @keyframes slowPulse { 50% { background: rgba(229,57,53,0.32); } } }

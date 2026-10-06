@@ -1622,6 +1622,7 @@ test("formation lap: no XP or upgrades, the endurance clock doesn't run, and it 
   while (r.sc?.rolling && n++ < 60 * 120) r.step(1 / 60);
   assert.ok(!r.sc, "green flag");
   assert.equal(p.xp, 0, "no XP on the formation lap"); assert.equal(p.level, 1, "so no upgrades");
+  assert.ok(r.cars.every((c) => c.tire === 1), "no tyre wear on the formation lap");
   assert.ok(Math.abs(r.enduro.secs - (secs0 + r.time)) < 0.05, "the endurance clock starts at the green flag");
   const lead = r.standings()[0]; assert.equal(lead.lapsDone, 0, "the leader is on lap 1 at the green flag");
   for (let k = 0; k < 60 * 3; k++) r.step(1 / 60);
@@ -1795,4 +1796,17 @@ test("suggestions: anyone can send one, only the owner's account (ScorTeddy) get
   const again = new Promise((ok) => s.once("suggestResult", ok)); s.emit("suggest", { text: "and another thing please" });
   assert.match((await again).error, /minute/, "one a minute");
   s.close();
+});
+
+test("next tyres follow the weather: no stale dry pick in the rain, and a pick made for other weather is overridden", () => {
+  const r = new game.Room("NEXTTY", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "nt", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set("nt", p);
+  Object.assign(r.settings, { ai: 1, quali: 0, laps: 5, weather: "sunny" }); r.ensureRoster(1);
+  r.startRace(); p.compound = "inter"; r.startLights(); r.phase = "race"; r.launchCars();
+  const c = r.cars.find((x) => x.owner === "nt");
+  r.wet = 0; assert.equal(r.nextTyre(c, p), "inter", "dry, no pick: keep what you're on");
+  r.wet = 0.8; assert.equal(r.nextTyre(c, p), "wet", "pouring, no pick: Wets (this used to stay on the starting dry tyres)");
+  r.wet = 0; r.pickCompound(p, "fast"); assert.equal(r.nextTyre(c, p), "fast", "your pick counts");
+  r.wet = 0.8; assert.equal(r.nextTyre(c, p), "wet", "picked Fast in the dry, now it's pouring: Wets");
+  r.pickCompound(p, "durable"); assert.equal(r.nextTyre(c, p), "durable", "picked dry tyres in the rain on purpose: your call");
 });

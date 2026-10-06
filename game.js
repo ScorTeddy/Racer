@@ -2846,7 +2846,7 @@
     updateBox();
   });
   socket.on("feed", (f) => {
-    if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
+    if (f.t === "rain") { banner("🌧 RAIN!", "#9ad0ff"); popup(`It's raining! Dry tyres lose up to 25% top speed in heavy rain (GT3s on Wets will fly past). Box (${keyName(KEY("box"))}) and pick Wets.`, true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { if (S.track) tlFor(S.track).lastLap = true; banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
     if (f.t === "qko") banner(`Q${f.stage}!`, "#ffcc1f");
@@ -5956,6 +5956,74 @@
   function spark(x, y, h, n = 3) {
     for (let k = 0; k < n && S.particles.length < 340; k++) { const a = h + Math.PI + (Math.random() - 0.5) * 1.1, v = 180 + Math.random() * 260; S.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.18 + Math.random() * 0.2, age: 0, r: 1.4, spark: 1, color: Math.random() < 0.6 ? "#ffd166" : "#ff8a3d" }); }
   }
+  // ---- rain you can't miss: a darker sky, two layers of streaks blowing in the wind, splashes on the ground, drops
+  // running down the lens, and in a downpour lightning (and thunder a moment later) ----
+  const RAIN = { drops: [], splash: [], lens: [], flash: 0, nextBolt: 0, wind: -0.28 };
+  function drawRain(w, h, dt, now) {
+    const W = S.weather, wv = W.wet, raining = W.raining && !reducedMotion, lo = settings.fx === "low" || settings.gfx === "fast" ? 0.45 : settings.fx === "off" ? 0.2 : 1;
+    dt = Math.min(dt, 0.05);
+    // the sky: darker and bluer the wetter it is, darkest round the edges
+    ctx.fillStyle = `rgba(22,34,58,${0.3 * wv})`; ctx.fillRect(0, 0, w, h);
+    if (!RAIN.vg || RAIN.vg.w !== w || RAIN.vg.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(10,16,30,0)"); g.addColorStop(1, "rgba(10,16,30,0.6)"); RAIN.vg = { g, w, h }; }
+    ctx.globalAlpha = wv; ctx.fillStyle = RAIN.vg.g; ctx.fillRect(0, 0, w, h); ctx.globalAlpha = 1;
+    if (!raining) { RAIN.drops.length = 0; return; }
+    // streaks: they fall (they don't flicker about), far ones thin and quick to fade, near ones long and bright
+    const want = Math.round(420 * wv * lo);
+    while (RAIN.drops.length < want) { const near = Math.random() < 0.35; RAIN.drops.push({ x: Math.random() * (w + 200), y: Math.random() * h, near, len: near ? 26 + Math.random() * 18 : 12 + Math.random() * 10, sp: near ? 1500 + Math.random() * 500 : 900 + Math.random() * 300 }); }
+    if (RAIN.drops.length > want) RAIN.drops.length = want;
+    const wind = RAIN.wind + Math.sin(now / 2300) * 0.08;
+    for (const layer of [false, true]) {
+      ctx.strokeStyle = layer ? "rgba(215,228,245,0.55)" : "rgba(190,205,230,0.32)"; ctx.lineWidth = layer ? 2 : 1.1; ctx.beginPath();
+      for (const d of RAIN.drops) {
+        if (d.near !== layer) continue;
+        d.y += d.sp * dt; d.x += d.sp * wind * dt;
+        if (d.y > h + 40 || d.x < -60) { d.y = -40 - Math.random() * 80; d.x = Math.random() * (w + 200); if (d.near && Math.random() < 0.5) RAIN.splash.push({ x: Math.random() * w, y: Math.random() * h, t: now }); }
+        ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.len * wind, d.y - d.len);
+      }
+      ctx.stroke();
+    }
+    // splashes: little rings on the ground
+    for (let k = 0; k < 30 * wv * lo * dt * 10; k++) if (RAIN.splash.length < 90) RAIN.splash.push({ x: Math.random() * w, y: Math.random() * h, t: now });
+    ctx.strokeStyle = "rgba(220,232,250,0.5)"; ctx.lineWidth = 1;
+    RAIN.splash = RAIN.splash.filter((p) => { const k = (now - p.t) / 350; if (k > 1) return false; ctx.globalAlpha = 0.6 * (1 - k); ctx.beginPath(); ctx.ellipse(p.x, p.y, 2 + 7 * k, 1 + 3 * k, 0, 0, Math.PI * 2); ctx.stroke(); return true; });
+    ctx.globalAlpha = 1;
+    // drops on the lens in heavy rain: blurry blobs that slide down and run off
+    if (wv > 0.45 && lo > 0.4) {
+      if (RAIN.lens.length < 14 * wv && Math.random() < dt * 3) RAIN.lens.push({ x: Math.random() * w, y: Math.random() * h * 0.7, r: 6 + Math.random() * 16, v: 0, t: now });
+      RAIN.lens = RAIN.lens.filter((d) => {
+        d.v += (Math.random() < 0.02 ? 120 : -d.v * 2) * dt; d.y += Math.max(0, d.v) * dt; const age = (now - d.t) / 1000; if (age > 7 || d.y > h + d.r) return false;
+        const a = Math.min(1, age * 3) * Math.min(1, (7 - age) / 1.5);
+        const g = ctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.3, 1, d.x, d.y, d.r);
+        g.addColorStop(0, `rgba(255,255,255,${0.32 * a})`); g.addColorStop(0.6, `rgba(190,210,240,${0.12 * a})`); g.addColorStop(1, "rgba(190,210,240,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill(); return true;
+      });
+    } else RAIN.lens.length = 0;
+    // lightning in a downpour (every 10-25s), thunder a moment later
+    if (wv > 0.7 && S.phase === "race") {
+      if (!RAIN.nextBolt) RAIN.nextBolt = now + 6000 + Math.random() * 10000;
+      if (now > RAIN.nextBolt) { RAIN.nextBolt = now + 10000 + Math.random() * 15000; RAIN.flash = now; setTimeout(() => thunder(0.6 + Math.random() * 0.4), 500 + Math.random() * 1500); }
+      const k = (now - RAIN.flash) / 450;
+      if (k >= 0 && k < 1) { const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.42; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h); }
+    } else RAIN.nextBolt = 0;
+  }
+  // the rain itself: a steady hiss (louder the harder it rains), and thunder
+  let rainNode = null;
+  function rainSound(on, wet) {
+    const want = on && fxVol() > 0 && wet > 0.05, a = want ? audio() : actx; if (!a) return;
+    if (!rainNode && want) {
+      const n = noise(a), hp = a.createBiquadFilter(), lp = a.createBiquadFilter(), g = a.createGain();
+      hp.type = "highpass"; hp.frequency.value = 900; lp.type = "lowpass"; lp.frequency.value = 7000; g.gain.value = 0;
+      n.connect(hp).connect(lp).connect(g).connect(fxOut(a)); n.start(); rainNode = { g };
+    }
+    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (0.012 + 0.05 * wet) * fxVol() : 0, a.currentTime, 0.8);
+  }
+  function thunder(k = 1) {
+    const a = actx; if (!a || fxVol() <= 0) return;
+    const t0 = a.currentTime, n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(420, t0); lp.frequency.exponentialRampToValueAtTime(90, t0 + 3);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.35 * k * fxVol(), t0 + 0.08); g.gain.setTargetAtTime(0.12 * k * fxVol(), t0 + 0.3, 0.3); g.gain.setTargetAtTime(0, t0 + 1.2, 0.7);
+    n.connect(lp).connect(g).connect(fxOut(a)); n.start(t0); n.stop(t0 + 4.5);
+  }
   function renderRace(dt, now) {
     const { w, h, dpr } = scr, t = S.track;
     if (!t) return;
@@ -6029,7 +6097,7 @@
       if (!visible(c, 200)) continue;
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
-      if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (S.weather && S.weather.wet > 0.25 && c.speed > 180 && Math.random() < 0.9 * fxLevel * S.weather.wet) { puff(c, "rgba(220,230,240,0.42)"); if (S.weather.wet > 0.6 && Math.random() < 0.5) puff(c, "rgba(210,222,238,0.3)"); }
       if (c.dmg > 0.55 && Math.random() < 0.25 * Math.max(0.4, fxLevel)) puff(c, "rgba(60,60,60,0.45)");
       if (c.extras?.trail && c.speed > 250 && S.particles.length < 300 && Math.random() < 0.35 * Math.max(0.4, fxLevel)) {
         S.particles.push({ x: c.x - Math.cos(c.h) * 22, y: c.y - Math.sin(c.h) * 22, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 50, life: 0.7, age: 0, r: 7, shape: c.extras.trail, k: Math.floor(Math.random() * 4) });
@@ -6164,16 +6232,8 @@
     });
     // screen-space effects
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (S.weather && S.weather.wet > 0.02) {
-      const wv = S.weather.wet;
-      ctx.fillStyle = `rgba(30,45,70,${0.22 * wv})`; ctx.fillRect(0, 0, w, h);
-      if (S.weather.raining && !reducedMotion) {
-        ctx.strokeStyle = "rgba(200,215,235,0.45)"; ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let k = 0; k < 160 * wv; k++) { const rx = Math.random() * w, ry = Math.random() * h; ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 20); }
-        ctx.stroke();
-      }
-    }
+    if (S.weather && S.weather.wet > 0.02) drawRain(w, h, dt, now);
+    rainSound(S.screen === "race" && !S.replaying && !!S.weather?.raining, S.weather?.wet || 0);
     const fogX = PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, fogY = PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z;
     // day into night: the light fades as the race goes on (from about a third of the way in)
     const dusk = !th.night && S.race?.dayNight ? duskLevel() : 0;
@@ -6553,6 +6613,21 @@
     $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.temp < 60 ? "  ·  ❄️ COLD" : me.temp < 85 ? "  ·  warming up" : "") + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
     $("tireName").style.color = me.punct || me.dmg > 0.4 ? "#ff8a80" : "";
     if (me.inPit) $("speedText").textContent = "PIT LIMITER";
+    // why am I slow? Everything that's costing you top speed right now (the same sums the server uses)
+    { const wet = S.weather?.wet || 0, why = [];
+      if (me.punct) why.push("💥 Puncture −67%");
+      else {
+        if (me.comp !== "wet" && wet > 0.05) { const k = 1 - 0.08 * wet - 0.17 * clamp((wet - 0.5) / 0.4, 0, 1); if (k < 0.97) why.push(`🌧 Dry tyres in the rain −${Math.round((1 - k) * 100)}%: box for Wets (${keyName(KEY("box"))})`); }
+        if (me.comp === "wet" && wet < 0.15) why.push("☀ Wets on a dry track −8%");
+        const tk = me.tire <= 0 ? 0.62 : 0.86 + 0.14 * Math.min(1, me.tire * 3); if (tk < 0.97) why.push(`🛞 Worn tyres −${Math.round((1 - tk) * 100)}%`);
+        if (me.dmg > 0.1) why.push(`🔧 Damage −${Math.round(me.dmg * 14)}%`);
+      }
+      if (me.temp < 60 && !me.inPit) why.push("❄️ Cold tyres: less grip in corners");
+      const txt = why.join("  ·  "), box = $("slowWhy");
+      if (box.textContent !== txt) box.textContent = txt;
+      box.classList.toggle("hidden", !why.length || me.fin);
+      box.classList.toggle("bad", why.some((w) => /Dry tyres|Puncture|Worn tyres −[2-9]\d/.test(w)));
+    }
     const W = S.weather;
     if (W) {
       const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
