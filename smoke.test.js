@@ -1907,3 +1907,44 @@ test("store horns: only known clips can be asked for", async () => {
   const r = await fetch(base + "/sfx/h_train"); assert.ok(r.status === 503 || r.status === 200);
   assert.equal((await fetch(base + "/sfx/h_nope")).status, 404);
 });
+
+test("party mode sabotage: oil spins cars, a storm cloud makes a bit of track wet, ink blinds the car behind", { timeout: 60000 }, () => {
+  const r = new game.Room("PARTYSAB", false); r.setRandomTrack("normal", "regular");
+  Object.assign(r.settings, { ai: 4, quali: 0, laps: 3, weather: "sunny", party: true }); r.ensureRoster(4);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  for (let n = 0; n < 60 * 8; n++) r.step(1 / 60);
+  assert.ok(r.partyOn());
+  const order = r.standings(), lead = order[0], second = order[1];
+  r.sabotage(second, "__oil"); const oil = r.hazards.find((h) => h.k === "oil"); assert.ok(oil);
+  const victim = order[2]; victim.x = oil.x; victim.y = oil.y; victim.speed = 300; victim.slipT = 0; r.time += 0.01; r.stepHazards(1 / 60);
+  assert.ok(victim.slipT > 0.5, "drove over the oil: sliding");
+  const dryGrip = r.weatherGrip(lead);
+  r.sabotage(second, "__cloud"); r.stepHazards(1 / 60);
+  assert.equal(lead.cloudWet, 0.85, "the car ahead is under the cloud"); assert.ok(r.weatherGrip(lead) < dryGrip * 0.7 || lead.compound === "wet");
+  r.sabotage(lead, "__ink"); assert.ok(second.blindT > 0 || order.some((c) => c.blindT > 0), "the car behind got inked");
+  r.settings.party = false; assert.equal(r.partyOn(), false);
+});
+
+test("party mode shortcuts: drive the dirt road and you're that much further round the lap", { timeout: 60000 }, () => {
+  const r = new game.Room("PARTYCUT", false); r.setRandomTrack("normal", "regular"); r.decor = [];
+  Object.assign(r.settings, { ai: 1, quali: 0, laps: 3, weather: "sunny", party: true }); r.ensureRoster(1);
+  const t = r.track, sc = r.trackMsg().scale, bp = (i) => { const p = t.pts[i]; return [(p.x - t.pad) / sc + t.minX, (p.y - t.pad) / sc + t.minY]; };
+  const a = 30, b = 70, A = bp(a), B = bp(b);
+  assert.equal(r.addDecor("cut", A[0], A[1], { x: B[0], y: B[1] }), null);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const cut = r.cutList()[0]; assert.ok(cut && cut.len >= 30, "the shortcut is there");
+  const c = r.cars[0], f = 0.5, x = cut.ax + cut.dx * cut.L * f, y = cut.ay + cut.dy * cut.L * f;
+  // (only where the dirt isn't on the road itself)
+  const onRoad = t.pts.some((p, i) => Math.hypot(p.x - x, p.y - y) < t.hw[i] - 4);
+  if (!onRoad) {
+    c.idx = cut.a + 18; c.x = x; c.y = y; r.trackPos(c);
+    assert.equal(c.surface, 5, "on the dirt"); assert.ok(c.onTrack);
+    assert.ok(Math.abs(c.idx - (cut.a + Math.round(cut.len * f)) % t.N) <= 1, "progress is that far round");
+  }
+  r.settings.party = false; r._cuts = null; c.idx = cut.a + 18; c.x = x; c.y = y; r.trackPos(c); assert.notEqual(c.surface, 5, "no party mode: no shortcut");
+});
+
+test("100 thunderclaps can be asked for, and no more", async () => {
+  const r = await fetch(base + "/sfx/thunder57"); assert.ok(r.status === 503 || r.status === 200);
+  assert.equal((await fetch(base + "/sfx/thunder101")).status, 404);
+});

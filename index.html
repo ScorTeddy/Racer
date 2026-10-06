@@ -216,6 +216,7 @@
           <label class="f wide">DRS <select id="sDrs"><option value="on">On: within 1s of the car ahead at a DRS zone = +7% top speed (from lap 2)</option><option value="off">Off</option></select></label>
           <label class="f wide">Start <select id="sStart"><option value="standing">Standing start: five red lights</option><option value="rolling">Rolling start: a formation lap behind the safety car</option></select></label>
           <label class="f wide">Day into night <select id="sDayNight"><option value="off">Off</option><option value="on">On: the sun goes down as the race goes on (headlights on at dusk)</option></select></label>
+          <label class="f wide">🎉 Party mode <select id="sParty"><option value="off">Off</option><option value="on">On: sabotage cards (oil, storm clouds, ink) and track shortcuts</option></select></label>
           <label class="f wide">Safety car <select id="sSafety"><option value="off">Off</option><option value="on">On: a big crash brings out the safety car and bunches everyone up</option></select></label>
           <label class="f wide">Team colors <select id="sTeamColors"><option value="off">Off: everyone keeps their paint</option><option value="on">On: teammates share paint</option></select></label>
         </div>
@@ -275,6 +276,7 @@
         <button type="button" class="tool" data-dm="curve" aria-pressed="false" title="Click points and the road curves smoothly through them"><span>🪢</span>Curve</button>
         <button type="button" class="tool" data-dm="mirror" aria-pressed="false" title="Draw one half, get a perfectly symmetric track"><span>🪞</span>Mirror</button>
         <button type="button" class="tool" data-dm="stamp" aria-pressed="false" title="Drag a box to drop in a ready-made shape"><span>🔷</span>Shapes</button>
+        <button type="button" class="tool" data-dm="corner" aria-pressed="false" title="Famous corners: Eau Rouge, the Monaco hairpin, 130R..."><span>🏁</span>Corners</button>
         <button type="button" class="tool hidden" id="undoPt" title="Undo the last piece (Ctrl+Z)"><span>↩️</span>Undo</button>
         <button type="button" class="tool hidden" id="closeLoop" title="Join the end back to the start"><span>⭕</span>Finish loop</button>
         <button type="button" class="tool hidden" id="redoPt" title="Redo (Ctrl+Y)"><span>↪️</span>Redo</button>
@@ -289,6 +291,9 @@
         <button type="button" class="tool" data-shape="flower"><span>🌸</span>Flower</button>
         <button type="button" class="tool" data-shape="zigzag"><span>⚡</span>Zigzag</button>
         <button type="button" class="tool" data-shape="clover"><span>🍀</span>Clover</button>
+      </div>
+      <div class="dock-group hidden" id="cornerPick" aria-label="Famous corner to add">
+        <span class="dock-label">Famous corners</span>
       </div>
       <div class="dock-group" id="snapTools">
         <button type="button" class="tool" id="snapBtn" aria-pressed="false" title="Straight lines snap to 15° angles and the grid"><span>🧲</span>Snap</button>
@@ -328,6 +333,7 @@
         <button type="button" class="tool" data-decor="banner" title="A banner arch over the track"><span>🎌</span>Banner</button>
         <button type="button" class="tool" data-decor="tunnel" title="A tunnel: the cars drive under it"><span>🚇</span>Tunnel</button>
         <button type="button" class="tool" data-decor="bridge" title="A bridge across the track"><span>🌉</span>Bridge</button>
+        <button type="button" class="tool" data-decor="cut" title="Party mode: a dirt shortcut. Click where it leaves the track, then where it joins again"><span>🎉</span>Shortcut</button>
         <button type="button" class="tool" data-decor="light" title="A floodlight tower: lights the track up in night races"><span>💡</span>Floodlight</button>
         <button type="button" class="tool" data-decor="tree" title="A clump of trees beside the track"><span>🌳</span>Trees</button>
         <button type="button" class="tool" data-decor="pit" title="The pit building, with garages"><span>🏢</span>Pit building</button>
@@ -427,6 +433,7 @@
     <div class="emote-row" aria-label="Quick emotes"><button type="button" class="emo" data-emote="👍" aria-label="Emote 👍">👍</button><button type="button" class="emo" data-emote="😂" aria-label="Emote 😂">😂</button><button type="button" class="emo" data-emote="😮" aria-label="Emote 😮">😮</button><button type="button" class="emo" data-emote="😡" aria-label="Emote 😡">😡</button><button type="button" class="emo" data-emote="🔥" aria-label="Emote 🔥">🔥</button><button type="button" class="emo" data-emote="GG" aria-label="Emote GG">GG</button><button type="button" class="emo" data-emote="🏁" aria-label="Emote 🏁">🏁</button><button type="button" class="emo" data-emote="😭" aria-label="Emote 😭">😭</button></div>
     <button type="button" class="rbtn hidden" id="endPracticeBtn">🏁 End practice</button>
     <button type="button" class="rbtn" id="photoBtn" title="Photo mode: freeze the view, move the camera, take a picture (K)"><kbd>K</kbd> 📷 Photo mode</button>
+    <button type="button" class="rbtn" id="clipBtn" title="Clip the last 15 seconds and get a link anyone can watch (J)"><kbd>J</kbd> 🎬 Clip it</button>
     <button type="button" class="rbtn hidden" id="pauseBtn" title="Host only: freeze the race for everyone (P)"><kbd>P</kbd> Pause race</button>
     <button type="button" class="rbtn" id="leaveRaceBtn">Leave race</button>
   </div>

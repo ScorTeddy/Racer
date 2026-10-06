@@ -1008,7 +1008,7 @@
 
 /* the drawing tools can get long (Shapes / Edit track open): let the dock scroll instead of running off screen */
 @media (min-width: 861px) { .dock { max-height: calc(100% - 1.5rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; } }
-#stampPick .tool.on, #wonkTools .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); color: var(--ink); }
+#stampPick .tool.on, #cornerPick .tool.on, #wonkTools .tool.on, #snapBtn.on, #moreBtn.on { background: rgba(255,204,31,0.18); border-color: var(--yellow); color: var(--ink); }
 
 /* ---- chat ---- */
 .chat-btn { position: fixed; z-index: 29; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); width: 3rem; height: 3rem; border-radius: 50%; border: 2px solid var(--edge); background: var(--panel-solid); color: var(--ink); font-size: 1.35rem; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,0.4); display: grid; place-items: center; transition: transform 140ms ease, border-color 140ms ease; }
@@ -1820,17 +1820,17 @@ body.builder .dock .tool[aria-pressed="true"], body.builder .dock .tool.on { box
 body.desk.builder #moreBtn { display: flex !important; }
 body.builder #boardTools > *:not(.tool) { display: none; }
 /* tool buttons that left the rail keep the same look */
-body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #wonkTools) .tool {
+body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #cornerPick, #wonkTools) .tool {
   cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; padding: 0.35rem 0.4rem;
   font: 700 0.7rem "Chakra Petch", sans-serif; border-radius: 0.7rem; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.05); color: var(--ink);
   transition: transform 120ms ease, background 150ms ease;
 }
-body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #wonkTools) .tool span { font-size: 1.1rem; }
-body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #wonkTools) .tool:hover { transform: translateY(-2px); background: rgba(255,255,255,0.12); }
-body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #wonkTools) .tool:is([aria-pressed="true"], [aria-checked="true"], .on) { background: var(--yellow); color: #1b1b1b; border-color: var(--yellow); }
+body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #cornerPick, #wonkTools) .tool span { font-size: 1.1rem; }
+body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #cornerPick, #wonkTools) .tool:hover { transform: translateY(-2px); background: rgba(255,255,255,0.12); }
+body.builder :is(.board-pill, .ctx-bar, .tp-start, .tp-objs, #moreTools, #stampPick, #cornerPick, #wonkTools) .tool:is([aria-pressed="true"], [aria-checked="true"], .on) { background: var(--yellow); color: #1b1b1b; border-color: var(--yellow); }
 /* flyouts beside the rail: shapes, and reshaping the whole track */
-body.builder #stampPick, body.builder #moreTools { position: absolute; left: 6.1rem; top: 0.8rem; z-index: 4; display: grid; grid-template-columns: repeat(3, 4.4rem); gap: 0.3rem; padding: 0.55rem; border-radius: 1rem; background: rgba(12,14,22,0.94); border: 1.5px solid var(--edge); box-shadow: 0 14px 40px rgba(0,0,0,0.5); animation: flyIn 220ms cubic-bezier(.2,1.2,.4,1) both; }
-body.builder #stampPick.hidden, body.builder #moreTools.hidden { display: none !important; }
+body.builder #stampPick, body.builder #cornerPick, body.builder #moreTools { position: absolute; left: 6.1rem; top: 0.8rem; z-index: 4; display: grid; grid-template-columns: repeat(3, 4.4rem); gap: 0.3rem; padding: 0.55rem; border-radius: 1rem; background: rgba(12,14,22,0.94); border: 1.5px solid var(--edge); box-shadow: 0 14px 40px rgba(0,0,0,0.5); animation: flyIn 220ms cubic-bezier(.2,1.2,.4,1) both; }
+body.builder #stampPick.hidden, body.builder #cornerPick.hidden, body.builder #moreTools.hidden { display: none !important; }
 body.builder #stampPick .dock-label, body.builder #moreTools .dock-label { grid-column: 1 / -1; font-size: 0.62rem; letter-spacing: 0.14em; font-weight: 700; color: var(--soft); }
 @keyframes flyIn { from { opacity: 0; transform: translateX(-10px) scale(0.96); } }
 /* the tool's options, floating at the top of the board */
@@ -1943,3 +1943,11 @@ body.builder .rc-step::after { content: attr(data-label); position: absolute; to
   @keyframes tvBlink { 50% { opacity: 0.3; } }
 }
 body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-bottom, 0px)); }
+/* party mode sabotage cards: a little menacing */
+.card.sab { border-color: #ff3d7f; background: repeating-linear-gradient(135deg, rgba(255,61,127,.12) 0 10px, transparent 10px 20px), var(--panel-solid); animation: flip 560ms cubic-bezier(.2,.9,.3,1.25) both, sabWobble 1.6s ease-in-out 560ms infinite; }
+.card .kind.sabotage { background: #ff3d7f; color: #fff; }
+.card.sab .fx span { color: #ff7aa8; font-weight: 800; }
+@keyframes sabWobble { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-1.2deg); } }
+@media (prefers-reduced-motion: reduce) { .card.sab { animation: none; } }
+.clip-flash { position: fixed; inset: 0; pointer-events: none; z-index: 90; border: 6px solid #fff; animation: clipFlash 650ms ease-out forwards; }
+@keyframes clipFlash { 0% { background: rgba(255,255,255,.35); } 100% { background: transparent; opacity: 0; transform: scale(.97); } }

@@ -83,7 +83,7 @@ const PIT_TIME = 2.8;
 // a short fingerprint of a drawing: the same track always gets the same key (personal bests, time trial boards)
 function strokeKey(stroke) { let h = 2166136261; for (let i = 0; i < Math.min(stroke.length, 8000); i += 3) { h = Math.imul(h ^ Math.round(Number(stroke[i]?.[0]) || 0), 16777619); h = Math.imul(h ^ Math.round(Number(stroke[i]?.[1]) || 0), 16777619); } return "d" + (h >>> 0).toString(36); }
 const ENDURO_MINS = [10, 20, 30];
-const DECOR = ["stand", "banner", "tunnel", "bridge", "light", "tree", "pit", "board"], DECOR_SIDE = ["light", "tree", "pit", "board"], DECOR_LONG = ["tunnel", "stand"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
+const DECOR = ["stand", "banner", "tunnel", "bridge", "light", "tree", "pit", "board", "cut"], DECOR_SIDE = ["light", "tree", "pit", "board"], DECOR_LONG = ["tunnel", "stand", "cut"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
 const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
@@ -265,6 +265,13 @@ const RARE_CARDS = [
   { key: "__all1", tier: "epic",      chance: 0.001,   name: "Full Upgrade", desc: "Every upgrade +1 level",        icon: "💎" },
 ];
 const RARE_BY_KEY = Object.fromEntries(RARE_CARDS.map((r) => [r.key, r]));
+// Party mode (host setting): sabotage cards now and then take one of the three slots. Used straight away.
+const SAB_CARDS = {
+  __oil:   { name: "Oil Slick",   icon: "🛢️", desc: "Drop an oil slick behind you. Anyone who drives over it spins out." },
+  __cloud: { name: "Storm Cloud", icon: "⛈️", desc: "It pours down on the bit of track the car ahead is on, for 20 s. No wets? Slippery!" },
+  __ink:   { name: "Ink Splat",   icon: "🦑", desc: "The car right behind you can't see a thing for 2 seconds." },
+};
+const SAB_CHANCE = 0.35, OIL_SECS = 25, CLOUD_SECS = 20, INK_SECS = 2;
 const TIER_RANK = { epic: 1, legendary: 2, mythic: 3 };
 function rollRareCard(rand = Math.random()) {
   let acc = 0;
@@ -519,7 +526,20 @@ const SFX = {
   h_v12: { text: "A V12 supercar engine revving hard twice, loud, realistic, no music.", secs: 2 },
   rain: { text: "Steady heavy rain falling on asphalt and splashing in puddles, close up, realistic ambient field recording, constant intensity, no thunder, no wind, no music.", secs: 20, loop: true },
 };
-const sfxMem = new Map(), sfxJobs = new Map(); let sfxOffUntil = 0;
+// ...and 96 more thunderclaps, so a long storm never plays the same one twice: every mix of how close the strike is,
+// how the lightning sounds, how the thunder rolls away and where you are. Each is only made the first time a race
+// asks for it, then kept for good.
+{
+  const near = ["directly overhead, deafeningly close", "very close, a few hundred metres away", "nearby", "a little way off", "in the distance", "far away across the hills"];
+  const crack = ["a sharp splitting crack", "a crackling, sizzling snap", "a whip-like snap", "a tearing, ripping crack like the sky splitting open", "a single explosive bang", "a stuttering crackle"];
+  const tail = ["a massive deep boom that rolls on for several seconds", "a long low rumble that echoes and fades", "a heavy boom and then three or four rolling growls", "a short punchy boom that dies away quickly", "a deep booming roar that shakes the ground then slowly rumbles off", "a boom that bounces around and rumbles unevenly"];
+  const where = ["open countryside", "a city, echoing off buildings", "a deep valley with long echoes", "over the sea", "a race circuit with grandstands"];
+  for (let n = 5, k = 0; n <= 100; n++, k++) {
+    const a = near[k % 6], b = crack[Math.floor(k / 6) % 6], c = tail[(k * 5 + Math.floor(k / 36)) % 6], d = where[(k * 7) % 5];
+    SFX["thunder" + n] = { text: `Lightning strike ${a}: ${b}, then ${c}. Heard in ${d}. Realistic storm field recording, deep bass, no music, no voices.`, secs: 5 + (k % 4) };
+  }
+}
+const sfxMem = new Map(), sfxJobs = new Map(); let sfxOffUntil = 0, sfxBusy = 0;
 function sfxClip(name) {
   const key = "sfx_v1_" + name;
   if (sfxMem.has(key)) return Promise.resolve(sfxMem.get(key));
@@ -534,6 +554,8 @@ function sfxClip(name) {
         try { return await fetch(url, { method: "POST", signal: ctl.signal, headers: { "xi-api-key": elKey(), "Content-Type": "application/json", Accept: "audio/mpeg" }, body: JSON.stringify(body) }); }
         finally { clearTimeout(timer); }
       };
+      while (sfxBusy >= 2) await new Promise((ok) => setTimeout(ok, 500));      // (two at a time at most)
+      sfxBusy++;
       try {
         const base = { text: S.text, duration_seconds: S.secs, prompt_influence: 0.6 };
         let r = await ask(S.loop ? { ...base, loop: true } : base);
@@ -543,6 +565,7 @@ function sfxClip(name) {
         if (buf.length < 4000) throw new Error("tiny sound file");
         accounts.voiceSet(key, buf).catch((e) => console.log("sound effect save failed:", e.message));
       } catch (e) { sfxOffUntil = Date.now() + 10 * 60e3; console.warn("weather sound", name, "-", e.name === "AbortError" ? "took too long" : e.message); throw e; }
+      finally { sfxBusy--; }
     }
     sfxMem.set(key, buf);
     return buf;
@@ -1388,7 +1411,7 @@ class Room {
     this.players = new Map();   // socket id -> team boss
     this.hostId = null;
     this.phase = "lobby";       // lobby | tires | lights | race | results
-    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false, mode: "normal", mix: 0.5, start: "standing", dayNight: false, enduroMin: 20, multiEndur: false, enduroShare: true };
+    this.settings = { reverseGrid: false, drs: true, laps: 5, ai: 5, map: "normal", theme: "night", speed: 1, wear: "normal", points: DEFAULT_POINTS.slice(), teamColors: false, weather: "sunny", teams: true, xpRate: XP_RATE_DEFAULT, season: 0, smooth: false, quali: 0, aiLevel: "medium", safetyCar: false, mode: "normal", mix: 0.5, start: "standing", dayNight: false, party: false, enduroMin: 20, multiEndur: false, enduroShare: true };
     this.trackKind = null; this.trackName = null;
     this.stroke = null; this.track = null;
     this.champ = {};
@@ -1813,6 +1836,53 @@ class Room {
   }
 
   // ======================= Race =======================
+  // party mode: sabotage cards and shortcuts (never in ranked, qualifying or time trial)
+  partyOn() { return !!this.settings.party && !this.ranked && !this.qualifying && !this.tt; }
+  // the shortcuts on this track: straight dirt roads from one bit of track to a later one
+  cutList() {
+    const key = this.track && (this.decor || []).filter((d) => d.k === "cut").map((d) => `${d.x},${d.y},${d.end?.x},${d.end?.y}`).join("|") + (this.track.reverse ? "r" : "");
+    if (this._cuts && this._cuts.t === this.track && this._cuts.key === key) return this._cuts.list;
+    const t = this.track, list = !t ? [] : this.decorMsg().filter((d) => d.k === "cut" && d.len >= 6).map((d) => {
+      const A = t.pts[d.i], B = t.pts[(d.i + d.len) % t.N], L = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+      return { a: d.i, len: d.len, ax: A.x, ay: A.y, dx: (B.x - A.x) / L, dy: (B.y - A.y) / L, L, w: Math.max(26, t.hw[d.i] * 0.8) };
+    });
+    this._cuts = { t, key, list }; return list;
+  }
+  // ---- sabotage (party mode) ----
+  sabotage(c, k) {
+    if (!c || this.phase !== "race" || !SAB_CARDS[k]) return;
+    this.hazards = this.hazards || []; const N = this.track.N, id = (this.hzId = (this.hzId || 0) + 1);
+    if (k === "__oil") {
+      const h = { id, k: "oil", x: c.x - Math.cos(c.heading) * 50, y: c.y - Math.sin(c.heading) * 50, at: this.time, until: this.time + OIL_SECS, by: c.id };
+      this.hazards.push(h); this.emit("hazard", { ...h, secs: OIL_SECS });
+    } else if (k === "__cloud") {
+      const target = c.ahead && !c.ahead.finished ? c.ahead : null, from = ((target ? target.idx : c.idx + 15) - 6 + N) % N, len = Math.max(24, Math.round(N / 7));
+      const h = { id, k: "cloud", from, len, at: this.time, until: this.time + CLOUD_SECS, by: c.id };
+      this.hazards.push(h); this.emit("hazard", { ...h, secs: CLOUD_SECS });
+    } else {
+      const order = this.standings(), i = order.indexOf(c), target = order.slice(i + 1).find((o) => !o.finished && !o.out) || (i > 0 ? order[i - 1] : null);
+      if (!target) return;
+      target.blindT = INK_SECS; this.emit("hazard", { id, k: "ink", car: target.id, by: c.id, secs: INK_SECS });
+      if (target.owner) io.to(target.owner).emit("toast", `🦑 ${c.name} splatted ink on your screen!`);
+    }
+    this.emit("feed", { t: "sab", k, name: c.name, id: c.id });
+  }
+  stepHazards(dt) {
+    const H = this.hazards; if (!H) return;
+    for (let q = H.length - 1; q >= 0; q--) if (this.time >= H[q].until) H.splice(q, 1);
+    const N = this.track.N;
+    for (const c of this.cars) {
+      if (c.blindT > 0) c.blindT -= dt;
+      c.cloudWet = 0;
+      for (const h of H) {
+        if (h.k === "cloud") { if (((c.idx - h.from + N) % N) <= h.len) c.cloudWet = 0.85; }
+        else if (h.k === "oil" && !(h.by === c.id && this.time - h.at < 3) && !(this.time - (c.oilAt || -99) < 2.5) && !c.inPit && Math.abs(c.speed) > 60 && (c.x - h.x) ** 2 + (c.y - h.y) ** 2 < 32 * 32) {
+          c.oilAt = this.time; c.slipT = 0.95; c.slipYaw = (Math.random() < 0.5 ? -1 : 1) * 1.8; if (c.rs) c.rs.slips++;
+          if (c.owner) io.to(c.owner).emit("toast", "🛢️ OIL! You're sliding!");
+        }
+      }
+    }
+  }
   startRace() {
     this.qFlag = null;
     if (!this.track || this.phase !== "lobby") return;
@@ -1860,7 +1930,7 @@ class Room {
     this.ensureRoster(aiCount);
     const total = humans.length + aiCount;
     if (!this.qualifying) this.raceNo++;
-    this.cars = [];
+    this.cars = []; this.hazards = [];
     // grid: the host can put any player in any grid spot; everyone else fills in
     // (AI at the front, players without a set spot at the back so there's someone to chase)
     const order = new Array(total).fill(null);
@@ -1992,7 +2062,7 @@ class Room {
     { const ev = this.eventHere(); if (ev) setTimeout(() => this.emit("feed", { t: "event", text: `${ev.icon} Weekend event: ${ev.name}! ${ev.desc}` }), 1500); }
     if (this.reversedGrid) setTimeout(() => this.emit("feed", { t: "event", text: "🔄 Reverse grid: the championship leaders start at the back!" }), 2500);
     this.pickRivals();
-    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, numFont: c.owner ? this.players.get(c.owner)?.numFont || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : c.aiExtras || null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
+    this.emit("race", this.lastRaceMsg = { cars: this.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, livery: c.livery, number: c.number, owner: c.owner, team: c.team, cls: c.cls || null, design: c.owner ? this.players.get(c.owner)?.design || null : null, numFont: c.owner ? this.players.get(c.owner)?.numFont || null : null, extras: c.owner ? this.players.get(c.owner)?.extras || null : c.aiExtras || null })), laps: s.laps, raceNo: this.raceNo, speed: s.speed, quali: this.qualifying ? Math.round(this.qualiEnd) : 0, practice: !!practice, ko: !!this.qualiKO, fog: this.weatherSetting() === "fog", ranked: !!this.ranked, multi: !!this.multi, elim: this.elim ? { per: this.elim.per } : null, dayNight: !!s.dayNight && !this.qualifying, koth: this.koth && !this.qualifying, enduro: this.enduro ? this.enduro.secs : 0, tt: !!this.tt, party: this.partyOn(), rolling: s.start === "rolling" && !this.qualifying && !this.ranked });
     // ranked: the "left the race" loss is charged now, and replaced by the real result at the flag
     if (this.ranked && !this.qualifying) {
       const mode = this.teamRanked ? "team" : "solo";
@@ -2257,6 +2327,7 @@ class Room {
       if (c.owner && !c.onTrack && !c.inPit) c.cleanLap = false;
     }
     this.collide();
+    this.stepHazards(dt);
     const order = this.standings();
     if (!this.qualifying && (!this.orderHist || this.time - (this.orderHist.at(-1)?.t ?? -9) >= 0.5)) {
       this.orderHist = this.orderHist || []; this.orderHist.push({ t: this.time, ids: order.map((c) => c.id) });
@@ -2779,7 +2850,7 @@ class Room {
   gripOf(c) { const T = c.temp ?? 1; return this.tireGrip(c.tire) * (0.86 + 0.14 * clamp(T / 0.85, 0, 1)); }
   // dry tires in the wet: slower everywhere, and from ~60% wet a LOT slower (about -25% at 100%)
   compoundSpeed(c) { return COMPOUNDS[c.compound].speed * (c.compound === "wet" ? 1 : 1 - 0.08 * this.wet - 0.17 * clamp((this.wet - 0.5) / 0.4, 0, 1)); }
-  weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.45 * this.wet); }
+  weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.45 * Math.max(this.wet, c.cloudWet || 0)); }
   // worn tyres: full speed down to a third left, then slower and slower, down to 70% on completely dead ones
   // (it used to sit at 86% and then drop straight to 62% at 0%: a sudden "my car lost all its speed")
   tireSpeed(w) { const k = Math.min(1, Math.max(0, w) * 3); return 0.7 + 0.3 * Math.sqrt(k); }
@@ -2864,13 +2935,15 @@ class Room {
     if (c.surface === 1) maxSp *= 0.97;
     else if (c.surface === 2) maxSp *= 0.55;
     else if (c.surface === 3) { maxSp *= 0.3; vF *= Math.exp(-2.4 * dt); vS *= Math.exp(-3 * dt); }
+    else if (c.surface === 5) maxSp *= 0.82;                  // a shortcut: bumpy dirt, slower, but a lot shorter
+    if (c.blindT > 0 && !c.owner) maxSp *= 0.8;              // inked AI: can't see, lifts off
     if (input.gas) { if (vF < maxSp) vF += accel * dt * (vF > maxSp * 0.85 ? 0.7 : 1); }
     else if (input.brake) { if (vF > 20) vF -= st.brake * dt; else if (vF > -REVERSE_MAX) vF -= accel * 0.6 * dt; }
     else vF -= vF * 0.55 * dt;
     if (vF > maxSp) vF -= Math.min(vF - maxSp, (c.surface >= 2 && c.surface < 4 ? 900 : this.sc ? 1000 : 300) * dt);
     // How hard the car can turn: steering lock at low speed, tire grip at high speed.
     let gripF = st.gripMul * this.gripOf(c) * this.weatherGrip(c);
-    if (c.surface === 2) gripF *= 0.55; else if (c.surface === 3) gripF *= 0.4;
+    if (c.surface === 2) gripF *= 0.55; else if (c.surface === 3) gripF *= 0.4; else if (c.surface === 5) gripF *= 0.8;
     if (c.punct) gripF *= 0.35;
     const av = Math.abs(vF);
     if (c.rs) {
@@ -2882,12 +2955,13 @@ class Room {
     const control = c.crashT > 0 ? 0.25 : c.slipT > 0 ? 0.55 : 1;
     c.heading += input.steer * c.yawMax * Math.sign(vF || 1) * dt * control;
     let grip = st.grip * this.gripOf(c) * this.weatherGrip(c);
-    if (c.surface === 2) grip *= 0.55; else if (c.surface === 3) grip *= 0.4;
+    if (c.surface === 2) grip *= 0.55; else if (c.surface === 3) grip *= 0.4; else if (c.surface === 5) grip *= 0.8;
     if (c.punct) { grip *= 0.35; c.heading += (Math.random() - 0.5) * 0.9 * dt; }
     // Heavy rain on the wrong tires: every so often (about 1-3 times a lap) the rear steps out
     // for most of a second. Scary, costs time, but the driver catches it.
-    if (c.compound !== "wet" && this.wet >= SLIP_WET && !c.inPit && av > 200 && !(c.slipT > 0)) {
-      const chance = 0.035 + 0.035 * clamp((this.wet - SLIP_WET) / (1 - SLIP_WET), 0, 1);
+    const wetHere = Math.max(this.wet, c.cloudWet || 0);       // (a party-mode storm cloud: just here)
+    if (c.compound !== "wet" && wetHere >= SLIP_WET && !c.inPit && av > 200 && !(c.slipT > 0)) {
+      const chance = (c.cloudWet > this.wet ? 0.2 : 0.035) + 0.035 * clamp((wetHere - SLIP_WET) / (1 - SLIP_WET), 0, 1);
       if (Math.random() < chance * dt) {
         if (c.rs) c.rs.slips++;
         c.slipT = 0.55 + Math.random() * 0.3; c.slipYaw = (Math.random() < 0.5 ? -1 : 1) * (0.9 + Math.random() * 0.5);
@@ -2910,7 +2984,7 @@ class Room {
     if (input.brake && vF > 250) wear *= 1.4;
     const C = COMPOUNDS[c.compound];
     wear *= c.compound === "wet" ? C.dryWear + (C.wear - C.dryWear) * clamp(this.wet * 1.6, 0, 1) : C.wear;
-    if (c.surface === 3) wear *= 2;
+    if (c.surface === 3) wear *= 2; else if (c.surface === 5) wear *= 1.3;
     if (this.qualifying && !this.practice) wear = 0;
     const before = c.tire;
     if (!c.finished && this.trackKind !== "tour" && !this.sc?.rolling) c.tire = Math.max(0, c.tire - wear * st.wear * (c.teamOrder === "push" ? 1.35 : c.teamOrder === "hold" ? 0.8 : 1));       // no wear on the formation lap or the cool-down lap (pit wall: push wears more, hold saves them)
@@ -2938,6 +3012,15 @@ class Room {
       let delta = g - c.idx; if (delta > N / 2) delta -= N; if (delta < -N / 2) delta += N;
       if (Math.abs(delta) < 40) { best = g; bestD = Math.sqrt(gd); }
     }
+    // party mode shortcuts: off the road and on the dirt cut-through? Then you're that far round the lap
+    c.onCut = null;
+    const cuts = this.partyOn() && this.phase === "race" ? this.cutList() : null;
+    if (cuts?.length && c.aiMode !== "pitLane" && c.aiMode !== "pitOut") for (const s2 of cuts) {
+      const rx = c.x - s2.ax, ry = c.y - s2.ay, along = rx * s2.dx + ry * s2.dy, f = along / s2.L;
+      if (f < 0.04 || f > 0.96 || Math.abs(-rx * s2.dy + ry * s2.dx) > s2.w) continue;
+      if (bestD < t.hw[best] - 4 && ((best - s2.a + N) % N) <= s2.len + 4) continue;     // (on the real road, inside the bit it skips)
+      c.onCut = s2; best = (s2.a + Math.round(f * s2.len)) % N; break;
+    }
     const delta = best - c.idx;
     // a lap only counts the FIRST time a car gets that far
     if (delta < -N / 2) { c.lapsDone++; if (c.lapsDone > (c.maxLaps ?? -1)) { c.maxLaps = c.lapsDone; this.onLap(c); } }
@@ -2957,12 +3040,12 @@ class Room {
     c.lat = lat; c.tOff = rx * t.tan[best].x + ry * t.tan[best].y;
     const k = laneK(t, best), pl = t.pitLane;
     const inLane = k >= 0 && Math.sign(lat) === pl.side && Math.abs(al - (hw + pl.gap) * rampLane(pl, k)) < 34 && al > hw - 5;
-    c.surface = inLane ? 4 : al < hw ? 0 : al < hw + 16 ? 1 : (t.gravel[best] && Math.sign(lat) === t.gravel[best] && al < hw + 140) ? 3 : 2;
+    c.surface = c.onCut ? 5 : inLane ? 4 : al < hw ? 0 : al < hw + 16 ? 1 : (t.gravel[best] && Math.sign(lat) === t.gravel[best] && al < hw + 140) ? 3 : 2;
     c.inPit = c.surface === 4;
-    c.onTrack = c.surface <= 1 || c.surface === 4;
+    c.onTrack = c.surface <= 1 || c.surface >= 4;
     // edge grip: sliding out at the edge of the road, the tyres bite on the kerb and pull the car back.
     // Sticky Setup and Carbon Brakes make it much stronger: a fully upgraded car very rarely runs off.
-    if (!inLane && c.aiMode !== "pitLane" && c.aiMode !== "pitOut" && al > hw - 8 && al < hw + 30 && !c.punct && !(c.crashT > 0) && !(c.slipT > 0)) {
+    if (!inLane && !c.onCut && c.aiMode !== "pitLane" && c.aiMode !== "pitOut" && al > hw - 8 && al < hw + 30 && !c.punct && !(c.crashT > 0) && !(c.slipT > 0)) {
       const vn = c.vx * t.nor[best].x + c.vy * t.nor[best].y;
       if (vn * Math.sign(lat) > 0) {
         const u = c.up || {}, hold = (1.5 + 1.6 * (u.grip || 0) + 1.1 * (u.brakes || 0)) * this.weatherGrip(c);
@@ -3344,6 +3427,8 @@ class Room {
   aiUpgrade(c) {
     const W = { engine: 3, corner: 3, turbo: 2, grip: 2, brakes: 2, late: 2, craft: 1.5, refill: 1, pitlane: 0.8, focus: 1, whisper: 1, enhance: 1.5, saver: 1 };
     const opts = Object.keys(UPGRADES).filter((k) => c.up[k] < UPGRADES[k].max);
+    // party mode: AI drivers play dirty too, now and then
+    if (this.partyOn() && this.phase === "race" && Math.random() < 0.2) { const ks = Object.keys(SAB_CARDS), k = ks[Math.floor(Math.random() * ks.length)]; this.cardsShown(c, [k], k); this.sabotage(c, k); return; }
     if (!opts.length) return;
     const cards = opts.map((k) => [k, Math.random()]).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([k]) => k);
     let r = Math.random() * cards.reduce((a, k) => a + (W[k] || 1), 0), pick = cards[0];
@@ -3354,7 +3439,7 @@ class Room {
   }
   // what a car was offered and what it took: for anyone spectating it (the card names, so the screen can show them)
   cardsShown(c, cards, pick) {
-    const nm = (k) => (RARE_BY_KEY[k] ? { k, name: RARE_BY_KEY[k].name, icon: RARE_BY_KEY[k].icon, rare: RARE_BY_KEY[k].tier } : { k, name: UPGRADES[k]?.name || k });
+    const nm = (k) => (SAB_CARDS[k] ? { k, name: SAB_CARDS[k].name, icon: SAB_CARDS[k].icon, sab: true } : RARE_BY_KEY[k] ? { k, name: RARE_BY_KEY[k].name, icon: RARE_BY_KEY[k].icon, rare: RARE_BY_KEY[k].tier } : { k, name: UPGRADES[k]?.name || k });
     c.lastCards = { cards: cards.map(nm), pick: pick ?? null, at: this.time };
     this.emit("carCards", { car: c.id, ...c.lastCards, up: c.up, lvl: this.carLevel(c) });
   }
@@ -3371,6 +3456,7 @@ class Room {
   }
   offerMsg(p) {
     return { pending: p.pendingPicks, cards: p.offer.map((k) => {
+      const sab = SAB_CARDS[k]; if (sab) return { key: k, kind: "Sabotage", icon: sab.icon, name: sab.name, desc: sab.desc, max: 0, level: 0, now: "", next: "Used straight away" };
       const rare = RARE_BY_KEY[k]; if (rare) return { key: k, kind: "Rare", tier: rare.tier, icon: rare.icon, name: rare.name, desc: rare.desc, max: 0, level: 0, now: "", next: rare.desc };
       const u = UPGRADES[k]; return { key: k, kind: u.kind, name: u.name, desc: u.desc, max: u.max, level: p.up[k], now: u.fx(p.up[k]), next: u.fx(p.up[k] + 1) }; }) };
   }
@@ -3383,6 +3469,7 @@ class Room {
     for (const k of pick) seen[k] = (seen[k] || 0) + 1;
     const rare = pick.length && rollRareCard();
     if (rare) pick[Math.floor(Math.random() * pick.length)] = rare.key;   // a super rare card takes one of the slots
+    else if (pick.length && this.partyOn() && Math.random() < SAB_CHANCE) { const ks = Object.keys(SAB_CARDS); pick[Math.floor(Math.random() * pick.length)] = ks[Math.floor(Math.random() * ks.length)]; }
     p.offer = pick;
     if (!p.offer.length) { p.offer = null; p.pendingPicks = 0; return; }
     io.to(p.id).emit("offer", this.offerMsg(p));
@@ -3431,6 +3518,13 @@ class Room {
   pick(p, i) {
     if (!p.offer) return;
     const k = p.offer[Number(i)]; if (!k) return;
+    if (SAB_CARDS[k]) {
+      const offered = p.offer, car = this.carOf(p.id); p.offer = null; p.pendingPicks--;
+      if (car) { this.cardsShown(car, offered, k); this.sabotage(car, k); }
+      io.to(p.id).emit("picked", { key: k, up: p.up, now: SAB_CARDS[k].desc, name: `${SAB_CARDS[k].icon} ${SAB_CARDS[k].name}` });
+      if (p.pendingPicks > 0) this.makeOffer(p);
+      return;
+    }
     const rare = RARE_BY_KEY[k];
     if (rare) {
       for (const u of Object.keys(UPGRADES)) p.up[u] = rare.key === "__max" ? UPGRADES[u].max : Math.min(UPGRADES[u].max, p.up[u] + (rare.key === "__all2" ? 2 : 1));
@@ -4140,6 +4234,7 @@ io.on("connection", (socket) => {
     if (s?.safetyCar !== undefined) S.safetyCar = s.safetyCar === true || s.safetyCar === "on";
     if (["standing", "rolling"].includes(s?.start)) S.start = s.start;
     if (s?.dayNight !== undefined) S.dayNight = s.dayNight === true || s.dayNight === "on";
+    if (s?.party !== undefined) S.party = s.party === true || s.party === "on";
     if (s?.drs !== undefined) S.drs = s.drs === true || s.drs === "on";
     if (s?.reverseGrid !== undefined) S.reverseGrid = s.reverseGrid === true || s.reverseGrid === "on";
     if (THEME_KEYS.includes(s?.theme)) { S.theme = s.theme; if (r.track) r.emit("track", r.trackMsg()); }
