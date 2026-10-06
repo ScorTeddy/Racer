@@ -83,7 +83,7 @@
   // ---- keybinds (Settings > Keybinds): every race key can be changed ----
   const KEY_ACTIONS = [
     ["boost", "⚡ Boost (hold) · start reaction", "Space"], ["boost2", "⚡ Boost, second key", "KeyN"], ["drs", "🟩 Open DRS", "KeyD"],
-    ["box", "🔧 Box this lap", "KeyB"], ["defend", "🛡️ Defend on/off", "KeyV"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"], ["horn", "📯 Horn", "KeyH"],
+    ["box", "🔧 Box this lap", "KeyB"], ["defend", "🛡️ Defend on/off", "KeyV"], ["cards", "🃏 Upgrade cards", "KeyU"], ["photo", "📷 Photo mode", "KeyK"], ["clip", "🎬 Clip the last 15 s", "KeyJ"], ["horn", "📯 Horn", "KeyH"],
     ["pause", "⏸ Pause race (host)", "KeyP"], ["spectate", "👀 Watch the next car", "Tab"], ["settings", "⚙ Settings", "KeyO"],
   ];
   const KEY_DEFAULTS = Object.fromEntries(KEY_ACTIONS.map(([a, , k]) => [a, k]));
@@ -199,7 +199,7 @@
   function keyHints() {
     const set = (sel, a) => document.querySelectorAll(sel).forEach((k) => (k.textContent = keyName(KEY(a))));
     const bk = document.querySelectorAll("#boostBtn small kbd"); if (bk[0]) bk[0].textContent = keyName(KEY("boost")); if (bk[1]) bk[1].textContent = keyName(KEY("boost2"));
-    set("#boxBtn kbd, #mustBox kbd", "box"); set("#photoBtn kbd", "photo"); set("#pauseBtn kbd", "pause"); set("#drsGo kbd", "drs"); set("#defendBtn kbd", "defend"); set("#laterBtn kbd", "cards");
+    set("#boxBtn kbd, #mustBox kbd", "box"); set("#photoBtn kbd", "photo"); set("#clipBtn kbd", "clip"); set("#pauseBtn kbd", "pause"); set("#drsGo kbd", "drs"); set("#defendBtn kbd", "defend"); set("#laterBtn kbd", "cards");
     const lp = $("lightsSay"); if (lp && lp.querySelector("kbd")) lp.querySelector("kbd").textContent = keyName(KEY("boost"));
   }
   const setEl = $("settings");
@@ -2960,6 +2960,50 @@
     if (S.nextComp !== m.next) { S.nextComp = m.next; renderNextTires(); }
     updateBox();
   });
+  // ---- party mode sabotage: oil slicks, storm clouds, ink ----
+  S.hazards = [];
+  socket.on("race", () => { S.hazards = []; S.ink = null; });
+  socket.on("hazard", (h) => {
+    h.end = performance.now() + h.secs * 1000; h.born = performance.now();
+    if (h.k === "ink") { if (h.car === S.myCar) { S.ink = { until: h.end, born: h.born, blobs: Array.from({ length: 7 }, () => ({ x: Math.random(), y: Math.random() * 0.8 + 0.1, r: 0.08 + Math.random() * 0.14, n: 5 + Math.floor(Math.random() * 5) })) }; sfx("jump"); } return; }
+    S.hazards.push(h);
+  });
+  function drawHazards(c, t, now) {
+    S.hazards = S.hazards.filter((h) => now < h.end);
+    for (const h of S.hazards) {
+      const fade = clamp(Math.min((h.end - now) / 1500, (now - h.born) / 300), 0, 1);
+      if (h.k === "oil") {
+        c.save(); c.globalAlpha = 0.9 * fade; c.translate(h.x, h.y);
+        c.fillStyle = "#0b0b0f"; c.beginPath(); for (let a = 0; a <= 24; a++) { const an = a / 24 * Math.PI * 2, r = 30 + Math.sin(an * 3 + h.id) * 4 + Math.sin(an * 5 + h.id * 2) * 2; c[a ? "lineTo" : "moveTo"](Math.cos(an) * r, Math.sin(an) * r * 0.75); } c.fill();
+        const g = c.createLinearGradient(-24, -16, 24, 16); g.addColorStop(0, "rgba(160,60,255,0.35)"); g.addColorStop(0.5, "rgba(40,220,200,0.3)"); g.addColorStop(1, "rgba(255,200,40,0.3)");
+        c.fillStyle = g; c.beginPath(); c.ellipse(-4, -3, 18, 10, 0.4, 0, Math.PI * 2); c.fill();
+        c.restore();
+      } else if (h.k === "cloud" && t.pts) {
+        const N = t.N; c.save(); c.lineCap = "round"; c.lineJoin = "round";
+        c.strokeStyle = `rgba(30,50,90,${0.35 * fade})`; c.lineWidth = (t.trackW || 90) * 1.6; c.beginPath();
+        for (let k = 0; k <= h.len; k += 2) { const q = t.pts[(h.from + k) % N]; k ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); } c.stroke();
+        c.strokeStyle = `rgba(170,200,255,${0.55 * fade})`; c.lineWidth = 1.5;
+        for (let k = 0; k < 60; k++) {
+          const q = t.pts[(h.from + Math.floor(Math.random() * h.len)) % N], x = q.x + (Math.random() - 0.5) * 120, y = q.y + (Math.random() - 0.5) * 120;
+          c.beginPath(); c.moveTo(x, y); c.lineTo(x - 6, y + 18); c.stroke();
+        }
+        const m = t.pts[(h.from + Math.floor(h.len / 2)) % N]; c.globalAlpha = fade; c.font = "40px sans-serif"; c.textAlign = "center"; c.fillText("⛈️", m.x, m.y - 70);
+        c.restore();
+      }
+    }
+  }
+  function drawInk(w, h, now) {
+    const I = S.ink; if (!I || now > I.until + 600) { S.ink = null; return; }
+    const k = clamp((now - I.born) / 120, 0, 1), out = now > I.until ? 1 - (now - I.until) / 600 : 1;
+    ctx.save(); ctx.globalAlpha = 0.97 * out; ctx.fillStyle = "#07060c";
+    for (const b of I.blobs) {
+      const R = b.r * Math.min(w, h) * 2.2 * k, x = b.x * w, y = b.y * h;
+      ctx.beginPath(); for (let a = 0; a <= b.n * 2; a++) { const r = a % 2 ? R * 0.55 : R; const an = (a / (b.n * 2)) * Math.PI * 2; ctx[a ? "lineTo" : "moveTo"](x + Math.cos(an) * r, y + Math.sin(an) * r); } ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, R * 0.75, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(x - R * 0.08, y, R * 0.16, R * 1.4 * clamp((now - I.born) / 1500, 0, 1));       // dripping
+    }
+    ctx.restore();
+  }
   socket.on("feed", (f) => {
     if (f.t === "rain") { banner("🌧 RAIN!", "#9ad0ff"); popup(`It's raining! Dry tyres lose up to 25% top speed in heavy rain (GT3s on Wets will fly past). Box (${keyName(KEY("box"))}) and pick Wets.`, true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
@@ -2975,7 +3019,7 @@
       for (let k = 0; k < (f.big ? 40 : 20); k++) S.particles.push({ x: f.x, y: f.y, vx: (Math.random() - 0.5) * 420, vy: (Math.random() - 0.5) * 420, life: 0.6 + Math.random() * 0.4, age: 0, r: 2 + Math.random() * 3, color: ["#222", "#555", "#ffcc1f", "#fff"][k % 4] });
       if (Math.hypot((S.cars.get(S.myCar)?.x || 0) - f.x, (S.cars.get(S.myCar)?.y || 0) - f.y) < 700) addShake(f.big ? 10 : 5);
     }
-    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "qFlag" ? "🏁 Time's up! Anyone on a lap gets to finish it" : f.t === "abandoned" ? `🟥 RACE ABANDONED: ${f.why === "redFlags" ? "too many red flags" : "too many safety cars"}` : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : "";
+    const txt = f.t === "crash" ? `💥 ${f.name} and ${f.other} crash${f.big ? " HARD" : ""}!` : f.t === "rain" ? "🌧 Rain is falling!" : f.t === "dry" ? "☀ The rain has stopped" : f.t === "pitSlow" ? `🔧 ${f.name}'s crew fumbles a wheel! +1s` : f.t === "puncture" ? `💥 ${f.name} has a puncture!` : f.t === "pit" ? `${f.name} pits` : f.t === "mistake" ? `${f.name} runs wide!` : f.t === "fastest" ? `Fastest lap: ${f.name} (${fmt(f.time)})` : f.t === "jump" ? `${f.name} jumped the start!` : f.t === "winner" ? `${f.name} takes the checkered flag!${f.cls ? ` (${CLASSES[f.cls].name} class win)` : ""}` : f.t === "qko" ? `🏁 Q${f.stage} is on! Knocked out: ${f.out.join(", ")}` : f.t === "elim" ? `💥 ${f.name} is knocked out! ${f.left} left` : f.t === "classWin" ? `${CLASSES[f.cls]?.icon || ""} ${f.name} wins the ${CLASSES[f.cls]?.name || ""} class!` : f.t === "retire" ? `${f.name} left the race (AI driving)` : f.t === "event" ? String(f.text || "") : f.t === "drs" ? "🟩 DRS enabled: within 1s of the car ahead at a zone = +7% top speed" : f.t === "scOut" ? "🚨 SAFETY CAR! No overtaking, the field bunches up" : f.t === "scIn" ? "🟢 Safety car in: GREEN FLAG, racing again!" : f.t === "unlap" ? "👻 Lapped cars may unlap themselves: they pass through the pack as ghosts" : f.t === "qFlag" ? "🏁 Time's up! Anyone on a lap gets to finish it" : f.t === "abandoned" ? `🟥 RACE ABANDONED: ${f.why === "redFlags" ? "too many red flags" : "too many safety cars"}` : f.t === "lastLap" ? `🏳️ Final lap! ${f.name} leads` : f.t === "photo" ? `📸 Photo finish! ${f.name} beat ${f.other} by ${f.gap.toFixed(3)}s` : f.t === "sab" ? ({ __oil: `🛢️ ${f.name} dropped an oil slick!`, __cloud: `⛈️ ${f.name} called in a storm cloud!`, __ink: `🦑 ${f.name} splatted ink!` }[f.k] || "") : "";
     if (!txt) return;
     const d = document.createElement("div"); d.textContent = txt;
     if (S.cars.get(f.id)?.id === S.myCar || f.name === prof.name) d.style.color = "var(--yellow)";
@@ -3031,7 +3075,7 @@
 
   // ======================= Lobby =======================
   const board = $("board"), bctx = board.getContext("2d");
-  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix", sMultiEndur: "multiEndur", sEnduroShare: "enduroShare" };
+  const sel = { sLaps: "laps", sQuali: "quali", sAiLevel: "aiLevel", sAi: "ai", sMap: "map", sTheme: "theme", sSpeed: "speed", sWear: "wear", sTeamColors: "teamColors", sWeather: "weather", sTeams: "teams", sSeason: "season", sSafety: "safetyCar", sStart: "start", sDayNight: "dayNight", sParty: "party", sDrs: "drs", sRevGrid: "reverseGrid", sMix: "mix", sMultiEndur: "multiEndur", sEnduroShare: "enduroShare" };
   $("smoothBtn").addEventListener("click", () => {
     if (!S.host || !S.lobby) return;
     const on = !S.lobby.settings.smooth;
@@ -3290,7 +3334,7 @@
     const s = l.settings;
     for (const [id, key] of Object.entries(sel)) {
       if (document.activeElement === $(id)) continue;
-      const sw = ["teamColors", "teams", "safetyCar", "drs", "reverseGrid", "dayNight", "multiEndur", "enduroShare"].includes(key);
+      const sw = ["teamColors", "teams", "safetyCar", "drs", "reverseGrid", "dayNight", "party", "multiEndur", "enduroShare"].includes(key);
       $(id).value = sw ? ((key === "enduroShare" ? s[key] !== false : !!s[key]) ? "on" : "off") : String(s[key] ?? (key === "start" ? "standing" : ""));
       $(id).disabled = !S.host || l.phase !== "lobby";
     }
@@ -3569,13 +3613,26 @@
     }
   }
   const TUNNEL_LEN = 16;          // (how many track points a one-click tunnel covers; two clicks: start to end)
-  const DECOR_LONG = ["tunnel", "stand"];
+  const DECOR_LONG = ["tunnel", "stand", "cut"];
   const decorLen = (d) => (d.len > 0 ? d.len : d.k === "tunnel" ? TUNNEL_LEN : 0);
   function drawObjects(c, T, layer, me = null, board = false) {
     const D = T?.decor; if (!D || !D.length) return;
     const N = T.N, P = (i) => T.pts[((i % N) + N) % N], Nn = (i) => T.nor[((i % N) + N) % N], ang = (i) => { const q = T.tan[((i % N) + N) % N]; return Math.atan2(q.y, q.x); };
     for (const d of D) {
       const i = d.i, p = P(i), n = Nn(i), hw = hwAt(T, i), a = ang(i);
+      if (d.k === "cut" && layer === "ground") {
+        // a party-mode shortcut: a dirt road cutting straight across (only there when party mode is on)
+        if (!(board || S.race?.party) || !(d.len >= 6)) continue;
+        const q = P(i + d.len), w = Math.max(26, hw * 0.8);
+        c.save(); c.lineCap = "round"; c.globalAlpha = board && !S.lobby?.settings.party ? 0.55 : 1;
+        c.strokeStyle = "#5c4126"; c.lineWidth = w * 2 + 8; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.stroke();
+        c.strokeStyle = "#8a6239"; c.lineWidth = w * 2; c.stroke();
+        c.strokeStyle = "rgba(60,40,20,0.45)"; c.lineWidth = 3; c.setLineDash([14, 10]);
+        for (const o of [-w * 0.45, w * 0.45]) { const L = Math.hypot(q.x - p.x, q.y - p.y) || 1, nx = -(q.y - p.y) / L * o, ny = (q.x - p.x) / L * o; c.beginPath(); c.moveTo(p.x + nx, p.y + ny); c.lineTo(q.x + nx, q.y + ny); c.stroke(); }
+        c.setLineDash([]); c.globalAlpha = 1;
+        c.translate((p.x + q.x) / 2, (p.y + q.y) / 2); c.font = `${Math.round(board ? 26 : 22)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(board ? "🎉" : "⚡", 0, 0);
+        c.restore(); continue;
+      }
       if (d.k === "stand" && layer === "ground") {
         // a grandstand (two clicks: a whole row of them, from where you started to where you ended)
         const L0 = decorLen(d), step = 9, list = L0 > 0 ? Array.from({ length: Math.max(1, Math.floor(L0 / step) + 1) }, (_, q) => i + q * step) : [i];
@@ -3736,7 +3793,7 @@
     }
     drawCutPreview(c);
     if (S.decorStart && S.decorTool) {  // first click of a tunnel / grandstand
-      c.fillStyle = S.decorTool === "tunnel" ? "#9ca3af" : "#ff2d55"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
+      c.fillStyle = S.decorTool === "tunnel" ? "#9ca3af" : S.decorTool === "cut" ? "#8a6239" : "#ff2d55"; c.strokeStyle = "#fff"; c.lineWidth = 2.5 / B.s;
       c.beginPath(); c.arc(S.decorStart[0], S.decorStart[1], 8 / B.s, 0, Math.PI * 2); c.fill(); c.stroke();
     }
     if (drsMode && drsMode.a) {         // first click of a new DRS zone
@@ -3797,6 +3854,13 @@
       const sp = shapePts(stampShape, stampStart, S.stampEnd);
       c.strokeStyle = th.asphalt; c.lineWidth = brushW / 3; c.lineJoin = "round"; c.globalAlpha = 0.75;
       c.beginPath(); sp.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); c.stroke(); c.globalAlpha = 1;
+    }
+    // famous corner: a ghost of where it would go
+    if (drawMode === "corner" && (hover || cornerStart) && S.host && S.lobby?.phase === "lobby") {
+      const pl = cornerPlan(cornerStart || hover, cornerStart ? hover : null), cp = cornerPts(cornerKind, pl.start, pl.heading);
+      c.strokeStyle = "rgba(255,204,31,0.55)"; c.lineWidth = brushW / 3; c.lineCap = "round"; c.lineJoin = "round";
+      c.beginPath(); c.moveTo(pl.start[0], pl.start[1]); cp.forEach((q) => c.lineTo(q[0], q[1])); c.stroke();
+      c.fillStyle = "#ffcc1f"; c.beginPath(); c.arc(pl.start[0], pl.start[1], 6 / B.s, 0, Math.PI * 2); c.fill();
     }
     // rubber band for straight lines (Straight tool, or Shift while drawing)
     const rubber = (a, b) => { c.setLineDash([10 / B.s, 8 / B.s]); c.lineWidth = brushW / 3; c.strokeStyle = "rgba(255,204,31,0.35)"; c.lineCap = "round"; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); c.setLineDash([]); };
@@ -3879,6 +3943,37 @@
     const f = SHAPES[kind] || SHAPES.oval, N = 260, out = [];
     for (let i = 0; i < N; i++) out.push(map(f((i / N) * Math.PI * 2)));
     return out;
+  }
+  // ---- famous corners: pieces you add onto the end of your drawing. Each is a list of [length, turn in degrees]
+  // (+ = right): drive that far while turning that much. Drag to aim it, or click and it carries on your road. ----
+  const CORNERS = {
+    eau:      { name: "Eau Rouge", where: "Spa", segs: [[110, 0], [90, -35], [130, 70], [110, -35], [150, 0]] },
+    loews:    { name: "Monaco Hairpin", where: "Monaco", segs: [[60, 0], [190, -180], [60, 0]] },
+    parab:    { name: "Parabolica", where: "Monza", segs: [[80, 0], [80, 40], [160, 70], [280, 70], [80, 0]] },
+    maggotts: { name: "Maggotts-Becketts", where: "Silverstone", segs: [[80, 0], [90, -40], [100, 70], [100, -70], [100, 60], [100, -20], [60, 0]] },
+    senna:    { name: "Senna S", where: "Interlagos", segs: [[60, 0], [110, -90], [120, 70], [110, -40], [80, 0]] },
+    r130:     { name: "130R", where: "Suzuka", segs: [[100, 0], [420, -90], [100, 0]] },
+    spoon:    { name: "Spoon Curve", where: "Suzuka", segs: [[70, 0], [160, -80], [60, -10], [200, -100], [70, 0]] },
+    cork:     { name: "Corkscrew", where: "Laguna Seca", segs: [[80, 0], [80, -70], [90, 110], [60, -40], [80, 0]] },
+    chicane:  { name: "Chicane", where: "Monza", segs: [[60, 0], [70, -55], [80, 110], [70, -55], [60, 0]] },
+  };
+  let cornerKind = "eau", cornerFlip = false, cornerStart = null;
+  const draftHeading = () => { const P = S.draft?.pts; if (!P || P.length < 2) return 0; const a = P[Math.max(0, P.length - 6)], b = P[P.length - 1]; return Math.atan2(b[1] - a[1], b[0] - a[0]); };
+  function cornerPts(kind, start, heading) {
+    const C = CORNERS[kind] || CORNERS.eau, out = []; let x = start[0], y = start[1], h = heading;
+    for (const [L, deg] of C.segs) {
+      const n = Math.max(2, Math.ceil(L / 6)), dh = ((cornerFlip ? -deg : deg) * Math.PI) / 180 / n, st = L / n;
+      for (let k = 0; k < n; k++) { h += dh / 2; x += Math.cos(h) * st; y += Math.sin(h) * st; h += dh / 2; out.push([clamp(x, 0, B.bw), clamp(y, 0, B.bh), brushW]); }
+    }
+    return out;
+  }
+  // where a corner would go: from the end of your drawing (or where you pressed), aimed the way you dragged
+  function cornerPlan(press, release) {
+    const dragged = press && release && Math.hypot(release[0] - press[0], release[1] - press[1]) * B.s > 18;
+    const fromEnd = S.draft && (!dragged || nearPx(press, lastPt(), 30));      // (a click carries on from the end of your road)
+    const start = fromEnd ? lastPt() : press || release;
+    const heading = dragged ? Math.atan2(release[1] - press[1], release[0] - press[0]) : fromEnd ? draftHeading() : 0;
+    return { start, heading, join: S.draft && !fromEnd };
   }
   // Snap: straight lines go in 15° steps and in 25-unit lengths
   function snapPt(a, p) {
@@ -4034,8 +4129,8 @@
   document.querySelectorAll("[data-dm]").forEach((b) => b.addEventListener("click", () => {
     drawMode = b.dataset.dm;
     document.querySelectorAll("[data-dm]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    $("stampPick").classList.toggle("hidden", drawMode !== "stamp"); requestAnimationFrame(sizeBoard);
-    const MH = { curve: "Click points and the road curves smoothly through them. Click the first point (or Finish loop) to close it.", mirror: "Draw HALF a track, starting and ending near the dashed middle line. Let go and you get the other half mirrored.", stamp: "Pick a shape, then drag a box on the board to drop it in." };
+    $("stampPick").classList.toggle("hidden", drawMode !== "stamp"); $("cornerPick").classList.toggle("hidden", drawMode !== "corner"); requestAnimationFrame(sizeBoard);
+    const MH = { curve: "Click points and the road curves smoothly through them. Click the first point (or Finish loop) to close it.", mirror: "Draw HALF a track, starting and ending near the dashed middle line. Let go and you get the other half mirrored.", stamp: "Pick a shape, then drag a box on the board to drop it in.", corner: "Pick a famous corner. Click and it carries on from the end of your road (or starts one), or drag to put it somewhere and aim it." };
     if (MH[drawMode] && !(S.draft && drawMode === "curve")) boardHint(MH[drawMode], false);
     else if (S.draft) hintDraft();
     else boardHint(drawMode === "line" ? (isTouch() ? "Tap to place corners. You can switch back to Freehand any time." : "Click to place corners. You can switch back to Freehand any time.") : (isTouch() ? "Draw your track in one loop with your finger. Tap Straight for straight lines." : "Draw your track in one loop. Hold Shift for straight lines."), false);
@@ -4148,6 +4243,14 @@
   }
   $("redoPt").addEventListener("click", redoDraft);
   // shapes, snap, whole-track edits
+  { const box = $("cornerPick");
+    for (const [k, C] of Object.entries(CORNERS)) {
+      const b = el("button", "tool" + (k === cornerKind ? " on" : "")); b.type = "button"; b.dataset.corner = k; b.title = `${C.name} (${C.where})`;
+      b.append(el("span", "", "🏁"), C.name); box.appendChild(b);
+      b.addEventListener("click", () => { cornerKind = k; box.querySelectorAll("[data-corner]").forEach((x) => x.classList.toggle("on", x === b)); boardHint(`${C.name} (${C.where}): click to add it, or drag to aim it.`, false); drawBoard(); });
+    }
+    const f = el("button", "tool"); f.type = "button"; f.id = "cornerFlip"; f.setAttribute("aria-pressed", "false"); f.append(el("span", "", "↔️"), "Mirror it"); box.appendChild(f);
+    f.addEventListener("click", () => { cornerFlip = !cornerFlip; f.setAttribute("aria-pressed", String(cornerFlip)); f.classList.toggle("on", cornerFlip); drawBoard(); }); }
   document.querySelectorAll("[data-shape]").forEach((b) => b.addEventListener("click", () => {
     stampShape = b.dataset.shape; document.querySelectorAll("[data-shape]").forEach((x) => x.classList.toggle("on", x === b));
     boardHint(`Drag a box on the board to drop in a ${b.textContent.trim().toLowerCase()}.`, false);
@@ -4160,7 +4263,7 @@
     if (!S.host) return;
     S.decorTool = S.decorTool === b.dataset.decor ? null : b.dataset.decor; S.decorStart = null;
     document.querySelectorAll("[data-decor]").forEach((x) => x.classList.toggle("on", x.dataset.decor === S.decorTool));
-    if (S.decorTool) boardHint({ stand: "🏟️ Click beside the track where the grandstand starts (on that side), then where it ends.", banner: "🎌 Click on the track for a banner arch over it.", tunnel: "🚇 Click on the track where the tunnel starts, then where it ends.", bridge: "🌉 Click on the track for a bridge over it.", light: "💡 Click beside the track for a floodlight: it lights the track up in night races.", tree: "🌳 Click beside the track for a clump of trees.", pit: "🏢 Click beside the track for the pit building.", board: "🪧 Click beside the track for a billboard with your team's name on it." }[S.decorTool], false);
+    if (S.decorTool) boardHint({ stand: "🏟️ Click beside the track where the grandstand starts (on that side), then where it ends.", banner: "🎌 Click on the track for a banner arch over it.", tunnel: "🚇 Click on the track where the tunnel starts, then where it ends.", cut: "🎉 Party mode shortcut: click on the track where it leaves, then where it comes back on (a dirt road straight across).", bridge: "🌉 Click on the track for a bridge over it.", light: "💡 Click beside the track for a floodlight: it lights the track up in night races.", tree: "🌳 Click beside the track for a clump of trees.", pit: "🏢 Click beside the track for the pit building.", board: "🪧 Click beside the track for a billboard with your team's name on it." }[S.decorTool], false);
   }));
   $("decorUndo").addEventListener("click", () => S.host && socket.emit("decor:undo"));
   $("decorClear").addEventListener("click", () => S.host && socket.emit("decor:clear"));
@@ -4774,10 +4877,10 @@
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (S.decorTool) {
       // tunnels and grandstands: click where it starts, then where it ends. Banners and bridges: one click.
-      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends (it runs in the racing direction, as long as you like)." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
+      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "cut" ? "🎉 Now click where the shortcut joins the track again." : S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends (it runs in the racing direction, as long as you like)." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
       socket.emit("decor:add", { k: S.decorTool, x: (S.decorStart || p)[0], y: (S.decorStart || p)[1], end: S.decorStart ? { x: p[0], y: p[1] } : null });
       S.decorStart = null; drawBoard();
-      if (DECOR_LONG.includes(S.decorTool)) boardHint(S.decorTool === "tunnel" ? "🚇 Tunnel built! Click for another one's start." : "🏟️ Grandstand built! Click for another one's start.", false);
+      if (DECOR_LONG.includes(S.decorTool)) boardHint(S.decorTool === "cut" ? (S.lobby?.settings.party ? "🎉 Shortcut made! Click for another one." : "🎉 Shortcut made! It only opens in Party mode (Race rules).") : S.decorTool === "tunnel" ? "🚇 Tunnel built! Click for another one's start." : "🏟️ Grandstand built! Click for another one's start.", false);
       return;
     }
     if (drsMode) {
@@ -4787,6 +4890,7 @@
     }
     redoStack.length = 0; updateRedo();
     if (drawMode === "stamp") { board.setPointerCapture(e.pointerId); drawing = true; stampStart = p; S.stampEnd = p; drawBoard(); return; }
+    if (drawMode === "corner") { board.setPointerCapture(e.pointerId); drawing = true; cornerStart = p; drawBoard(); return; }
     if (drawMode === "curve") {
       if (!S.draft) { S.draft = { pts: [], corners: [], pieces: [], ctrl: [], base: 0 }; S.lastDraft = null; }
       const d = S.draft;
@@ -4816,6 +4920,7 @@
     const p = toBoard(e); hover = p;
     if (!drawing) { if (S.host && S.lobby?.phase === "lobby") drawBoard(); return; }
     if (drawMode === "stamp") { S.stampEnd = p; drawBoard(); return; }
+    if (drawMode === "corner") { drawBoard(); return; }
     if (e.shiftKey) {                  // hold Shift: a straight line from where Shift was pressed
       if (!shiftAnchor) shiftAnchor = lastPt();
       S.shiftEnd = p; drawBoard(); return;
@@ -4855,6 +4960,18 @@
       if (!a || !b || Math.abs(a[0] - b[0]) < 60 || Math.abs(a[1] - b[1]) < 60) { boardHint("Drag a bigger box to drop in the shape.", true); drawBoard(); return; }
       S.draft = { pts: shapePts(stampShape, a, b), corners: [], pieces: [0] }; S.lastDraft = null;
       finishDraft(); return;
+    }
+    if (drawMode === "corner") {                // add the famous corner onto the drawing
+      const pl = cornerPlan(cornerStart, hover || cornerStart); cornerStart = null;
+      if (!pl.start) return;
+      if (!S.draft) { S.draft = { pts: [[pl.start[0], pl.start[1], brushW]], corners: [], pieces: [0] }; S.lastDraft = null; }
+      else { S.draft.pieces.push(S.draft.pts.length); if (pl.join) { markCorner(); addStraight(pl.start); markCorner(); } }
+      S.draft.pts.push(...cornerPts(cornerKind, pl.start, pl.heading));
+      const P = S.draft.pts;
+      if (P.length > 40 && draftLen() > 400 && nearPx(P[0], P[P.length - 1], 26)) { finishDraft(); return; }
+      updateDraftUi(); drawBoard(); shareDraft();
+      boardHint(`${CORNERS[cornerKind].name} added! Add another, draw on from the end, or Finish loop to close it.`, false);
+      return;
     }
     if (shiftAnchor) commitShift();
     const d = S.draft; if (!d) return;
@@ -5038,12 +5155,12 @@
     const rareCard = o.cards.find((c) => c.tier);
     if (rareCard) { $("cardsTitle").textContent = `✨ A SUPER RARE CARD APPEARED! ✨`; banner(`${rareCard.icon} ${RARE_TIER[rareCard.tier].label} CARD!`, RARE_TIER[rareCard.tier].color); sfx("win"); }
     o.cards.forEach((c, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "card" + (c.tier ? ` rare tier-${c.tier}` : "");
+      const b = document.createElement("button"); b.type = "button"; b.className = "card" + (c.tier ? ` rare tier-${c.tier}` : c.kind === "Sabotage" ? " sab" : "");
       const top = document.createElement("div"); top.className = "top";
       const k = document.createElement("kbd"); k.textContent = i + 1;
       const n = document.createElement("span"); n.textContent = c.name;
       const kd = document.createElement("span"); kd.className = "kind " + c.kind.toLowerCase(); kd.textContent = c.tier ? `${RARE_TIER[c.tier].label} · ${RARE_TIER[c.tier].odds}` : c.kind;
-      if (c.tier) n.textContent = `${c.icon} ${c.name}`;
+      if (c.tier || c.kind === "Sabotage") n.textContent = `${c.icon} ${c.name}`;
       top.append(k, n, kd);
       const d = document.createElement("div"); d.className = "desc"; d.textContent = c.desc;
       const fx = document.createElement("div"); fx.className = "fx";
@@ -6296,12 +6413,25 @@
   // ---- weather sounds. The real-sounding ones (4 thunderclaps and a rain loop) come from the server (made once with
   // ElevenLabs). Until they've loaded, or if the server hasn't got them, the game makes its own: rain out of thousands
   // of single drops (not a flat hiss), and deep thunder that's different every time. ----
-  const WX = { buf: {}, asked: false, lastThunder: -1 };
+  // 100 different thunderclaps on the server: a few load at the start, and every strike asks for another new one
+  // (played next time), so you keep hearing ones you haven't heard yet. Recently heard ones aren't picked again.
+  const THUNDER_N = 100;
+  const WX = { buf: {}, asked: false, recent: [], loading: 0, fails: 0 };
+  function loadSfx(name) {
+    const a = actx; if (!a || WX.buf[name] !== undefined) return; WX.buf[name] = null; WX.loading++;
+    fetch("/sfx/" + name).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error("no " + name)))).then((ab) => a.decodeAudioData(ab))
+      .then((b) => { WX.buf[name] = b; if (name === "rain" && rainNode?.synth) { stopRainNode(); } })
+      .catch(() => { WX.fails++; if (name !== "rain") setTimeout(() => { if (WX.buf[name] === null) delete WX.buf[name]; }, 120e3); })
+      .finally(() => WX.loading--);
+  }
+  function loadNewThunder() {
+    if (WX.loading > 1 || WX.fails > 6) return;
+    const left = []; for (let n = 1; n <= THUNDER_N; n++) if (WX.buf["thunder" + n] === undefined) left.push(n);
+    if (left.length) loadSfx("thunder" + left[Math.floor(Math.random() * left.length)]);
+  }
   function loadWeatherSounds() {
-    const a = actx; if (!a || WX.asked) return; WX.asked = true;
-    for (const name of ["rain", "thunder1", "thunder2", "thunder3", "thunder4"]) {
-      fetch("/sfx/" + name).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error("no " + name)))).then((ab) => a.decodeAudioData(ab)).then((b) => { WX.buf[name] = b; if (name === "rain" && rainNode?.synth) { stopRainNode(); } }).catch(() => {});
-    }
+    if (!actx || WX.asked) return; WX.asked = true;
+    loadSfx("rain"); for (let i = 0; i < 3; i++) loadNewThunder();
   }
   // the built-in rain: a few seconds of single raindrops (each a tiny tick, some splashier) over a soft wash, looped
   let rainDropBuf = null;
@@ -6330,7 +6460,7 @@
       src.connect(hp).connect(lp).connect(g).connect(fxOut(a)); src.start(0, Math.random() * (src.buffer.duration - 0.5));
       rainNode = { src, g, synth: !real };
     }
-    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (rainNode.synth ? 0.05 + 0.22 * wet : 0.12 + 0.55 * wet) * fxVol() : 0, a.currentTime, 0.8);
+    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (rainNode.synth ? 0.04 + 0.16 * wet : 0.09 + 0.41 * wet) * fxVol() : 0, a.currentTime, 0.8);
     if (!want && rainNode && !rainNode.stopping) { const r = rainNode; r.stopping = true; setTimeout(() => { r.stopping = false; if (rainNode === r && !(S.weather?.raining && S.screen === "race")) stopRainNode(); }, 3000); }
   }
   // a lightning strike: a real thunderclap (a different one each time, a little higher or deeper), or the built-in one
@@ -6338,10 +6468,13 @@
     const a = actx; if (!a || fxVol() <= 0) return;
     loadWeatherSounds();
     const V = fxVol() * k, comp = a.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 5; comp.connect(fxOut(a));
-    const real = ["thunder1", "thunder2", "thunder3", "thunder4"].filter((n) => WX.buf[n]);
+    const real = Object.keys(WX.buf).filter((n) => n.startsWith("thunder") && WX.buf[n]);
+    loadNewThunder();
     if (real.length) {
-      let i = Math.floor(Math.random() * real.length); if (real.length > 1 && real[i] === WX.lastThunder) i = (i + 1) % real.length; WX.lastThunder = real[i];
-      const src = a.createBufferSource(), g = a.createGain(); src.buffer = WX.buf[real[i]]; src.playbackRate.value = 0.82 + Math.random() * 0.25;
+      // the ones you haven't heard yet first, then the ones you heard longest ago
+      const fresh = real.filter((n) => !WX.recent.includes(n)), pick = fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : WX.recent.find((n) => real.includes(n));
+      WX.recent = WX.recent.filter((n) => n !== pick); WX.recent.push(pick); if (WX.recent.length > Math.min(30, real.length - 1)) WX.recent.shift();
+      const src = a.createBufferSource(), g = a.createGain(); src.buffer = WX.buf[pick]; src.playbackRate.value = 0.85 + Math.random() * 0.2;
       g.gain.value = 1.3 * V; src.connect(g).connect(comp); src.start();
     } else {
       // built-in: a deep thunderclap, never quite the same twice. A low crack (not a hiss), then the boom and the rolls
@@ -6438,7 +6571,7 @@
     const fxLevel = settings.fx === "off" ? 0 : settings.fx === "low" || settings.gfx === "fast" ? 0.35 : 1;
     if (S.phase === "race" && fxLevel && !PH.on) for (const c of S.cars.values()) {
       if (!visible(c, 200)) continue;
-      if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
+      if ((c.surf === 3 || c.surf === 5) && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
       if (S.weather && S.weather.wet > 0.25 && c.speed > 180 && Math.random() < 0.9 * fxLevel * S.weather.wet) { puff(c, "rgba(220,230,240,0.42)"); if (S.weather.wet > 0.6 && Math.random() < 0.5) puff(c, "rgba(210,222,238,0.3)"); }
       if (c.dmg > 0.55 && Math.random() < 0.25 * Math.max(0.4, fxLevel)) puff(c, "rgba(60,60,60,0.45)");
@@ -6562,6 +6695,7 @@
     drawAutoStands(ctx, t);
     drawTrackLife(ctx, t, dt, now, visible);
     drawObjects(ctx, t, "ground");
+    if (S.hazards.length) drawHazards(ctx, t, now);
     ground.sort(mineLast).forEach(drawOne);
     G.bridges.forEach((br, k) => { drawBridge(ctx, t, G, th, br); if (scK === k) drawSC(); layers[k].sort(mineLast).forEach(drawOne); });
     drawObjects(ctx, t, "top", (S.camTarget && S.cars.get(S.camTarget)) || S.cars.get(S.myCar));
@@ -6579,6 +6713,7 @@
     // screen-space effects
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (S.weather && S.weather.wet > 0.02) drawRain(w, h, dt, now);
+    if (S.ink) drawInk(w, h, now);
     rainSound(S.screen === "race" && !S.replaying && !!S.weather?.raining, S.weather?.wet || 0);
     const fogX = PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, fogY = PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z;
     // day into night: the light fades as the race goes on (from about a third of the way in)
@@ -7320,7 +7455,10 @@
   $("codeForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("codeInput").value.trim().toUpperCase(); if (v.length < 6) { $("codeMsg").textContent = "Codes are 6 letters/numbers"; return; } $("codeMsg").textContent = "Loading..."; socket.emit("track:load", v); });
   $("shareTrackBtn").addEventListener("click", () => { if (!S.track) return boardHint("Draw or load a track first, then share it.", true); socket.emit("track:share"); });
   $("loadCodeBtn").addEventListener("click", () => { if (!S.host) return boardHint("Only the host can change the track.", true); openCode("load"); });
-  socket.on("shareCode", (d) => { if (d.error) return popup(d.error, true); openCode("show", d); });
+  socket.on("shareCode", (d) => {
+    if (S.clipWaiting && d.kind === "replay") { S.clipWaiting = false; return d.error ? popup(d.error, true) : clipReady(d.code); }
+    if (d.error) return popup(d.error, true); openCode("show", d);
+  });
   socket.on("trackResult", (r) => {
     if ($("codeBox").dataset.mode === "load" && !$("codeBox").classList.contains("hidden")) { if (r.error) $("codeMsg").textContent = r.error; else $("codeBox").classList.add("hidden"); }
     if (!r.error && r.shared) boardHint(`Loaded track ${r.shared}${r.sharedName ? ` ("${r.sharedName}")` : ""}!`, false);
@@ -7701,7 +7839,7 @@
   // on when the window is wider than 860px and phone mode is off. Nothing in the HTML moves.
   const DESK = { on: false, dsec: "draw" };
   const DOCK_SECS = {
-    draw: ["#drawMode", "#stampPick", "#snapBtn", "#widthTools", "#cutBtn", "#smoothBtn", "#clearBtn"],
+    draw: ["#drawMode", "#stampPick", "#cornerPick", "#snapBtn", "#widthTools", "#cutBtn", "#smoothBtn", "#clearBtn"],
     tracks: ["#wonkTools", "#randomBtn", "#f1Btn", "#totwBtn", "#commBtn", "#presetBtn", "#loadCodeBtn", "#shareTrackBtn"],
     edit: ["#startLineBtn", "#reverseBtn", "#drsBtn", "#drsAutoBtn", "#drsClearBtn", "[data-decor]", "#decorUndo", "#decorClear", "#moreBtn", "#moreTools"],
   };
@@ -7810,7 +7948,7 @@
       bMove($("decorUndo"), objGrid); bMove($("decorClear"), objGrid);
       bMove($("widthTools"), ctxBar); bMove($("snapBtn"), ctxBar);
       bMove($("undoTools"), pill); bMove($("reverseBtn"), pill);
-      bMove($("stampPick"), wrap); bMove($("moreTools"), wrap);          // (they open beside the rail)
+      bMove($("stampPick"), wrap); bMove($("cornerPick"), wrap); bMove($("moreTools"), wrap);          // (they open beside the rail)
       document.querySelector(".dock")?.setAttribute("data-dsec", "all");
       for (const [id, t] of [["copyBtn", "🔗 Invite"], ["garageBtn", "🏎️ Car"]]) { const b = $(id); if (b) { b.dataset.bldOrig = b.innerHTML; b.textContent = t; } }
       setStep(BLD.step || (S.host ? "track" : "grid"), true);
@@ -7875,6 +8013,14 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06e", date: "6 Oct", title: "Party mode, clips, famous corners, 100 thunders", items: [
+      "🎉 Party mode (Race rules): sabotage cards turn up among your upgrades. 🛢️ Oil Slick (anyone who drives over it spins), ⛈️ Storm Cloud (rain on the bit of track the car ahead is on) and 🦑 Ink Splat (the car behind you can't see for 2 seconds). The AI plays dirty too. Never in ranked.",
+      "⚡ Party mode shortcuts: in the track builder, 🎉 Shortcut makes a dirt road straight across from one bit of track to a later one. It's slower dirt, but a lot shorter. They only open in Party mode.",
+      "🎬 Clip it (J): saves the last 15 seconds and copies a link anyone can open to watch it (sign in for the link). Your clips are in 🎬 Replays.",
+      "🏁 Famous corners in the track builder: Eau Rouge, the Monaco hairpin, Parabolica, Maggotts-Becketts, the Senna S, 130R, Spoon, the Corkscrew and a chicane. Click to add one onto your road, drag to aim it, Mirror it to flip it.",
+      "⛈️ 100 different thunderclaps: every strike tries to be one you haven't heard yet.",
+      "🌧️ The rain is a little quieter.",
+    ] },
     { v: "u-2026-10-06d", date: "6 Oct", title: "Car damage, TV camera, garage, horns, track scenery", items: [
       "💥 Damage shows where you got hit: a caved-in nose, a hanging front wing (sparks when it scrapes), a tilted rear wing, scraped sides. A pit stop fixes it.",
       "🚗 The car on the menu sits on a spinning turntable under a spotlight. Drag it to turn it round.",
@@ -8445,7 +8591,7 @@
     }
     box.appendChild(el("h3", "hub-h", "💾 Saved replays"));
   }
-  $("replaysBtn").addEventListener("click", () => { renderMyFinishes(); $("replayBox").classList.remove("hidden"); $("replayNote").textContent = "Save the end of a race from the results screen (💾), or watch one a friend shared with you."; renderReplayList(); });
+  $("replaysBtn").addEventListener("click", () => { renderMyFinishes(); renderMyClips($("myFinishList")); $("replayBox").classList.remove("hidden"); $("replayNote").textContent = "Save the end of a race from the results screen (💾), or watch one a friend shared with you."; renderReplayList(); });
   $("replayBoxClose").addEventListener("click", () => $("replayBox").classList.add("hidden"));
   $("replayBox").addEventListener("click", (e) => { if (e.target.id === "replayBox") $("replayBox").classList.add("hidden"); });
   $("replayCodeForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("replayCodeIn").value.trim().toUpperCase(); if (v.length < 6) return; $("replayNote").textContent = "Loading..."; socket.emit("replay:get", v); });
@@ -8465,6 +8611,43 @@
     const t0 = rec.frames[0].t, sp = rec.speed || 1;
     const clip = rec.frames.map((f) => ({ at: ((f.t - t0) / sp) * 1000, st: { t: f.t, phase: "race", cars: f.c, standings: f.s, gaps: [], fastest: 0, sc: 0, ql: -1, paused: false, weather: { raining: !!f.r, wet: f.w || 0, trend: 0, dyn: false } } }));
     runClip(clip, rec.winner, rec.title || "Replay");
+  }
+
+  // ---- 🎬 Clip it: the last 15 seconds, saved, and (signed in) a link anyone can open to watch it ----
+  const myClips = () => { try { return JSON.parse(localStorage.getItem("tb-clips") || "[]"); } catch (e) { return []; } };
+  const clipLink = (code) => `${location.origin}/?replay=${code}`;
+  async function clipIt() {
+    if (S.screen !== "race" || S.replaying) return;
+    if (S.clipAt && performance.now() - S.clipAt < 5000) return popup("Just clipped that!", false);
+    const fc = S.cars.get(S.camTarget) || S.cars.get(S.myCar), who = fc && S.race?.info.get(fc.id)?.name;
+    const rec = buildReplay({ from: performance.now() - 15000, focus: who || "", title: `🎬 ${who || "Clip"} · ${S.track?.name || "Scribble track"}` });
+    if (!rec) return popup("Nothing to clip yet: race a bit first", true);
+    S.clipAt = performance.now(); sfx("tick");
+    const fl = el("div", "clip-flash"); document.body.appendChild(fl); setTimeout(() => fl.remove(), 700);
+    if (!A.user) { saveReplay(rec); return popup("🎬 Clip saved in 🎬 Replays. Sign in to get a link you can send.", false); }
+    try { S.clipWaiting = true; S.clipTitle = rec.title; popup("🎬 Clipping..."); socket.emit("replay:share", await packReplay(rec, 360e3)); }
+    catch (e) { S.clipWaiting = false; popup(e.message || "Couldn't clip that", true); }
+  }
+  function clipReady(code) {
+    const link = clipLink(code);
+    try { localStorage.setItem("tb-clips", JSON.stringify([{ code, title: S.clipTitle || "Clip", at: Date.now() }, ...myClips()].slice(0, 20))); } catch (e) {}
+    navigator.clipboard?.writeText(link).then(() => popup("🎬 Clip link copied! Paste it to anyone", false)).catch(() => popup(`🎬 Clip ready: ${link}`, false));
+  }
+  $("clipBtn").addEventListener("click", clipIt);
+  // somebody opened a clip link: play it straight away
+  { const rc = new URLSearchParams(location.search).get("replay");
+    if (rc && /^[A-Za-z0-9]{6,10}$/.test(rc)) { let asked = false; socket.on("connect", () => { if (asked) return; asked = true; socket.emit("replay:get", rc.toUpperCase()); }); if (socket.connected) { asked = true; socket.emit("replay:get", rc.toUpperCase()); } history.replaceState(null, "", location.pathname); } }
+  function renderMyClips(box) {
+    const list = myClips(); if (!list.length) return;
+    const top = el("div"); box.prepend(top); box = top;
+    box.appendChild(el("h3", "hub-h", "🎬 Your clips"));
+    for (const c of list) {
+      const row = el("div", "friend"), tx = el("div"); tx.append(el("b", "", c.title), el("small", "", `${new Date(c.at).toLocaleString()} · code ${c.code}`));
+      const bs = el("div", "sec-row");
+      const w = el("button", "btn go", "Watch"); w.type = "button"; w.addEventListener("click", () => { $("replayNote").textContent = "Loading..."; socket.emit("replay:get", c.code); });
+      const cp = el("button", "btn", "🔗 Copy link"); cp.type = "button"; cp.addEventListener("click", () => navigator.clipboard?.writeText(clipLink(c.code)).then(() => { cp.textContent = "Copied ✓"; }).catch(() => { cp.textContent = c.code; }));
+      bs.append(w, cp); row.append(el("span", "fdot on"), tx, bs); box.appendChild(row);
+    }
   }
 
   // ======================= Photo mode =======================
@@ -8526,6 +8709,7 @@
   window.addEventListener("keydown", (e) => {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
     if (e.code === KEY("photo") && !e.repeat && S.screen === "race") { e.preventDefault(); photoMode(!PH.on); }
+    if (e.code === KEY("clip") && !e.repeat && S.screen === "race" && !PH.on) { e.preventDefault(); clipIt(); }
     else if (e.key === "Escape" && PH.on) photoMode(false);
   });
 
