@@ -2782,8 +2782,31 @@
     RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at));
     RP.timers.push(setTimeout(stopReplay, clip[clip.length - 1].at + 1500));
   }
+  // red flag: the race stops, and everyone watches the pile-up again (the few seconds before it, from the race
+  // they just watched), then it's back to the live race, already lined up on the grid
+  function rfReplay(f) {
+    if (S.replaying || !S.race || !f.at) return;
+    const clip = RP.buf.filter((m) => m.st.t >= Math.max((f.t0 ?? f.at) - 2.5, f.at - 7) && m.st.t < f.at - 0.01);
+    if (clip.length < 15) return;
+    RP.rf = { cam: S.camTarget };
+    S.replaying = "rf"; snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = [];
+    document.body.classList.add("replaying"); $("replayBar").classList.remove("hidden"); $("replaySave").classList.add("hidden");
+    $("replayTitle").textContent = "🟥 RED FLAG · watch the crash again";
+    S.camTarget = f.car ?? null;
+    const t0 = clip[0].at;
+    RP.timers = clip.map((m) => setTimeout(() => onState(m.st), m.at - t0));
+    RP.timers.push(setTimeout(endRfReplay, clip[clip.length - 1].at - t0 + 800));
+  }
+  function endRfReplay() {
+    if (S.replaying !== "rf") return;
+    RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false;
+    document.body.classList.remove("replaying"); $("replayBar").classList.add("hidden");
+    snaps.length = 0; rt = 0; S.cars = new Map(); S.particles = []; S.camTarget = RP.rf?.cam ?? null; RP.rf = null;
+    banner("🟥 BACK TO THE GRID", "#ff2d55");
+  }
   function stopReplay() {
     if (!S.replaying) return;
+    if (S.replaying === "rf") return endRfReplay();
     const saved = S.replaying === "saved";
     if (S.photoOn) photoMode(false);
     RP.timers.forEach(clearTimeout); RP.timers = []; S.replaying = false; S.camTarget = null;
@@ -2823,6 +2846,13 @@
       if (S.race?.koth) { const top = [...S.cars.values()].filter((c) => c.leadT > 0).sort((a, b) => b.leadT - a.leadT).slice(0, 3); const me = S.cars.get(S.myCar);
         txt = "👑 " + (top.map((c) => `${c.name.split(" ")[0]} ${c.leadT.toFixed(0)}s`).join(" · ") || "Lead the race to start your clock") + (me && !top.includes(me) ? ` · you ${(me.leadT || 0).toFixed(0)}s` : ""); }
       else if (S.race?.enduro && st.enduro >= 0) { const m = Math.floor(st.enduro / 60), sec = String(st.enduro % 60).padStart(2, "0"); txt = st.enduro > 0 ? `⏳ ${m}:${sec} left` : "⏳ Time's up: last lap!"; }
+      // laps to go (for everyone, spectators too): counted from the leader
+      if (!S.race?.enduro && !S.race?.practice && !S.race?.tt && !(st.ql >= 0) && S.phase === "race" && S.race?.laps) {
+        const lead = S.cars.get(S.standings?.[0]), left = lead ? S.race.laps - Math.max(0, lead.laps || 0) : 0;
+        const lt = st.fl ? `🟡 Formation lap · ${S.race.laps} laps` : lead?.fin || left <= 0 ? "🏁 Chequered flag!" : left === 1 ? "🏳️ FINAL LAP" : `🏁 ${left} laps to go`;
+        txt = txt ? `${txt} · ${lt}` : lt;
+        mc.classList.toggle("final", left === 1 && !lead?.fin);
+      } else mc.classList.remove("final");
       mc.classList.toggle("hidden", !txt); mc.textContent = txt; }
     // spectators: live timing (gap, tyres, tyre age, stops)
     if (!S.myCar && S.specStatsOn && (!S.ssAt || performance.now() - S.ssAt > 500)) { S.ssAt = performance.now(); renderSpecStats(st); }
@@ -2846,7 +2876,7 @@
     updateBox();
   });
   socket.on("feed", (f) => {
-    if (f.t === "rain") { banner("RAIN!", "#9ad0ff"); popup("It's raining! Slicks will slide. Think about Wets.", true); }
+    if (f.t === "rain") { banner("🌧 RAIN!", "#9ad0ff"); popup(`It's raining! Dry tyres lose up to 25% top speed in heavy rain (GT3s on Wets will fly past). Box (${keyName(KEY("box"))}) and pick Wets.`, true); }
     if (f.t === "dry") { popup("The rain has stopped. The track will dry out.", false); }
     if (f.t === "lastLap") { if (S.track) tlFor(S.track).lastLap = true; banner("🏳️ FINAL LAP", "#fff"); sfx("level"); }
     if (f.t === "qko") banner(`Q${f.stage}!`, "#ffcc1f");
@@ -2898,7 +2928,7 @@
     const all = document.querySelectorAll(".world-toast"); if (all.length > 3) all[0].remove();
     setTimeout(() => { d.classList.add("out"); setTimeout(() => d.remove(), 500); }, 6500);
   });
-  socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => tut("done"), 1600); });
+  socket.on("results", (r) => { showResults(r); if (S.tutorial) setTimeout(() => { TQ.queue = []; if (TQ.cards && TUT_RACE_ORDER.includes(TQ.step)) { TQ.cards = null; $("tutCard").classList.add("hidden"); } tut("results"); }, 1800); });
   // checkered flag: camera cuts to the winner, fireworks, finish tags on everyone who crosses
   let fireworks = [];
   socket.on("feed", (f) => {
@@ -4262,37 +4292,110 @@
   $("specPrev").addEventListener("click", () => specMove(-1));
   $("specNext").addEventListener("click", () => specMove(1));
   $("specLead").addEventListener("click", () => specMove(0));
-  // ======================= Tutorial: a guided first race =======================
+  // ======================= Tutorial: everything in the game, in about 7 minutes =======================
+  // Three parts: a tour of building a track (in your own room), a short guided race, then a tour of the menu
+  // (account, car, ranked, rewards, friends, gifts, trades, bets). Each card is [title, text, what to point at].
+  // A step can be one card (shown when something happens in the race) or a list (a tour: Next, Next, Next).
+  const TK = (a) => `<b>${keyName(KEY(a))}</b>`;
   const TUT = {
-    lobby: ["👋 Welcome to Scribble GP!", "This is your room. Normally you draw a track here (or roll a random one) - we made one for you. You're the <b>team boss</b>: your AI driver steers, you make the calls. Press <b>Start race</b>!"],
-    tires: ["🛞 Pick your starting tires", "<b>Fast</b> is quickest but wears out fast. <b>Durable</b> lasts longest but is slow. <b>Wets</b> are for rain. For your first race, <b>Intermediate</b> is a safe pick."],
-    lights: ["🚦 Get a rocket start", "Watch the 5 red lights. Press <b>Space</b> (or tap the screen) the moment they go <b>out</b>. Too early = jump start!"],
-    boost: ["⚡ Boost", "Hold <b>Space</b> (or the round Boost button on phones) on straights for extra speed. It refills every lap, a little every second, and +10% for every overtake. Run it dry and it's locked for 5 seconds, unless you overtake or cross the line. While it's on, you earn <b>1.5x upgrade XP</b>."],
-    upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick one of the cards (keys <b>1 / 2 / 3</b>) to upgrade your car or driver. They stack up during the race."],
-    pit: ["🔧 Tires wearing out", "See the tire bar at the bottom? When it gets low the car slows down and can get a puncture. Press <b>B</b> (Box this lap) to pit for fresh tires - you choose which set on the way in."],
-    afterPit: ["✅ Nice stop!", "Fresh tires! In longer races, timing your stops (and the weather) is how races are won. <b>Tab</b> watches other cars, <b>O</b> opens settings."],
-    done: ["🏁 You're ready!", "That's everything you need. Try <b>⚡ Quick Play</b> to race real people, or <b>Make a room</b> and send the invite link to friends. Make an account to save your stats and earn coins!"],
+    lobby: [
+      ["👋 Welcome to Scribble GP!", "You're the <b>team boss</b>: your AI driver steers, you make the calls (tyres, boost, pit stops, upgrades). This tour shows you <b>everything</b>: building a track (2 min), a short race (3 min), then the menu (2 min). Skip any time."],
+      ["✏️ Drawing a track", "Drag on the board to draw one loop. The tools: <b>Freehand</b>, <b>Straight</b> (click points), <b>Curve</b>, <b>Mirror</b> (a symmetric track) and <b>Shapes</b>. Road width and Snap float over the board, Undo/Redo (Ctrl+Z / Ctrl+Y) sit at the bottom. We rolled a random track for you already.", "#drawMode"],
+      ["🛠️ Changing it", "<b>Edit track</b>: rotate, flip, bigger, smaller, a wider or narrower road, wiggle. <b>Redraw part</b> cuts out a bit to draw again, <b>Smooth</b> tidies it, <b>Start line</b> moves the start (click it, then the track), <b>Reverse</b> flips the direction.", "#moreBtn"],
+      ["🟩 DRS zones and objects", "<b>Add DRS</b>: click where a zone starts, then where it ends (<b>Auto DRS</b> picks the straights). <b>Objects</b>: grandstands, banners, bridges and tunnels. Long ones (tunnels, stands) go from your first click to your second. Inside a tunnel everything echoes!", "[data-decor=\"tunnel\"]"],
+      ["📚 Other tracks", "<b>Random</b> (pick how wonky), <b>Real tracks</b> (F1 circuits and more), <b>My tracks</b> (save yours), <b>Track of the week</b>, <b>Community</b> tracks, and <b>share codes</b> to swap tracks with friends.", "#randomBtn"],
+      ["⚙️ Step 2: Race rules", "Pick a <b>mode</b>: Normal, Multiclass (Hypers vs GT3s), Elimination, Endurance (teammates swap), Championship, Time trial, King of the hill, Practice. Then laps, AI drivers and difficulty, weather, qualifying, safety car, DRS, standing or rolling start, points.", ".rc-step[data-step=\"rules\"], #modeTab"],
+      ["👥 Step 3: Grid & teams", "Team up (tap <b>Join</b>) with friends or AI: teammates share a garage and score together. Invite friends with the room code or <b>Invite</b> link, or make the room <b>Public</b>. Chat with <b>Enter</b>. Now press <b>Start race</b>!", "#startBtn"],
+    ],
+    tires: ["🛞 Pick your starting tyres", "<b>Fast</b> is quickest but wears out fast, <b>Durable</b> lasts longest but is slower, <b>Wets</b> are for rain. <b>Intermediate</b> is a safe first pick. You can change your <b>next</b> set any time in Team radio.", "#tirePick"],
+    lights: ["🚦 Rocket start", `Watch the 5 red lights. Press ${TK("boost")} (or tap) the moment they go <b>out</b>. Too early = jump start!`, "#lights"],
+    boost: ["⚡ Boost", `Hold ${TK("boost")} on straights for extra speed. It refills every lap, a little every second, and after every overtake. While it's on you earn <b>1.5x XP</b>. Tucked right behind another car you also get a <b>slipstream</b> tow.`, "#boostBtn"],
+    upgrade: ["⬆️ Level up!", "Your team earns XP while racing. Pick a card (<b>1 / 2 / 3</b>): <b>Driver</b> cards (corners, braking, overtaking...) or <b>Car</b> cards (engine, turbo, grip...). They stack. Rare 💎👑🌈 cards upgrade everything!", "#cards"],
+    defend: ["🛡️ Defend", `Someone right behind you? Press ${TK("defend")}: your driver covers the line so they can't get past. It uses boost, so save it for the end.`, "#defendBtn"],
+    slow: ["🐢 Why am I slow?", "The line under your speed tells you what's costing you: worn tyres, dry tyres in the rain, damage, cold tyres. The track map is top right, laps to go at the top, the gaps to the cars around you top left.", "#radio"],
+    drs: ["🟩 DRS is on", `In a green DRS zone and within 1 second of the car ahead? Press ${TK("drs")} for +7% top speed.`],
+    pit: ["🔧 Tyres wearing out", `When the tyre bar gets low the car slows down and can get a puncture. Press ${TK("box")} to pit this lap, and pick your next set (keys <b>1-4</b>).`, "#boxBtn"],
+    pitGame: ["🎮 You're in the pits!", "Hit the arrows in order (arrow keys or WASD) as fast as you can. A quick, clean stop beats the AI crews. Miss one and you lose time!", "#pitGame"],
+    afterPit: ["✅ Nice stop!", "Fresh tyres come out cold: a little less grip for a lap. In longer races, when you stop (and for which tyres, rain or shine) is how races are won."],
+    watch: ["👀 Watch anyone", `Click a driver on the leaderboard (or ${TK("spectate")}) to follow them: you see their boost, tyres, upgrades and the cards they pick. Watching a friend? Hit <b>Cheer them on</b>. Click yourself to come back.`, "#standings"],
+    fun: ["📷 More to try", `${TK("photo")} photo mode, ${TK("horn")} horn, emotes and chat. Rain can come mid-race, a big crash brings out the <b>safety car</b> (no overtaking, lapped cars unlap), a huge pile-up a <b>red flag</b> (back to the grid).`],
+    results: [
+      ["🏁 Results", "Points for the championship, best laps and pit stops. Rewatch the finish, the <b>overtake of the race</b>, the <b>highlights</b> or the lap chart, save or share a replay, say <b>GG</b>, or hit <b>Rematch</b>.", "#ggBtn"],
+      ["🏆 One more part: the menu", "Points carry over race to race in a room (see Standings). Last bit of the tour: the menu, where your account, car, ranked, rewards and friends live.", null, "menu"],
+    ],
+    menu: [
+      ["🏠 The menu", "<b>Quick Play</b> races real people, <b>Race solo</b> is you vs the AI, <b>Make a room</b> for friends, or join one with a code or from the public lobbies.", "#quickBtn"],
+      ["👤 Your account", "Make an account (free) to save your stats, earn <b>coins</b>, get achievements and a rank. It works on any device.", "#signUpBtn, #acctBar"],
+      ["🎨 Your car", "Name, number (and number style), colour, livery, or <b>paint your own design</b>. Save whole looks as car presets. The <b>Store</b> sells underglow, spoilers, rims, horns, trails and more; equip them in <b>Customize</b>.", ".menu-car, #carPreview"],
+      ["🏆 Ranked and events", "<b>Ranked</b>: climb from Iron to Overdrive Elite. <b>Track of the week</b> has its own leaderboard, weekend events double your coins, <b>Tournaments</b> run every weekend, and spectators can <b>predict</b> the winner for coins.", "#rankedBtn"],
+      ["🎟️ Rewards", "The <b>Season pass</b> (60 tiers a month), daily login streak, daily challenges, the daily wheel, crates and achievements. The casino (slots, blackjack, plinko) is in your profile.", "[data-hub=\"pass\"]"],
+      ["👥 Friends", "Profile › <b>Friends</b>: add people by username or friend code, see who's online, chat, and invite them to your room.", "#acctBar [data-hub=\"stats\"]"],
+      ["🤝 Gifts, trades and bets", "On a friend's card: 🎁 <b>gift</b> coins or an item; 🤝 <b>trade</b>: pick as many items (and coins) as you like each side, they accept or decline; ⚔️ <b>bet</b> coins on your next race together; 👻 send them your best lap as a <b>ghost</b> to beat."],
+      ["🎓 That's everything!", "⚙️ Settings has the controls, sound, engine and horn, and <b>assists</b> (pit, boost, DRS, defend) if you want help. 📰 What's new shows every update, and 💡 <b>Suggest an idea</b> goes straight to the person who makes the game. Have fun!", "#suggestLink", "done"],
+    ],
   };
+  const TUT_RACE_ORDER = ["tires", "lights", "boost", "upgrade", "defend", "slow", "drs", "pit", "pitGame", "afterPit", "watch", "fun"];
+  const TQ = { cards: null, i: 0, step: null, queue: [], hl: null };
+  function tutHighlight(sel) {
+    if (TQ.hl) TQ.hl.classList.remove("tut-hl"); TQ.hl = null;
+    if (!sel) return;
+    const el2 = [...document.querySelectorAll(sel)].find((e) => e.offsetParent !== null || getComputedStyle(e).position === "fixed");
+    if (el2) { el2.classList.add("tut-hl"); TQ.hl = el2; el2.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }
+    // never sit on top of the thing we're pointing at: drop to the bottom of the screen if it would
+    const card = $("tutCard"); card.classList.remove("low");
+    if (el2) requestAnimationFrame(() => { const a = card.getBoundingClientRect(), b2 = el2.getBoundingClientRect(); if (a.left < b2.right && b2.left < a.right && a.top < b2.bottom && b2.top < a.bottom) card.classList.add("low"); });
+  }
+  function tutShow() {
+    const [title, body, sel] = TQ.cards[TQ.i], n = TQ.cards.length;
+    $("tutTitle").textContent = title; $("tutBody").innerHTML = body;      // (our own fixed text, never player text)
+    $("tutNext").textContent = TQ.i < n - 1 ? `Next (${TQ.i + 1}/${n}) ›` : TQ.cards[TQ.i][3] === "menu" ? "Show me the menu ›" : "Got it";
+    const card = $("tutCard"); card.classList.remove("hidden"); card.classList.remove("tut-in"); void card.offsetWidth; card.classList.add("tut-in"); sfx("tick");
+    tutHighlight(sel);
+    clearTimeout(S.tutT);
+    // single race tips tidy themselves away (the race goes on); tours wait for Next
+    if (n === 1 && TUT_RACE_ORDER.includes(TQ.step)) S.tutT = setTimeout(tutNext, 16000);
+  }
+  function tutNext() {
+    clearTimeout(S.tutT);
+    const card = TQ.cards && TQ.cards[TQ.i], act = card && card[3];
+    if (TQ.cards && TQ.i < TQ.cards.length - 1) { TQ.i++; tutShow(); return; }
+    $("tutCard").classList.add("hidden"); tutHighlight(null); TQ.cards = null;
+    if (act === "menu") { tutMenu(); return; }
+    if (act === "done") { tutFinish(); return; }
+    if (TQ.queue.length) setTimeout(() => { const nx = TQ.queue.shift(); tutOpen(nx); }, 600);
+  }
+  function tutOpen(step) {
+    const t = TUT[step]; TQ.step = step; TQ.cards = Array.isArray(t[0]) ? t : [t]; TQ.i = 0; tutShow();
+  }
   function tut(step) {
     if (!S.tutorial || !TUT[step] || (S.tutSeen || (S.tutSeen = new Set())).has(step)) return;
+    if (TUT_RACE_ORDER.includes(step) && (S.screen !== "race" || S.replaying)) return;     // (race tips only during the race)
     S.tutSeen.add(step);
-    const [title, body] = TUT[step];
-    $("tutTitle").textContent = title; $("tutBody").innerHTML = body;      // (our own fixed text, never player text)
-    $("tutCard").classList.remove("hidden"); sfx("tick");
-    clearTimeout(S.tutT); if (step !== "done" && step !== "lobby") S.tutT = setTimeout(() => $("tutCard").classList.add("hidden"), 14000);
-    if (step === "done") { try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} S.tutorial = false; }
+    if (TQ.cards) { TQ.queue.push(step); return; }      // one at a time: the next tip waits its turn
+    tutOpen(step);
   }
+  // after the race: out of the room and onto the menu for the last part
+  function tutMenu() {
+    S.tutorial = true;
+    try { $("leaveBtn").click(); } catch (e) {}
+    setTimeout(() => { if (S.screen !== "menu") show("menu"); window.scrollTo(0, 0); S.tutSeen.delete("menu"); tut("menu"); }, 500);
+  }
+  function tutFinish() { try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} S.tutorial = false; TQ.queue = []; $("tutBtn").classList.remove("pulse"); banner("🎓 TUTORIAL DONE!", "#3ecf6a"); sfx("level"); }
   function startTutorial() {
-    saveProfile(); S.solo = true; S.tutorial = true; S.tutSeen = new Set(); S.tutPits = undefined; S.tutSetup = true;
+    saveProfile(); S.solo = true; S.tutorial = true; S.tutSeen = new Set(); S.tutPits = undefined; S.tutSetup = true; TQ.queue = []; TQ.cards = null;
     socket.emit("create", prof);
   }
-  $("tutNext").addEventListener("click", () => $("tutCard").classList.add("hidden"));
-  $("tutQuit").addEventListener("click", () => { S.tutorial = false; $("tutCard").classList.add("hidden"); try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} });
+  $("tutNext").addEventListener("click", tutNext);
+  $("tutQuit").addEventListener("click", () => { S.tutorial = false; TQ.queue = []; TQ.cards = null; clearTimeout(S.tutT); tutHighlight(null); $("tutCard").classList.add("hidden"); try { localStorage.setItem("tb-tut-done", "1"); } catch (e) {} });
+  // the race tips that need a moment, rather than an event
+  socket.on("lightsOut", () => { if (!S.tutorial) return; setTimeout(() => tut("defend"), 22000); setTimeout(() => tut("slow"), 34000); setTimeout(() => tut("watch"), 60000); setTimeout(() => tut("fun"), 80000); });
+  socket.on("feed", (f) => { if (f.t === "drs") tut("drs"); });
+  socket.on("pitGame", () => tut("pitGame"));
   // set up the tutorial room: short, easy, dry, one random track
   socket.on("lobby", (l) => {
     if (!S.tutSetup || l.hostId !== S.me) return;
     S.tutSetup = false;
-    socket.emit("settings", { laps: 3, ai: 3, aiLevel: "easy", speed: 1, weather: "sunny", quali: 0, wear: "high", theme: "grass", season: 0 });
+    socket.emit("settings", { laps: 4, ai: 3, aiLevel: "easy", speed: 1, weather: "sunny", quali: 0, wear: "high", theme: "grass", season: 0, safetyCar: false, mode: "normal" });
     setTimeout(() => socket.emit("randomTrack", { map: "small" }), 200);
     setTimeout(() => tut("lobby"), 900);
   });
@@ -5956,6 +6059,74 @@
   function spark(x, y, h, n = 3) {
     for (let k = 0; k < n && S.particles.length < 340; k++) { const a = h + Math.PI + (Math.random() - 0.5) * 1.1, v = 180 + Math.random() * 260; S.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.18 + Math.random() * 0.2, age: 0, r: 1.4, spark: 1, color: Math.random() < 0.6 ? "#ffd166" : "#ff8a3d" }); }
   }
+  // ---- rain you can't miss: a darker sky, two layers of streaks blowing in the wind, splashes on the ground, drops
+  // running down the lens, and in a downpour lightning (and thunder a moment later) ----
+  const RAIN = { drops: [], splash: [], lens: [], flash: 0, nextBolt: 0, wind: -0.28 };
+  function drawRain(w, h, dt, now) {
+    const W = S.weather, wv = W.wet, raining = W.raining && !reducedMotion, lo = settings.fx === "low" || settings.gfx === "fast" ? 0.45 : settings.fx === "off" ? 0.2 : 1;
+    dt = Math.min(dt, 0.05);
+    // the sky: darker and bluer the wetter it is, darkest round the edges
+    ctx.fillStyle = `rgba(22,34,58,${0.3 * wv})`; ctx.fillRect(0, 0, w, h);
+    if (!RAIN.vg || RAIN.vg.w !== w || RAIN.vg.h !== h) { const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) / 2); g.addColorStop(0, "rgba(10,16,30,0)"); g.addColorStop(1, "rgba(10,16,30,0.6)"); RAIN.vg = { g, w, h }; }
+    ctx.globalAlpha = wv; ctx.fillStyle = RAIN.vg.g; ctx.fillRect(0, 0, w, h); ctx.globalAlpha = 1;
+    if (!raining) { RAIN.drops.length = 0; return; }
+    // streaks: they fall (they don't flicker about), far ones thin and quick to fade, near ones long and bright
+    const want = Math.round(420 * wv * lo);
+    while (RAIN.drops.length < want) { const near = Math.random() < 0.35; RAIN.drops.push({ x: Math.random() * (w + 200), y: Math.random() * h, near, len: near ? 26 + Math.random() * 18 : 12 + Math.random() * 10, sp: near ? 1500 + Math.random() * 500 : 900 + Math.random() * 300 }); }
+    if (RAIN.drops.length > want) RAIN.drops.length = want;
+    const wind = RAIN.wind + Math.sin(now / 2300) * 0.08;
+    for (const layer of [false, true]) {
+      ctx.strokeStyle = layer ? "rgba(215,228,245,0.55)" : "rgba(190,205,230,0.32)"; ctx.lineWidth = layer ? 2 : 1.1; ctx.beginPath();
+      for (const d of RAIN.drops) {
+        if (d.near !== layer) continue;
+        d.y += d.sp * dt; d.x += d.sp * wind * dt;
+        if (d.y > h + 40 || d.x < -60) { d.y = -40 - Math.random() * 80; d.x = Math.random() * (w + 200); if (d.near && Math.random() < 0.5) RAIN.splash.push({ x: Math.random() * w, y: Math.random() * h, t: now }); }
+        ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.len * wind, d.y - d.len);
+      }
+      ctx.stroke();
+    }
+    // splashes: little rings on the ground
+    for (let k = 0; k < 30 * wv * lo * dt * 10; k++) if (RAIN.splash.length < 90) RAIN.splash.push({ x: Math.random() * w, y: Math.random() * h, t: now });
+    ctx.strokeStyle = "rgba(220,232,250,0.5)"; ctx.lineWidth = 1;
+    RAIN.splash = RAIN.splash.filter((p) => { const k = (now - p.t) / 350; if (k > 1) return false; ctx.globalAlpha = 0.6 * (1 - k); ctx.beginPath(); ctx.ellipse(p.x, p.y, 2 + 7 * k, 1 + 3 * k, 0, 0, Math.PI * 2); ctx.stroke(); return true; });
+    ctx.globalAlpha = 1;
+    // drops on the lens in heavy rain: blurry blobs that slide down and run off
+    if (wv > 0.45 && lo > 0.4) {
+      if (RAIN.lens.length < 14 * wv && Math.random() < dt * 3) RAIN.lens.push({ x: Math.random() * w, y: Math.random() * h * 0.7, r: 6 + Math.random() * 16, v: 0, t: now });
+      RAIN.lens = RAIN.lens.filter((d) => {
+        d.v += (Math.random() < 0.02 ? 120 : -d.v * 2) * dt; d.y += Math.max(0, d.v) * dt; const age = (now - d.t) / 1000; if (age > 7 || d.y > h + d.r) return false;
+        const a = Math.min(1, age * 3) * Math.min(1, (7 - age) / 1.5);
+        const g = ctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.3, 1, d.x, d.y, d.r);
+        g.addColorStop(0, `rgba(255,255,255,${0.32 * a})`); g.addColorStop(0.6, `rgba(190,210,240,${0.12 * a})`); g.addColorStop(1, "rgba(190,210,240,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill(); return true;
+      });
+    } else RAIN.lens.length = 0;
+    // lightning in a downpour (every 10-25s), thunder a moment later
+    if (wv > 0.7 && S.phase === "race") {
+      if (!RAIN.nextBolt) RAIN.nextBolt = now + 6000 + Math.random() * 10000;
+      if (now > RAIN.nextBolt) { RAIN.nextBolt = now + 10000 + Math.random() * 15000; RAIN.flash = now; setTimeout(() => thunder(0.6 + Math.random() * 0.4), 500 + Math.random() * 1500); }
+      const k = (now - RAIN.flash) / 450;
+      if (k >= 0 && k < 1) { const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.42; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h); }
+    } else RAIN.nextBolt = 0;
+  }
+  // the rain itself: a steady hiss (louder the harder it rains), and thunder
+  let rainNode = null;
+  function rainSound(on, wet) {
+    const want = on && fxVol() > 0 && wet > 0.05, a = want ? audio() : actx; if (!a) return;
+    if (!rainNode && want) {
+      const n = noise(a), hp = a.createBiquadFilter(), lp = a.createBiquadFilter(), g = a.createGain();
+      hp.type = "highpass"; hp.frequency.value = 900; lp.type = "lowpass"; lp.frequency.value = 7000; g.gain.value = 0;
+      n.connect(hp).connect(lp).connect(g).connect(fxOut(a)); n.start(); rainNode = { g };
+    }
+    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (0.012 + 0.05 * wet) * fxVol() : 0, a.currentTime, 0.8);
+  }
+  function thunder(k = 1) {
+    const a = actx; if (!a || fxVol() <= 0) return;
+    const t0 = a.currentTime, n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(420, t0); lp.frequency.exponentialRampToValueAtTime(90, t0 + 3);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.35 * k * fxVol(), t0 + 0.08); g.gain.setTargetAtTime(0.12 * k * fxVol(), t0 + 0.3, 0.3); g.gain.setTargetAtTime(0, t0 + 1.2, 0.7);
+    n.connect(lp).connect(g).connect(fxOut(a)); n.start(t0); n.stop(t0 + 4.5);
+  }
   function renderRace(dt, now) {
     const { w, h, dpr } = scr, t = S.track;
     if (!t) return;
@@ -6029,7 +6200,7 @@
       if (!visible(c, 200)) continue;
       if (c.surf === 3 && Math.abs(c.speed) > 40 && Math.random() < 0.8 * fxLevel) puff(c, "rgba(170,140,90,0.55)");
       else if (c.surf === 2 && Math.abs(c.speed) > 120 && Math.random() < 0.5 * fxLevel) puff(c, th.night ? "rgba(90,80,60,0.5)" : "rgba(110,120,60,0.4)");
-      if (S.weather && S.weather.wet > 0.3 && c.speed > 220 && Math.random() < 0.45 * fxLevel * S.weather.wet) puff(c, "rgba(220,230,240,0.35)");
+      if (S.weather && S.weather.wet > 0.25 && c.speed > 180 && Math.random() < 0.9 * fxLevel * S.weather.wet) { puff(c, "rgba(220,230,240,0.42)"); if (S.weather.wet > 0.6 && Math.random() < 0.5) puff(c, "rgba(210,222,238,0.3)"); }
       if (c.dmg > 0.55 && Math.random() < 0.25 * Math.max(0.4, fxLevel)) puff(c, "rgba(60,60,60,0.45)");
       if (c.extras?.trail && c.speed > 250 && S.particles.length < 300 && Math.random() < 0.35 * Math.max(0.4, fxLevel)) {
         S.particles.push({ x: c.x - Math.cos(c.h) * 22, y: c.y - Math.sin(c.h) * 22, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 50, life: 0.7, age: 0, r: 7, shape: c.extras.trail, k: Math.floor(Math.random() * 4) });
@@ -6164,16 +6335,8 @@
     });
     // screen-space effects
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (S.weather && S.weather.wet > 0.02) {
-      const wv = S.weather.wet;
-      ctx.fillStyle = `rgba(30,45,70,${0.22 * wv})`; ctx.fillRect(0, 0, w, h);
-      if (S.weather.raining && !reducedMotion) {
-        ctx.strokeStyle = "rgba(200,215,235,0.45)"; ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let k = 0; k < 160 * wv; k++) { const rx = Math.random() * w, ry = Math.random() * h; ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 20); }
-        ctx.stroke();
-      }
-    }
+    if (S.weather && S.weather.wet > 0.02) drawRain(w, h, dt, now);
+    rainSound(S.screen === "race" && !S.replaying && !!S.weather?.raining, S.weather?.wet || 0);
     const fogX = PH.on ? w / 2 : w / 2 + (target.x - cam.x) * z, fogY = PH.on ? h / 2 : h / 2 + (target.y - cam.y) * z;
     // day into night: the light fades as the race goes on (from about a third of the way in)
     const dusk = !th.night && S.race?.dayNight ? duskLevel() : 0;
@@ -6336,7 +6499,7 @@
     else if (f.t === "mistake") say("mistake", null, 0, 20000);
     else if (f.t === "qko") say("qko", null, 2);
     else if (f.t === "timeUp") { say("lastLap", null, 2); banner("⏳ TIME'S UP: LAST LAP!", "#ffc53d"); }
-    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s: everyone back to the grid in the order before the crash${S.race?.multi ? " (each class together)" : ""}`, true); }
+    else if (f.t === "redFlag") { say("crashBig", null, 3); banner("🟥 RED FLAG", "#ff2d55"); addShake(10); popup(`Huge pile-up! Race stopped for ${f.secs}s. Here it is again, then everyone goes back to the grid in the order before the crash${S.race?.multi ? " (each class together)" : ""}`, true); setTimeout(() => rfReplay(f), 700); }
     else if (f.t === "rfRestart") popup("Standing restart from the grid!");
   });
   // new leader (from the race state): "Bolt takes the lead!"
@@ -6553,6 +6716,21 @@
     $("tireName").textContent = me.punct ? "PUNCTURE!" : `Tires: ${TIRES[me.comp]?.name || ""}` + (me.temp < 60 ? "  ·  ❄️ COLD" : me.temp < 85 ? "  ·  warming up" : "") + (me.dmg > 0.05 ? `  ·  Damage ${Math.round(me.dmg * 100)}%` : "");
     $("tireName").style.color = me.punct || me.dmg > 0.4 ? "#ff8a80" : "";
     if (me.inPit) $("speedText").textContent = "PIT LIMITER";
+    // why am I slow? Everything that's costing you top speed right now (the same sums the server uses)
+    { const wet = S.weather?.wet || 0, why = [];
+      if (me.punct) why.push("💥 Puncture −67%");
+      else {
+        if (me.comp !== "wet" && wet > 0.05) { const k = 1 - 0.08 * wet - 0.17 * clamp((wet - 0.5) / 0.4, 0, 1); if (k < 0.97) why.push(`🌧 Dry tyres in the rain −${Math.round((1 - k) * 100)}%: box for Wets (${keyName(KEY("box"))})`); }
+        if (me.comp === "wet" && wet < 0.15) why.push("☀ Wets on a dry track −8%");
+        const tk = 0.7 + 0.3 * Math.sqrt(Math.min(1, Math.max(0, me.tire) * 3)); if (tk < 0.97) why.push(`🛞 Worn tyres −${Math.round((1 - tk) * 100)}%: box (${keyName(KEY("box"))})`);
+        if (me.dmg > 0.1) why.push(`🔧 Damage −${Math.round(me.dmg * 14)}%`);
+      }
+      if (me.temp < 60 && !me.inPit) why.push("❄️ Cold tyres: less grip in corners");
+      const txt = why.join("  ·  "), box = $("slowWhy");
+      if (box.textContent !== txt) box.textContent = txt;
+      box.classList.toggle("hidden", !why.length || me.fin);
+      box.classList.toggle("bad", why.some((w) => /Dry tyres|Puncture|Worn tyres −[2-9]\d/.test(w)));
+    }
     const W = S.weather;
     if (W) {
       const pill = $("weatherPill"); pill.classList.remove("hidden"); pill.classList.toggle("rain", W.raining || W.wet > 0.3);
@@ -6620,8 +6798,7 @@
         if (id === S.camTarget && id !== S.myCar) li.className += " watch";
         { const f = S.lbFlash?.get(id); if (f && f.until > performance.now()) li.className += " " + f.cls; }
         li.title = id === S.myCar ? "Your car" : `Watch ${c.name}`;
-        // click a driver: the camera follows them (click yourself, or the chip, to come back)
-        li.addEventListener("click", (e) => { e.stopPropagation(); watchCar(id === S.myCar ? null : id); });
+        li.dataset.id = id;      // (clicking a driver: see the pointerdown handler on the list below)
         li.append(p, d, n, g, badge(c.comp || "inter", true), x); ol.appendChild(li);
       });
       if (!all && myI < fit && S.standings.length > fit) { const m = document.createElement("li"); m.className = "lb-gap"; m.textContent = `+${S.standings.length - fit} more · ${isTouch() ? "tap" : "hold Ctrl"}`; ol.appendChild(m); }
@@ -6633,7 +6810,15 @@
   window.addEventListener("keydown", (e) => { if (e.key === "Control" && S.screen === "race") S.lbAll = true; });
   window.addEventListener("keyup", (e) => { if (e.key === "Control") S.lbAll = false; });
   window.addEventListener("blur", () => { S.lbAll = false; });
-  $("standings").addEventListener("click", () => { S.lbAll = !S.lbAll; });
+  // click a driver: the camera follows them (click yourself, or the chip, to come back). It's done on the press, not
+  // the click: the list is rebuilt many times a second, and a click only counts if the press and the release land
+  // on the same row, so clicks kept getting lost (and then toggled the long list instead)
+  $("standList").addEventListener("pointerdown", (e) => {
+    const li = e.target.closest("li[data-id]"); if (!li) return;
+    const id = Number(li.dataset.id); S.lbPress = performance.now();
+    watchCar(id === S.myCar ? null : id); sfx("tick");
+  });
+  $("standings").addEventListener("click", () => { if (performance.now() - (S.lbPress || 0) < 800) return; S.lbAll = !S.lbAll; });
   // spectate anyone from the leaderboard
   function watchCar(id) {
     if (S.myCar === null || S.myCar === undefined) { S.camTarget = id; const c = id && S.cars.get(id); $("specName").textContent = c ? c.name : "the leader"; lastHudStand = ""; return; }
@@ -6678,6 +6863,12 @@
     if (WP.id !== id) { WP.id = id; WP.up = null; WP.last = null; renderWatchCards(false); renderWatchUps(); socket.emit("watchInfo", id); panel.classList.remove("swap"); void panel.offsetWidth; panel.classList.add("swap"); }
     $("wpDot").style.background = c.color || "#fff"; $("wpName").textContent = c.name || ""; $("wpLvl").textContent = `Team Lv ${WP.lvl}`;
     $("wpCheer").classList.toggle("hidden", !c.owner || c.owner === S.me);
+    // their tyres: which set, how much is left, how many laps on them, cold or warm
+    { const tw = Math.max(0, Math.round((c.tire ?? 1) * 100)), key = c.comp || "inter";
+      if (WP.tyreKey !== key) { WP.tyreKey = key; const b = $("wpTyreBadge"); b.textContent = ""; b.appendChild(badge(key, true)); b.title = TIRES[key]?.name || ""; }
+      const bar = $("wpTyre"); bar.style.width = tw + "%"; bar.style.background = tw < 20 ? "#e53935" : tw < 40 ? "#ffb020" : "#3ecf6a";
+      $("wpTyreTxt").textContent = tw + "%";
+      $("wpTyreNote").textContent = c.punct ? "💥 Puncture!" : `${TIRES[key]?.name || ""} · ${c.tyreAge || 0} lap${c.tyreAge === 1 ? "" : "s"} old${c.temp < 60 ? " · ❄️ cold" : ""}${c.pit >= 0 ? " · 🔧 in the pits" : ""}`; }
     const n = Math.round(c.nitro ?? 0); $("wpBoost").style.width = n + "%"; $("wpBoost").classList.toggle("on", !!c.nitroOn); $("wpBoostTxt").textContent = n + "%";
   }
   $("wpCheer").addEventListener("click", () => {
@@ -7434,6 +7625,21 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06a", date: "6 Oct", title: "No more mystery slowdowns, red flag replays, a full tutorial", items: [
+      "🐢 Fixed cars suddenly losing a third of their speed: completely worn tyres used to drop you straight from 86% to 62% speed. Now worn tyres slow you down gradually (70% when they're totally dead).",
+      "🏎️ A GT3 in a Hypercar's slipstream can keep up with it now, but can't out-drag it any more (the tow used to take a GT3 past a Hyper's top speed).",
+      "🌧️ When it rains and you pit, you get Wets (unless you picked dry tyres in the rain on purpose). Your next tyres used to be stuck on whatever you started on.",
+      "🔎 A new line under your speed tells you what's slowing you down: worn tyres, dry tyres in the rain, damage, cold tyres.",
+      "🟥 Red flag: everyone watches the crash again, then it's back to the grid.",
+      "🌧️ Rain you can't miss: darker skies, streaks blowing in the wind, splashes, drops on the lens, spray off the cars, lightning and thunder in a downpour, and you can hear it.",
+      "🏁 \"Laps to go\" at the top of the screen for everyone (spectators too). Final lap flashes.",
+      "👀 Watching someone? You see their tyres too: which set, how worn, how many laps old, cold or not.",
+      "🖱️ Clicking a driver on the leaderboard to watch them works every time now (clicks used to get lost).",
+      "📣 \"Cheer them on\" works now.",
+      "🔁 Endurance: when your teammate takes over, the car keeps all its upgrades and team level, and both of your picks go on the car.",
+      "🟡 No tyre wear on the formation lap.",
+      "🎓 A new tutorial that shows everything in about 7 minutes: building tracks, every race control, then the menu (account, car, ranked, rewards, friends, gifts, trades and bets).",
+    ] },
     { v: "u-2026-10-05g", date: "5 Oct", title: "New track builder, bigger trades, suggestions", items: [
       "🛠️ A new track builder on computers: three steps at the top (1 Track › 2 Race rules › 3 Grid & teams), every drawing tool in one rail on the left, the road width and snap floating over the board, undo/redo and reverse at the bottom, and a Track panel with where to start from, scenery, objects and the race at a glance.",
       "🤝 Trades: pick as many items as you like to give AND to ask for (up to 10 each side), plus coins. Search your items, see roughly what they're worth, and check it all before you send.",

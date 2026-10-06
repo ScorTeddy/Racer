@@ -87,7 +87,7 @@ const DECOR = ["stand", "banner", "tunnel", "bridge"], DECOR_LONG = ["tunnel", "
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
 const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
 const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
-const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 6;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 6 seconds
+const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 10;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 10 seconds (everyone watches the crash again first)
 const AI_PIT_STOP = 0.72, AI_PIT_LANE = 1.15;   // AI pit stops: 28% shorter standing still, 15% faster down the pit lane
 const MAP_SIZES = { small: [1200, 750], normal: [1600, 1000], large: [2400, 1500], huge: [3200, 2000] };
 const WEAR_LEVELS = { low: 0.75, normal: 1, high: 1.35 };
@@ -2075,7 +2075,7 @@ class Room {
       c.compound = p ? (p.compound || (this.wet > 0.45 ? "wet" : "inter")) : c.planComp;
       if (this.qualifying) { c.compound = this.wet > 0.45 ? "wet" : "fast"; c.stintEnd = Infinity; c.stopsLeft = 0; }
       if (this.trackKind === "tour") { c.stintEnd = Infinity; c.stopsLeft = 0; }        // tournament track: no tyre wear, so no stops
-      if (p) { p.compound = c.compound; if (!p.nextCompound) p.nextCompound = c.compound; }
+      if (p) { p.compound = c.compound; p.nextCompound = null; p.nextPicked = false; }
     }
     // rolling start: no lights; a formation lap behind the safety car, green flag when it gets back to the line
     if (this.settings.start === "rolling" && !this.qualifying && !this.ranked) {
@@ -2092,13 +2092,24 @@ class Room {
     this.lightsStart = now; this.outAt = now + 5000 + 400 + Math.random() * 2000; this.lightsShown = 0;
     this.emit("lightsBegin", { compounds: Object.fromEntries(this.cars.map((c) => [c.id, c.compound])) });
   }
+  // which tyres a player's car gets at its next stop: what they picked, unless they picked it for other weather
+  // (dry tyres chosen in the dry and now it's pouring, or the other way round). No pick = what suits the weather
+  // (with pit assist: the strategist's plan).
+  nextTyre(c, p) {
+    const rainNow = this.wet > 0.45;
+    const auto = p.assist?.pit && c.planComp ? c.planComp : rainNow ? "wet" : c.compound === "wet" && this.wet < 0.2 ? "inter" : c.compound;
+    if (!p.nextPicked || !COMPOUNDS[p.nextCompound]) return auto;
+    const rainThen = (p.nextPickedWet ?? 0) > 0.45;
+    if (rainNow !== rainThen && (p.nextCompound === "wet") !== rainNow) return auto;
+    return p.nextCompound;
+  }
   pickCompound(p, key) {
     if (!COMPOUNDS[key]) return;
     if (this.phase === "tires") {
       p.compound = key;
       const humans = this.cars.filter((c) => c.owner);
       if (humans.every((c) => this.players.get(c.owner)?.compound)) this.tiresUntil = Math.min(this.tiresUntil, Date.now() + 800);
-    } else p.nextCompound = key;
+    } else { p.nextCompound = key; p.nextPicked = true; p.nextPickedWet = this.wet; }
   }
 
   tick() {
@@ -2675,7 +2686,9 @@ class Room {
   // dry tires in the wet: slower everywhere, and from ~60% wet a LOT slower (about -25% at 100%)
   compoundSpeed(c) { return COMPOUNDS[c.compound].speed * (c.compound === "wet" ? 1 : 1 - 0.08 * this.wet - 0.17 * clamp((this.wet - 0.5) / 0.4, 0, 1)); }
   weatherGrip(c) { return COMPOUNDS[c.compound].grip * (c.compound === "wet" ? 1 : 1 - 0.45 * this.wet); }
-  tireSpeed(w) { return w <= 0 ? 0.62 : 0.86 + 0.14 * Math.min(1, w * 3); }
+  // worn tyres: full speed down to a third left, then slower and slower, down to 70% on completely dead ones
+  // (it used to sit at 86% and then drop straight to 62% at 0%: a sudden "my car lost all its speed")
+  tireSpeed(w) { const k = Math.min(1, Math.max(0, w) * 3); return 0.7 + 0.3 * Math.sqrt(k); }
 
   physics(c, input, dt) {
     const st = c.st, t = this.track;
@@ -2691,7 +2704,7 @@ class Room {
         const p = c.owner && this.players.get(c.owner);
         if (!p || p.assist?.pit) this.aiPlan(c);
         // players: their "Next tires" pick; with pit assist and no pick, the strategist's choice
-        c.compound = p ? (p.nextCompound || (p.assist?.pit ? c.planComp || c.compound : c.compound)) : c.planComp;
+        c.compound = p ? this.nextTyre(c, p) : c.planComp;
         c.lapWearMeas = 0; c.tireAtLap = undefined;
         if (c.damage > 0 && c.owner) io.to(c.owner).emit("toast", "Crew fixed the damage!");
         c.tire = 1; c.pits++; c.aiMode = "pitOut"; c.punct = false; c.damage = 0; c.temp = 0.3; c.tyreLap = Math.max(0, c.lapsDone);      // fresh tyres come out cold
@@ -2713,10 +2726,15 @@ class Room {
       const nn = this.around(c, Math.ceil(reach / t.spacing) + 1, 0);
       for (let q = 0; q < nn; q++) {
         const o = NEAR_O[q], along = NEAR_D[q];
-        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && !o.defending) { c.slip = true; break; }   // (any class: GT3s can tow behind Hypers and the other way round)
+        if (along > 28 && along < reach && Math.abs(o.lat - c.lat) < 34 && o.speed > 200 && !this.ghost(o) && Math.abs(this.level(o) - lvl) <= 0.45 && !o.defending) { c.slip = true; c.slipFrom = o; break; }   // (any class: GT3s can tow behind Hypers and the other way round)
       }
     }
-    if (c.slip && !this.sc) maxSp *= 1 + SLIP_BONUS;
+    if (c.slip && !this.sc) {
+      // a slower class towing behind a faster one (a GT3 behind a Hyper) keeps up with it, but the tow can't
+      // drag it past: before, +30% took a GT3 (82% of a Hyper's top speed) to 107% and it flew by on every straight
+      const o = c.slipFrom, slower = o && c.cls && o.cls && (CAR_CLASSES[c.cls]?.speed || 1) < (CAR_CLASSES[o.cls]?.speed || 1);
+      maxSp = slower ? Math.max(maxSp, Math.min(maxSp * (1 + SLIP_BONUS), (o.st?.maxSpeed || maxSp) * 0.99)) : maxSp * (1 + SLIP_BONUS);
+    }
     c.boosting = this.time < c.boostUntil;           // launch boost off the line
     if (c.boosting) { accel *= 1.8; maxSp *= 1.08; }
     // Nitro boost: +12% while held, drains 20%/s. Refills only at the line (see onLap).
@@ -2796,7 +2814,7 @@ class Room {
     if (c.surface === 3) wear *= 2;
     if (this.qualifying && !this.practice) wear = 0;
     const before = c.tire;
-    if (!c.finished && this.trackKind !== "tour") c.tire = Math.max(0, c.tire - wear * st.wear * (c.teamOrder === "push" ? 1.35 : c.teamOrder === "hold" ? 0.8 : 1));       // no wear on the cool-down lap (pit wall: push wears more, hold saves them)
+    if (!c.finished && this.trackKind !== "tour" && !this.sc?.rolling) c.tire = Math.max(0, c.tire - wear * st.wear * (c.teamOrder === "push" ? 1.35 : c.teamOrder === "hold" ? 0.8 : 1));       // no wear on the formation lap or the cool-down lap (pit wall: push wears more, hold saves them)
     // tyres warm up with speed (and cool a little when crawling)
     { const sp = Math.hypot(c.vx, c.vy) / MAX_SPEED; c.temp = clamp((c.temp ?? 1) + dt * (sp > 0.25 ? 0.045 * (0.5 + sp) : -0.01), 0, 1); }
     if (c.tire <= 0 && before > 0 && !c.punct) {
@@ -3022,7 +3040,23 @@ class Room {
     if (was) { was.coDriver = next; io.to(was.id).emit("coDriver", { car: c.id, driver: now.name }); }
     now.coDriver = null; now.lastPos = this.standings().indexOf(c) + 1; now.passCd = now.passCd || new Map(); now.lostCd = now.lostCd || new Map(); now.compound = c.compound;
     c.owner = next;
+    // the car keeps everything it's earned: the driver getting in takes over its upgrades, team level, XP and any
+    // cards still waiting to be picked (and from now on both drivers share the one upgrade list, so a pick by
+    // either of them goes on the car). It used to keep the first driver's list, and the second driver's picks did nothing.
+    const up = c.up || blankUp();
+    for (const k of Object.keys(UPGRADES)) up[k] = Math.max(up[k] || 0, now.up?.[k] || 0);
+    c.up = up; now.up = up; if (was) was.up = up;
+    if (was) {
+      if ((was.level || 1) > (now.level || 1) || ((was.level || 1) === (now.level || 1) && (was.xp || 0) > (now.xp || 0))) { now.level = was.level; now.xp = was.xp; }
+      now.pendingPicks = (now.pendingPicks || 0) + (was.pendingPicks || 0); if (!now.offer && was.offer) { now.offer = was.offer; now.offered = was.offered; }
+      was.pendingPicks = 0; was.offer = null; was.offered = null;
+      if (was.rare && !now.rare) now.rare = was.rare;
+    }
+    c.st = this.stats(c);
     this.emit("driverSwap", { car: c.id, owner: next, name: now.name, from: was?.name || null });
+    const n = Object.values(up).reduce((a, b) => a + b, 0);
+    io.to(now.id).emit("toast", `🔁 You take over at team Lv ${now.level || 1}${n ? ` with all ${n} upgrade level${n === 1 ? "" : "s"}` : ""}${now.pendingPicks ? ` and ${now.pendingPicks} card${now.pendingPicks === 1 ? "" : "s"} to pick` : ""}`);
+    if (now.pendingPicks) this.resendOffer(now);
   }
   // ---- red flag (with the safety car setting on): everyone stops where they are, the crews fix the damage,
   // then the race restarts in order behind the safety car ----
@@ -3036,10 +3070,11 @@ class Room {
     const snap = [...(this.orderHist || [])].reverse().find((h) => h.t < first - 0.3);
     this.rfCount = (this.rfCount || 0) + 1;
     if (this.rfCount >= RF_ABANDON) return this.abandonRace("redFlags");     // a third red flag: that's it, the race is called off
+    const pile = this.crashLog.find((x) => x.big) || this.crashLog[0];     // (for the replay: which car to follow, and when it started)
     this.rf = { until: this.time + RED_FLAG_TIME }; this.sc = null; this.crashLog = [];
     for (const c of this.cars) { c.vx = c.vy = 0; c.speed = 0; c.spin = 0; c.crashT = 0; c.nitroOn = false; c.passT = 0; c.unlapping = false; }
     this.regrid(snap ? snap.ids : this.standings().map((c) => c.id));
-    this.emit("feed", { t: "redFlag", secs: RED_FLAG_TIME });
+    this.emit("feed", { t: "redFlag", secs: RED_FLAG_TIME, car: pile ? pile.a : null, t0: Math.round(first * 100) / 100, at: Math.round(this.time * 100) / 100 });
   }
   // Red flag: everyone back to the starting grid, in the order they were in before the crash (multiclass: each
   // class together, Hypers first). Laps stay fair: lapped cars stay lapped, and nobody gains or loses more than
@@ -3447,7 +3482,7 @@ class Room {
     const perLap = this.perLapAll();
     for (const p of this.players.values()) {
       const c = this.carOf(p.id);
-      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: p.nextCompound, picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, defend: !!p.defendOn, xpRate: this.settings.xpRate,
+      if (c) io.to(p.id).emit("me", { id: c.id, box: p.boxCall, level: p.level, xp: p.xp, need: xpForLevel(p.level), lapStart: r2(c.lapStart), up: p.up, rare: p.rare || null, compound: c.compound, next: this.nextTyre(c, p), picked: p.compound, perLap, nitro: Math.round(c.nitro * 100), nitroLock: Math.ceil(c.nitroLock || 0), slip: c.slip, defend: !!p.defendOn, xpRate: this.settings.xpRate,
         sec: c.curSec ? { t: c.curSec, col: c.secCol, best: c.bestSec.map((x) => (isFinite(x) ? Math.round(x * 1000) / 1000 : null)), now: c.sec, at: c.secAt != null ? r2(c.secAt) : null } : { now: c.sec ?? 0, at: c.secAt != null ? r2(c.secAt) : null },
         pitLane: c.aiMode === "pitLane", pitting: c.pitting > 0, heading: c.aiMode === "wantPit", lapsLeft: Math.max(1, this.settings.laps - Math.max(0, c.lapsDone + 1)), life: Object.fromEntries(COMPOUND_KEYS.map((k) => [k, Math.round(this.lifeLaps(c, k) * 10) / 10])) });
     }
@@ -4646,7 +4681,7 @@ io.on("connection", (socket) => {
     socket.emit("trackResult", { error: null, drs: fr ? "real" : "auto", zones: r.track.drs.length });
   });
   socket.on("compound", (k) => { const r = room(), p = me(); if (r && p && r.cars) r.pickCompound(p, k); });
-  socket.on("nextCompound", (k) => { const r = room(), p = me(); if (r && p && r.cars && COMPOUNDS[k]) p.nextCompound = k; });
+  socket.on("nextCompound", (k) => { const r = room(), p = me(); if (r && p && r.cars && COMPOUNDS[k]) { p.nextCompound = k; p.nextPicked = true; p.nextPickedWet = r.wet; } });
   socket.on("kick", (id) => {
     const r = room(); if (!r || !isHost() || id === socket.id || !r.players.has(id)) return;
     const name = r.players.get(id).name;

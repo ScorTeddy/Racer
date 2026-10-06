@@ -1185,7 +1185,7 @@ test("red flag: only a BIG pile-up; everyone back to the grid in the order befor
   const N = r.track.N; assert.ok(r.cars.every((x) => x.idx > N * 0.8), "back at the start line");
   for (let n = 0; n < 60 * 3; n++) r.step(1 / 60);
   assert.ok(r.cars.every((x) => x.speed === 0), "everyone stands still on the grid");
-  for (let n = 0; n < 60 * 5; n++) r.step(1 / 60);
+  for (let n = 0; n < 60 * 9; n++) r.step(1 / 60);       // (the stop is 10s now: everyone watches the crash again first)
   assert.ok(!r.rf && feed.includes("rfRestart") && !r.sc, "standing restart (no safety car)");
   assert.ok(r.cars.every((x) => x.damage === 0), "crews fixed the damage");
   assert.ok(r.cars.some((x) => x.speed > 50), "and they're off");
@@ -1252,8 +1252,13 @@ test("endurance: a race against the clock, and teammates share a car, swapping a
   r.startLights(); r.phase = "race"; r.launchCars();
   r.enduro.secs = 60;                                         // (a short one for the test)
   for (let n = 0; n < 60 * 30; n++) r.step(1 / 60);
+  shared.up.engine = 3; shared.up.turbo = 2; a.level = 6; a.xp = 40; b.up = { grip: 1 };
   r.swapDriver(shared);
   assert.equal(shared.owner, "e2", "Bo takes over"); assert.equal(swaps[0].name, "Bo"); assert.equal(a.coDriver, "e2");
+  assert.ok(b.up === shared.up && a.up === shared.up, "both drivers share the car's upgrades now");
+  assert.ok(shared.up.engine === 3 && shared.up.turbo === 2 && shared.up.grip === 1, "Ann's upgrades stay on the car (and Bo's are added)");
+  assert.equal(b.level, 6, "Bo takes over at Ann's team level");
+  const before = shared.st.maxSpeed; b.up.engine++; shared.st = r.stats(shared); assert.ok(shared.st.maxSpeed > before, "a pick by Bo goes on the car");
   for (let n = 0; n < 60 * 240 && r.phase === "race"; n++) r.step(1 / 60);
   if (r.phase === "race") r.endRace();
   assert.ok(feed.includes("timeUp"), "time's up was called");
@@ -1622,6 +1627,7 @@ test("formation lap: no XP or upgrades, the endurance clock doesn't run, and it 
   while (r.sc?.rolling && n++ < 60 * 120) r.step(1 / 60);
   assert.ok(!r.sc, "green flag");
   assert.equal(p.xp, 0, "no XP on the formation lap"); assert.equal(p.level, 1, "so no upgrades");
+  assert.ok(r.cars.every((c) => c.tire === 1), "no tyre wear on the formation lap");
   assert.ok(Math.abs(r.enduro.secs - (secs0 + r.time)) < 0.05, "the endurance clock starts at the green flag");
   const lead = r.standings()[0]; assert.equal(lead.lapsDone, 0, "the leader is on lap 1 at the green flag");
   for (let k = 0; k < 60 * 3; k++) r.step(1 / 60);
@@ -1659,7 +1665,7 @@ test("3 red flags or 7 safety cars: the race is called off and classified as it 
   };
   // red flags
   const A = mk("ABRF");
-  for (let k = 0; k < 2; k++) { A.r.redFlag(); assert.ok(A.r.rf, "red flag " + (k + 1)); for (let n = 0; n < 60 * 40; n++) A.r.step(1 / 60); }
+  for (let k = 0; k < 2; k++) { A.r.redFlag(); assert.ok(A.r.rf, "red flag " + (k + 1)); for (let n = 0; n < 60 * 45; n++) A.r.step(1 / 60); }
   assert.equal(A.r.phase, "race", "two red flags: still racing");
   const order = A.r.standings().map((c) => c.id);
   A.r.redFlag();
@@ -1795,6 +1801,26 @@ test("suggestions: anyone can send one, only the owner's account (ScorTeddy) get
   const again = new Promise((ok) => s.once("suggestResult", ok)); s.emit("suggest", { text: "and another thing please" });
   assert.match((await again).error, /minute/, "one a minute");
   s.close();
+});
+
+test("next tyres follow the weather: no stale dry pick in the rain, and a pick made for other weather is overridden", () => {
+  const r = new game.Room("NEXTTY", false); r.setRandomTrack("normal", "regular");
+  const p = { id: "nt", name: "Me", up: {}, level: 1, xp: 0 }; r.players.set("nt", p);
+  Object.assign(r.settings, { ai: 1, quali: 0, laps: 5, weather: "sunny" }); r.ensureRoster(1);
+  r.startRace(); p.compound = "inter"; r.startLights(); r.phase = "race"; r.launchCars();
+  const c = r.cars.find((x) => x.owner === "nt");
+  r.wet = 0; assert.equal(r.nextTyre(c, p), "inter", "dry, no pick: keep what you're on");
+  r.wet = 0.8; assert.equal(r.nextTyre(c, p), "wet", "pouring, no pick: Wets (this used to stay on the starting dry tyres)");
+  r.wet = 0; r.pickCompound(p, "fast"); assert.equal(r.nextTyre(c, p), "fast", "your pick counts");
+  r.wet = 0.8; assert.equal(r.nextTyre(c, p), "wet", "picked Fast in the dry, now it's pouring: Wets");
+  r.pickCompound(p, "durable"); assert.equal(r.nextTyre(c, p), "durable", "picked dry tyres in the rain on purpose: your call");
+});
+
+test("worn tyres slow you down gradually: no sudden cliff at 0% (that made cars randomly lose a third of their speed)", () => {
+  const r = new game.Room("TYCLIFF", false);
+  for (let w = 0.33; w > 0; w -= 0.01) assert.ok(r.tireSpeed(w) - r.tireSpeed(Math.max(0, w - 0.01)) < 0.06, "no big step at " + w.toFixed(2));
+  assert.ok(r.tireSpeed(1) === 1 && r.tireSpeed(0.34) === 1, "full speed with a third left");
+  assert.ok(r.tireSpeed(0) >= 0.7, "dead tyres: 70%, not 62%");
 });
 test("commentator voice: a Voice Library voice on a free ElevenLabs plan switches to a free voice by itself", { timeout: 30000 }, async () => {
   const urls = [];
