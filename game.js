@@ -4622,7 +4622,7 @@
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (S.decorTool) {
       // tunnels and grandstands: click where it starts, then where it ends. Banners and bridges: one click.
-      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
+      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends (it runs in the racing direction, as long as you like)." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
       socket.emit("decor:add", { k: S.decorTool, x: (S.decorStart || p)[0], y: (S.decorStart || p)[1], end: S.decorStart ? { x: p[0], y: p[1] } : null });
       S.decorStart = null; drawBoard();
       if (DECOR_LONG.includes(S.decorTool)) boardHint(S.decorTool === "tunnel" ? "🚇 Tunnel built! Click for another one's start." : "🏟️ Grandstand built! Click for another one's start.", false);
@@ -6141,41 +6141,76 @@
       }
     } else RAIN.nextBolt = 0;
   }
-  // the rain itself: a steady hiss (louder the harder it rains), and thunder
+  // ---- weather sounds. The real-sounding ones (4 thunderclaps and a rain loop) come from the server (made once with
+  // ElevenLabs). Until they've loaded, or if the server hasn't got them, the game makes its own: rain out of thousands
+  // of single drops (not a flat hiss), and deep thunder that's different every time. ----
+  const WX = { buf: {}, asked: false, lastThunder: -1 };
+  function loadWeatherSounds() {
+    const a = actx; if (!a || WX.asked) return; WX.asked = true;
+    for (const name of ["rain", "thunder1", "thunder2", "thunder3", "thunder4"]) {
+      fetch("/sfx/" + name).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error("no " + name)))).then((ab) => a.decodeAudioData(ab)).then((b) => { WX.buf[name] = b; if (name === "rain" && rainNode?.synth) { stopRainNode(); } }).catch(() => {});
+    }
+  }
+  // the built-in rain: a few seconds of single raindrops (each a tiny tick, some splashier) over a soft wash, looped
+  let rainDropBuf = null;
+  function rainDrops(a) {
+    if (rainDropBuf) return rainDropBuf;
+    const sr = a.sampleRate, len = sr * 4, b = a.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch); let brown = 0;
+      for (let i = 0; i < len; i++) { brown = (brown + (Math.random() * 2 - 1) * 0.02) * 0.995; d[i] = brown * 0.9; }          // the wash
+      for (let n = 0; n < 2600; n++) {                                                                                      // the drops
+        const at = Math.floor(Math.random() * len), big = Math.random() < 0.12, amp = (big ? 0.5 : 0.18) * (0.4 + Math.random()), dec = sr * (big ? 0.012 : 0.004), f = 0.25 + Math.random() * 0.5;
+        let ph = 0; for (let k = 0; k < dec * 4 && at + k < len; k++) { ph += f; d[(at + k) % len] += Math.sin(ph) * amp * Math.exp(-k / dec) * (Math.random() * 0.6 + 0.4); }
+      }
+    }
+    return (rainDropBuf = b);
+  }
   let rainNode = null;
+  function stopRainNode() { if (!rainNode) return; const r = rainNode, a = actx; rainNode = null; try { r.g.gain.setTargetAtTime(0, a.currentTime, 0.4); setTimeout(() => { try { r.src.stop(); } catch (e) {} }, 2000); } catch (e) {} }
   function rainSound(on, wet) {
     const want = on && fxVol() > 0 && wet > 0.05, a = want ? audio() : actx; if (!a) return;
+    if (want) loadWeatherSounds();
     if (!rainNode && want) {
-      const n = noise(a), hp = a.createBiquadFilter(), lp = a.createBiquadFilter(), g = a.createGain();
-      hp.type = "highpass"; hp.frequency.value = 900; lp.type = "lowpass"; lp.frequency.value = 7000; g.gain.value = 0;
-      n.connect(hp).connect(lp).connect(g).connect(fxOut(a)); n.start(); rainNode = { g };
+      const real = WX.buf.rain, src = a.createBufferSource(), lp = a.createBiquadFilter(), hp = a.createBiquadFilter(), g = a.createGain();
+      src.buffer = real || rainDrops(a); src.loop = true;
+      lp.type = "lowpass"; lp.frequency.value = real ? 12000 : 6500; hp.type = "highpass"; hp.frequency.value = real ? 40 : 250; g.gain.value = 0;
+      src.connect(hp).connect(lp).connect(g).connect(fxOut(a)); src.start(0, Math.random() * (src.buffer.duration - 0.5));
+      rainNode = { src, g, synth: !real };
     }
-    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (0.012 + 0.05 * wet) * fxVol() : 0, a.currentTime, 0.8);
+    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (rainNode.synth ? 0.05 + 0.22 * wet : 0.12 + 0.55 * wet) * fxVol() : 0, a.currentTime, 0.8);
+    if (!want && rainNode && !rainNode.stopping) { const r = rainNode; r.stopping = true; setTimeout(() => { r.stopping = false; if (rainNode === r && !(S.weather?.raining && S.screen === "race")) stopRainNode(); }, 3000); }
   }
-  // lightning strike: a CRACK right with the flash, then the BOOOOM (a deep hit and a long rolling rumble)
+  // a lightning strike: a real thunderclap (a different one each time, a little higher or deeper), or the built-in one
   function thunder(k = 1) {
     const a = actx; if (!a || fxVol() <= 0) return;
-    const t0 = a.currentTime, V = fxVol() * k;
-    const comp = a.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 6; comp.connect(fxOut(a));      // (loud, but no clipping)
-    // the crack: sharp bursts of bright noise, like the air tearing
-    for (let i = 0; i < 7; i++) {
-      const n = noise(a), hp = a.createBiquadFilter(), g = a.createGain(), st = t0 + Math.random() * 0.22, len = 0.02 + Math.random() * 0.06;
-      hp.type = "highpass"; hp.frequency.value = 1800 + Math.random() * 2500;
-      g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime((0.5 + Math.random() * 0.4) * V, st + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, st + len);
-      n.connect(hp).connect(g).connect(comp); n.start(st); n.stop(st + len + 0.05);
+    loadWeatherSounds();
+    const V = fxVol() * k, comp = a.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 5; comp.connect(fxOut(a));
+    const real = ["thunder1", "thunder2", "thunder3", "thunder4"].filter((n) => WX.buf[n]);
+    if (real.length) {
+      let i = Math.floor(Math.random() * real.length); if (real.length > 1 && real[i] === WX.lastThunder) i = (i + 1) % real.length; WX.lastThunder = real[i];
+      const src = a.createBufferSource(), g = a.createGain(); src.buffer = WX.buf[real[i]]; src.playbackRate.value = 0.82 + Math.random() * 0.25;
+      g.gain.value = 1.3 * V; src.connect(g).connect(comp); src.start();
+    } else {
+      // built-in: a deep thunderclap, never quite the same twice. A low crack (not a hiss), then the boom and the rolls
+      const t0 = a.currentTime, deep = 0.75 + Math.random() * 0.5, len = 4 + Math.random() * 3;
+      for (let i = 0, n = 3 + Math.floor(Math.random() * 4); i < n; i++) {
+        const nz = noise(a), bp = a.createBiquadFilter(), g = a.createGain(), st = t0 + Math.random() * 0.25, l = 0.05 + Math.random() * 0.12;
+        bp.type = "bandpass"; bp.frequency.value = (500 + Math.random() * 900) * deep; bp.Q.value = 0.8;
+        g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime((0.35 + Math.random() * 0.3) * V, st + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, st + l);
+        nz.connect(bp).connect(g).connect(comp); nz.start(st); nz.stop(st + l + 0.05);
+      }
+      const b0 = t0 + 0.08 + Math.random() * 0.2, o = a.createOscillator(), og = a.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(55 * deep, b0); o.frequency.exponentialRampToValueAtTime(20 * deep, b0 + 1.6);
+      og.gain.setValueAtTime(0, b0); og.gain.linearRampToValueAtTime(1.0 * V, b0 + 0.04); og.gain.exponentialRampToValueAtTime(0.0001, b0 + 2);
+      o.connect(og).connect(comp); o.start(b0); o.stop(b0 + 2.1);
+      const nz = noise(a), lp = a.createBiquadFilter(), lp2 = a.createBiquadFilter(), g = a.createGain();
+      lp.type = "lowpass"; lp.frequency.setValueAtTime(380 * deep, b0); lp.frequency.exponentialRampToValueAtTime(45, b0 + len); lp2.type = "lowpass"; lp2.frequency.value = 500;
+      g.gain.setValueAtTime(0, b0); g.gain.linearRampToValueAtTime(0.95 * V, b0 + 0.06); g.gain.setTargetAtTime(0.3 * V, b0 + 0.4, 0.3);
+      for (let r = 0, rolls = 2 + Math.floor(Math.random() * 3); r < rolls; r++) { const at = 0.8 + r * (0.7 + Math.random() * 0.9); g.gain.setTargetAtTime((0.35 + Math.random() * 0.25) * V, b0 + at, 0.07); g.gain.setTargetAtTime(0.12 * V, b0 + at + 0.2 + Math.random() * 0.3, 0.35); }
+      g.gain.setTargetAtTime(0, b0 + len - 1, 0.6);
+      nz.connect(lp).connect(lp2).connect(g).connect(comp); nz.start(b0); nz.stop(b0 + len + 2);
     }
-    // the BOOM: a sub-bass thump that drops away...
-    const b0 = t0 + 0.12, o = a.createOscillator(), og = a.createGain();
-    o.type = "sine"; o.frequency.setValueAtTime(78, b0); o.frequency.exponentialRampToValueAtTime(28, b0 + 1.4);
-    og.gain.setValueAtTime(0, b0); og.gain.linearRampToValueAtTime(0.95 * V, b0 + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, b0 + 1.8);
-    o.connect(og).connect(comp); o.start(b0); o.stop(b0 + 1.9);
-    // ...and the rumble rolling away, with a couple of after-rolls
-    const n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
-    lp.type = "lowpass"; lp.frequency.setValueAtTime(900, b0); lp.frequency.exponentialRampToValueAtTime(70, b0 + 4);
-    g.gain.setValueAtTime(0, b0); g.gain.linearRampToValueAtTime(0.85 * V, b0 + 0.05); g.gain.setTargetAtTime(0.3 * V, b0 + 0.35, 0.25);
-    for (const at of [1.1 + Math.random() * 0.5, 2.0 + Math.random() * 0.8]) { g.gain.setTargetAtTime(0.42 * V, b0 + at, 0.08); g.gain.setTargetAtTime(0.12 * V, b0 + at + 0.25, 0.4); }
-    g.gain.setTargetAtTime(0, b0 + 3.2, 0.6);
-    n.connect(lp).connect(g).connect(comp); n.start(b0); n.stop(b0 + 6);
     if (S.screen === "race") addShake(16 * k);
   }
   function renderRace(dt, now) {
@@ -7683,6 +7718,12 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06c", date: "6 Oct", title: "Real thunder, better rain, endless tunnels", items: [
+      "⛈️ Thunder now uses real-sounding recorded thunderclaps (4 different ones, each a bit deeper or higher every time) instead of one high-pitched sound. If they can't load, the built-in thunder is much deeper now and different every strike.",
+      "🌧️ The rain sounds like actual rain: a recorded downpour, or (if that can't load) thousands of single raindrops instead of static.",
+      "🚇 Tunnels can be as long as you like now, even most of the lap. They run from your first click to your second in the racing direction.",
+      "🚨 Safety car: cars at the back get a catch-up boost and brake later, so the field bunches up about twice as fast.",
+    ] },
     { v: "u-2026-10-06b", date: "6 Oct", title: "No passing under the safety car, bridges that stay up, new gear", items: [
       "🚨 Safety car: overtaking is now impossible. The order is frozen until it goes in (you can still go past a wrecked or stopped car, and cars in the pits rejoin where they come out).",
       "🌉 Draw a bit of track right on top of another bit and it stays up on a bridge the whole way now (it used to sink down onto the road below, and cars crashed into each other).",

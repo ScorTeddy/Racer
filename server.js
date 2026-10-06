@@ -32,7 +32,7 @@ const SLIP_TIME = 0.5, SLIP_BONUS = 0.30;          // within 0.5s of the car ahe
 // more: every lap you cross the line you get 50% of the tank back (Nitro Refill: 55/60/65%).
 // Defend mode: switching it on costs 10% boost, then it burns 8% a second (and boost doesn't recharge meanwhile)
 const DEFEND_START = 0.1, DEFEND_DRAIN = 0.08;
-const SC_CATCH_DEC = 650;
+const SC_CATCH_DEC = 1000;     // (stragglers brake late and hard when they reach the queue: they get there sooner)
 const PIT_GAME_LEN = 6, PIT_GAME_MAX = 8;
 const KO_LEN = [120, 90, 90];                  // knockout qualifying: Q1 / Q2 / Q3 seconds
 const PRACTICE_LEN = 60 * 60;                  // practice: up to an hour, end it whenever you like      // pit stop minigame: arrows to hit, seconds before the crew gives up waiting       // safety car: how hard the stragglers plan to brake when they reach the pack
@@ -497,6 +497,53 @@ app.get("/voice/:file", (req, res) => {
   const slow = setTimeout(() => { if (!done) { done = true; notReady(); } }, 2500);
   voiceClip(file).then((buf) => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "public, max-age=86400"); res.type("audio/mpeg").send(buf); })
     .catch(() => { if (done) return; done = true; clearTimeout(slow); res.setHeader("Cache-Control", "no-store"); fallback(); });
+});
+// ---- weather sounds: real-sounding thunder (4 different strikes) and a rain loop, made ONCE with ElevenLabs sound
+// effects (same key as the commentator), then kept like the voice clips and served from here. No key, or it fails?
+// The game plays its own built-in thunder and rain instead. ----
+const SFX = {
+  thunder1: { text: "A very close lightning strike: a sharp crack splits the air, then a massive deep BOOM of thunder that rolls and rumbles away for several seconds. Realistic outdoor storm recording, no music, no rain.", secs: 7 },
+  thunder2: { text: "Huge thunder: a deep, heavy, low booming thunderclap that echoes and rolls across the sky for a long time. Realistic field recording of a storm, no music.", secs: 8 },
+  thunder3: { text: "Lightning strikes nearby with a crackling snap, followed by an enormous booming thunderclap and a long echoing rumble. Realistic, cinematic, deep bass.", secs: 7 },
+  thunder4: { text: "Rolling thunder in a heavy storm: a deep low boom, then several rumbling rolls that slowly fade out. Realistic outdoor recording, no music.", secs: 6 },
+  rain: { text: "Steady heavy rain falling on asphalt and splashing in puddles, close up, realistic ambient field recording, constant intensity, no thunder, no wind, no music.", secs: 20, loop: true },
+};
+const sfxMem = new Map(), sfxJobs = new Map(); let sfxOffUntil = 0;
+function sfxClip(name) {
+  const key = "sfx_v1_" + name;
+  if (sfxMem.has(key)) return Promise.resolve(sfxMem.get(key));
+  if (sfxJobs.has(key)) return sfxJobs.get(key);
+  const job = (async () => {
+    let buf = await accounts.voiceGet(key).catch(() => null);
+    if (!buf) {
+      if (!elKey() || Date.now() < sfxOffUntil) throw new Error("no sound effects right now");
+      const S = SFX[name], url = `${process.env.ELEVENLABS_URL || "https://api.elevenlabs.io"}/v1/sound-generation?output_format=mp3_44100_128`;
+      const ask = async (body) => {
+        const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
+        try { return await fetch(url, { method: "POST", signal: ctl.signal, headers: { "xi-api-key": elKey(), "Content-Type": "application/json", Accept: "audio/mpeg" }, body: JSON.stringify(body) }); }
+        finally { clearTimeout(timer); }
+      };
+      try {
+        const base = { text: S.text, duration_seconds: S.secs, prompt_influence: 0.6 };
+        let r = await ask(S.loop ? { ...base, loop: true } : base);
+        if (!r.ok && S.loop && (r.status === 400 || r.status === 422)) r = await ask(base);       // (older API: no "loop")
+        if (!r.ok) throw new Error("ElevenLabs said " + r.status + ": " + (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200));
+        buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length < 4000) throw new Error("tiny sound file");
+        accounts.voiceSet(key, buf).catch((e) => console.log("sound effect save failed:", e.message));
+      } catch (e) { sfxOffUntil = Date.now() + 10 * 60e3; console.warn("weather sound", name, "-", e.name === "AbortError" ? "took too long" : e.message); throw e; }
+    }
+    sfxMem.set(key, buf);
+    return buf;
+  })();
+  sfxJobs.set(key, job); job.finally(() => sfxJobs.delete(key)).catch(() => {});
+  return job;
+}
+app.get("/sfx/:name", (req, res) => {
+  const name = String(req.params.name).replace(/\.mp3$/, "");
+  if (!SFX[name]) return res.status(404).send("Not found");
+  sfxClip(name).then((buf) => { res.setHeader("Cache-Control", "public, max-age=604800"); res.type("audio/mpeg").send(buf); })
+    .catch(() => { if (!res.headersSent) { res.setHeader("Cache-Control", "no-store"); res.status(503).send("Not available"); } });
 });
 app.get("/music/km/:file", (req, res) => {
   const file = req.params.file;
@@ -1461,7 +1508,11 @@ class Room {
       // (the far end, for the long ones: how many track points it runs for, along the direction of racing)
       let len = 0;
       if (d.end) { const ex = (d.end.x - t.minX) * SCALE + t.pad, ey = (d.end.y - t.minY) * SCALE + t.pad; let j = 0, bj = Infinity; t.pts.forEach((p, q) => { const e = (p.x - ex) ** 2 + (p.y - ey) ** 2; if (e < bj) { bj = e; j = q; } });
-        len = (j - i + t.N) % t.N; if (len > t.N / 2) { i = j; len = t.N - len; } len = Math.min(len, DECOR_MAX_LEN); }
+        len = (j - i + t.N) % t.N;
+        // tunnels: as long as you like, from your first click to your second in the racing direction (only a click
+        // pair that would wrap round nearly the whole lap is read the other way). Grandstands: the shorter way, capped.
+        if (d.k === "tunnel") { if (len > t.N * 0.9) { i = j; len = t.N - len; } len = Math.min(len, t.N - 2); }
+        else { if (len > t.N / 2) { i = j; len = t.N - len; } len = Math.min(len, DECOR_MAX_LEN); } }
       return { k: d.k, i, side, len };
     });
   }
@@ -2789,6 +2840,8 @@ class Room {
       c.nitro = Math.max(0, c.nitro - st.nitroDrain * dt);
       if (c.nitro <= 0) { c.nitroLock = NITRO_LOCKOUT; if (p) io.to(p.id).emit("xp", { label: `⚡ Boost empty! ${NITRO_LOCKOUT}s to recharge` }); }
     } else if (c.nitro < 1 && this.phase === "race" && !(c.nitroLock > 0) && !c.defending) c.nitro = Math.min(1, c.nitro + NITRO_REGEN * dt);
+    // safety car: way back from the queue? a catch-up boost (+20% top speed, much quicker acceleration) to get there fast
+    if (this.sc && !this.sc.rolling && c.scCatch && c.aiMode === "race" && !c.punct) { maxSp *= 1.2; accel *= 1.5; }
     if (this.sc) maxSp = Math.min(maxSp, this.scLimit(c));
     // surfaces: 0 track, 1 kerb, 2 grass, 3 gravel, 4 pit lane
     if (c.surface === 1) maxSp *= 0.97;
@@ -3191,7 +3244,7 @@ class Room {
   // under the safety car: the leader drives at its pace, everyone else closes up to a tight gap, no boost
   scLimit(c) {
     if (!this.sc || c.finished || c.inPit || c.aiMode === "pitLane" || c.aiMode === "pitOut") return Infinity;
-    const SC = MAX_SPEED * 0.44, ah = c.ahead;
+    const SC = MAX_SPEED * 0.44, ah = c.ahead; c.scCatch = false;
     if (c.unlapping) return MAX_SPEED * 0.85;          // lapped: through the pack (as a ghost) to unlap
     // no passing: right behind the car that was ahead when the safety car came out = no faster than them
     const was = this.sc.ahead && this.sc.ahead.get(c.id), wa = was != null && this.cars.find((o) => o.id === was);
@@ -3207,13 +3260,14 @@ class Room {
       if (g2 < 45) return Math.max(Math.min(wa.speed, MAX_SPEED * 0.2), wa.speed + (g2 - 28) * 3);
       // closing in on them: never faster than lets you brake down to their speed by the time you get there
       // (a car sprinting up to the queue used to arrive too fast and slide past)
-      if (g2 < 600) return Math.min(MAX_SPEED * 0.97, Math.sqrt(wa.speed * wa.speed + 2 * 520 * (g2 - 40)));
+      if (g2 < 600) { c.scCatch = g2 > 220; return Math.min(MAX_SPEED * 1.2, Math.sqrt(wa.speed * wa.speed + 2 * 900 * (g2 - 40))); }
     }
-    if (!ah || ah.finished) return SC;
+    if (!ah || ah.finished) { c.scCatch = false; return SC; }
     const gap = (ah.progress - c.progress) * this.track.spacing;
+    c.scCatch = gap > 220;          // way back: the catch-up boost is on (see physics)
     // stragglers sprint up to the pack (almost race speed), braking just in time to slot in behind the last car
     const tail = SC * 0.9;
-    return Math.min(MAX_SPEED * 0.97, Math.sqrt(tail * tail + 2 * SC_CATCH_DEC * Math.max(0, gap - 70)));
+    return Math.min(MAX_SPEED * 1.2, Math.sqrt(tail * tail + 2 * SC_CATCH_DEC * Math.max(0, gap - 70)));
   }
 
   // ---- safety car: the order is frozen. Nobody can be ranked ahead of the car that was ahead of them when it came

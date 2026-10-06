@@ -1876,3 +1876,18 @@ test("a bit of track drawn right along another bit goes over it on a bridge for 
   assert.ok(over > 100, "the test track really does overlap itself");
   assert.equal(same, 0, "everywhere the road overlaps, one is up on a bridge");
 });
+
+test("weather sounds: only the known ones can be asked for, and without an ElevenLabs key the game uses its own", async () => {
+  assert.equal((await fetch(base + "/sfx/nope")).status, 404);
+  assert.equal((await fetch(base + "/sfx/..%2Fpackage.json")).status, 404);
+  const r = await fetch(base + "/sfx/thunder1"); assert.ok(r.status === 503 || r.status === 200, "thunder: made, or not available (then the built-in one plays)");
+});
+
+test("tunnels can be as long as you like (more than half the lap), in the racing direction", () => {
+  const r = new game.Room("LONGTUN", false); r.setRandomTrack("normal", "regular"); r.decor = [];
+  const t = r.track, sc = r.trackMsg().scale, bp = (i) => { const p = t.pts[i]; return [(p.x - t.pad) / sc + t.minX, (p.y - t.pad) / sc + t.minY]; };
+  const a = Math.floor(t.N * 0.05), b = Math.floor(t.N * 0.8), A = bp(a), B = bp(b);
+  assert.equal(r.addDecor("tunnel", A[0], A[1], { x: B[0], y: B[1] }), null);
+  const d = r.trackMsg().decor[0];
+  assert.ok(d.len > 140 && d.len > t.N * 0.6, "a long tunnel: " + d.len + " of " + t.N + " points");
+});
