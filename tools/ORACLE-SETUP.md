@@ -27,7 +27,9 @@ On Windows, open **Terminal** (or PowerShell); on a Mac, open Terminal:
 ssh -i PATH-TO-THE-KEY-FILE ubuntu@YOUR-IP
 ```
 (Drag the key file into the window to fill in its path. Type `yes` the first time.)
-Mac/Linux only: if it complains about permissions, run `chmod 600 PATH-TO-THE-KEY-FILE` first.
+If it says the key's permissions are "too open":
+- Mac/Linux: `chmod 600 PATH-TO-THE-KEY-FILE`
+- Windows (PowerShell): `icacls PATH-TO-THE-KEY-FILE /inheritance:r /grant:r "$($env:USERNAME):R"`
 
 ## 5. Install the game (one line)
 ```
@@ -58,3 +60,14 @@ add your new address (`https://1-2-3-4.sslip.io`) › Save.
 - Want your own name later (like `scribblegp.xyz`)? Buy a domain, point it at your server's IP (an "A record"),
   and change the first line of `/etc/caddy/Caddyfile` to it, then `sudo systemctl restart caddy`, change `SITE_URL`
   in `~/scribble.env`, and add the new address in Google too.
+
+## Good to know
+- **Idle servers can be taken back.** Oracle may reclaim an Always Free server that sits almost unused for 7 days
+  (very low CPU, network and memory use). A game with players is usually busy enough. If it ever happens, nothing
+  is lost (accounts are in Upstash): make a new server and do steps 2-7 again.
+- **The first 30 days** come with free trial credit. After that, anything that isn't "Always Free" stops by itself.
+  This server is Always Free, so it keeps going. Don't click "Upgrade to Pay As You Go" unless an adult who owns the
+  card agrees: that's what lets Oracle charge for anything past the free limits.
+- **Keep a copy of your settings** (`~/scribble.env`) somewhere safe, like a password manager, in case you ever need
+  to set it up again.
+
