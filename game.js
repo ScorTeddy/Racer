@@ -990,6 +990,13 @@
         c.strokeStyle = "rgba(255,236,160,0.9)"; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x0, y0 + 1); c.lineTo(-x0, y0 + 1); c.moveTo(x0, -y0 - 1); c.lineTo(-x0, -y0 - 1); c.stroke();
         break;
       }
+      // ---- fifth wave ----
+      case "candy": { c.fillStyle = "#fff6f6"; c.fillRect(x0, y0, L, Wd); c.save(); c.beginPath(); c.rect(x0, y0, L, Wd); c.clip(); c.fillStyle = "#e11d48"; for (let i = -Wd; i < L + Wd; i += 9) { c.beginPath(); c.moveTo(x0 + i, y0); c.lineTo(x0 + i + 4, y0); c.lineTo(x0 + i + 4 + Wd, -y0); c.lineTo(x0 + i + Wd, -y0); c.fill(); } c.restore(); break; }
+      case "blueprint": { c.fillStyle = "#1d4ed8"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "rgba(255,255,255,0.22)"; c.lineWidth = 0.4; for (let i = 0; i < L; i += 3) { c.beginPath(); c.moveTo(x0 + i, y0); c.lineTo(x0 + i, -y0); c.stroke(); } for (let j = 0; j < Wd; j += 3) { c.beginPath(); c.moveTo(x0, y0 + j); c.lineTo(-x0, y0 + j); c.stroke(); } c.strokeStyle = "rgba(255,255,255,0.85)"; c.lineWidth = 0.7; c.strokeRect(x0 + 3, y0 + 2.5, L - 6, Wd - 5); c.beginPath(); c.arc(x0 + L * 0.3, 0, 3.2, 0, Math.PI * 2); c.moveTo(x0 + L * 0.3 - 5, 0); c.lineTo(x0 + L * 0.3 + 5, 0); c.stroke(); break; }
+      case "honeycomb": { c.fillStyle = "#f5b800"; c.fillRect(x0, y0, L, Wd); c.strokeStyle = "#7a5200"; c.lineWidth = 0.6; for (let row = 0; row < 5; row++) for (let i = 0; i < 12; i++) { const cx = x0 + i * 4.4 + (row % 2) * 2.2, cy = y0 + 1.5 + row * 3.4; c.beginPath(); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + Math.PI / 6; c.lineTo(cx + Math.cos(a) * 2.2, cy + Math.sin(a) * 2.2); } c.closePath(); c.stroke(); } break; }
+      case "dazzle": { c.fillStyle = "#f2f2f2"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "#121212"; c.save(); c.beginPath(); c.rect(x0, y0, L, Wd); c.clip(); for (let k = 0; k < 7; k++) { const sx = x0 + R() * L, a = R() * Math.PI; c.beginPath(); c.moveTo(sx, y0 - 2); c.lineTo(sx + Math.cos(a) * 16, -y0 + 2); c.lineTo(sx + Math.cos(a) * 16 + 4 + R() * 5, -y0 + 2); c.lineTo(sx + 5 + R() * 4, y0 - 2); c.fill(); } c.restore(); break; }
+      case "comic": { const t = performance.now() / 1000; c.fillStyle = "#ffe14d"; c.fillRect(x0, y0, L, Wd); c.fillStyle = "rgba(230,40,60,0.55)"; for (let i = 0; i < L; i += 2.4) for (let j = 0; j < Wd; j += 2.4) { const r2 = 0.35 + 0.55 * Math.abs(Math.sin((i + j) / 6 - t * 2)); c.beginPath(); c.arc(x0 + i + 1, y0 + j + 1, r2, 0, Math.PI * 2); c.fill(); } const pop = 1 + 0.12 * Math.sin(t * 6); c.save(); c.translate(L * 0.3, 0); c.rotate(Math.PI / 2); c.scale(pop, pop); c.fillStyle = "#fff"; c.strokeStyle = "#111"; c.lineWidth = 0.8; c.beginPath(); for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2, rr = k % 2 ? 3.5 : 6.5; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill(); c.stroke(); c.fillStyle = "#e11d48"; c.font = "900 3.6px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("POW", 0, 0.3); c.restore(); break; }
+      case "watercolor": { const t = performance.now() / 1000; c.fillStyle = "#fbf7ef"; c.fillRect(x0, y0, L, Wd); for (const [col, k] of [["rgba(56,189,248,0.85)", 0], ["rgba(244,114,182,0.8)", 1.7], ["rgba(250,204,21,0.8)", 3.1], ["rgba(167,139,250,0.8)", 4.4]]) { const cx = x0 + L * (0.5 + 0.38 * Math.sin(t * 0.5 + k)), cy = Wd * 0.25 * Math.cos(t * 0.7 + k); const g = c.createRadialGradient(cx, cy, 0, cx, cy, 16); g.addColorStop(0, col); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x0, y0, L, Wd); } break; }
       case "eclipse": {   // MYTHIC, animated: a black sun with its golden corona turning, stars around
         const t = performance.now() / 1000, cx = x0 + L * 0.42;
         c.fillStyle = lin(["#020205", "#0d0a1a", "#020205"], true); c.fillRect(x0, y0, L, Wd);
@@ -1104,6 +1111,10 @@
     }
     else if (kind === "rings") { c.strokeStyle = `rgba(150,220,255,${0.9 - (k % 3) * 0.2})`; c.lineWidth = 1.6; c.beginPath(); c.arc(0, 0, r * (0.45 + 0.3 * (k % 3)), 0, Math.PI * 2); c.stroke(); }
     else if (kind === "cash") { c.rotate(k * 0.6); c.fillStyle = "#1f9d55"; c.fillRect(-r * 0.75, -r * 0.42, r * 1.5, r * 0.84); c.strokeStyle = "#c7f9d4"; c.lineWidth = 0.7; c.strokeRect(-r * 0.6, -r * 0.3, r * 1.2, r * 0.6); c.fillStyle = "#eafff1"; c.font = `800 ${Math.round(r * 0.75)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("$", 0, 0.5); }
+    else if (kind === "diamonds") { c.rotate(k * 0.4); const g = c.createLinearGradient(-r, -r, r, r); g.addColorStop(0, "#e0f7ff"); g.addColorStop(0.5, "#7dd3fc"); g.addColorStop(1, "#ffffff"); c.fillStyle = g; c.strokeStyle = "rgba(255,255,255,0.9)"; c.lineWidth = 0.6; c.beginPath(); c.moveTo(0, -r * 0.8); c.lineTo(r * 0.6, -r * 0.2); c.lineTo(0, r * 0.8); c.lineTo(-r * 0.6, -r * 0.2); c.closePath(); c.fill(); c.stroke(); c.beginPath(); c.moveTo(-r * 0.6, -r * 0.2); c.lineTo(r * 0.6, -r * 0.2); c.stroke(); }
+    else if (kind === "fireflies") { const f = 0.5 + 0.5 * Math.sin(performance.now() / 120 + k * 2.3); const g = c.createRadialGradient(0, 0, 0, 0, 0, r * 1.2); g.addColorStop(0, `rgba(250,255,170,${0.95 * f})`); g.addColorStop(0.4, `rgba(190,255,90,${0.5 * f})`); g.addColorStop(1, "rgba(190,255,90,0)"); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r * 1.2, 0, Math.PI * 2); c.fill(); }
+    else if (kind === "feathers") { c.rotate(k * 0.9 + Math.sin(performance.now() / 300 + k) * 0.4); c.fillStyle = k % 2 ? "#f8fafc" : "#fde68a"; c.strokeStyle = "rgba(120,90,40,0.7)"; c.lineWidth = 0.6; c.beginPath(); c.ellipse(0, 0, r * 0.95, r * 0.38, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(-r, 0); c.lineTo(r, 0); c.stroke(); }
+    else if (kind === "ufos") { const bob = Math.sin(performance.now() / 150 + k) * r * 0.15; c.translate(0, bob); c.fillStyle = "rgba(160,255,200,0.35)"; c.beginPath(); c.moveTo(-r * 0.3, r * 0.2); c.lineTo(r * 0.3, r * 0.2); c.lineTo(r * 0.55, r * 1.1); c.lineTo(-r * 0.55, r * 1.1); c.fill(); c.fillStyle = "#9ca3af"; c.beginPath(); c.ellipse(0, 0, r, r * 0.35, 0, 0, Math.PI * 2); c.fill(); c.fillStyle = "#86efac"; c.beginPath(); c.ellipse(0, -r * 0.2, r * 0.45, r * 0.32, 0, Math.PI, 0); c.fill(); }
     else if (kind === "hex") { c.fillStyle = k % 2 ? "#f5b800" : "#ffd84d"; c.strokeStyle = "#8a6200"; c.lineWidth = 0.8; c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; c.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7); } c.closePath(); c.fill(); c.stroke(); }
     else if (kind === "dust") { c.fillStyle = "rgba(150,120,80,0.6)"; c.beginPath(); c.arc(0, 0, r * 0.9, 0, Math.PI * 2); c.fill(); }
     else { c.fillStyle = k % 2 ? "#ffd24a" : "#ff8a2a"; c.fillRect(-r * 0.5, -r * 0.5, r, r); }
@@ -2228,7 +2239,7 @@
   }
   function storeCard(it, u) {
     const slot = it.slot, owned = u?.owned.includes(it.id), on = u?.equipped?.[slot] === it.id;
-    const card = el("div", "item" + (on ? " on" : ""));
+    const card = el("div", "item" + (on ? " on" : "")); card.dataset.item = it.id;
     const rt = el("span", "rtag", RARITY[it.rarity]?.[0] || ""); rt.style.color = RARITY[it.rarity]?.[1];
     card.style.setProperty("--rc", RARITY[it.rarity]?.[1] || "var(--edge)");
     card.append(itemPreview(it), rt, el("b", "", it.name));
@@ -2239,7 +2250,7 @@
       row.appendChild(el("span", "price", `🪙 ${it.price}`));
       const b = el("button", "btn go", "Buy"); b.type = "button";
       b.disabled = !u || u.coins < it.price; b.title = !u ? "Sign in first" : u.coins < it.price ? `You need ${it.price - u.coins} more coins` : "";
-      b.addEventListener("click", () => socket.emit("store:buy", it.id));
+      b.addEventListener("click", () => { const q = b.getBoundingClientRect(); S.buying = { id: it.id, x: q.left + q.width / 2, y: q.top + q.height / 2, rar: it.rarity }; socket.emit("store:buy", it.id); });
       row.appendChild(b);
     } else {
       row.appendChild(el("span", "price", on ? "Equipped" : "Owned"));
@@ -2868,6 +2879,7 @@
   // my own team's numbers (XP, upgrades, tires, boost)
   socket.on("me", (m) => {
 
+    if (S.xp && m.level > S.xp.level && !reducedMotion) { const mt = $("xpFill").parentElement; mt.classList.remove("lvlup"); void mt.offsetWidth; mt.classList.add("lvlup"); }
     S.xp = m; S.box = m.box; S.up = m.up; S.myComp = m.compound; S.sec = m.sec || null;
     if (!!m.defend !== !!S.defendOn && performance.now() - (S.defendAt || 0) > 600) setDefendUi(!!m.defend);
     if ((m.rare || null) !== (S.myRare || null)) { S.myRare = m.rare || null; renderGarage(); }
@@ -4610,7 +4622,7 @@
     if (startMode) { socket.emit("setStart", { x: p[0], y: p[1] }); startMode = false; $("startLineBtn").classList.remove("on"); return; }
     if (S.decorTool) {
       // tunnels and grandstands: click where it starts, then where it ends. Banners and bridges: one click.
-      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
+      if (DECOR_LONG.includes(S.decorTool) && !S.decorStart) { S.decorStart = p; boardHint(S.decorTool === "tunnel" ? "🚇 Now click where the tunnel ends (it runs in the racing direction, as long as you like)." : "🏟️ Now click where the grandstand ends (it goes on the side you clicked first).", false); drawBoard(); return; }
       socket.emit("decor:add", { k: S.decorTool, x: (S.decorStart || p)[0], y: (S.decorStart || p)[1], end: S.decorStart ? { x: p[0], y: p[1] } : null });
       S.decorStart = null; drawBoard();
       if (DECOR_LONG.includes(S.decorTool)) boardHint(S.decorTool === "tunnel" ? "🚇 Tunnel built! Click for another one's start." : "🏟️ Grandstand built! Click for another one's start.", false);
@@ -4749,6 +4761,8 @@
     const ms = CHAT.msgs[tab];
     if (!ms.length) list.appendChild(el("div", "empty", tab === "global" ? "Chat with everyone playing right now. Be nice!" : tab === "team" ? "Only your team sees this." : "Everyone in this room sees this."));
     for (const m of ms) list.appendChild(m.note ? el("div", "note", m.text) : chatLine(m));
+    if (ms.length && ms.length !== CHAT.shown?.[tab]) { const last = list.lastElementChild; if (last && CHAT.shown?.[tab] !== undefined) last.classList.add("chat-new"); }
+    CHAT.shown = CHAT.shown || {}; CHAT.shown[tab] = ms.length;
     list.scrollTop = list.scrollHeight;
     $("chatIn").placeholder = tab === "global" && !A.user ? "Sign in to chat with everyone" : tab === "team" ? "Message your team..." : "Say something nice...";
   }
@@ -6102,30 +6116,102 @@
       });
     } else RAIN.lens.length = 0;
     // lightning in a downpour (every 10-25s), thunder a moment later
-    if (wv > 0.7 && S.phase === "race") {
+    if (wv > 0.6 && S.phase === "race") {
       if (!RAIN.nextBolt) RAIN.nextBolt = now + 6000 + Math.random() * 10000;
-      if (now > RAIN.nextBolt) { RAIN.nextBolt = now + 10000 + Math.random() * 15000; RAIN.flash = now; setTimeout(() => thunder(0.6 + Math.random() * 0.4), 500 + Math.random() * 1500); }
+      if (now > RAIN.nextBolt) {
+        RAIN.nextBolt = now + 7000 + Math.random() * 11000; RAIN.flash = now;
+        // a jagged bolt from the top of the screen, forking on the way down
+        const bolt = [], x0 = w * (0.15 + Math.random() * 0.7); let x = x0, y = 0; bolt.push([x, y]);
+        while (y < h * (0.55 + Math.random() * 0.35)) { y += 18 + Math.random() * 34; x += (Math.random() - 0.5) * 70; bolt.push([x, y]); }
+        const fork = bolt.slice(0, 2 + Math.floor(Math.random() * (bolt.length - 2))), last = fork[fork.length - 1]; let fx = last[0], fy = last[1];
+        for (let i = 0; i < 4; i++) { fy += 20 + Math.random() * 25; fx += (Math.random() < 0.5 ? -1 : 1) * (15 + Math.random() * 30); fork.push([fx, fy]); }
+        RAIN.bolt = { pts: bolt, fork: fork.slice(fork.length - 5) };
+        thunder(0.85 + Math.random() * 0.15);
+      }
       const k = (now - RAIN.flash) / 450;
-      if (k >= 0 && k < 1) { const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.42; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h); }
+      if (k >= 0 && k < 1) {
+        const f = (k < 0.15 ? 1 : k < 0.3 ? 0.3 : k < 0.42 ? 0.85 : 1 - k) * 0.5; ctx.fillStyle = `rgba(230,238,255,${Math.max(0, f)})`; ctx.fillRect(0, 0, w, h);
+        if (RAIN.bolt && k < 0.6) {
+          const draw = (pts, wd) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.lineWidth = wd; ctx.stroke(); };
+          ctx.save(); ctx.globalAlpha = k < 0.15 ? 1 : k < 0.3 ? 0.4 : 0.9 * (1 - k / 0.6); ctx.lineJoin = "round"; ctx.lineCap = "round";
+          ctx.strokeStyle = "rgba(160,190,255,0.5)"; ctx.shadowColor = "#9cc0ff"; ctx.shadowBlur = 30; draw(RAIN.bolt.pts, 9); draw(RAIN.bolt.fork, 5);
+          ctx.strokeStyle = "#fff"; ctx.shadowBlur = 12; draw(RAIN.bolt.pts, 2.6); draw(RAIN.bolt.fork, 1.4);
+          ctx.restore();
+        }
+      }
     } else RAIN.nextBolt = 0;
   }
-  // the rain itself: a steady hiss (louder the harder it rains), and thunder
+  // ---- weather sounds. The real-sounding ones (4 thunderclaps and a rain loop) come from the server (made once with
+  // ElevenLabs). Until they've loaded, or if the server hasn't got them, the game makes its own: rain out of thousands
+  // of single drops (not a flat hiss), and deep thunder that's different every time. ----
+  const WX = { buf: {}, asked: false, lastThunder: -1 };
+  function loadWeatherSounds() {
+    const a = actx; if (!a || WX.asked) return; WX.asked = true;
+    for (const name of ["rain", "thunder1", "thunder2", "thunder3", "thunder4"]) {
+      fetch("/sfx/" + name).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error("no " + name)))).then((ab) => a.decodeAudioData(ab)).then((b) => { WX.buf[name] = b; if (name === "rain" && rainNode?.synth) { stopRainNode(); } }).catch(() => {});
+    }
+  }
+  // the built-in rain: a few seconds of single raindrops (each a tiny tick, some splashier) over a soft wash, looped
+  let rainDropBuf = null;
+  function rainDrops(a) {
+    if (rainDropBuf) return rainDropBuf;
+    const sr = a.sampleRate, len = sr * 4, b = a.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch); let brown = 0;
+      for (let i = 0; i < len; i++) { brown = (brown + (Math.random() * 2 - 1) * 0.02) * 0.995; d[i] = brown * 0.9; }          // the wash
+      for (let n = 0; n < 2600; n++) {                                                                                      // the drops
+        const at = Math.floor(Math.random() * len), big = Math.random() < 0.12, amp = (big ? 0.5 : 0.18) * (0.4 + Math.random()), dec = sr * (big ? 0.012 : 0.004), f = 0.25 + Math.random() * 0.5;
+        let ph = 0; for (let k = 0; k < dec * 4 && at + k < len; k++) { ph += f; d[(at + k) % len] += Math.sin(ph) * amp * Math.exp(-k / dec) * (Math.random() * 0.6 + 0.4); }
+      }
+    }
+    return (rainDropBuf = b);
+  }
   let rainNode = null;
+  function stopRainNode() { if (!rainNode) return; const r = rainNode, a = actx; rainNode = null; try { r.g.gain.setTargetAtTime(0, a.currentTime, 0.4); setTimeout(() => { try { r.src.stop(); } catch (e) {} }, 2000); } catch (e) {} }
   function rainSound(on, wet) {
     const want = on && fxVol() > 0 && wet > 0.05, a = want ? audio() : actx; if (!a) return;
+    if (want) loadWeatherSounds();
     if (!rainNode && want) {
-      const n = noise(a), hp = a.createBiquadFilter(), lp = a.createBiquadFilter(), g = a.createGain();
-      hp.type = "highpass"; hp.frequency.value = 900; lp.type = "lowpass"; lp.frequency.value = 7000; g.gain.value = 0;
-      n.connect(hp).connect(lp).connect(g).connect(fxOut(a)); n.start(); rainNode = { g };
+      const real = WX.buf.rain, src = a.createBufferSource(), lp = a.createBiquadFilter(), hp = a.createBiquadFilter(), g = a.createGain();
+      src.buffer = real || rainDrops(a); src.loop = true;
+      lp.type = "lowpass"; lp.frequency.value = real ? 12000 : 6500; hp.type = "highpass"; hp.frequency.value = real ? 40 : 250; g.gain.value = 0;
+      src.connect(hp).connect(lp).connect(g).connect(fxOut(a)); src.start(0, Math.random() * (src.buffer.duration - 0.5));
+      rainNode = { src, g, synth: !real };
     }
-    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (0.012 + 0.05 * wet) * fxVol() : 0, a.currentTime, 0.8);
+    if (rainNode) rainNode.g.gain.setTargetAtTime(want ? (rainNode.synth ? 0.05 + 0.22 * wet : 0.12 + 0.55 * wet) * fxVol() : 0, a.currentTime, 0.8);
+    if (!want && rainNode && !rainNode.stopping) { const r = rainNode; r.stopping = true; setTimeout(() => { r.stopping = false; if (rainNode === r && !(S.weather?.raining && S.screen === "race")) stopRainNode(); }, 3000); }
   }
+  // a lightning strike: a real thunderclap (a different one each time, a little higher or deeper), or the built-in one
   function thunder(k = 1) {
     const a = actx; if (!a || fxVol() <= 0) return;
-    const t0 = a.currentTime, n = noise(a), lp = a.createBiquadFilter(), g = a.createGain();
-    lp.type = "lowpass"; lp.frequency.setValueAtTime(420, t0); lp.frequency.exponentialRampToValueAtTime(90, t0 + 3);
-    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.35 * k * fxVol(), t0 + 0.08); g.gain.setTargetAtTime(0.12 * k * fxVol(), t0 + 0.3, 0.3); g.gain.setTargetAtTime(0, t0 + 1.2, 0.7);
-    n.connect(lp).connect(g).connect(fxOut(a)); n.start(t0); n.stop(t0 + 4.5);
+    loadWeatherSounds();
+    const V = fxVol() * k, comp = a.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 5; comp.connect(fxOut(a));
+    const real = ["thunder1", "thunder2", "thunder3", "thunder4"].filter((n) => WX.buf[n]);
+    if (real.length) {
+      let i = Math.floor(Math.random() * real.length); if (real.length > 1 && real[i] === WX.lastThunder) i = (i + 1) % real.length; WX.lastThunder = real[i];
+      const src = a.createBufferSource(), g = a.createGain(); src.buffer = WX.buf[real[i]]; src.playbackRate.value = 0.82 + Math.random() * 0.25;
+      g.gain.value = 1.3 * V; src.connect(g).connect(comp); src.start();
+    } else {
+      // built-in: a deep thunderclap, never quite the same twice. A low crack (not a hiss), then the boom and the rolls
+      const t0 = a.currentTime, deep = 0.75 + Math.random() * 0.5, len = 4 + Math.random() * 3;
+      for (let i = 0, n = 3 + Math.floor(Math.random() * 4); i < n; i++) {
+        const nz = noise(a), bp = a.createBiquadFilter(), g = a.createGain(), st = t0 + Math.random() * 0.25, l = 0.05 + Math.random() * 0.12;
+        bp.type = "bandpass"; bp.frequency.value = (500 + Math.random() * 900) * deep; bp.Q.value = 0.8;
+        g.gain.setValueAtTime(0, st); g.gain.linearRampToValueAtTime((0.35 + Math.random() * 0.3) * V, st + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, st + l);
+        nz.connect(bp).connect(g).connect(comp); nz.start(st); nz.stop(st + l + 0.05);
+      }
+      const b0 = t0 + 0.08 + Math.random() * 0.2, o = a.createOscillator(), og = a.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(55 * deep, b0); o.frequency.exponentialRampToValueAtTime(20 * deep, b0 + 1.6);
+      og.gain.setValueAtTime(0, b0); og.gain.linearRampToValueAtTime(1.0 * V, b0 + 0.04); og.gain.exponentialRampToValueAtTime(0.0001, b0 + 2);
+      o.connect(og).connect(comp); o.start(b0); o.stop(b0 + 2.1);
+      const nz = noise(a), lp = a.createBiquadFilter(), lp2 = a.createBiquadFilter(), g = a.createGain();
+      lp.type = "lowpass"; lp.frequency.setValueAtTime(380 * deep, b0); lp.frequency.exponentialRampToValueAtTime(45, b0 + len); lp2.type = "lowpass"; lp2.frequency.value = 500;
+      g.gain.setValueAtTime(0, b0); g.gain.linearRampToValueAtTime(0.95 * V, b0 + 0.06); g.gain.setTargetAtTime(0.3 * V, b0 + 0.4, 0.3);
+      for (let r = 0, rolls = 2 + Math.floor(Math.random() * 3); r < rolls; r++) { const at = 0.8 + r * (0.7 + Math.random() * 0.9); g.gain.setTargetAtTime((0.35 + Math.random() * 0.25) * V, b0 + at, 0.07); g.gain.setTargetAtTime(0.12 * V, b0 + at + 0.2 + Math.random() * 0.3, 0.35); }
+      g.gain.setTargetAtTime(0, b0 + len - 1, 0.6);
+      nz.connect(lp).connect(lp2).connect(g).connect(comp); nz.start(b0); nz.stop(b0 + len + 2);
+    }
+    if (S.screen === "race") addShake(16 * k);
   }
   function renderRace(dt, now) {
     const { w, h, dpr } = scr, t = S.track;
@@ -6491,7 +6577,7 @@
     else if (f.t === "scIn") say("scIn", null, 2);
     else if (f.t === "rain") say("rain", null, 1);
     else if (f.t === "puncture") say("puncture", f.name, 1, 8000);
-    else if (f.t === "fastest") say("fastest", f.name, 0, 20000);
+    else if (f.t === "fastest") { say("fastest", f.name, 0, 20000); const me = S.cars.get(S.myCar); if (me && me.name === f.name && !S.replaying) { const bt = $("bestText"); bt.classList.remove("fl"); void bt.offsetWidth; bt.classList.add("fl"); burstFrom(bt, "#b061ff", 12, 60); tone(880, 0.12, "triangle", 0.16); tone(1320, 0.18, "triangle", 0.14, 0, 0.1); } }
     else if (f.t === "elim") say(mine(f.name) ? "elimYou" : "elim", mine(f.name) ? null : f.name, 2);
     else if (f.t === "drs") say("drs", null, 0, 60000);
     else if (f.t === "jump") say("jump", null, 1, 8000);
@@ -7431,6 +7517,13 @@
   });
   socket.on("suggestions", (list) => { SG.list = list || []; renderSuggest(); });
   socket.on("account", (u) => { const n = u?.suggestAdmin; const b = $("suggestInboxBtn"); b.classList.toggle("hidden", !n); b.textContent = n?.unread ? `💡 Suggestions (${n.unread})` : "💡 Suggestions"; if (!$("suggestBox").classList.contains("hidden")) renderSuggest(); });
+  // just bought something: it lands with a burst of sparks in its rarity colour (and the card pops)
+  socket.on("account", (u) => {
+    const B = S.buying; if (!B || !u?.owned?.includes(B.id)) return; S.buying = null;
+    const col = { common: "#cbd5e1", rare: "#38bdf8", epic: "#c084fc", legendary: "#ffc21f", mythic: "#ff3b8a" }[B.rar] || "#ffcc1f";
+    sparkBurst(B.x, B.y, col, B.rar === "legendary" || B.rar === "mythic" ? 26 : 16, 90); sfx("level");
+    setTimeout(() => { const card = document.querySelector(`[data-item="${B.id}"]`); if (card) { card.classList.remove("just-bought"); void card.offsetWidth; card.classList.add("just-bought"); } }, 60);
+  });
   function tradesBlock(u) {
     if (!u?.trades?.length) return null;
     const sec = el("section", "sec-box"); sec.appendChild(el("h3", "hub-h", `🤝 Trade offers (${u.trades.length})`));
@@ -7625,6 +7718,22 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-10-06c", date: "6 Oct", title: "Real thunder, better rain, endless tunnels", items: [
+      "⛈️ Thunder now uses real-sounding recorded thunderclaps (4 different ones, each a bit deeper or higher every time) instead of one high-pitched sound. If they can't load, the built-in thunder is much deeper now and different every strike.",
+      "🌧️ The rain sounds like actual rain: a recorded downpour, or (if that can't load) thousands of single raindrops instead of static.",
+      "🚇 Tunnels can be as long as you like now, even most of the lap. They run from your first click to your second in the racing direction.",
+      "🚨 Safety car: cars at the back get a catch-up boost and brake later, so the field bunches up about twice as fast.",
+    ] },
+    { v: "u-2026-10-06b", date: "6 Oct", title: "No passing under the safety car, bridges that stay up, new gear", items: [
+      "🚨 Safety car: overtaking is now impossible. The order is frozen until it goes in (you can still go past a wrecked or stopped car, and cars in the pits rejoin where they come out).",
+      "🌉 Draw a bit of track right on top of another bit and it stays up on a bridge the whole way now (it used to sink down onto the road below, and cars crashed into each other).",
+      "🔁 Endurance (sharing a car): who qualifies and starts is picked at random, not always the same person. And the race after qualifying keeps you in one shared car (it used to give you a car each).",
+      "🎨 AI cars wear store paint jobs, rims, helmets and spoilers now.",
+      "⚡ Lightning: a CRACK and a huge BOOOOM, the screen shakes, and you can see the bolt.",
+      "🛒 22 new store items: Candy cane, Blueprint, Honeycomb, Dazzle camo, Comic book (animated) and Watercolour (animated) liveries; Diamond, Firefly, Feather and Flying saucer trails; 10 new badges; lime rims and a rose gold helmet.",
+      "🏅 153 new achievements: trades, gifts, emotes, saying GG, cheering friends on, bets, the daily wheel, daily and weekly challenges, selling items, tournaments and suggestions.",
+      "✨ New little moments: buying something bursts with sparks in its rarity colour, a fastest lap pops purple, a team level-up shines along the bar, and new chat messages slide in.",
+    ] },
     { v: "u-2026-10-06a", date: "6 Oct", title: "No more mystery slowdowns, red flag replays, a full tutorial", items: [
       "🐢 Fixed cars suddenly losing a third of their speed: completely worn tyres used to drop you straight from 86% to 62% speed. Now worn tyres slow you down gradually (70% when they're totally dead).",
       "🏎️ A GT3 in a Hypercar's slipstream can keep up with it now, but can't out-drag it any more (the tow used to take a GT3 past a Hyper's top speed).",

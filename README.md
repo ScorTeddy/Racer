@@ -308,6 +308,11 @@ Email (optional): set these Render environment variables (never put them in the 
 - `SUGGEST_FROM` (optional): the sender. Defaults to `Scribble GP <onboarding@resend.dev>`, Resend's test sender, which
   can only send to the address you signed up to Resend with. That's all a suggestion box needs.
 
+## Weather sounds
+Thunder (4 different strikes) and the rain loop are made once with ElevenLabs sound effects, using the same
+`ELEVENLABS_API_KEY` as the commentator, then kept like the voice clips (Upstash or the data folder) and served from
+`/sfx/<name>`. No key, or ElevenLabs fails? The game plays its own built-in thunder and rain instead.
+
 ## Race commentator
 Recorded clips in `public/commentary/`, made offline with the Kokoro neural TTS model (voice `af_heart`, its
 best-rated one) by `tools/commentary_gen.py`:
