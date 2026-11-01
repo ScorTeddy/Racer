@@ -2363,3 +2363,9 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 @media (min-width: 861px) and (min-height: 600px) {
   :root[data-theme="sketch"] body:not(.phone) #posText { background: color-mix(in srgb, var(--bg) 88%, transparent); box-shadow: 0 6px 14px rgba(0,0,0,0.18); }
 }
+
+/* season pass: premium-only items get a shimmering gold edge, the tier-60 mythic a rainbow one */
+.pr.premium-only { border-color: #ffcf40 !important; box-shadow: 0 0 0 2px rgba(255, 207, 64, 0.35), 0 0 14px rgba(255, 207, 64, 0.35); position: relative; }
+.pr.premium-only::before { content: "✦ PREMIUM ONLY"; position: absolute; top: 0.2rem; left: 50%; translate: -50% 0; font-size: 0.55rem; font-weight: 800; letter-spacing: 0.06em; color: #b88a00; background: #fff4c4; border-radius: 99px; padding: 0 0.35rem; white-space: nowrap; z-index: 1; }
+.pr.mythic { border-color: transparent !important; background-image: linear-gradient(var(--panel-solid), var(--panel-solid)), linear-gradient(120deg, #ff4fd8, #ffd24a, #22e6ff, #7c3aed); background-origin: border-box; background-clip: padding-box, border-box; }
+@media (prefers-reduced-motion: no-preference) { .pr.premium-only { animation: premGlow 2.4s ease-in-out infinite; } @keyframes premGlow { 50% { box-shadow: 0 0 0 2px rgba(255, 207, 64, 0.6), 0 0 22px rgba(255, 207, 64, 0.55); } } }

@@ -779,6 +779,15 @@
         const n = 8, at = Math.floor(performance.now() / 70) % (n * 2), k0 = at < n ? at : n * 2 - 1 - at;
         for (let k = 0; k < n; k++) { const on = Math.abs(k - k0) <= 1; c.fillStyle = on ? "#ff3355" : "rgba(255,51,85,0.25)"; if (on) { c.shadowColor = "#ff3355"; c.shadowBlur = 6; } c.fillRect(-L / 2 - 2.6, -Wd / 2 - 2.5 + k * ((Wd + 5) / n), 3.2, (Wd + 5) / n - 0.6); c.shadowBlur = 0; }
       }
+      else if (typeof X.wing === "string" && X.wing.startsWith("tw_")) {   // PREMIUM pass wing: theme colours + a glowing edge
+        const T = passTheme(X.wing.slice(3)), g = c.createLinearGradient(0, -Wd / 2 - 3, 0, Wd / 2 + 3);
+        g.addColorStop(0, T.c[0]); g.addColorStop(0.5, T.c[1]); g.addColorStop(1, T.c[0]);
+        c.fillStyle = "#15161a"; c.fillRect(-L / 2 - 4, -Wd / 2 - 3, 2.5, 5); c.fillRect(-L / 2 - 4, Wd / 2 - 2, 2.5, 5);
+        c.save(); c.shadowColor = T.glow || T.c[0]; c.shadowBlur = 5 + 2 * Math.sin(performance.now() / 260);
+        c.fillStyle = g; c.fillRect(-L / 2 - 3.5, -Wd / 2 - 3.5, 5, Wd + 7); c.restore();
+        c.fillStyle = "rgba(255,255,255,0.55)"; c.fillRect(-L / 2 - 3, -Wd / 2 - 3, 1, Wd + 6);
+        c.fillStyle = T.c[0]; c.fillRect(-L / 2 - 4.5, -Wd / 2 - 4, 6.5, 1.6); c.fillRect(-L / 2 - 4.5, Wd / 2 + 2.4, 6.5, 1.6);   // end plates
+      }
       else if (X.wing === "duck") { c.fillStyle = wc; rrect(c, -L / 2 - 1, -Wd / 2 + 2, 4, Wd - 4, 2); c.fill(); }
       else {
         const decks = X.wing === "twin" ? [-L / 2 - 3, -L / 2 + 2] : [-L / 2 - 2];
@@ -787,11 +796,12 @@
       }
     }
     // number
-    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"], disco: [DISCO[Math.floor(performance.now() / 250) % DISCO.length], "#111"], carbon: ["#1f2328", "#e5e7eb"], papaya: ["#ff8000", "#111"], green: ["#0b6e3a", "#fff"], fire: [`hsl(${20 + 22 * Math.sin(performance.now() / 70)},100%,52%)`, "#fff"] }[X.num] || ["#fff", "#111"];
+    const NP = { gold: ["#ffcc1f", "#1b1400"], black: ["#111", "#fff"], neon: ["#0b0d18", "#22e6ff"], beige: ["#d8ccb0", "#4a3f2e"], red: ["#e53935", "#fff"], rainbow: [`hsl(${hueNow},90%,60%)`, "#111"], blue: ["#1e63d6", "#fff"], chrome: ["#dfe6ee", "#1b1f26"], holo: [`hsl(${(hueNow * 1.5) % 360},85%,72%)`, "#0b0d18"], disco: [DISCO[Math.floor(performance.now() / 250) % DISCO.length], "#111"], carbon: ["#1f2328", "#e5e7eb"], papaya: ["#ff8000", "#111"], green: ["#0b6e3a", "#fff"], fire: [`hsl(${20 + 22 * Math.sin(performance.now() / 70)},100%,52%)`, "#fff"] }[X.num] || (typeof X.num === "string" && X.num.startsWith("tn_") ? [passTheme(X.num.slice(3)).c[0], "#fff"] : ["#fff", "#111"]);
     const nx = B === "f1" ? 11 : B === "kart" ? 9 : -14, nr = open ? 5 : 7;
     c.fillStyle = NP[0]; c.beginPath(); c.arc(nx, 0, nr, 0, Math.PI * 2); c.fill();
     if (car.cls && X.num !== "neon") { c.strokeStyle = CLASSES[car.cls]?.col || "#fff"; c.lineWidth = 1.8; c.stroke(); }
     if (X.num === "neon") { c.strokeStyle = "#22e6ff"; c.lineWidth = 1.5; c.stroke(); }
+    if (typeof X.num === "string" && X.num.startsWith("tn_")) { c.strokeStyle = passTheme(X.num.slice(3)).c[1]; c.lineWidth = 1.8; c.stroke(); }
     c.save(); c.translate(nx, 0); c.rotate(Math.PI / 2); if (open) c.scale(0.75, 0.75);
     c.fillStyle = NP[1]; c.font = (NUM_FONTS.find((f) => f[0] === car.numFont) || NUM_FONTS[0])[2]; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(car.number ?? ""), 0, 0.5);
     c.restore();
@@ -894,6 +904,13 @@
   function drawDecal(c, kind, L, Wd, B) {
     const x = B === "f1" ? -L * 0.16 : L * 0.28, y = 0;   // on the bonnet (engine cover on the open-wheeler)
     c.save(); c.translate(x, y);
+    if (typeof kind === "string" && kind.startsWith("td_")) {   // PREMIUM pass decal: the theme's icon in a two-tone roundel
+      const T = passTheme(kind.slice(3));
+      c.fillStyle = T.c[1]; c.beginPath(); c.arc(0, 0, 6.2, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = T.c[0]; c.lineWidth = 1.6; c.stroke();
+      c.rotate(Math.PI / 2); c.font = "7px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(T.icon || "✦", 0, 0.5);
+      c.restore(); return;
+    }
     switch (kind) {
       case "star": c.fillStyle = "#ffe066"; c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i / 10) * Math.PI * 2, r = i % 2 ? 2.2 : 5; c.lineTo(Math.cos(a) * r, Math.sin(a) * r); } c.closePath(); c.fill(); break;
       case "bolt": c.fillStyle = "#ffd21f"; c.beginPath(); c.moveTo(4, -6); c.lineTo(-1, 0.5); c.lineTo(2, 0.5); c.lineTo(-4, 6); c.lineTo(0, -1); c.lineTo(-2.5, -1); c.closePath(); c.fill(); break;
@@ -945,6 +962,8 @@
     }
     c.restore();
   }
+  // a season pass theme by key (colours, icon), for the premium-track cosmetics
+  const passTheme = (key) => (A.catalog?.passThemes || []).find((x) => x.key === key) || { c: ["#ffd24a", "#ff4fd8"], icon: "✦" };
   // chest liveries (original designs), painted over the whole body
   function drawLivery(c, kind, base, L, Wd, hue) {
     const x0 = -L / 2, y0 = -Wd / 2;
@@ -952,6 +971,18 @@
     const R = seeded(kind.length * 97);
     // a season pass theme's MYTHIC livery: the theme's colours flowing over the car, a shine sweeping across, and its
     // icon riding on the roof (works for any theme, new ones too)
+    // PREMIUM pass livery: the theme's colours as a split body with a sharp chevron, twin pinstripes, a soft sheen and
+    // a row of the theme's icon down one side (static, so it reads as its own thing next to the animated mythic)
+    if (typeof kind === "string" && kind.startsWith("tl_")) {
+      const T = passTheme(kind.slice(3)), [a, b] = T.c;
+      c.fillStyle = a; c.fillRect(x0, y0, L, Wd);
+      c.fillStyle = b; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x0 + L * 0.42, y0); c.lineTo(x0 + L * 0.62, 0); c.lineTo(x0 + L * 0.42, -y0); c.lineTo(x0, -y0); c.closePath(); c.fill();
+      c.strokeStyle = "rgba(255,255,255,0.85)"; c.lineWidth = 0.9; c.beginPath(); c.moveTo(x0 + L * 0.47, y0); c.lineTo(x0 + L * 0.67, 0); c.lineTo(x0 + L * 0.47, -y0); c.stroke();
+      c.strokeStyle = "rgba(20,20,30,0.55)"; c.lineWidth = 0.7; c.beginPath(); c.moveTo(x0, y0 + 2.2); c.lineTo(-x0, y0 + 2.2); c.moveTo(x0, -y0 - 2.2); c.lineTo(-x0, -y0 - 2.2); c.stroke();
+      const sh = c.createLinearGradient(0, y0, 0, -y0); sh.addColorStop(0, "rgba(255,255,255,0.28)"); sh.addColorStop(0.45, "rgba(255,255,255,0)"); sh.addColorStop(1, "rgba(0,0,0,0.18)"); c.fillStyle = sh; c.fillRect(x0, y0, L, Wd);
+      if (T.icon) { c.save(); c.font = `${Math.max(4, Math.round(Wd * 0.22))}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.globalAlpha = 0.9; for (let k = 0; k < 3; k++) c.fillText(T.icon, -x0 - L * (0.12 + k * 0.11), y0 + Wd * 0.2); c.restore(); }
+      return;
+    }
     if (typeof kind === "string" && kind.startsWith("tm_")) {
       const T = (A.catalog?.passThemes || []).find((x) => x.key === kind.slice(3)), col = T?.c || ["#ffd24a", "#ff4fd8"], t = performance.now() / 1000;
       const g = c.createLinearGradient(x0 + Math.sin(t * 0.9) * L * 0.3, y0, -x0 + Math.sin(t * 0.9) * L * 0.3, -y0);
@@ -7637,8 +7668,8 @@
     return "";
   }
   function rewardCell(rw, locked, got) {
-    const d = el("div", "pr" + (locked ? " locked" : "") + (got ? " got" : "") + (rw.item ? " item" : rw.crate ? " crate" : ""));
     const it = rw.item && A.catalog?.store.find((x) => x.id === rw.item);
+    const d = el("div", "pr" + (locked ? " locked" : "") + (got ? " got" : "") + (rw.item ? " item" : rw.crate ? " crate" : "") + (it?.premium ? " premium-only" : "") + (it?.rarity === "mythic" ? " mythic" : ""));
     if (it) { d.appendChild(itemPreview(it, 96, 54)); d.style.setProperty("--rc", RARITY[it.rarity]?.[1]); }
     else d.appendChild(el("span", "pr-ic", rw.crate ? "🎁" : rw.spins ? "🎡" : "🪙"));
     d.appendChild(el("small", "", rewardText(rw)));
@@ -7673,7 +7704,7 @@
       } else pb.appendChild(el("small", "", "Max the pass again to prestige once more."));
       box.appendChild(pb);
     }
-    box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). 60 tiers. The free track pays coins, a themed item, crates and 🎡 wheel spins. Premium adds this month's items, themed crates you can't get anywhere else, and more wheel spins."));
+    box.appendChild(el("p", "preset-note", "Pass XP: every race (+60, more for places beaten and wins, +40 in ranked), daily challenges (+150), weekly challenges (+300). 60 tiers. The free track pays coins, a themed item, crates and 🎡 wheel spins. Premium adds this month's whole themed set, a ✦ premium-only livery, wing, bonnet decal and number plate (never in crates), lots more coins, crates and spins, and the animated MYTHIC livery at tier 60."));
     // crates you own
     const crates = Object.entries(u.crates || {}).filter(([, n]) => n > 0);
     if (crates.length) {
@@ -8190,6 +8221,11 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-11-05", date: "5 Nov", title: "🎟️ A better season pass", items: [
+      "🪙 Free track: more coins every tier and an extra themed crate at tier 20.",
+      "⭐ Premium: every month now has a ✦ PREMIUM-ONLY set you can't get from crates: a themed livery, a glowing themed wing, a bonnet decal and a number plate.",
+      "🔮 Premium tier 60 is now the month's animated MYTHIC livery, guaranteed (it used to be a rare crate drop only). Plus more coins, crates (up to 4 at once) and wheel spins all the way up.",
+    ] },
     { v: "u-2026-11-04", date: "4 Nov", title: "✏️ A new race screen", items: [
       "📝 In Sketchbook (light and dark) the race screen is drawn like the notebook now: the lap on a sticky note at the top with your place circled in red, the leaderboard on a notepad, big Defend / BOOST / Box box stickers along the bottom and your upgrade cards as a fanned hand of cards.",
       "📱 Phones keep their compact layout; Broadcast dark looks the same as before.",

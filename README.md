@@ -180,6 +180,11 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   live odds (0.9 / chance, 1.05x to 25x, locked in when you pick); a car above 80% can't be picked.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
+- **Season pass rewards** (`passRewards` in accounts.js): free track = more coins (70 + 6/tier, 200 + 10/tier every 5th), the
+  themed rims at 15 and crates at 20/30/45/60. Premium = the themed set plus a **✦ premium-only set** per theme
+  (`PREMIUM_SET`: livery `tl_`, wing `tw_`, bonnet decal `td_`, number plate `tn_` + theme key; drawn on the client from the
+  theme's colours, so new themes get them automatically; `premium: true` keeps them out of crates), more coins, crates and
+  spins, and the theme's animated mythic guaranteed at tier 60.
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
   Festive), 60 tiers of 250 XP. Free track: coins, wheel spins, a themed item (tier 15) and themed crates (tiers 30, 45, 60). Premium
   (2,000 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)
