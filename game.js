@@ -24,6 +24,8 @@
     beach:   { ground: "#e9d8a6", speck: ["rgba(255,255,255,0.35)", "rgba(160,120,60,0.12)"], tex: "dunes", runoff: "#f3e6bf", asphalt: "#474a52", curbA: "#ffffff", curbB: "#0ea5b7", line: "rgba(255,255,255,0.5)", water: "#2bb3c9" },
     city:    { ground: "#7b8088", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.1)"], tex: "slabs", runoff: "#9aa0a8", asphalt: "#2e3036", curbA: "#ffd21f", curbB: "#1c1c1c", line: "rgba(255,255,255,0.5)" },
     volcano: { ground: "#2b2320", speck: ["rgba(255,90,20,0.18)", "rgba(0,0,0,0.3)"], tex: "lava", runoff: "#4a3a33", asphalt: "#1f1c1c", curbA: "#ffb020", curbB: "#b91c1c", line: "rgba(255,190,120,0.45)" },
+    // ✏️ the Sketchbook look: graph paper, a pencil-grey road with an ink edge, red-and-white marker kerbs
+    paper:   { ground: "#fbf7ec", speck: ["rgba(31,38,51,0.035)", "rgba(47,111,228,0.035)"], tex: "paper", runoff: "#f1e8cf", asphalt: "#9ea5b1", curbA: "#ffffff", curbB: "#e5483f", line: "rgba(255,255,255,0.9)", ink: "#1f2633" },
     neon:    { ground: "#120d24", speck: ["rgba(180,120,255,0.08)", "rgba(0,0,0,0.3)"], tex: "grid", runoff: "#231a40", asphalt: "#18142a", curbA: "#22e6ff", curbB: "#ff2bd6", line: "rgba(120,240,255,0.6)", night: true },
   };
   const TIRES = {
@@ -72,7 +74,7 @@
     { key: "shake", label: "Screen shake", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "minimap", label: "Minimap", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
-    { key: "theme", label: "Menu theme", def: "broadcast", opts: [["broadcast", "Broadcast (new)"], ["dark", "Classic dark"], ["light", "Light"]] },
+    { key: "theme", label: "Look", hint: "Sketchbook: the whole game drawn in a notebook. Dark: the night-time broadcast look.", def: "sketch", opts: [["sketch", "✏️ Sketchbook (new)"], ["broadcast", "🌙 Dark"], ["dark", "Classic dark"], ["light", "Light"]] },
     { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
@@ -92,6 +94,8 @@
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
   // the Broadcast look is the new default menu theme: players on the old dark theme move over once (Settings has Classic)
   if (!settings.themeV) { if (settings.theme === "dark") settings.theme = "broadcast"; settings.themeV = 1; }
+  // the Sketchbook look is the new default: everyone moves over once (🌙 on the menu or Settings > Look switches back to Dark)
+  if (settings.themeV < 2) { settings.theme = "sketch"; settings.themeV = 2; }
   settings.keys = { ...KEY_DEFAULTS, ...(settings.keys && typeof settings.keys === "object" ? settings.keys : {}) };
   const KEY = (a) => settings.keys[a] || KEY_DEFAULTS[a];
   const keyName = (code) => (!code ? "?" : code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) : code.startsWith("Numpad") ? "Num " + code.slice(6)
@@ -108,6 +112,8 @@
   const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
   function applySettings() {
     document.documentElement.dataset.theme = settings.theme;
+    { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = settings.theme === "sketch" ? "#fbf7ec" : settings.theme === "light" ? "#e9ebef" : "#14161b"; }
+    { const b = document.getElementById("lookBtn"); if (b) { const sk = settings.theme === "sketch"; b.textContent = sk ? "🌙" : "✏️"; b.title = sk ? "Switch to the dark look" : "Switch to the Sketchbook look"; b.setAttribute("aria-label", b.title); } }
     // UI size: everything in the menus and HUD is sized in rem, so this scales it all
     const ui = { s: 82, m: 100, l: 115, xl: 130 }[settings.ui] || (isPhone() ? 88 : 100);
     document.documentElement.style.fontSize = ui + "%";
@@ -127,6 +133,8 @@
     }
     try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
   }
+  // ✏️ / 🌙 on the menu: one tap between the Sketchbook look and the dark one
+  document.getElementById("lookBtn")?.addEventListener("click", () => { settings.theme = settings.theme === "sketch" ? "broadcast" : "sketch"; applySettings(); });
   let setTab = "general", rebinding = null;
   function renderSettings() {
     const body = $("setBody"); body.textContent = "";
@@ -1532,7 +1540,7 @@
     const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
     sc.onload = () => {
       google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential, backup: backupFor(lastAcct()) }) });
-      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
+      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" || settings.theme === "sketch" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
     };
     document.head.appendChild(sc);
   }).catch(() => {});
@@ -2519,6 +2527,14 @@
     $("netVeil").classList.add("hidden");
     if (was) { show("menu"); menuErr.textContent = "That room's gone (it ended while you were away)."; }
     S.restarting = false;
+  });
+  // Sketchbook look: a new room you're the host of starts on the ✏️ Paper scenery (only once, and only if it's still on
+  // the default: pick anything else and it stays picked)
+  const PAPERED = new Set();
+  socket.on("lobby", (l) => {
+    if (!S.me || !l?.code) return;
+    if (settings.theme === "sketch" && l.hostId === S.me && !l.ranked && !l.raceNo && l.phase === "lobby" && l.settings?.theme === "night" && !PAPERED.has(l.code)) { PAPERED.add(l.code); socket.emit("settings", { theme: "paper" }); }
+    PAPERED.add(l.code);
   });
   socket.on("lobby", (l) => {
     S.lobby = l; S.host = l.hostId === S.me && !l.ranked;
@@ -3754,7 +3770,13 @@
     boardDims();
     const c = bctx, dpr = B.dpr || 1;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h);
+    if (settings.theme === "sketch") {      // ✏️ the desk under the page: more graph paper
+      c.fillStyle = "#f3eee0"; c.fillRect(0, 0, B.w, B.h);
+      c.strokeStyle = "#e1e5ea"; c.lineWidth = 1; c.beginPath();
+      for (let x = 0.5; x < B.w; x += 28) { c.moveTo(x, 0); c.lineTo(x, B.h); }
+      for (let y = 0.5; y < B.h; y += 28) { c.moveTo(0, y); c.lineTo(B.w, y); }
+      c.stroke();
+    } else { c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h); }
     const themeKey = S.lobby?.settings.theme || "grass", th = THEMES[themeKey]; th.key = themeKey;
     const T = S.track;
     // everyone else watches the host's drawing appear live
@@ -5677,7 +5699,7 @@
     if (cur) { if (out.length && out[0][0] === 0) out[0] = [...cur, ...out[0]]; else out.push(cur); }
     return out;
   }
-  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150" };
+  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150", paper: "#efe6cf" };
   // The road is drawn as "runs": stretches where the width is (almost) the same, each stroked
   // with its own line width. Width changes are gradual, so the joins are invisible.
   function widthRuns(t, idxs, cum, closed) {
@@ -5776,6 +5798,10 @@
     const cv = document.createElement("canvas"); cv.width = cv.height = 256;
     const c = cv.getContext("2d");
     let seed = kind === "gravel" ? 7 : 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    if (kind === "pencil") {      // graphite grain for the paper road: short soft strokes, mostly one way
+      for (let i = 0; i < 1400; i++) { const x = rnd() * 256, y = rnd() * 256, l = 3 + rnd() * 9, a = 0.6 + (rnd() - 0.5) * 0.5; c.strokeStyle = `rgba(40,46,60,${0.05 + rnd() * 0.12})`; c.lineWidth = 0.8 + rnd() * 1.2; for (const [ox, oy] of [[0, 0], [256, 0], [0, 256], [-256, 0], [0, -256]]) { c.beginPath(); c.moveTo(x + ox, y + oy); c.lineTo(x + ox + Math.cos(a) * l, y + oy + Math.sin(a) * l); c.stroke(); } }
+      return (texCache[key] = cv);
+    }
     if (kind === "gravel") { c.fillStyle = GRAVEL[th.key] || GRAVEL.grass; c.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { c.fillStyle = i % 3 ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.12)"; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 2, 2 + rnd() * 2); } }
     else {
       c.fillStyle = th.ground; c.fillRect(0, 0, 256, 256);
@@ -5785,6 +5811,7 @@
       if (T === "dunes") { c.strokeStyle = "rgba(120,80,30,0.13)"; c.lineWidth = 2.5; for (let y = 8; y < 256; y += 21) { c.beginPath(); for (let x = 0; x <= 256; x += 4) c.lineTo(x, y + Math.sin((x / 256) * Math.PI * 4 + y) * 5); c.stroke(); } }
       if (T === "drifts") { for (let i = 0; i < 26; i++) { const x = rnd() * 256, y = rnd() * 256, r = 14 + rnd() * 30; for (const [ox, oy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) { const g = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); } } }
       if (T === "slabs") { c.strokeStyle = "rgba(0,0,0,0.16)"; c.lineWidth = 2; for (let y = 0; y < 256; y += 32) { c.beginPath(); c.moveTo(0, y); c.lineTo(256, y); c.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < 256; x += 64) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 32); c.stroke(); } } }
+      if (T === "paper") { c.strokeStyle = "#dde6f0"; c.lineWidth = 2; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v + 1, 0); c.lineTo(v + 1, 256); c.moveTo(0, v + 1); c.lineTo(256, v + 1); c.stroke(); } }
       if (T === "grid") { c.strokeStyle = "rgba(170,90,255,0.22)"; c.lineWidth = 1.5; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v, 0); c.lineTo(v, 256); c.moveTo(0, v); c.lineTo(256, v); c.stroke(); } }
       if (T === "lava") { c.lineCap = "round"; for (let i = 0; i < 7; i++) { let x = rnd() * 256, y = rnd() * 256; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; c.lineTo(x, y); } c.strokeStyle = "rgba(255,80,10,0.18)"; c.lineWidth = 7; c.stroke(); c.strokeStyle = "rgba(255,170,40,0.55)"; c.lineWidth = 1.8; c.stroke(); } }
       if (T === "leaves") { for (let i = 0; i < 160; i++) { c.fillStyle = ["rgba(230,120,30,0.5)", "rgba(200,60,30,0.45)", "rgba(240,190,60,0.45)"][i % 3]; c.save(); c.translate(rnd() * 256, rnd() * 256); c.rotate(rnd() * 6.3); c.beginPath(); c.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.restore(); } }
@@ -5844,6 +5871,7 @@
       city:    { b: 0.75, bk: "office", t: ["tree", "car", "car"] },
       volcano: { b: 0.1, bk: "bunker", t: ["rock", "rock", "lava", "vent", "rock"] },
       neon:    { b: 0.8, bk: "cyber", t: ["holo", "lampNeon", "car"] },
+      paper:   { b: 0.08, bk: "farm", t: ["tree", "tree", "bush"] },
     }[theme] || { b: 0.15, bk: "farm", t: ["tree"] };
     const area = (t.W * t.H) / 1e6, tries = Math.round(area * (theme === "city" || theme === "neon" ? 700 : 300));
     if (theme === "volcano") for (let k = 0; k < 20; k++) { const r = 180 + R() * 120, x = r + R() * (t.W - 2 * r), y = r + R() * (t.H - 2 * r); if (free(x, y, r)) { put({ k: "volcano", x, y, r }); break; } }
@@ -6039,9 +6067,11 @@
     c.lineWidth = 50; c.strokeStyle = th.asphalt; c.stroke(G.lane);
     c.lineCap = "round";
     strokeRuns(c, G.runs, 24, th.runoff);
+    if (th.ink) strokeRuns(c, G.runs, 20, th.ink);             // (paper: an ink outline round the road)
     strokeRuns(c, G.runs, 14, th.curbA);
     c.lineCap = "butt"; strokeRuns(c, G.runs, 14, th.curbB, [22, 22]); c.lineCap = "round";
     strokeRuns(c, G.runs, 0, th.asphalt);
+    if (th.ink) { c.save(); c.globalAlpha = 0.5; strokeRuns(c, G.runs, 0, c.createPattern(tex("pencil", th), "repeat")); c.restore(); }
     c.lineCap = "butt"; c.lineWidth = 3; c.strokeStyle = th.line; c.setLineDash([26, 30]);
     for (const r of G.runs) { c.lineDashOffset = r.dash; c.stroke(r.p); }
     c.setLineDash([]); c.lineDashOffset = 0; c.lineCap = "round";
@@ -6731,9 +6761,16 @@
       if (showName) {
         const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
         const label = (pos ? (S.race?.multi && c.cls ? `${CLASSES[c.cls].short} P${classPos(c.id)} ` : `P${pos} `) : "") + (c.extras?.prest ? c.extras.prest + " " : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
-        ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
-        ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        if (THEMES[S.track?.theme]?.ink) {      // paper track: hand-written names in ink, with a white halo
+          ctx.font = "16px 'Patrick Hand', 'Chakra Petch', sans-serif";
+          ctx.lineWidth = 4; ctx.strokeStyle = "rgba(255,253,248,0.92)"; ctx.strokeText(label, c.x, c.y - 24);
+          ctx.fillStyle = c.id === S.myCar ? "#c2410c" : c.owner ? "#1d4ed8" : "#1f2633"; ctx.fillText(label, c.x, c.y - 24);
+        } else {
+          ctx.font = "700 13px 'Chakra Petch', sans-serif";
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
+          ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
+        }
       }
       const em = S.emotes && S.emotes.get(c.id);
       if (em && em.until > performance.now()) {
@@ -6836,13 +6873,14 @@
     const s = Math.min((mw - pad * 2) / t.W, (mh - pad * 2) / t.H), ox = (mw - t.W * s) / 2, oy = (mh - t.H * s) / 2;
     if (!S.geo) return;
     mctx.save(); mctx.translate(ox, oy); mctx.scale(s, s);
-    mctx.lineWidth = 5 / s; mctx.strokeStyle = "rgba(255,255,255,0.35)"; mctx.lineJoin = "round"; mctx.stroke(S.geo.trackPath);
+    const sk = settings.theme === "sketch";
+    mctx.lineWidth = (sk ? 6 : 5) / s; mctx.strokeStyle = sk ? "rgba(31,38,51,0.8)" : "rgba(255,255,255,0.35)"; mctx.lineJoin = "round"; mctx.stroke(S.geo.trackPath);
     mctx.restore();
     for (const c of S.cars.values()) {
       if (c.x === undefined) continue;
       mctx.beginPath(); mctx.arc(ox + c.x * s, oy + c.y * s, c.id === S.myCar ? 4.5 : 3.2, 0, Math.PI * 2);
       mctx.fillStyle = c.color; mctx.globalAlpha = c.ghost ? 0.45 : 1; mctx.fill(); mctx.globalAlpha = 1;
-      if (c.id === S.myCar) { mctx.lineWidth = 1.5; mctx.strokeStyle = "#fff"; mctx.stroke(); }
+      if (c.id === S.myCar || settings.theme === "sketch") { mctx.lineWidth = 1.5; mctx.strokeStyle = settings.theme === "sketch" ? "#1f2633" : "#fff"; mctx.stroke(); }
     }
   }
   // ---- Boost: hold the button (or Space / N). 100% tank, drains while held, refills slowly ----
@@ -7502,7 +7540,7 @@
   // ======================= Track of the Week =======================
   socket.on("totwInfo", (t) => { S.totw = t; renderTotw(); });
   socket.on("connect", () => socket.emit("totw:info"));
-  const THEME_NAME = { grass: "Grass", desert: "Desert", snow: "Snow", night: "Night", autumn: "Autumn", beach: "Beach", city: "City", volcano: "Volcano", neon: "Neon night" };
+  const THEME_NAME = { grass: "Grass", desert: "Desert", snow: "Snow", night: "Night", autumn: "Autumn", beach: "Beach", city: "City", volcano: "Volcano", neon: "Neon night", paper: "Paper" };
   function renderTotw() {
     const t = S.totw; if (!t) return;
     const days = Math.max(1, Math.ceil((t.ends - Date.now()) / 86400000));
@@ -8124,6 +8162,11 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-11-02", date: "2 Nov", title: "✏️ The Sketchbook look", items: [
+      "✏️ A whole new look: the game is drawn in a notebook now. Graph paper, marker headings, sticky notes and tape, a notepad leaderboard and a highlighter boost bar.",
+      "📄 New ✏️ Paper scenery: a pencil-grey road with an ink edge on graph paper. Rooms you make start on it (pick any other scenery in the room as usual).",
+      "🌙 Prefer the dark look? Tap 🌙 next to ⚙ on the menu (or Settings › Look). ✏️ switches back. Your car's livery, colours, designs and all the race effects look the same in both.",
+    ] },
     { v: "u-2026-11-01", date: "1 Nov", title: "Ranked seasons, rivalries and live odds", items: [
       "🗓️ Ranked seasons: every month is a season, played in your league (the tier you start it in). Finish higher and you're PROMOTED (+300 bonus coins), lower and you're relegated. Season coins for the best tier you reach, and the ranked leaderboard starts fresh each season.",
       "⚔️ Rivalries: every race with another signed-in player counts now (not just friends). See your record before the lights, ⚔️ marks them on the leaderboard, and the room hears about it when rivals finish side by side. Profile › Friends shows your biggest rivalries.",

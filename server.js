@@ -292,7 +292,7 @@ const AI_LEVELS = {
   // ranked only (Overdrive Elite): the fastest AI in the game
   elite:   { skill: [1.09, 1.14], power: 1.11, xp: 4, mistakes: 0.08, aggr: 1.5, react: [0.04, 0.09], rankedOnly: true },
 };
-const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"];
+const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon", "paper"];   // (paper: the Sketchbook look's notebook page)
 const WEATHERS = ["sunny", "rain", "dynamic", "fog"];
 // Math.random, but the same numbers every time for the same seed (Track of the Week is the same for everyone)
 function withSeed(seed, fn) {

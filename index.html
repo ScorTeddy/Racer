@@ -22,7 +22,7 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"Scribble GP: Team Boss","description":"Multiplayer racing team manager: draw a track, pick tires, call pit stops and race friends and AI drivers.","genre":["Racing","Strategy"],"gamePlatform":"Web browser","playMode":["SinglePlayer","MultiPlayer"],"applicationCategory":"Game","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Emmett"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700;1,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;600;700&family=Permanent+Marker&family=Patrick+Hand&family=Caveat:wght@600;700&family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,700;1,900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/game.css">
 </head>
 <body>
@@ -34,6 +34,7 @@
 <div class="screen" id="menu">
   <form class="menu-card panel" id="menuForm" novalidate>
     <button type="button" class="gear" data-settings aria-label="Settings">⚙</button>
+    <button type="button" class="gear look-btn" id="lookBtn" aria-label="Switch to the dark look" title="Switch to the dark look">🌙</button>
     <div class="menu-head">
       <h1 class="logo display">Scribble <span>GP</span></h1>
       <p class="tag">Team Boss</p>
@@ -205,7 +206,7 @@
           <label class="f">AI drivers (0-60) <input type="number" id="sAi" min="0" max="60" step="1" value="5" inputmode="numeric"></label>
           <p class="crowd-warn wide hidden" id="crowdWarn" role="status"></p>
           <label class="f">Map size <select id="sMap"><option value="small">Small</option><option value="normal" selected>Normal</option><option value="large">Large</option><option value="huge">Huge</option></select></label>
-          <label class="f">Track theme <select id="sTheme"><option value="night" selected>🌙 Night (headlights on)</option><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
+          <label class="f">Track theme <select id="sTheme"><option value="night" selected>🌙 Night (headlights on)</option><option value="paper">✏️ Paper</option><option value="grass">Grass</option><option value="desert">Desert</option><option value="snow">Snow</option><option value="autumn">Autumn</option><option value="beach">Beach</option><option value="city">City streets</option><option value="volcano">Volcano</option><option value="neon">Neon night</option></select></label>
           <label class="f">Race speed <select id="sSpeed"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option></select></label>
           <label class="f">Tire wear <select id="sWear"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
           <label class="f wide">Weather <select id="sWeather"><option value="sunny">☀ Always sunny</option><option value="rain">🌧 Always rainy</option><option value="dynamic">⛅ Dynamic (changes mid-race)</option><option value="fog">🌫 Fog (you can't see far)</option></select></label>

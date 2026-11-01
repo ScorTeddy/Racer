@@ -2033,3 +2033,8 @@ test("100 thunderclaps can be asked for, and no more", async () => {
   const r = await fetch(base + "/sfx/thunder57"); assert.ok(r.status === 503 || r.status === 200);
   assert.equal((await fetch(base + "/sfx/thunder101")).status, 404);
 });
+
+test("paper scenery (the Sketchbook look): a room can use it and the track carries it", () => {
+  const r = new game.Room("PAPERSC", false); r.settings.theme = "paper"; r.setRandomTrack("normal", "regular");
+  assert.equal(r.trackMsg().theme, "paper");
+});

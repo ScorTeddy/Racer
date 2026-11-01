@@ -26,6 +26,19 @@ public/commentary/ recorded commentary clips + lines.json
 All of these sit in the main folder next to server.js. The server also finds them inside a `public/` folder
 (it looks there first), so either layout works.
 
+## Looks: ✏️ Sketchbook (default) and 🌙 Dark
+- **Settings › Look** (`settings.theme`, saved in `tb-settings`): `sketch` (default), `broadcast` (🌙 Dark), `dark` (classic),
+  `light`. The ✏️/🌙 button next to ⚙ on the menu (`#lookBtn`) flips between Sketchbook and Dark. Everyone was moved to
+  Sketchbook once (`themeV` 2); they can switch back any time.
+- **Sketchbook CSS** is the block at the end of game.css, all under `:root[data-theme="sketch"]`: graph paper, Permanent
+  Marker / Patrick Hand / Caveat fonts (Google Fonts link in index.html), white cards with an ink outline and hard shadow,
+  sticky-note Quick Play, tape ticker, notepad leaderboard, highlighter boost bar. Text that was yellow (for dark
+  backgrounds) is marker gold there (`--sk-gold`); yellow backgrounds stay bright.
+- **✏️ Paper scenery** (`THEMES.paper` in game.js, `paper` in `THEME_KEYS` in server.js): graph-paper ground, pencil-grey road
+  with an ink edge and graphite grain (`tex("pencil")`), red-and-white kerbs, hand-written car names. A Sketchbook host's
+  new room starts on it (only while it's still on the default Night). Cars, liveries, designs and effects are drawn
+  exactly the same on every scenery and in both looks.
+
 ## Before every update: run the tests
 `npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
 full race against the AI (about 30 seconds). If anything says `not ok`, don't upload yet.
