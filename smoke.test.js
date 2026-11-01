@@ -1914,6 +1914,9 @@ test("party mode sabotage: oil spins cars, a storm cloud makes a bit of track we
   r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
   for (let n = 0; n < 60 * 8; n++) r.step(1 / 60);
   assert.ok(r.partyOn());
+  // AI drivers play random sabotage cards during the warm-up too: wipe them so this test starts from a clean, dry track
+  r.hazards = []; for (const c of r.cars) { c.cloudWet = 0; c.oilAt = -99; c.slipT = 0; c.blindT = 0; c.inPit = false; }
+  r.stepHazards(1 / 60);
   const order = r.standings(), lead = order[0], second = order[1];
   r.sabotage(second, "__oil"); const oil = r.hazards.find((h) => h.k === "oil"); assert.ok(oil);
   const victim = order[2]; victim.x = oil.x; victim.y = oil.y; victim.speed = 300; victim.slipT = 0; r.time += 0.01; r.stepHazards(1 / 60);

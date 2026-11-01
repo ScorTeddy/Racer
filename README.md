@@ -12,14 +12,19 @@ accounts.js        Google sign-in, saved stats, achievements, coins and the stor
 f1-tracks.json     42 real-world layouts under made-up names (e.g. "Old Airfield Circuit", "Eifel Northern Loop"), keep it next to server.js
 filter.js          bad-word filter for names, team names and usernames
 package.json       dependencies (express, socket.io, zxcvbn, qrcode) + "npm test"
-test/smoke.test.js automatic checks: pages, headers, filter, passwords and a whole race vs the AI
-public/index.html  the page itself (all the screens' HTML)
-public/game.js     the whole game client (menu, room, race view, HUD, settings, profile)
-public/game.css    all the styles
-public/faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
-public/og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
+smoke.test.js      automatic checks: pages, headers, filter, passwords and a whole race vs the AI
+index.html         the page itself (all the screens' HTML)
+game.js            the whole game client (menu, room, race view, HUD, settings, profile)
+game.css           all the styles
+faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
+og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
+music.json         your own songs list (see "Your own songs" below)
+public/commentary/ recorded commentary clips + lines.json
+.gitignore         keeps accounts, keys and node_modules off GitHub (the name MUST start with a dot)
                                                      (robots.txt and sitemap.xml are made by server.js)
 ```
+All of these sit in the main folder next to server.js. The server also finds them inside a `public/` folder
+(it looks there first), so either layout works.
 
 ## Before every update: run the tests
 `npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
@@ -385,7 +390,7 @@ It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 s
 (60 AI at 3x speed can stutter). If the game gets popular, Render's cheapest paid instance ("Starter") fixes both.
 
 ## Put it online (Render, free)
-1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, `index.html` inside `public/`.
+1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, next to `index.html`, `game.js` and `game.css`.
 2. render.com > New > Web Service > pick the repo. Language Node.
 3. Build command `npm install`, start command `npm start`, instance type Free.
 
