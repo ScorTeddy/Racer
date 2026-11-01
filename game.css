@@ -669,22 +669,23 @@
   .menu-head { display: flex; flex-direction: column; gap: 0.35rem; padding-right: 3rem; }
   .menu-head .online { margin-top: 0.15rem; }
   /* phones: the Play buttons come first, so "Race solo" is visible without scrolling */
-  @media (max-width: 899px) { .menu-card > .menu-head { order: -3; } .menu-card > .menu-play { order: -2; } .menu-card > .acct-bar { order: 5; } .menu-foot { order: 6; } }
+  @media (max-width: 899px) { .menu-card > .menu-head { order: -3; } .menu-card > .menu-play, .menu-card > .menu-side { order: -2; } .menu-card > .acct-bar { order: 5; } .menu-foot { order: 6; } }
   .menu-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; justify-content: center; padding-top: 0.6rem; border-top: 1.5px solid var(--edge); font-size: 0.82rem; color: var(--soft); }
   .menu-foot a { color: var(--soft); font-weight: 700; } .menu-foot a:hover { color: var(--ink); }
   .site-links { position: fixed; left: 0.8rem; bottom: 0.5rem; display: flex; gap: 0.8rem; font-size: 0.75rem; z-index: 2; }
   .site-links a { color: var(--soft); opacity: 0.8; } #menu:not(.hidden) ~ .site-links { display: none; }
-  .menu-car, .menu-play { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+  .menu-car, .menu-play, .menu-side { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
   div.f { font-size: 0.8rem; font-weight: 600; color: var(--soft); }
   .menu-h { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--soft); }
   @media (min-width: 900px) {
-    .menu-card { width: min(62rem, 100%); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "head head" "car play"; column-gap: 1.6rem; row-gap: 1rem; padding: 1.6rem 1.8rem; }
+    .menu-card { width: min(62rem, 100%); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-areas: "head head" "car play" "car side"; grid-template-rows: auto auto 1fr; column-gap: 1.6rem; row-gap: 1rem; padding: 1.6rem 1.8rem; }
     .menu-head { grid-area: head; flex-direction: row; align-items: baseline; flex-wrap: wrap; column-gap: 1rem; }
     .menu-head .logo { font-size: 3rem; }
     .menu-head .online { margin-left: auto; margin-top: 0; }
     .menu-car { grid-area: car; }
     .menu-play { grid-area: play; padding-left: 1.6rem; border-left: 1.5px solid var(--edge); }
-    .menu-play .lobbies { max-height: 18rem; overflow-y: auto; }
+    .menu-side { grid-area: side; padding-left: 1.6rem; border-left: 1.5px solid var(--edge); }
+    .menu-side .lobbies { max-height: 18rem; overflow-y: auto; }
     #soloBtn { font-size: 1.45rem; min-height: 3.6rem; }
   }
 
@@ -1579,7 +1580,7 @@ body:not(.spectating) .odds-bar, body.replaying .odds-bar { display: none; }
 :root[data-theme="broadcast"] #menu .logo { font-size: 2.2rem; text-transform: uppercase; }
 :root[data-theme="broadcast"] #menu .logo span { color: var(--bc-red); }
 :root[data-theme="broadcast"] #menu .tag { text-transform: uppercase; letter-spacing: 0.35em; font-size: 0.7rem; color: var(--soft); }
-:root[data-theme="broadcast"] #menu .menu-play { border-left: 0; }
+:root[data-theme="broadcast"] #menu :is(.menu-play, .menu-side) { border-left: 0; }
 /* the big hello */
 :root[data-theme="broadcast"] #menu .bc-hero { display: block; }
 :root[data-theme="broadcast"] .bc-big { margin: 0; font-family: "Titillium Web", sans-serif; font-style: italic; font-weight: 900; text-transform: uppercase; font-size: clamp(2.3rem, 6.4vw, 4.6rem); line-height: 0.92; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -1633,7 +1634,7 @@ body:not(.spectating) .odds-bar, body.replaying .odds-bar { display: none; }
 /* big screens: the car side is the hero, play on the right */
 @media (min-width: 900px) {
   :root[data-theme="broadcast"] #menu .menu-card { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 2.4rem; padding: 1rem 1.2rem; }
-  :root[data-theme="broadcast"] #menu .menu-play { padding-left: 0; }
+  :root[data-theme="broadcast"] #menu :is(.menu-play, .menu-side) { padding-left: 0; }
   :root[data-theme="broadcast"] #menu #soloBtn { font-size: 1.35rem; min-height: 4.6rem; }
 }
 /* phones: everything stacks, nothing scrolls sideways */
@@ -1643,7 +1644,7 @@ body:not(.spectating) .odds-bar, body.replaying .odds-bar { display: none; }
   :root[data-theme="broadcast"] #menu .menu-card > .menu-car { display: contents; }
   :root[data-theme="broadcast"] #menu .menu-card > .menu-head { order: -4; }
   :root[data-theme="broadcast"] #menu .bc-hero { order: -3; }
-  :root[data-theme="broadcast"] #menu .menu-card > .menu-play { order: -2; }
+  :root[data-theme="broadcast"] #menu .menu-card > .menu-play, :root[data-theme="broadcast"] #menu .menu-card > .menu-side { order: -2; }
   :root[data-theme="broadcast"] #menu #carPreview { max-width: 22rem; }
   :root[data-theme="broadcast"] #menu { padding-bottom: 1rem; }
   :root[data-theme="broadcast"] #menu .bc-ticker { position: static; order: 7; margin: 0 -0.2rem; }
@@ -1987,10 +1988,11 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
    outline and a hard shadow, sticky notes and tape. Built on the light colours; the race view's track gets the
    same look from the ✏️ Paper scenery (game.js THEMES.paper). Car liveries, designs and effects are untouched. */
 :root[data-theme="sketch"] {
-  --bg: #fbf7ec; --panel: #fffdf8; --panel-solid: #fffdf8; --edge: #1f2633; --ink: #1f2633; --soft: #5b6474;
+  --bg: #fbf7ec; --panel: var(--sk-card); --panel-solid: var(--sk-card); --edge: #1f2633; --ink: #1f2633; --soft: #5b6474;
   --yellow: #ffd84a; --red: #e5483f; --green: #2fae61; --blue: #2f6fe4; --focus: #2f6fe4;
   --paper: #fffdf7; --paper-grid: #dfe6ef;
-  --sk-grid: #dde6f0; --sk-ink: #1f2633; --sk-gold: #b88a00; --sk-sticky: #fff1a0; --sk-tape: rgba(236, 220, 170, 0.82);
+  --sk-grid: #dde6f0; --sk-ink: #1f2633; --sk-shadow: #1f2633; --sk-card: #fffdf8; --sk-card2: #fff; --sk-hover: #fffbe6;
+  --sk-soft-bg: #eef2f7; --sk-blue-bg: #e2f1ff; --sk-note-bg: #fff3c4; --sk-bad-bg: #ffe1dc; --sk-peach: #ffe2d6; --sk-dots: #cdd8ea; --sk-photo: #eef4ff; --sk-rule: #b9d2ef; --sk-hl-ink: #1f2633; --sk-gold: #b88a00; --sk-sticky: #fff1a0; --sk-tape: rgba(236, 220, 170, 0.82);
   --sk-r: 14px 20px 12px 22px / 20px 12px 22px 14px; --sk-r2: 10px 16px 9px 15px / 15px 9px 16px 10px;
   --sk-marker: "Permanent Marker", "Russo One", cursive; --sk-hand: "Patrick Hand", "Chakra Petch", cursive; --sk-note: "Caveat", "Patrick Hand", cursive;
   color-scheme: light;
@@ -2006,39 +2008,39 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 :root[data-theme="sketch"] .credit { font-family: var(--sk-note); font-size: 1.15rem; color: var(--soft); text-shadow: none; }
 
 /* cards: white paper with an ink outline and a hard shadow */
-:root[data-theme="sketch"] .panel { background: var(--panel); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); backdrop-filter: none; }
+:root[data-theme="sketch"] .panel { background: var(--panel); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-shadow); backdrop-filter: none; }
 /* buttons: stickers */
-:root[data-theme="sketch"] .btn { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05em; }
-:root[data-theme="sketch"] .btn:hover:not(:disabled) { background: #fffbe6; transform: translate(-1px, -1px); box-shadow: 3px 4px 0 var(--sk-ink); }
-:root[data-theme="sketch"] .btn:active:not(:disabled) { transform: translate(2px, 3px); box-shadow: 0 0 0 var(--sk-ink); }
-:root[data-theme="sketch"] .btn.go { background: var(--red); color: #fff; border-color: var(--sk-ink); font-family: var(--sk-marker); box-shadow: 3px 4px 0 var(--sk-ink); letter-spacing: 0.02em; }
+:root[data-theme="sketch"] .btn { background: var(--sk-card2); color: var(--ink); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); box-shadow: 2px 3px 0 var(--sk-shadow); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05em; }
+:root[data-theme="sketch"] .btn:hover:not(:disabled) { background: var(--sk-hover); transform: translate(-1px, -1px); box-shadow: 3px 4px 0 var(--sk-shadow); }
+:root[data-theme="sketch"] .btn:active:not(:disabled) { transform: translate(2px, 3px); box-shadow: 0 0 0 var(--sk-shadow); }
+:root[data-theme="sketch"] .btn.go { background: var(--red); color: #fff; border-color: var(--sk-ink); font-family: var(--sk-marker); box-shadow: 3px 4px 0 var(--sk-shadow); letter-spacing: 0.02em; }
 :root[data-theme="sketch"] .btn.go:hover:not(:disabled) { background: #ef5a51; }
 :root[data-theme="sketch"] .btn.go::after { display: none; }
 :root[data-theme="sketch"] .btn.ghost { background: transparent; box-shadow: none; border-style: dashed; }
-:root[data-theme="sketch"] .gear { background: #fff; border: 2px solid var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .gear { background: var(--sk-card2); border: 2px solid var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-shadow); }
 /* inputs: written on the line */
 :root[data-theme="sketch"] :is(input[type="text"], input[type="password"], input[type="number"], input[type="email"], input:not([type]), select, textarea) {
-  background: #fff; border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); color: var(--ink); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05rem;
+  background: var(--sk-card2); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); color: var(--ink); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05rem;
 }
 :root[data-theme="sketch"] ::placeholder { color: #a3abb8; }
 :root[data-theme="sketch"] label.f, :root[data-theme="sketch"] .f { color: var(--soft); font-weight: 400; font-size: 0.95rem; }
 :root[data-theme="sketch"] .err { color: var(--red); }
 /* chips and toggles: highlighter when picked */
-:root[data-theme="sketch"] .chip { border: 2px solid var(--sk-ink); background: #fff; color: var(--ink); font-family: var(--sk-hand); font-weight: 400; }
-:root[data-theme="sketch"] :is(.chip.on, .chip[aria-pressed="true"], .chip[aria-checked="true"], .chips button.on, .chips button[aria-pressed="true"]) { background: var(--yellow); color: var(--ink); border-color: var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .chip { border: 2px solid var(--sk-ink); background: var(--sk-card2); color: var(--ink); font-family: var(--sk-hand); font-weight: 400; }
+:root[data-theme="sketch"] :is(.chip.on, .chip[aria-pressed="true"], .chip[aria-checked="true"], .chips button.on, .chips button[aria-pressed="true"]) { background: var(--yellow); color: var(--ink); border-color: var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-shadow); }
 /* tabs: notebook tabs */
 :root[data-theme="sketch"] .hub-tabs button, :root[data-theme="sketch"] .rc-tabs button { font-family: var(--sk-marker); font-weight: 400; font-style: normal; text-transform: none; letter-spacing: 0.02em; color: var(--soft); }
 :root[data-theme="sketch"] .hub-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--red); background: linear-gradient(transparent 60%, rgba(255, 216, 74, 0.7) 60%, rgba(255, 216, 74, 0.7) 92%, transparent 92%); }
 :root[data-theme="sketch"] .rc-tabs button[aria-selected="true"] { color: var(--ink); background: var(--yellow); box-shadow: inset 0 -3px 0 var(--sk-ink); }
 :root[data-theme="sketch"] .sect::before { background: var(--red); }
-:root[data-theme="sketch"] .coins { font-family: var(--sk-marker); font-weight: 400; color: var(--ink); background: #fff; border: 2px solid var(--sk-ink); }
-:root[data-theme="sketch"] kbd { border-width: 2px; background: #fff; color: var(--ink); }
+:root[data-theme="sketch"] .coins { font-family: var(--sk-marker); font-weight: 400; color: var(--ink); background: var(--sk-card2); border: 2px solid var(--sk-ink); }
+:root[data-theme="sketch"] kbd { border-width: 2px; background: var(--sk-card2); color: var(--ink); }
 :root[data-theme="sketch"] a { color: var(--blue); }
 :root[data-theme="sketch"] .site-links a, :root[data-theme="sketch"] .menu-foot a { color: var(--soft); }
 :root[data-theme="sketch"] .menu-foot { font-family: var(--sk-note); font-size: 1.15rem; }
 
 /* ---- menu ---- */
-:root[data-theme="sketch"] #menu .menu-card { background: rgba(255, 253, 248, 0.94); border-radius: 6px; animation: skFade 420ms ease both; }
+:root[data-theme="sketch"] #menu .menu-card { background: var(--sk-card); border-radius: 6px; animation: skFade 420ms ease both; }
 @keyframes skFade { from { opacity: 0; } }     /* (fade only: a transform would trap the fixed tape ticker inside the card) */
 :root[data-theme="sketch"] #menu .menu-card::before { content: ""; position: absolute; left: 50%; top: -14px; width: 120px; height: 28px; transform: translateX(-50%) rotate(-3deg); background: var(--sk-tape); box-shadow: 0 1px 2px rgba(0,0,0,0.08); z-index: 2; pointer-events: none; }
 :root[data-theme="sketch"] #menu .logo { font-size: 3.1rem; transform: rotate(-2deg); transform-origin: left; }
@@ -2051,17 +2053,17 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 :root[data-theme="sketch"] #soloBtn { background: var(--yellow); font-family: var(--sk-marker); }
 :root[data-theme="sketch"] #rankedBtn { background: var(--blue); color: #fff; }
 :root[data-theme="sketch"] #rankedBtn :is(small, span) { color: inherit; }
-:root[data-theme="sketch"] :is(.totw-card, .event-card) { background: #fff; border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); }
+:root[data-theme="sketch"] :is(.totw-card, .event-card) { background: var(--sk-card2); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-shadow); }
 :root[data-theme="sketch"] .totw-card { transform: rotate(0.6deg); } :root[data-theme="sketch"] .event-card { transform: rotate(-0.5deg); }
 :root[data-theme="sketch"] :is(.totw-tx small, .ev-tx small) { color: var(--sk-gold); font-family: var(--sk-marker); font-weight: 400; }
 :root[data-theme="sketch"] #totwCv { background: var(--paper); border: 2px solid var(--sk-ink); border-radius: 8px; }
-:root[data-theme="sketch"] .lobbies { background: #fff; background-image: linear-gradient(transparent 31px, #b9d2ef 31px, #b9d2ef 33px); background-size: 100% 33px; border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .lobbies { background: var(--sk-card2); background-image: linear-gradient(transparent 31px, var(--sk-rule) 31px, var(--sk-rule) 33px); background-size: 100% 33px; border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 var(--sk-shadow); }
 :root[data-theme="sketch"] .lob-empty { font-family: var(--sk-note); font-size: 1.25rem; color: var(--soft); border: 0; }
 :root[data-theme="sketch"] #codeIn { font-family: var(--sk-marker); letter-spacing: 0.4em; text-align: center; border-style: dashed; }
 :root[data-theme="sketch"] .sep-or { font-family: var(--sk-note); font-size: 1.25rem; }
-:root[data-theme="sketch"] #carPreview { background: radial-gradient(#cdd8ea 1.4px, transparent 1.5px) 0 0 / 14px 14px, #eef4ff; border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 rgba(0,0,0,0.15); transform: rotate(1.5deg); }
+:root[data-theme="sketch"] #carPreview { background: radial-gradient(var(--sk-dots) 1.4px, transparent 1.5px) 0 0 / 14px 14px, var(--sk-photo); border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 rgba(0,0,0,0.15); transform: rotate(1.5deg); }
 :root[data-theme="sketch"] .swatches button, :root[data-theme="sketch"] .swatch { border: 2px solid var(--sk-ink); }
-:root[data-theme="sketch"] .acct-av { border: 2px solid var(--sk-ink); background: #ffe2d6; }
+:root[data-theme="sketch"] .acct-av { border: 2px solid var(--sk-ink); background: var(--sk-peach); }
 /* the old ticker comes back as a strip of masking tape along the bottom */
 :root[data-theme="sketch"] #menu .bc-ticker { display: flex; position: fixed; left: -10px; right: -10px; bottom: 0.6rem; z-index: 3; height: 2.4rem; align-items: center; background: var(--sk-tape); transform: rotate(-0.4deg); box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 1.05rem; }
 :root[data-theme="sketch"] .bc-live { align-self: stretch; display: flex; align-items: center; padding: 0 1rem 0 1.4rem; font-family: var(--sk-marker); color: var(--red); flex: none; text-transform: none; }
@@ -2074,7 +2076,7 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 
 /* ---- dialogs and pop-ups ---- */
 :root[data-theme="sketch"] [role="dialog"]:not(#hud *) > .panel, :root[data-theme="sketch"] .hub > .panel { border-radius: 6px; }
-:root[data-theme="sketch"] :is(.ach-pop, .streak-pop, .toast, .popup) { background: #fff; color: var(--ink); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); font-family: var(--sk-hand); }
+:root[data-theme="sketch"] :is(.ach-pop, .streak-pop, .toast, .popup) { background: var(--sk-card2); color: var(--ink); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-shadow); font-family: var(--sk-hand); }
 :root[data-theme="sketch"] .banner { font-family: var(--sk-marker); font-style: normal; }
 
 /* text that was yellow (made for dark backgrounds): marker gold on paper (yellow backgrounds stay highlighter-bright) */
@@ -2123,37 +2125,37 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 :root[data-theme="sketch"] .tp-count { color: var(--sk-gold); text-shadow: none; }
 
 /* ---- ✏️ Sketchbook: track builder pop-outs, the race HUD ---- */
-:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools, .tp-start, .tp-objs) { background: #fffdf8; border: 2px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-ink); }
-:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools) .tool:hover { background: #fffbe6; }
-:root[data-theme="sketch"] :is(#boardHint, .board-hint) { background: #fffdf8; color: var(--ink); border: 2px solid var(--sk-ink); }
-:root[data-theme="sketch"] .dock .tool { background: #fff; border: 2px solid var(--sk-ink); color: var(--ink); }
-:root[data-theme="sketch"] :is(.dock .tool[aria-pressed="true"], .dock .tool.on) { background: var(--yellow); box-shadow: 2px 3px 0 var(--sk-ink); transform: rotate(-2deg); }
-:root[data-theme="sketch"] .mode-chip { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-hand); }
+:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools, .tp-start, .tp-objs) { background: var(--sk-card); border: 2px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-shadow); }
+:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools) .tool:hover { background: var(--sk-hover); }
+:root[data-theme="sketch"] :is(#boardHint, .board-hint) { background: var(--sk-card); color: var(--ink); border: 2px solid var(--sk-ink); }
+:root[data-theme="sketch"] .dock .tool { background: var(--sk-card2); border: 2px solid var(--sk-ink); color: var(--ink); }
+:root[data-theme="sketch"] :is(.dock .tool[aria-pressed="true"], .dock .tool.on) { background: var(--yellow); box-shadow: 2px 3px 0 var(--sk-shadow); transform: rotate(-2deg); }
+:root[data-theme="sketch"] .mode-chip { background: var(--sk-card2); color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-shadow); font-family: var(--sk-hand); }
 :root[data-theme="sketch"] .mode-chip.final { background: var(--yellow); }
-:root[data-theme="sketch"] .sectors span:not(.purple):not(.green):not(.yellow) { background: #eef2f7; color: var(--ink); border: 1px solid #c9d1de; }
-:root[data-theme="sketch"] .sectors span.live { background: #fff3c4; border-color: var(--sk-gold); }
-:root[data-theme="sketch"] .slow-why { color: #8a5300; background: #fff3c4; border: 1.5px solid #e2b23c; }
-:root[data-theme="sketch"] .slow-why.bad { color: #b42318; background: #ffe1dc; border-color: #e5483f; }
-:root[data-theme="sketch"] .badge { background: #fff; color: var(--ink); box-shadow: 0 0 0 1px var(--sk-ink); font-family: var(--sk-marker); font-weight: 400; }
+:root[data-theme="sketch"] .sectors span:not(.purple):not(.green):not(.yellow) { background: var(--sk-soft-bg); color: var(--ink); border: 1px solid #c9d1de; }
+:root[data-theme="sketch"] .sectors span.live { background: var(--sk-note-bg); border-color: var(--sk-gold); }
+:root[data-theme="sketch"] .slow-why { color: #8a5300; background: var(--sk-note-bg); border: 1.5px solid #e2b23c; }
+:root[data-theme="sketch"] .slow-why.bad { color: #b42318; background: var(--sk-bad-bg); border-color: #e5483f; }
+:root[data-theme="sketch"] .badge { background: var(--sk-card2); color: var(--ink); box-shadow: 0 0 0 1px var(--sk-ink); font-family: var(--sk-marker); font-weight: 400; }
 /* boost: a highlighter tube; defend: a sticker */
-:root[data-theme="sketch"] #boostBtn { background: #fff; color: var(--ink); border: 2.5px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] #boostBtn { background: var(--sk-card2); color: var(--ink); border: 2.5px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-shadow); }
 :root[data-theme="sketch"] #boostBtn .bfill { background: repeating-linear-gradient(-45deg, #ffd84a 0 10px, #ffc800 10px 20px); opacity: 0.95; }
 :root[data-theme="sketch"] #boostBtn .blabel { font-family: var(--sk-marker); }
 :root[data-theme="sketch"] #boostBtn small { color: var(--ink); }
-:root[data-theme="sketch"] #boostBtn.on { border-color: var(--sk-ink); box-shadow: 0 0 0 4px rgba(255, 216, 74, 0.7), 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] #boostBtn.on { border-color: var(--sk-ink); box-shadow: 0 0 0 4px rgba(255, 216, 74, 0.7), 3px 4px 0 var(--sk-shadow); }
 :root[data-theme="sketch"] #boostBtn.empty .blabel { color: var(--red); }
-:root[data-theme="sketch"] #defendBtn { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-marker); }
-:root[data-theme="sketch"] #defendBtn.on { background: var(--blue); color: #fff; box-shadow: 0 0 0 4px rgba(47, 111, 228, 0.3), 2px 3px 0 var(--sk-ink); }
+:root[data-theme="sketch"] #defendBtn { background: var(--sk-card2); color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-shadow); font-family: var(--sk-marker); }
+:root[data-theme="sketch"] #defendBtn.on { background: var(--blue); color: #fff; box-shadow: 0 0 0 4px rgba(47, 111, 228, 0.3), 2px 3px 0 var(--sk-shadow); }
 /* standings: a notepad, your row in highlighter */
 :root[data-theme="sketch"] .standings li.me { color: var(--ink); background: linear-gradient(transparent 10%, rgba(255, 216, 74, 0.85) 10%, rgba(255, 216, 74, 0.85) 90%, transparent 90%); }
 :root[data-theme="sketch"] .pos { font-family: var(--sk-marker); color: var(--red); }
 :root[data-theme="sketch"] #hud :is(.big, #lapText) { font-family: var(--sk-marker); font-weight: 400; }
 
-:root[data-theme="sketch"] .intro-card { background: #fffdf8; color: var(--ink); border: 2.5px solid var(--sk-ink); border-left: 6px solid var(--red); box-shadow: 4px 5px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .intro-card { background: var(--sk-card); color: var(--ink); border: 2.5px solid var(--sk-ink); border-left: 6px solid var(--red); box-shadow: 4px 5px 0 var(--sk-shadow); }
 :root[data-theme="sketch"] .intro-card small { color: var(--red); font-family: var(--sk-marker); }
 :root[data-theme="sketch"] .intro-card b { font-family: var(--sk-marker); font-weight: 400; color: var(--ink); }
 :root[data-theme="sketch"] .intro-card span { color: var(--soft); }
-:root[data-theme="sketch"] .slip-tag { color: var(--ink); background: #e2f1ff; border: 2px solid var(--sk-ink); border-radius: 8px; padding: 0 0.4rem; text-shadow: none; }
+:root[data-theme="sketch"] .slip-tag { color: var(--ink); background: var(--sk-blue-bg); border: 2px solid var(--sk-ink); border-radius: 8px; padding: 0 0.4rem; text-shadow: none; }
 @media (max-width: 560px) {
   :root[data-theme="sketch"] #menu .logo { font-size: 2.3rem; }
   :root[data-theme="sketch"] #menu .menu-head { padding-right: 5.6rem; }
@@ -2163,3 +2165,108 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 :root[data-theme="sketch"] .cards .card:hover { transform: translateY(-4px) rotate(0deg) scale(1.03); }
 /* (the ✏️/🌙 look button sits left of the gear: keep the menu's top-right text clear of it) */
 :root[data-theme="broadcast"] #menu .tip-day { margin-right: 3rem; }
+
+
+/* ======================= Big screens: use the whole monitor =======================
+   (Interface size "Auto" also grows with the window, see applySettings.) The menu becomes three columns that fill
+   the screen: your car | play | track of the week, events, lobbies and friends. Dialogs get much wider. */
+@media (min-width: 1300px) {
+  #menu { place-items: start stretch; padding: 1.4rem 1.6rem; }
+  #menu .menu-card, :root[data-theme="broadcast"] #menu .menu-card { width: 100%; max-width: none; min-height: calc(100dvh - 2.8rem); grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr); grid-template-areas: "head head head" "car play side" "acct acct acct" "foot foot foot"; grid-template-rows: auto 1fr auto auto; column-gap: 2.4rem; align-content: start; }
+  #menu .menu-card > .acct-bar { grid-area: acct; } #menu .menu-card > .menu-foot { grid-area: foot; }
+  #menu .menu-side { grid-area: side; }
+  #menu .menu-side .lobbies { max-height: none; }
+  #menu #carPreview { width: 100%; max-width: 30rem; height: auto; aspect-ratio: 5 / 3; }
+  #menu .garage-preview { flex-direction: column; align-items: stretch; }
+  .hub-card { width: min(110rem, calc(100vw - 3rem)); height: calc(100dvh - 2rem); }
+  .set-card { width: min(64rem, calc(100vw - 3rem)); }
+  .res-card { width: min(60rem, 100%); }
+  .fin-card { width: min(100rem, 100%); }
+  :is(.preset-card, .f1-card) { width: min(84rem, calc(100vw - 3rem)); }
+  :is(.friend-card, .code-card, .news-card) { width: min(52rem, 100%); }
+  .tire-pick { width: min(64rem, calc(100vw - 3rem)); }
+  .cards { width: min(56rem, calc(100vw - 30rem)); }
+}
+
+/* ======================= 🌙 Sketchbook dark (Settings > Look, or 🌙 / ☀️ on the menu) =======================
+   The same notebook at night: a dark page with faint blue grid lines, chalk-white ink, black hard shadows. Sticky
+   notes, highlighter and tape stay bright (with dark writing on them). The Paper track turns into its night page. */
+:root[data-theme="sketch"][data-sk="dark"] {
+  --bg: #191c23; --panel: #222631; --panel-solid: #222631; --edge: #d9d2c1; --ink: #ece6d6; --soft: #a3abb9;
+  --red: #ff6b5f; --blue: #5b8cff; --green: #4cc97b; --focus: #8fb4ff;
+  --paper: #1c2029; --paper-grid: #2a3140;
+  --sk-grid: #262c37; --sk-ink: #d9d2c1; --sk-shadow: rgba(0, 0, 0, 0.75); --sk-card: #222631; --sk-card2: #2a2f3c; --sk-hover: #333a4a;
+  --sk-soft-bg: #2a2f3c; --sk-blue-bg: #1e2b44; --sk-note-bg: #3a3220; --sk-bad-bg: #3d1f1f; --sk-peach: #4a3a33; --sk-dots: #3a4152; --sk-photo: #262c3a; --sk-rule: #33405a;
+  --sk-gold: #f2c94c; --sk-tape: rgba(214, 196, 140, 0.55);
+  color-scheme: dark;
+}
+:root[data-theme="sketch"][data-sk="dark"] ::placeholder { color: #6f7889; }
+:root[data-theme="sketch"][data-sk="dark"] .lined, :root[data-theme="sketch"][data-sk="dark"] .lobbies { background-color: var(--sk-card2); }
+/* bright things (highlighter, sticky notes, yellow buttons) keep dark writing */
+:root[data-theme="sketch"][data-sk="dark"] :is(.chip.on, .chip[aria-pressed="true"], .chip[aria-checked="true"], .chips button.on, .chips button[aria-pressed="true"], #soloBtn, .dock .tool[aria-pressed="true"], .dock .tool.on, .mode-chip.final, .rc-tabs button[aria-selected="true"], .standings li.me, .standings li.me *, .store-tab[aria-selected="true"], .ach-filters .chip.on, .champ-tabs button[aria-pressed="true"], .paint-tools button[aria-pressed="true"], #boxBtn.on) { color: #1f2633; }
+:root[data-theme="sketch"][data-sk="dark"] #quickBtn { color: #d8352b; }
+:root[data-theme="sketch"][data-sk="dark"] #boostBtn :is(.blabel, small) { color: #fff; text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.8); }
+:root[data-theme="sketch"][data-sk="dark"] .hub-tabs button[aria-selected="true"] { background: linear-gradient(transparent 60%, rgba(255, 216, 74, 0.35) 60%, rgba(255, 216, 74, 0.35) 92%, transparent 92%); }
+:root[data-theme="sketch"][data-sk="dark"] .sectors span.live { color: var(--ink); }
+:root[data-theme="sketch"][data-sk="dark"] .slow-why { color: #f2c94c; border-color: #8a6a1a; } :root[data-theme="sketch"][data-sk="dark"] .slow-why.bad { color: #ff9a8f; border-color: #a33a30; }
+:root[data-theme="sketch"][data-sk="dark"] .badge { color: #ece6d6; }
+
+/* ======================= ✏️ Sketchbook on big screens: the concept layout =======================
+   No big box round everything: the three columns are separate cards on the page, each with its own tape —
+   your team (a polaroid of your car), Play (a big sticky note and chunky buttons), and the side column (track
+   of the week, events, lobbies on lined paper, friends). Your account sits top right. */
+@media (min-width: 1300px) {
+  :root[data-theme="sketch"] #menu .menu-card { background: transparent; border: 0; box-shadow: none; padding: 0.4rem 0.6rem 3.4rem; grid-template-areas: "head head acct" "car play side" "foot foot foot"; grid-template-rows: auto 1fr auto; row-gap: 1.6rem; column-gap: 2.6rem; }
+  :root[data-theme="sketch"] #menu .menu-card::before { display: none; }
+  :root[data-theme="sketch"] #menu .menu-card > .menu-head { align-self: center; padding-right: 0; }
+  :root[data-theme="sketch"] #menu .menu-card > .acct-bar { align-self: center; margin-right: 6.2rem; background: var(--sk-card); border: 2px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 3px 4px 0 var(--sk-shadow); transform: rotate(0.6deg); }
+  :root[data-theme="sketch"] #menu .gear { top: 1.6rem; }
+  :root[data-theme="sketch"] #menu :is(.menu-car, .menu-play, .menu-side) { border: 0; padding: 0; }
+  :root[data-theme="sketch"] #menu .menu-car { position: relative; align-self: start; padding: 1.6rem 1.5rem 1.4rem; background: var(--sk-card); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 5px 6px 0 var(--sk-shadow); transform: rotate(-0.8deg); }
+  :root[data-theme="sketch"] #menu .menu-car::before { content: ""; position: absolute; left: 38%; top: -15px; width: 110px; height: 28px; transform: rotate(-4deg); background: var(--sk-tape); }
+  /* the car as a polaroid */
+  :root[data-theme="sketch"] #menu #carPreview { border: 12px solid var(--sk-card2); border-bottom-width: 40px; outline: 2px solid var(--sk-ink); box-shadow: 4px 6px 0 rgba(0, 0, 0, 0.18); transform: rotate(1.8deg); max-width: 26rem; align-self: center; margin: 0.4rem 0 0.8rem; }
+  :root[data-theme="sketch"] #menu .menu-h { font-size: 1.7rem; color: var(--ink); }
+  :root[data-theme="sketch"] #menu .swatches button, :root[data-theme="sketch"] #menu .swatch { width: 2.2rem; height: 2.2rem; }
+  /* play: a huge sticky note, then chunky buttons */
+  :root[data-theme="sketch"] #menu .menu-play { gap: 1.1rem; padding-top: 0.6rem; }
+  :root[data-theme="sketch"] #menu #quickBtn { min-height: 11rem; font-size: 3.6rem; text-align: left; padding: 1.4rem 1.8rem; transform: rotate(1.2deg); margin-top: 1.4rem; }
+  :root[data-theme="sketch"] #menu .menu-play .btn:not(#quickBtn) { min-height: 4.2rem; font-size: 1.3rem; }
+  :root[data-theme="sketch"] #menu .menu-play .menu-row2 { gap: 1rem; }
+  :root[data-theme="sketch"] #menu #soloBtn { transform: rotate(-1deg); } :root[data-theme="sketch"] #menu #tutBtn { transform: rotate(0.8deg); }
+  :root[data-theme="sketch"] #menu #rankedBtn { min-height: 5rem; transform: rotate(-0.4deg); }
+  :root[data-theme="sketch"] #menu #codeIn { min-height: 4.2rem; font-size: 1.5rem; }
+  /* the side column: separate cards, a bit crooked */
+  :root[data-theme="sketch"] #menu .menu-side { gap: 1.4rem; padding-top: 0.4rem; }
+  :root[data-theme="sketch"] #menu .totw-card { position: relative; padding: 1rem 1.1rem; transform: rotate(1.4deg); }
+  :root[data-theme="sketch"] #menu .totw-card::before { content: ""; position: absolute; right: 1.2rem; top: -13px; width: 90px; height: 24px; transform: rotate(6deg); background: var(--sk-tape); }
+  :root[data-theme="sketch"] #menu #totwCv { width: 9rem; height: auto; }
+  :root[data-theme="sketch"] #menu .event-card { transform: rotate(-1deg); padding: 0.9rem 1rem; }
+  :root[data-theme="sketch"] #menu .lob-head { margin-bottom: -0.6rem; }
+  :root[data-theme="sketch"] #menu .lobbies { position: relative; min-height: 12rem; padding: 0.4rem 1rem 0.4rem 3rem; box-shadow: inset 2.6rem 0 0 -2.5rem #f2a3a3, 4px 5px 0 var(--sk-shadow); transform: rotate(-0.8deg); }
+  :root[data-theme="sketch"] #menu .lobbies::before { content: ""; position: absolute; left: 44%; top: -13px; width: 90px; height: 24px; transform: rotate(-3deg); background: var(--sk-tape); }
+  :root[data-theme="sketch"] #menu #menuFriends .lobbies { min-height: 6rem; transform: rotate(0.7deg); }
+  :root[data-theme="sketch"] #menu .menu-foot { border-top: 2px dashed var(--soft); }
+}
+@media (min-width: 1300px) {
+  :root[data-theme="sketch"] #menu .garage-preview > div { display: grid !important; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(0, 1.2fr); gap: 0.6rem !important; }
+  :root[data-theme="sketch"] #menu #carPreview { max-width: 22rem; }
+  :root[data-theme="sketch"] #menu .menu-car { gap: 0.7rem; }
+}
+/* (fit the whole concept menu on one screen, above the tape ticker) */
+@media (min-width: 1300px) {
+  :root[data-theme="sketch"] #menu .menu-card { row-gap: 0.9rem; }
+  :root[data-theme="sketch"] #menu .tip-day { flex-basis: 100%; margin: 0; }
+  :root[data-theme="sketch"] #menu .menu-car { padding: 1.1rem 1.3rem 1.1rem; gap: 0.55rem; }
+  :root[data-theme="sketch"] #menu .menu-h { font-size: 1.45rem; }
+  :root[data-theme="sketch"] #menu #carPreview { max-width: 17rem; border-width: 9px; border-bottom-width: 28px; margin: 0 0 0.4rem; }
+  :root[data-theme="sketch"] #menu .swatches button, :root[data-theme="sketch"] #menu .swatch { width: 1.9rem; height: 1.9rem; }
+  :root[data-theme="sketch"] #menu .menu-play { gap: 0.85rem; padding-top: 0; }
+  :root[data-theme="sketch"] #menu #quickBtn { min-height: 7.5rem; font-size: 3.1rem; margin-top: 1.3rem; }
+  :root[data-theme="sketch"] #menu .menu-play .btn:not(#quickBtn) { min-height: 3.5rem; font-size: 1.2rem; }
+  :root[data-theme="sketch"] #menu #rankedBtn { min-height: 4rem; }
+  :root[data-theme="sketch"] #menu #codeIn { min-height: 3.5rem; }
+  :root[data-theme="sketch"] #menu .menu-side { gap: 1.1rem; }
+  :root[data-theme="sketch"] #menu .lobbies { min-height: 8rem; }
+  :root[data-theme="sketch"] #menu #totwCv { width: 7.5rem; }
+}

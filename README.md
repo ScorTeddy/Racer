@@ -27,9 +27,15 @@ All of these sit in the main folder next to server.js. The server also finds the
 (it looks there first), so either layout works.
 
 ## Looks: ✏️ Sketchbook (default) and 🌙 Dark
-- **Settings › Look** (`settings.theme`, saved in `tb-settings`): `sketch` (default), `broadcast` (🌙 Dark), `dark` (classic),
-  `light`. The ✏️/🌙 button next to ⚙ on the menu (`#lookBtn`) flips between Sketchbook and Dark. Everyone was moved to
-  Sketchbook once (`themeV` 2); they can switch back any time.
+- **Settings › Look** (`settings.theme`, saved in `tb-settings`): `sketch` (default), `sketchdark` (🌙 Sketchbook dark),
+  `broadcast` (📺 Broadcast dark), `dark` (classic), `light`. Both Sketchbook looks set `data-theme="sketch"`; dark adds
+  `data-sk="dark"`, which only swaps the `--sk-*` colour variables (see the "Sketchbook dark" block in game.css). The
+  button next to ⚙ on the menu (`#lookBtn`) flips Sketchbook light ↔ dark (from any other look it goes to Sketchbook).
+  Everyone was moved to Sketchbook once (`themeV` 2). In game.js use `isSketch()` / `skDark()`, never `theme === "sketch"`.
+- **Big screens**: Interface size "Auto" grows with the window (`autoUi` in `applySettings`: 1440x930 = 100%, up to 175%).
+  From 1300px wide the menu is three columns (`.menu-car` | `.menu-play` | `.menu-side`, the last holds track of the week,
+  the event, lobbies and friends) and dialogs get much wider (the "Big screens" block in game.css). In Sketchbook the
+  columns are separate taped cards with the account card top right (the "Sketchbook on big screens" block).
 - **Sketchbook CSS** is the block at the end of game.css, all under `:root[data-theme="sketch"]`: graph paper, Permanent
   Marker / Patrick Hand / Caveat fonts (Google Fonts link in index.html), white cards with an ink outline and hard shadow,
   sticky-note Quick Play, tape ticker, notepad leaderboard, highlighter boost bar. Text that was yellow (for dark
@@ -37,7 +43,8 @@ All of these sit in the main folder next to server.js. The server also finds the
 - **✏️ Paper scenery** (`THEMES.paper` in game.js, `paper` in `THEME_KEYS` in server.js): graph-paper ground, pencil-grey road
   with an ink edge and graphite grain (`tex("pencil")`), red-and-white kerbs, hand-written car names. A Sketchbook host's
   new room starts on it (only while it's still on the default Night). Cars, liveries, designs and effects are drawn
-  exactly the same on every scenery and in both looks.
+  exactly the same on every scenery and in every look. Sketchbook dark players see a Paper room on its night page
+  (`THEMES.paperNight`, picked by `sceneTheme()`); everyone else in the room still sees the day page.
 
 ## Before every update: run the tests
 `npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
