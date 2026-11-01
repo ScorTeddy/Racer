@@ -1786,6 +1786,7 @@
     const tb = tradesBlock(u); if (tb) box.appendChild(tb);
     const gb = ghostsBlock(u); if (gb) box.appendChild(gb);
     const bb = betsBlock(u); if (bb) box.appendChild(bb);
+    const rb = rivalsBlock(u); if (rb) box.appendChild(rb);
     if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     const person = (f, buttons) => {
       const d = el("div", "friend");
@@ -1833,7 +1834,10 @@
       box.appendChild(el("p", "preset-note", T ? `🌟 ${T.name}: fastest laps this week (resets every Monday). Race it from the main menu, or 🌟 on the track tools.` : "This week's featured track."));
       const go = el("button", "btn go", "Race it now"); go.type = "button"; go.addEventListener("click", () => { closeHub(); $("totwRace").click(); }); if (!S.code) box.appendChild(go);
     }
-    if ((A.lbKind || "wins") === "ranked") box.appendChild(el("p", "preset-note", "The top ranked players by skill rating (SR)."));
+    if ((A.lbKind || "wins") === "ranked" || A.lbKind === "rankedTeam") {
+      box.appendChild(el("p", "preset-note", `The top ranked players by skill rating (SR)${L?.season ? ` in Season ${L.season}` : ""}. It starts empty every season (each month).`));
+      if (L?.prev?.list?.length) box.appendChild(el("p", "preset-note", `👑 Season ${L.prev.n} champions: ${L.prev.list.map((x, i) => `${["🥇", "🥈", "🥉"][i]} ${x.name}`).join("  ")}`));
+    }
     if (!L) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     if (!L.list.length) { box.appendChild(el("p", "preset-note", "No times yet. Be the first!")); return; }
     const ol = el("ol", "lb-list");
@@ -2962,7 +2966,7 @@
   });
   // ---- party mode sabotage: oil slicks, storm clouds, ink ----
   S.hazards = [];
-  socket.on("race", () => { S.hazards = []; S.ink = null; });
+  socket.on("race", () => { S.hazards = []; S.ink = null; S.nemeses = null; });
   socket.on("hazard", (h) => {
     h.end = performance.now() + h.secs * 1000; h.born = performance.now();
     if (h.k === "ink") { if (h.car === S.myCar) { S.ink = { until: h.end, born: h.born, blobs: Array.from({ length: 7 }, () => ({ x: Math.random(), y: Math.random() * 0.8 + 0.1, r: 0.08 + Math.random() * 0.14, n: 5 + Math.floor(Math.random() * 5) })) }; sfx("jump"); } return; }
@@ -3036,6 +3040,13 @@
   // someone got a super rare card: everyone hears about it, and their car glows for the rest of the race
   // your rival for this race (arrives just before the race starts)
   socket.on("rival", (r) => { S.pendingRival = r; });
+  // real players you've raced before: your record against them (the one you've raced most gets a popup), ⚔️ on the board
+  socket.on("nemesis", (d) => {
+    S.nemeses = new Map((d?.list || []).map((x) => [x.car, x]));
+    const x = d?.list?.[0]; if (!x) return;
+    const l = x.n - x.w, streak = x.s >= 3 ? ` You've won the last ${x.s}!` : x.s <= -3 ? ` They've won the last ${-x.s}. Time to end that!` : "";
+    setTimeout(() => popup(`⚔️ Rivalry: you're ${x.w}–${l} against ${x.name} (${x.n} races).${streak}`), 4200);
+  });
   socket.on("rivalResult", (r) => {
     setTimeout(() => popup(r.beat ? `🎯 You beat your rival ${r.name}!${r.coins ? ` +${r.coins} coins` : ""}${r.xp ? ` +${r.xp} pass XP` : ""}` : `🎯 ${r.name} beat you this time. Get them next race!`, !r.beat), 1200);
   });
@@ -4216,18 +4227,63 @@
     if (S.pendingTour) { S.pendingTour = false; setTimeout(() => socket.emit("tour:load"), 300); }
   });
   $("predictBtn").addEventListener("click", () => socket.emit("predict:list"));
-  socket.on("predictList", (d) => {
-    const box = $("predictBox"), list = $("predictCars"); list.textContent = "";
-    if (!d) return;
-    box.classList.remove("hidden");
-    $("predictNote").textContent = d.mine ? `You picked ${d.mine.name}: 🪙 ${d.mine.coins} at ${d.mine.odds}x` : d.open ? "Who wins? Pay-outs by grid position: the further back, the more you win." : "Predictions are closed for this race.";
+  // the predict box: before the start the odds go by grid slot; once racing they're LIVE (they move with the race,
+  // and you lock in the odds you see when you pick). Closes on the final lap; a near-certain winner can't be picked.
+  const PB = { d: null };
+  function renderPredict() {
+    const d = PB.d, list = $("predictCars"); list.textContent = ""; if (!d) return;
+    $("predictNote").textContent = d.mine ? `You picked ${d.mine.name}: 🪙 ${d.mine.coins} at ${d.mine.odds}x` : !d.open ? "Predictions are closed for this race." : d.live ? "🔴 LIVE odds: they change as the race goes. You lock in the odds you pick at. Closes on the final lap." : "Who wins? Before the start, odds go by grid position: the further back, the more you win.";
     for (const c of d.cars) {
-      const b = el("button", "btn predict-car"); b.type = "button"; b.disabled = !d.open || !!d.mine;
-      const dot = el("span", "dot"); dot.style.background = c.color; b.append(dot, el("b", "", `P${c.grid} ${c.name}`), el("small", "", `${c.odds}x`));
+      const lock = !!c.lock;
+      const b = el("button", "btn predict-car" + (lock ? " locked" : "")); b.type = "button"; b.disabled = !d.open || !!d.mine || lock;
+      const dot = el("span", "dot"); dot.style.background = c.color;
+      b.append(dot, el("b", "", `P${c.pos} ${c.name}`), el("small", "", lock ? "🔒 too sure" : `${c.p != null ? Math.round(c.p * 100) + "% · " : ""}${c.odds}x`));
       b.addEventListener("click", () => { const coins = Math.floor(Number($("predictCoins").value) || 0); socket.emit("predict", { car: c.id, coins }); });
       list.appendChild(b);
     }
+  }
+  socket.on("predictList", (d) => {
+    PB.d = d; if (!d) { $("predictCars").textContent = ""; return; }
+    $("predictBox").classList.remove("hidden"); renderPredict();
   });
+  // live odds (every 2 race-seconds): the bar for people watching, and the predict box if it's open
+  const ODDS = { list: null };
+  function renderOddsBar() {
+    const bar = $("oddsBar"), L = ODDS.list;
+    if (!L?.length || S.myCar || S.replaying || !S.race || S.race.quali) { bar.classList.add("hidden"); return; }
+    bar.classList.remove("hidden"); bar.textContent = "";
+    const head = el("div", "ob-head"); head.append(el("b", "", "🎲 Win chances"), el("small", "", ODDS.open ? "● LIVE" : "● LIVE · closed")); bar.appendChild(head);
+    const track = el("div", "ob-track"); let rest = 1;
+    for (const x of L) {
+      const info = S.race.info?.get(x.id) || S.cars.get(x.id) || {};
+      const seg = el("i"); seg.style.flexGrow = String(Math.max(0.01, x.p)); seg.style.background = info.color || "#888"; seg.title = `${info.name || "?"} ${Math.round(x.p * 100)}%`;
+      track.appendChild(seg); rest -= x.p;
+    }
+    if (rest > 0.01) { const seg = el("i", "ob-rest"); seg.style.flexGrow = String(rest); track.appendChild(seg); }
+    bar.appendChild(track);
+    const rows = el("div", "ob-rows");
+    for (const x of L.slice(0, 4)) {
+      const info = S.race.info?.get(x.id) || S.cars.get(x.id) || {}, prev = ODDS.prev?.get(x.id);
+      const r = el("span", "ob-row"); const dot = el("span", "dot"); dot.style.background = info.color || "#888";
+      const tr = prev == null ? "" : x.p > prev + 0.03 ? " ▲" : x.p < prev - 0.03 ? " ▼" : "";
+      r.append(dot, el("b", "", info.name || "?"), el("small", tr === " ▲" ? "up" : tr === " ▼" ? "down" : "", `${Math.round(x.p * 100)}%${tr}`));
+      rows.appendChild(r);
+    }
+    bar.appendChild(rows);
+  }
+  socket.on("odds", (o) => {
+    ODDS.prev = ODDS.list ? new Map(ODDS.list.map((x) => [x.id, x.p])) : null; ODDS.list = o.list; ODDS.open = o.open;
+    renderOddsBar();
+    // keep an open predict box's odds fresh
+    if (PB.d && !$("predictBox").classList.contains("hidden")) {
+      const m = new Map(o.list.map((x) => [x.id, x]));
+      PB.d.open = PB.d.open && o.open; PB.d.live = true;
+      for (const c of PB.d.cars) { const x = m.get(c.id); c.p = x ? x.p : 0; c.odds = x ? x.odds : 25; c.lock = !!x?.lock; }
+      renderPredict();
+    }
+  });
+  socket.on("race", () => { ODDS.list = null; ODDS.prev = null; PB.d = null; $("oddsBar").classList.add("hidden"); });
+  socket.on("results", () => { ODDS.list = null; $("oddsBar").classList.add("hidden"); });
   socket.on("predictOk", (d) => { $("predictBox").classList.add("hidden"); popup(`🎲 ${d.coins} on ${d.name} at ${d.odds}x: win ${d.win.toLocaleString()} if they do it!`); });
   $("predictClose").addEventListener("click", () => $("predictBox").classList.add("hidden"));
   socket.on("ghostChallenge", (g) => { S.challenge = g; boardHint(`👻 ${g.from}'s lap: ${g.t.toFixed(3)}s. Press Start, then beat their ghost!`, false); });
@@ -7166,7 +7222,7 @@
         const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
         const p = document.createElement("span"); p.className = "p"; p.textContent = S.race?.multi && c.cls ? classPos(id) : i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
-        const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + c.name;
+        const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + (S.nemeses?.has(id) ? "⚔️ " : "") + c.name;
         if (S.race?.multi && c.cls) { d.style.boxShadow = `0 0 0 2px ${CLASSES[c.cls].col}`; d.title = CLASSES[c.cls].name; p.style.color = CLASSES[c.cls].col; }   // (class: a ring + coloured position, so names keep their room)
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
@@ -7331,6 +7387,7 @@
     tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, ${R.field.laps} laps${R.field.real ? ", a random track or a real circuit" : ", a random track"}`));
     const go = el("button", "btn go", "🏁 Play ranked"); go.type = "button"; go.addEventListener("click", playRanked);
     top.append(tx, go); box.appendChild(top);
+    if (R.season) box.appendChild(seasonCard(R));
     if (R.hist?.length) {
       box.appendChild(el("h3", "hub-h", "Last races"));
       const row = el("div", "rank-hist");
@@ -7360,6 +7417,45 @@
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
   }
+  // ---- ranked seasons: one a month, played in your league (the tier you started it in) ----
+  const SEASON_ZONE = { promotion: ["⬆️ Promotion zone", "You're above your league: finish the season here and you're promoted (+bonus coins)."],
+    safe: ["✅ Safe", "You're in your league. Climb a tier to get into the promotion zone."],
+    relegation: ["⬇️ Relegation zone", "You're below your league: climb back before the season ends or you'll be relegated."],
+    inactive: ["💤 Play to stay up", "Gold and up: play at least a few races this season or you'll drop a tier."] };
+  const daysLeft = (t) => { const d = Math.ceil((t - Date.now()) / 86400000); return d <= 1 ? "ends today" : `${d} days left`; };
+  function seasonCard(R) {
+    const Z = R.season, sec = el("section", "season-card zone-" + Z.zone); sec.style.setProperty("--rk", Z.league.color);
+    const head = el("div", "sc-head"); head.append(el("b", "", `🗓️ Season ${Z.n}`), el("small", "", daysLeft(Z.ends))); sec.appendChild(head);
+    sec.appendChild(el("div", "sc-league", `League: ${Z.league.icon} ${Z.league.name}`));
+    const [zt, zd] = SEASON_ZONE[Z.zone] || SEASON_ZONE.safe;
+    sec.append(el("b", "sc-zone", zt), el("small", "", zd));
+    const bits = [`${Z.games} race${Z.games === 1 ? "" : "s"} this season`, Z.wins ? `${Z.wins} win${Z.wins === 1 ? "" : "s"}` : "",
+      Z.promoteAt != null ? `promotion at ${Z.promoteAt} SR` : "", Z.relegateBelow != null ? `relegation below ${Z.relegateBelow} SR` : ""].filter(Boolean);
+    sec.appendChild(el("small", "", bits.join(" · ")));
+    sec.appendChild(el("small", "", Z.games >= Z.minGames ? `🪙 Season reward so far: ${Z.reward.toLocaleString()} coins (more for higher tiers, +${Z.promoBonus} if promoted)` : `🪙 Play ${Z.minGames - Z.games} more ranked race${Z.minGames - Z.games === 1 ? "" : "s"} to earn a season reward`));
+    if (Z.history?.length) {
+      const row = el("div", "rank-hist");
+      for (const h of Z.history.slice().reverse()) row.appendChild(el("span", "rh " + (h.outcome === "promoted" ? "up" : h.outcome === "relegated" ? "down" : ""), `S${h.n} ${h.outcome === "promoted" ? "⬆️" : h.outcome === "relegated" ? "⬇️" : "➖"} ${TIER_LADDER[h.fin]?.[1] || ""}`));
+      sec.append(el("small", "", "Past seasons"), row);
+    }
+    sec.appendChild(el("p", "preset-note", "Each month is a season. When it ends, you start the next one at the bottom of your new league (division III), with a fresh rank shield."));
+    return sec;
+  }
+  // the season you just finished: shown once, the first time you're back after it ends
+  function seasonRecap(u) {
+    for (const [mode, R] of [["solo", u?.ranked], ["team", u?.rankedTeam]]) {
+      const x = R?.season?.last; if (!x) continue;
+      const key = `tb-season-${mode}-${x.key}`;
+      try { if (localStorage.getItem(key)) continue; localStorage.setItem(key, "1"); } catch (e) { continue; }
+      const lg = TIER_LADDER[x.league], fin = TIER_LADDER[x.fin], what = mode === "team" ? "Team ranked " : "";
+      setTimeout(() => {
+        if (x.outcome === "promoted") { banner(`⬆️ PROMOTED! ${fin[1]} ${fin[0]}`, "#3ecf6a"); sfx("win"); }
+        else if (x.outcome === "relegated") banner(`⬇️ Relegated to ${fin[1]} ${fin[0]}`, "#ff6b61");
+        popup(`🗓️ ${what}Season ${x.n} is over: ${x.outcome === "promoted" ? `promoted from ${lg[0]} to ${fin[0]}!` : x.outcome === "relegated" ? (x.inactive ? `relegated to ${fin[0]} (too few races).` : `relegated from ${lg[0]} to ${fin[0]}.`) : `you stayed in ${fin[0]}.`}${x.coins ? ` +${x.coins.toLocaleString()} season coins!` : ""} The new season starts you at the bottom of ${fin[0]}.`);
+      }, 1500);
+    }
+  }
+  socket.on("account", (u) => seasonRecap(u));
   socket.on("rankedResult", (r) => {
     S.rankedRes = r; renderRankedRes();
     if (r.up) setTimeout(() => { banner(`RANK UP! ${r.after.icon} ${r.after.label}`, r.after.color); sfx("win"); }, 2400);
@@ -7738,6 +7834,20 @@
     }
     return sec;
   }
+  // ⚔️ Rivalries: the real players you've raced most (friends or not), your record and current streak
+  function rivalsBlock(u) {
+    const L = u?.rivals; if (!L?.length) return null;
+    const sec = el("section", "rivals"); sec.appendChild(el("h3", "hub-h", "⚔️ Rivalries"));
+    for (const r of L) {
+      const l = r.n - r.w, d = el("div", "rival-row" + (r.w > l ? " up" : r.w < l ? " down" : ""));
+      const tx = el("div"); tx.append(el("b", "", r.name + (r.friend ? " 🤝" : "")), el("small", "", `${r.n} races together${r.s >= 2 ? ` · 🔥 won your last ${r.s}` : r.s <= -2 ? ` · lost your last ${-r.s}` : ""}`));
+      const rec = el("b", "rival-rec", `${r.w}–${l}`); rec.title = "Your wins – their wins";
+      const bar = el("div", "rival-bar"); const f = el("i"); f.style.width = Math.round((r.w / Math.max(1, r.n)) * 100) + "%"; bar.appendChild(f);
+      d.append(tx, rec, bar); sec.appendChild(d);
+    }
+    sec.appendChild(el("p", "preset-note", "Every race with another signed-in player counts. Finish right behind or ahead of a rival and the whole room hears about it."));
+    return sec;
+  }
   function betsBlock(u) {
     const inc = u?.bets?.in || [], live = u?.bets?.live || [];
     if (!inc.length && !live.length) return null;
@@ -8014,6 +8124,11 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-11-01", date: "1 Nov", title: "Ranked seasons, rivalries and live odds", items: [
+      "🗓️ Ranked seasons: every month is a season, played in your league (the tier you start it in). Finish higher and you're PROMOTED (+300 bonus coins), lower and you're relegated. Season coins for the best tier you reach, and the ranked leaderboard starts fresh each season.",
+      "⚔️ Rivalries: every race with another signed-in player counts now (not just friends). See your record before the lights, ⚔️ marks them on the leaderboard, and the room hears about it when rivals finish side by side. Profile › Friends shows your biggest rivalries.",
+      "🎲 Live odds: spectators see everyone's win chances move all race, and predictions stay open until the final lap at the live odds (a near-certain winner can't be picked).",
+    ] },
     { v: "u-2026-10-06f", date: "6 Oct", title: "Faster loading", items: [
       "⚡ The game loads faster and uses much less data: its files come squashed, race updates are about 3x smaller, and the music streams straight from archive.org.",
     ] },

@@ -1432,6 +1432,19 @@ body.touch .pg-pad { display: flex; }
 .predict-cars { display: grid; gap: 0.3rem; }
 .predict-car { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; text-align: left; }
 .predict-car .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; } .predict-car small { color: var(--yellow); font-weight: 800; }
+.predict-car.locked { opacity: 0.55; }
+/* live win chances (spectators): a stacked bar + the top 4 */
+.odds-bar { position: absolute; top: calc(2.4rem + 130px + 0.6rem + env(safe-area-inset-top, 0px)); right: 1rem; z-index: 6; width: 13rem; padding: 0.45rem 0.55rem; display: grid; gap: 0.35rem; pointer-events: none; font-size: 0.8rem; }
+.odds-bar .ob-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; white-space: nowrap; } .odds-bar .ob-head small { color: #ff6b61; font-weight: 800; font-size: 0.68rem; }
+.odds-bar .ob-track { display: flex; height: 0.55rem; border-radius: 0.3rem; overflow: hidden; background: rgba(255,255,255,0.08); }
+.odds-bar .ob-track i { display: block; min-width: 2px; transition: flex-grow 0.9s ease; } .odds-bar .ob-track i.ob-rest { background: rgba(255,255,255,0.18); }
+.odds-bar .ob-rows { display: grid; gap: 0.15rem; }
+.odds-bar .ob-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.35rem; }
+.odds-bar .ob-row .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; } .odds-bar .ob-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.odds-bar .ob-row small { font-weight: 800; font-variant-numeric: tabular-nums; } .odds-bar .ob-row small.up { color: #3ecf6a; } .odds-bar .ob-row small.down { color: #ff6b61; }
+body:not(.spectating) .odds-bar, body.replaying .odds-bar { display: none; }
+@media (max-width: 860px) { .odds-bar { top: calc(0.5rem + 80px + 0.4rem + env(safe-area-inset-top, 0px)); right: 0.5rem; width: 10rem; font-size: 0.72rem; padding: 0.35rem 0.45rem; } }
+@media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) { .odds-bar { top: calc(0.5rem + 70px + 0.4rem); } .odds-bar .ob-row:nth-child(n+3) { display: none; } }
 .tour-top { display: grid; gap: 0.4rem; padding: 0.8rem; border-radius: 0.6rem; background: rgba(255,255,255,0.04); margin-bottom: 0.8rem; } .tour-top small { color: var(--soft); }
 .bracket { display: flex; gap: 0.8rem; overflow-x: auto; padding-bottom: 0.5rem; }
 .br-col { display: flex; flex-direction: column; justify-content: space-around; gap: 0.5rem; min-width: 10rem; }
@@ -1951,3 +1964,18 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 @media (prefers-reduced-motion: reduce) { .card.sab { animation: none; } }
 .clip-flash { position: fixed; inset: 0; pointer-events: none; z-index: 90; border: 6px solid #fff; animation: clipFlash 650ms ease-out forwards; }
 @keyframes clipFlash { 0% { background: rgba(255,255,255,.35); } 100% { background: transparent; opacity: 0; transform: scale(.97); } }
+
+/* ⚔️ rivalries (Profile › Friends) */
+.rivals { display: grid; gap: 0.35rem; }
+.rival-row { display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 0.6rem; align-items: center; padding: 0.45rem 0.6rem; border-radius: 0.6rem; background: rgba(255,255,255,0.05); }
+.rival-row > div:first-child { display: grid; min-width: 0; } .rival-row small { opacity: 0.75; }
+.rival-rec { font-size: 1.1rem; font-variant-numeric: tabular-nums; } .rival-row.up .rival-rec { color: #3ecf6a; } .rival-row.down .rival-rec { color: #ff6b61; }
+.rival-bar { grid-column: 1 / -1; height: 0.3rem; border-radius: 0.2rem; background: rgba(255,107,97,0.45); overflow: hidden; } .rival-bar i { display: block; height: 100%; background: #3ecf6a; }
+
+/* 🗓️ ranked season card (league, promotion / relegation zone) */
+.season-card { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; margin: 0.6rem 0; border-radius: 0.8rem; background: rgba(255,255,255,0.05); border-left: 4px solid var(--rk, #ffcc1f); }
+.season-card .sc-head { display: flex; justify-content: space-between; align-items: baseline; } .season-card .sc-head small { opacity: 0.75; }
+.season-card .sc-league { font-weight: 800; color: var(--rk, #ffcc1f); }
+.season-card .sc-zone { font-size: 1.05rem; } .season-card small { opacity: 0.85; }
+.season-card.zone-promotion .sc-zone { color: #3ecf6a; } .season-card.zone-relegation .sc-zone, .season-card.zone-inactive .sc-zone { color: #ff6b61; }
+.season-card .rank-hist { margin-top: 0.1rem; }

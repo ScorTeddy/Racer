@@ -136,6 +136,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   dry (`rankedLook`); night and fog never together.
   **Coins:** ranked races pay no race coins. Reaching a division for the first time does (`rankUpCoins`, compared
   with your peak): 150 per division, 600 per new tier, 3,000 for Overdrive Elite.
+- **Ranked seasons** (`seasonRoll` in accounts.js): every calendar month (UTC) is a season, Season 1 = November 2026.
+  You play it in a **league** = the tier you started it in (`R.sLeague`). At the end (worked out the first time the
+  player is seen afterwards, never mid-race): finish in a higher tier = **promoted** (+300 coins), lower = **relegated**;
+  Gold and up with fewer than 3 races = relegated one tier for being inactive. Season coins for the best tier reached
+  (`SEASON_COINS`, 3+ races). Then a soft reset to the bottom of the new league (division III) and a fresh rank shield.
+  The ranked boards start empty each season; last season's top 3 are kept (`B.rankedPrev`). Profile › Ranked shows the
+  league, the promotion / relegation zone and past seasons; the result pops up once (`tb-season-*` in localStorage).
+- **Rivalries** (`recordH2H` in accounts.js): every race between signed-in players records head-to-head (`u.h2h`:
+  races, wins, current streak, name), friends or not, ranked too. Before the lights each player hears their record
+  against the player they've raced most in the room (`nemesis` event, ⚔️ on the leaderboard) and the room hears its
+  biggest rivalry; at the flag, rivals who finished side by side get a room-wide call-out (`rivalryResults`), and
+  3/5/10/20/50-race winning streaks a toast. Profile › Friends lists your top rivalries (`rivalsPublic`).
+- **Live odds** (`winChances` / `stepOdds` in server.js): every 2 race-seconds the server works out everyone's win
+  chance (gap to the leader in laps against how much race is left, nudged by driver skill and damage) and sends
+  `odds` to the room. Spectators see a live bar under the minimap. Predictions stay open until the final lap at the
+  live odds (0.9 / chance, 1.05x to 25x, locked in when you pick); a car above 80% can't be picked.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
