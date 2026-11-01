@@ -234,9 +234,10 @@ test("season pass: XP, tiers, premium and themed crates", async () => {
   assert.ok(p.prem);
   assert.ok(u.owned.some((id) => id.startsWith("bp_") && id.endsWith("_helmet")), "premium tier 1 item handed out when bought late");
   accounts.passXp(u, 250 * 3);
-  assert.ok((u.crates || {})[p.theme.key] >= 1, "premium tier 3 is a themed crate");
-  const o = accounts.openCrate(u, p.theme.key);
-  assert.ok(o.ok && o.item.pass === p.theme.key, "the crate gives this month's item");
+  assert.ok(u.owned.includes(`bp_${p.theme.key}_pnum`), "premium tier 3 is the premium-only number plate");
+  accounts.passXp(u, 250 * 4);
+  assert.ok((u.crates || {})[p.theme.key] >= 1, "premium tier 7 is a themed crate");
+  for (let k = 0; k < 40; k++) { u.crates[p.theme.key] = 1; const o = accounts.openCrate(u, p.theme.key); assert.ok(o.ok && o.item.pass === p.theme.key, "the crate gives this month's item"); assert.ok(!o.item.premium, "premium-only items never come from crates"); }
   assert.ok(!accounts.STORE.filter((x) => x.pass).some((x) => !x.loot), "pass items can't be bought");
 });
 
@@ -2037,4 +2038,22 @@ test("100 thunderclaps can be asked for, and no more", async () => {
 test("paper scenery (the Sketchbook look): a room can use it and the track carries it", () => {
   const r = new game.Room("PAPERSC", false); r.settings.theme = "paper"; r.setRandomTrack("normal", "regular");
   assert.equal(r.trackMsg().theme, "paper");
+});
+
+test("season pass rewards: the free track pays more, premium has its own themed set and the mythic at tier 60", () => {
+  for (const T of accounts.PASS_THEMES) {
+    for (const slot of ["livery", "wing", "decal", "num"]) { const it = accounts.STORE.find((x) => x.id === `bp_${T.key}_p${slot}`); assert.ok(it && it.premium && it.slot === slot, `${T.key} premium ${slot}`); }
+  }
+  const u = { id: "u_pr", coins: 5000, stats: {}, owned: [], ach: {}, equipped: {} };
+  accounts.passXp(u, 0); assert.ok(accounts.buyPass(u).ok);
+  const P = accounts.publicUser(u).pass, free = P.rewards.free, prem = P.rewards.prem;
+  const coins = (list) => list.reduce((a, r) => a + (r.coins || 0), 0);
+  assert.ok(coins(free) > 9000, `free track coins ${coins(free)}`);
+  const value = (list) => list.reduce((a, r) => a + (r.coins || 0) + (r.spins || 0) * 150 + (r.crate ? (r.n || 1) * 400 : 0), 0);
+  assert.ok(coins(prem) > coins(free), "premium pays more coins");
+  assert.ok(value(prem) > value(free) * 1.8, "and a lot more spins and crates on top (plus 11 items)");
+  assert.ok(prem[59].item && accounts.STORE.find((x) => x.id === prem[59].item).rarity === "mythic", "tier 60 premium is the mythic");
+  assert.equal(prem.filter((r) => r.item).length, 11, "11 premium items");
+  accounts.passXp(u, 250 * 60);
+  assert.ok(u.owned.includes(prem[59].item), "the mythic is handed out at tier 60");
 });

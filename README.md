@@ -40,6 +40,12 @@ All of these sit in the main folder next to server.js. The server also finds the
   Marker / Patrick Hand / Caveat fonts (Google Fonts link in index.html), white cards with an ink outline and hard shadow,
   sticky-note Quick Play, tape ticker, notepad leaderboard, highlighter boost bar. Text that was yellow (for dark
   backgrounds) is marker gold there (`--sk-gold`); yellow backgrounds stay bright.
+- **Sketchbook race HUD** (computers and tablets, 861px+ wide and 600px+ tall, not phone mode): the "Sketchbook race HUD"
+  block in game.css moves the existing HUD pieces — lap sticky note top centre with `#posText` circled beside it, notepad
+  `.standings` top left, minimap + feed top right, tyre card (`.bottom`) and team radio bottom left, `#boostPanel` fixed
+  bottom centre, the cards as a fanned hand bottom right. `placeBoxBtn()` in game.js moves `#boxBtn` into `#boostPanel`
+  there (and back into the radio everywhere else). Don't add `transform`/`rotate` to `.bottom` or `.radio`: they hold
+  fixed-position children (`#boostPanel`, `#slowWhy`) that would get trapped.
 - **✏️ Paper scenery** (`THEMES.paper` in game.js, `paper` in `THEME_KEYS` in server.js): graph-paper ground, pencil-grey road
   with an ink edge and graphite grain (`tex("pencil")`), red-and-white kerbs, hand-written car names. A Sketchbook host's
   new room starts on it (only while it's still on the default Night). Cars, liveries, designs and effects are drawn
@@ -174,6 +180,11 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   live odds (0.9 / chance, 1.05x to 25x, locked in when you pick); a car above 80% can't be picked.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
+- **Season pass rewards** (`passRewards` in accounts.js): free track = more coins (70 + 6/tier, 200 + 10/tier every 5th), the
+  themed rims at 15 and crates at 20/30/45/60. Premium = the themed set plus a **✦ premium-only set** per theme
+  (`PREMIUM_SET`: livery `tl_`, wing `tw_`, bonnet decal `td_`, number plate `tn_` + theme key; drawn on the client from the
+  theme's colours, so new themes get them automatically; `premium: true` keeps them out of crates), more coins, crates and
+  spins, and the theme's animated mythic guaranteed at tier 60.
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
   Festive), 60 tiers of 250 XP. Free track: coins, wheel spins, a themed item (tier 15) and themed crates (tiers 30, 45, 60). Premium
   (2,000 coins, pays out tiers already reached): 6 themed items and themed crates. Pass items (`bp_*`, `box: "pass"`)

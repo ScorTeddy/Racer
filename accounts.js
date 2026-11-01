@@ -885,6 +885,12 @@ const PASS_SLOTS = [
 ];
 for (const T of PASS_THEMES) for (const [slot, word, rarity] of PASS_SLOTS)
   STORE.push({ id: `bp_${T.key}_${slot}`, slot, name: `${T.name} ${word}`, look: T[slot], loot: true, rarity, box: "pass", pass: T.key });
+// PREMIUM-only themed set (only from the premium reward track, never from crates): a hand-drawn themed livery, a wing
+// in the theme's colours with a glowing edge, the theme's icon as a bonnet decal and a themed number plate. The client
+// draws them from the theme's colours ("tl_" / "tw_" / "td_" / "tn_" + theme key), so new themes get them for free.
+const PREMIUM_SET = [["livery", "tl_", "livery", "legendary"], ["wing", "tw_", "wing", "epic"], ["decal", "td_", "bonnet decal", "epic"], ["num", "tn_", "number plate", "rare"]];
+for (const T of PASS_THEMES) for (const [slot, pre, word, rarity] of PREMIUM_SET)
+  STORE.push({ id: `bp_${T.key}_p${slot}`, slot, name: `${T.name} ${word} ✦`, look: pre + T.key, loot: true, rarity, box: "pass", pass: T.key, premium: true });
 // Every theme has its own elusive MYTHIC: an animated livery in the theme's colours, only from that theme's crates,
 // and only rarely (CRATE_MYTHIC). New themes get one automatically. Haunted has its own hand-made set instead.
 const THEME_MYTHICS = {
@@ -1553,14 +1559,17 @@ const passItem = (T, slot) => `bp_${T.key}_${slot}`;
 function passRewards(T = monthTheme()) {
   const free = [], prem = [];
   for (let t = 1; t <= PASS_TIERS; t++) {
-    // 60 tiers, and the rewards get better the higher you go: coins grow every tier, more spins and
-    // double crates late on. Themed items up to 30, the biggest prizes at the top.
-    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 30 ? { crate: T.key } : t === 45 ? { crate: T.key, n: 2 } : t === 60 ? { crate: T.key, n: 3 }
-      : t % 10 === 7 ? { spins: t < 30 ? 1 : t < 50 ? 2 : 3 } : t % 5 === 0 ? { coins: 150 + t * 8 } : { coins: 50 + t * 5 });
-    prem.push(t === 1 ? { item: passItem(T, "helmet") } : t === 5 ? { item: passItem(T, "glow") } : t === 10 ? { item: passItem(T, "smoke") }
-      : t === 20 ? { item: passItem(T, "flame") } : t === 25 ? { item: passItem(T, "trail") } : t === 30 ? { item: passItem(T, "badge") }
-      : t === 60 ? { spins: 6 } : t === 50 ? { crate: T.key, n: 3 } : t % 6 === 0 ? { spins: t <= 30 ? 2 : 3 } : t % 4 === 3 ? { crate: T.key, n: t < 40 ? 1 : 2 }
-      : { coins: 100 + t * 10 });
+    // 60 tiers, and the rewards get better the higher you go. FREE: coins every tier (a bit more than before),
+    // spins, the themed rims and crates. PREMIUM: much more: the themed set early, a PREMIUM-only themed livery,
+    // wing, decal and number plate, lots more coins and crates, and the theme's animated MYTHIC livery at tier 60.
+    free.push(t === 15 ? { item: passItem(T, "rims") } : t === 20 ? { crate: T.key } : t === 30 ? { crate: T.key } : t === 45 ? { crate: T.key, n: 2 } : t === 60 ? { crate: T.key, n: 3 }
+      : t % 10 === 7 ? { spins: t < 30 ? 1 : t < 50 ? 2 : 3 } : t % 5 === 0 ? { coins: 200 + t * 10 } : { coins: 70 + t * 6 });
+    const mythic = STORE_BY_ID.has(`bp_${T.key}_mythic`) ? `bp_${T.key}_mythic` : null;
+    prem.push(t === 1 ? { item: passItem(T, "helmet") } : t === 3 ? { item: `bp_${T.key}_pnum` } : t === 5 ? { item: passItem(T, "glow") } : t === 8 ? { item: `bp_${T.key}_pdecal` } : t === 10 ? { item: passItem(T, "smoke") }
+      : t === 15 ? { item: `bp_${T.key}_plivery` } : t === 20 ? { item: passItem(T, "flame") } : t === 25 ? { item: passItem(T, "trail") } : t === 30 ? { item: passItem(T, "badge") }
+      : t === 35 ? { item: `bp_${T.key}_pwing` } : t === 60 ? (mythic ? { item: mythic } : { spins: 8 }) : t === 59 ? { spins: 8 } : t === 50 ? { crate: T.key, n: 4 } : t === 40 ? { crate: T.key, n: 3 }
+      : t % 6 === 0 ? { spins: t <= 30 ? 2 : 4 } : t % 4 === 3 ? { crate: T.key, n: t < 40 ? 1 : 2 }
+      : { coins: 200 + t * 18 });
   }
   return { free, prem };
 }
@@ -1605,7 +1614,7 @@ const CRATE_MYTHIC = 0.015;
 function openCrate(u, key) {
   u.crates = u.crates || {};
   if (!(u.crates[key] > 0)) return { error: "You don't have that crate" };
-  const all = STORE.filter((x) => x.pass === key); if (!all.length) return { error: "Unknown crate" };
+  const all = STORE.filter((x) => x.pass === key && !x.premium); if (!all.length) return { error: "Unknown crate" };   // (premium-track items never drop)
   u.crates[key]--; if (!u.crates[key]) delete u.crates[key];
   // the theme's mythic is elusive: a CRATE_MYTHIC chance per crate, whatever else you already own
   const myth = all.filter((x) => x.rarity === "mythic"), rest = all.filter((x) => x.rarity !== "mythic");
