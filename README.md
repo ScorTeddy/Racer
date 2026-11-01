@@ -40,6 +40,12 @@ All of these sit in the main folder next to server.js. The server also finds the
   Marker / Patrick Hand / Caveat fonts (Google Fonts link in index.html), white cards with an ink outline and hard shadow,
   sticky-note Quick Play, tape ticker, notepad leaderboard, highlighter boost bar. Text that was yellow (for dark
   backgrounds) is marker gold there (`--sk-gold`); yellow backgrounds stay bright.
+- **Sketchbook race HUD** (computers and tablets, 861px+ wide and 600px+ tall, not phone mode): the "Sketchbook race HUD"
+  block in game.css moves the existing HUD pieces — lap sticky note top centre with `#posText` circled beside it, notepad
+  `.standings` top left, minimap + feed top right, tyre card (`.bottom`) and team radio bottom left, `#boostPanel` fixed
+  bottom centre, the cards as a fanned hand bottom right. `placeBoxBtn()` in game.js moves `#boxBtn` into `#boostPanel`
+  there (and back into the radio everywhere else). Don't add `transform`/`rotate` to `.bottom` or `.radio`: they hold
+  fixed-position children (`#boostPanel`, `#slowWhy`) that would get trapped.
 - **✏️ Paper scenery** (`THEMES.paper` in game.js, `paper` in `THEME_KEYS` in server.js): graph-paper ground, pencil-grey road
   with an ink edge and graphite grain (`tex("pencil")`), red-and-white kerbs, hand-written car names. A Sketchbook host's
   new room starts on it (only while it's still on the default Night). Cars, liveries, designs and effects are drawn

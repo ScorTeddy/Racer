@@ -2270,3 +2270,96 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
   :root[data-theme="sketch"] #menu .lobbies { min-height: 8rem; }
   :root[data-theme="sketch"] #menu #totwCv { width: 7.5rem; }
 }
+
+/* ======================= ✏️ Sketchbook race HUD (light and dark), computers and tablets =======================
+   Laid out like the first drawing of it: the lap counter on a sticky note at the top with your place circled in red
+   marker, the leaderboard on a notepad (top left), minimap and race feed top right, the tyre card bottom left, big
+   Defend / BOOST / Box box stickers bottom centre and the upgrade cards as a fanned hand bottom right.
+   (Fade-only entrances here: a transform would trap the fixed-position bits inside their panels.) */
+@media (min-width: 861px) and (min-height: 600px) {
+  :root[data-theme="sketch"] body:not(.phone) :is(.standing, .standings, .radio, .bottom, .garage, #minimap) { animation: skFade 420ms ease both; }
+  /* lap sticky note + circled position */
+  :root[data-theme="sketch"] body:not(.phone) .standing { left: 50%; translate: -50% 0; top: calc(0.8rem + env(safe-area-inset-top, 0px)); background: none; border: 0; box-shadow: none; padding: 0; gap: 0.7rem; align-items: flex-start; }
+  :root[data-theme="sketch"] body:not(.phone) .standing .laps { order: 1; display: flex; flex-direction: column; align-items: center; min-width: 13rem; padding: 0.7rem 1.4rem 0.6rem; background: var(--sk-sticky); color: #1f2633; box-shadow: 0 10px 18px rgba(0,0,0,0.16); rotate: 1deg; position: relative; }
+  :root[data-theme="sketch"] body:not(.phone) .standing .laps::before { content: ""; position: absolute; left: 50%; top: -11px; width: 70px; height: 22px; translate: -50% 0; rotate: -3deg; background: var(--sk-tape); }
+  :root[data-theme="sketch"] body:not(.phone) .standing .laps :is(span, b) { color: #1f2633; }
+  :root[data-theme="sketch"] body:not(.phone) #lapText { font-family: var(--sk-marker); font-size: 2.3rem; line-height: 1.05; }
+  :root[data-theme="sketch"] body:not(.phone) .standing .laps .t { display: inline; font-size: 1rem; }
+  :root[data-theme="sketch"] body:not(.phone) .standing .gapline .a { color: #b42318; } :root[data-theme="sketch"] body:not(.phone) .standing .gapline .b { color: #1d4ed8; }
+  :root[data-theme="sketch"] body:not(.phone) #posText { position: absolute; left: calc(100% + 1rem); top: 0.3rem; width: 5.4rem; height: 5.4rem; display: grid; place-items: center; grid-auto-flow: column; align-content: center; justify-content: center; border: 4px solid var(--red); border-radius: 52% 46% 55% 44% / 48% 55% 45% 52%; color: var(--red); font-family: var(--sk-marker); font-size: 2.3rem; rotate: -7deg; background: none; }
+  :root[data-theme="sketch"] body:not(.phone) #posText small { font-size: 0.9rem; align-self: end; margin-bottom: 0.3rem; }
+  :root[data-theme="sketch"] body:not(.phone) .lap-delta { order: 0; position: absolute; right: calc(100% + 1rem); top: 0.6rem; padding: 0.4rem 0.7rem; background: var(--sk-card); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); box-shadow: 2px 3px 0 var(--sk-shadow); rotate: -2deg; }
+  /* chips that lived at the top centre move round the sticky note */
+  :root[data-theme="sketch"] body:not(.phone) .weather { left: auto; right: calc(50% + 8.6rem); translate: none; transform: none; top: calc(1.1rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body:not(.phone) .mode-chip { left: auto; right: calc(50% + 8.6rem); transform: none; top: calc(3.9rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body:not(.phone) .watch-chip { top: calc(9.4rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body:not(.phone) .class-flag { top: calc(9.4rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body.in-race:not(.phone) .chat-btn { left: calc(50% + 14.6rem); top: calc(1.1rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body.in-race:not(.phone) .chat-box { top: calc(10rem + env(safe-area-inset-top, 0px)); }
+  /* the "why am I slow" line: a blue sticky under the lap note */
+  :root[data-theme="sketch"] body:not(.phone) #slowWhy:not(.hidden) { position: fixed; left: 50%; translate: -50% 0; rotate: -1deg; top: calc(9.4rem + env(safe-area-inset-top, 0px)); z-index: 6; max-width: 30rem; padding: 0.4rem 1rem; font-size: 1rem; font-weight: 400; color: #1f2633; background: #dceeff; border: 0; border-radius: 2px; box-shadow: 0 8px 14px rgba(0,0,0,0.14); }
+  :root[data-theme="sketch"] body:not(.phone) #slowWhy.bad:not(.hidden) { background: #ffe1dc; color: #9b1c12; }
+  /* leaderboard: a notepad with punched holes along the top */
+  :root[data-theme="sketch"] body:not(.phone) .standings { top: calc(1rem + env(safe-area-inset-top, 0px)); width: 18rem; padding: 2rem 0.8rem 0.6rem 1.1rem; font-size: 0.95rem; border-radius: 4px; rotate: -1deg; background-color: var(--sk-card2); background-image: linear-gradient(transparent calc(100% - 2px), var(--sk-rule) calc(100% - 2px)); }
+  :root[data-theme="sketch"] body:not(.phone) .standings::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1.25rem; border-bottom: 2px solid var(--sk-ink); background: radial-gradient(circle at 13px 50%, var(--bg) 5px, transparent 5.5px) 0 0 / 26px 100%, var(--sk-soft-bg); border-radius: 4px 4px 0 0; }
+  :root[data-theme="sketch"] body:not(.phone) .standings li { border-bottom: 1.5px solid var(--sk-rule); padding: 0.2rem 0; }
+  :root[data-theme="sketch"] body:not(.phone) .standings li > span:first-child { font-family: var(--sk-marker); }
+  :root[data-theme="sketch"] body:not(.phone) .standings .head { font-family: var(--sk-marker); color: var(--soft); }
+  /* minimap + feed, top right */
+  :root[data-theme="sketch"] body:not(.phone) #minimap { top: calc(1rem + env(safe-area-inset-top, 0px)); width: 230px; height: 160px; rotate: 1.5deg; }
+  :root[data-theme="sketch"] body:not(.phone) .odds-bar { top: calc(1rem + 160px + 1rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body:not(.phone) .feed { top: calc(1rem + 160px + 1.2rem + env(safe-area-inset-top, 0px)); width: 19rem; gap: 0.45rem; }
+  :root[data-theme="sketch"] body:not(.phone) .feed div { width: 100%; font-size: 1rem; font-weight: 400; padding: 0.35rem 0.8rem; background: var(--sk-card2); color: var(--ink); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); box-shadow: 2px 3px 0 var(--sk-shadow); }
+  :root[data-theme="sketch"] body:not(.phone) .feed div:nth-child(2) { rotate: -0.8deg; opacity: 0.85; } :root[data-theme="sketch"] body:not(.phone) .feed div:nth-child(n+3) { rotate: 0.8deg; opacity: 0.6; }
+  /* bottom left: the tyre card (tyres + team level) with the team radio above it */
+  :root[data-theme="sketch"] body:not(.phone) .bottom { left: 1rem; transform: none; width: 19rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); gap: 0; padding: 1rem 1.1rem 0.9rem; background: var(--sk-card); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-shadow); }
+  :root[data-theme="sketch"] body:not(.phone) .bottom > .panel:not(#boostPanel) { background: none; border: 0; box-shadow: none; padding: 0.15rem 0; }
+  :root[data-theme="sketch"] body:not(.phone) #tireName { font-family: var(--sk-marker); font-size: 1.05rem; }
+  :root[data-theme="sketch"] body:not(.phone) .bottom .meter { height: 0.9rem; border: 2px solid var(--sk-ink); border-radius: 8px; background: var(--sk-card2); overflow: hidden; }
+  :root[data-theme="sketch"] body:not(.phone) #tireFill { background-image: repeating-linear-gradient(-45deg, rgba(255,255,255,0.25) 0 8px, transparent 8px 16px); }
+  :root[data-theme="sketch"] body:not(.phone) #xpFill { background: repeating-linear-gradient(-45deg, #ffd84a 0 8px, #ffc800 8px 16px); }
+  :root[data-theme="sketch"] body:not(.phone) .radio { bottom: calc(10.4rem + env(safe-area-inset-bottom, 0px)); width: 19rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; padding: 0.8rem; }   /* (no tilt: it would trap the fixed slow-why sticky) */
+  :root[data-theme="sketch"] body:not(.phone) .radio > :is(.radio-top, .next-tires, .pit-wall, .emote-row, #boxBtn) { grid-column: 1 / -1; }
+  :root[data-theme="sketch"] body:not(.phone) .radio .rbtn { font-size: 0.85rem; padding: 0.3rem 0.4rem; }
+  /* bottom centre: Defend / BOOST / Box box stickers (Box box moves here from the radio, see placeBoxBtn) */
+  :root[data-theme="sketch"] body:not(.phone) #boostPanel { position: fixed; left: 50%; translate: -50% 0; bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: row; align-items: flex-end; gap: 1.1rem; padding: 0; background: none; border: 0; box-shadow: none; }
+  :root[data-theme="sketch"] body:not(.phone) #boostBtn { order: 2; width: 15rem; min-height: 5rem; flex-direction: column; justify-content: center; align-items: center; gap: 0; rotate: -2deg; border-radius: var(--sk-r); }
+  :root[data-theme="sketch"] body:not(.phone) #boostBtn .blabel { font-size: 1.9rem; }
+  :root[data-theme="sketch"] body:not(.phone) #defendBtn { order: 1; width: 9.5rem; min-height: 4rem; margin: 0; flex-direction: column; justify-content: center; gap: 0; font-size: 1.15rem; rotate: 1.5deg; border-radius: var(--sk-r); }
+  :root[data-theme="sketch"] body:not(.phone) #boostPanel #boxBtn { order: 3; width: 10rem; min-height: 4rem; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--sk-marker); font-size: 1.25rem; color: #fff; background: var(--red); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 3px 4px 0 var(--sk-shadow); rotate: 1deg; cursor: pointer; }
+  :root[data-theme="sketch"] body:not(.phone) #boostPanel #boxBtn kbd { order: 2; font-family: var(--sk-hand); font-size: 0.8rem; border-color: rgba(255,255,255,0.7); background: transparent; color: #fff; }
+  :root[data-theme="sketch"] body:not(.phone) #boostPanel #boxBtn.on { background: var(--yellow); color: #1f2633; }
+  :root[data-theme="sketch"] body:not(.phone) #drsGo:not(.hidden) { order: 4; min-height: 4rem; border-radius: var(--sk-r); border: 2.5px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-shadow); }
+  :root[data-theme="sketch"] body:not(.phone) .slip-tag { position: absolute; left: 50%; top: -2.4rem; right: auto; translate: -50% 0; transform: none; }
+  /* bottom right: the upgrade cards as a fanned hand (rotate/translate, not transform: the flip animation uses that) */
+  :root[data-theme="sketch"] body:not(.phone) .cards { left: auto; right: 1.4rem; top: auto; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); transform: none; width: min(33rem, 40vw); align-items: flex-end; gap: 0.3rem; }
+  :root[data-theme="sketch"] body:not(.phone) .cards h2 { order: -1; align-self: flex-end; font-family: var(--sk-note); font-weight: 700; font-size: 1.7rem; color: var(--red); text-shadow: none; rotate: 3deg; margin-right: 0.6rem; }
+  :root[data-theme="sketch"] body:not(.phone) .cards h2::after { content: " ↓"; }
+  :root[data-theme="sketch"] body:not(.phone) .card-row { display: flex; gap: 0; justify-content: flex-end; align-items: flex-end; }
+  :root[data-theme="sketch"] body:not(.phone) .card-row .card { flex: 1 1 0; min-width: 0; min-height: 11.5rem; margin-left: -0.6rem; border-radius: 12px; transform-origin: bottom center; }
+  :root[data-theme="sketch"] body:not(.phone) .card-row .card:nth-child(1) { rotate: -7deg; translate: 0 0.6rem; } :root[data-theme="sketch"] body:not(.phone) .card-row .card:nth-child(2) { rotate: 0deg; translate: 0 -0.5rem; z-index: 1; } :root[data-theme="sketch"] body:not(.phone) .card-row .card:nth-child(3) { rotate: 7deg; translate: 0 0.6rem; }
+  :root[data-theme="sketch"] body:not(.phone) .card-row .card:hover { translate: 0 -1.2rem; z-index: 2; }
+  :root[data-theme="sketch"] body:not(.phone) .cards .later { align-self: center; }
+  /* the upgrade list moves up the right side, under the feed */
+  :root[data-theme="sketch"] body:not(.phone) .garage { bottom: auto; top: calc(1rem + 160px + 12.5rem + env(safe-area-inset-top, 0px)); width: 15rem; max-height: max(8.5rem, calc(100vh - 160px - 37rem)); overflow: auto; rotate: 0.8deg; }
+}
+@media (min-width: 861px) and (min-height: 600px) {
+  /* "upgrades waiting": a little sticker under the lap note, not on top of it */
+  :root[data-theme="sketch"] body:not(.phone) .up-pill { top: calc(9.6rem + env(safe-area-inset-top, 0px)); background: var(--sk-sticky); color: #1f2633; border: 0; border-radius: 2px; box-shadow: 0 8px 14px rgba(0,0,0,0.15); rotate: 1.5deg; font-family: var(--sk-hand); }
+  :root[data-theme="sketch"] body:not(.phone) #slowWhy:not(.hidden) { top: calc(12.6rem + env(safe-area-inset-top, 0px)); }
+  :root[data-theme="sketch"] body:not(.phone) #boostBtn .blabel { font-size: 1.7rem; white-space: nowrap; }
+  :root[data-theme="sketch"] body:not(.phone) #boostBtn { width: 17rem; }
+  :root[data-theme="sketch"] body:not(.phone) #tireName { font-family: var(--sk-hand); font-size: 1.05rem; font-weight: 700; }
+  :root[data-theme="sketch"] body:not(.phone) .bottom .meter-label { font-size: 1rem; }
+}
+@media (min-width: 861px) and (min-height: 600px) {
+  :root[data-theme="sketch"] body:not(.phone) .cards { width: min(30rem, calc(50vw - 22.5rem)); }
+  :root[data-theme="sketch"] body:not(.phone) .card-row .card { min-height: 10rem; }
+}
+/* "You need to pit": a warning sticker, not a dark box (both Sketchbook looks, every size) */
+:root[data-theme="sketch"] .must-pit { background: var(--sk-card); color: var(--ink); border: 3px solid var(--red); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-shadow); rotate: -1deg; }
+:root[data-theme="sketch"] .must-pit .mp-head { font-family: var(--sk-marker); font-weight: 400; color: var(--red); }
+:root[data-theme="sketch"] .must-pit .mp-why { color: var(--ink); }
+@media (min-width: 861px) and (min-height: 600px) {
+  :root[data-theme="sketch"] body:not(.phone) #posText { background: color-mix(in srgb, var(--bg) 88%, transparent); box-shadow: 0 6px 14px rgba(0,0,0,0.18); }
+}

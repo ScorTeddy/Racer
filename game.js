@@ -140,7 +140,18 @@
       requestAnimationFrame(() => { try { if (S.screen === "lobby") sizeBoard(); } catch (e) {} });
     }
     try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
+    placeBoxBtn();
   }
+  // Sketchbook race HUD on computers: "Box this lap" becomes the red Box box sticker next to BOOST (it lives in the
+  // team radio everywhere else). Same button, just moved, so its handlers and blinking still work.
+  function placeBoxBtn() {
+    const b = document.getElementById("boxBtn"), panel = document.getElementById("boostPanel"), tires = document.getElementById("nextTires");
+    if (!b || !panel || !tires) return;
+    const wide = isSketch() && !document.body.classList.contains("phone") && window.innerWidth > 860 && window.innerHeight >= 600;
+    if (wide && b.parentElement !== panel) panel.appendChild(b);
+    else if (!wide && b.parentElement !== tires.parentElement) tires.after(b);
+  }
+  window.addEventListener("resize", placeBoxBtn);
   // ✏️ / 🌙 on the menu: one tap between the Sketchbook look and the dark one
   // (✏️ light <-> 🌙 dark Sketchbook; from any other look it goes to Sketchbook)
   document.getElementById("lookBtn")?.addEventListener("click", () => { settings.theme = settings.theme === "sketch" ? "sketchdark" : "sketch"; applySettings(); if (S.screen === "lobby") try { drawBoard(); } catch (e) {} });
@@ -8179,6 +8190,10 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-11-04", date: "4 Nov", title: "✏️ A new race screen", items: [
+      "📝 In Sketchbook (light and dark) the race screen is drawn like the notebook now: the lap on a sticky note at the top with your place circled in red, the leaderboard on a notepad, big Defend / BOOST / Box box stickers along the bottom and your upgrade cards as a fanned hand of cards.",
+      "📱 Phones keep their compact layout; Broadcast dark looks the same as before.",
+    ] },
     { v: "u-2026-11-03", date: "3 Nov", title: "🌙 Sketchbook dark, and the whole screen", items: [
       "🌙 Sketchbook dark: the notebook at night, with chalk-white ink on a dark page (Paper tracks turn into their night page too). Tap 🌙 next to ⚙ on the menu, ☀️ switches back. Broadcast dark is still in Settings › Look.",
       "🖥️ Big monitors get the whole screen: the menu spreads into three columns (your car, Play, and track of the week / events / lobbies), and Profile, Settings, results and the rest are much wider.",
