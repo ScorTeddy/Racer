@@ -24,6 +24,8 @@
     beach:   { ground: "#e9d8a6", speck: ["rgba(255,255,255,0.35)", "rgba(160,120,60,0.12)"], tex: "dunes", runoff: "#f3e6bf", asphalt: "#474a52", curbA: "#ffffff", curbB: "#0ea5b7", line: "rgba(255,255,255,0.5)", water: "#2bb3c9" },
     city:    { ground: "#7b8088", speck: ["rgba(255,255,255,0.05)", "rgba(0,0,0,0.1)"], tex: "slabs", runoff: "#9aa0a8", asphalt: "#2e3036", curbA: "#ffd21f", curbB: "#1c1c1c", line: "rgba(255,255,255,0.5)" },
     volcano: { ground: "#2b2320", speck: ["rgba(255,90,20,0.18)", "rgba(0,0,0,0.3)"], tex: "lava", runoff: "#4a3a33", asphalt: "#1f1c1c", curbA: "#ffb020", curbB: "#b91c1c", line: "rgba(255,190,120,0.45)" },
+    // ✏️ the Sketchbook look: graph paper, a pencil-grey road with an ink edge, red-and-white marker kerbs
+    paper:   { ground: "#fbf7ec", speck: ["rgba(31,38,51,0.035)", "rgba(47,111,228,0.035)"], tex: "paper", runoff: "#f1e8cf", asphalt: "#9ea5b1", curbA: "#ffffff", curbB: "#e5483f", line: "rgba(255,255,255,0.9)", ink: "#1f2633" },
     neon:    { ground: "#120d24", speck: ["rgba(180,120,255,0.08)", "rgba(0,0,0,0.3)"], tex: "grid", runoff: "#231a40", asphalt: "#18142a", curbA: "#22e6ff", curbB: "#ff2bd6", line: "rgba(120,240,255,0.6)", night: true },
   };
   const TIRES = {
@@ -72,7 +74,7 @@
     { key: "shake", label: "Screen shake", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "minimap", label: "Minimap", def: "on", opts: [["on", "On"], ["off", "Off"]] },
     { key: "raceline", label: "Show racing line", hint: "The line the drivers try to follow", def: "off", opts: [["on", "On"], ["off", "Off"]] },
-    { key: "theme", label: "Menu theme", def: "broadcast", opts: [["broadcast", "Broadcast (new)"], ["dark", "Classic dark"], ["light", "Light"]] },
+    { key: "theme", label: "Look", hint: "Sketchbook: the whole game drawn in a notebook. Dark: the night-time broadcast look.", def: "sketch", opts: [["sketch", "✏️ Sketchbook (new)"], ["broadcast", "🌙 Dark"], ["dark", "Classic dark"], ["light", "Light"]] },
     { key: "motion", label: "Reduce motion", def: "system", opts: [["system", "Device"], ["on", "On"], ["off", "Off"]] },
     // ---- Assists tab: things done for you in the race ----
     { tab: "assists", key: "asPit", label: "🔧 Pit assist", hint: "Calls your pit stops for you (worn tires, rain, damage) and picks the tires, like the AI strategists do. You can still box yourself.", def: "off", opts: [["on", "On"], ["off", "Off"]] },
@@ -92,6 +94,8 @@
   try { Object.assign(settings, JSON.parse(localStorage.getItem("tb-settings") || "{}")); } catch (e) {}
   // the Broadcast look is the new default menu theme: players on the old dark theme move over once (Settings has Classic)
   if (!settings.themeV) { if (settings.theme === "dark") settings.theme = "broadcast"; settings.themeV = 1; }
+  // the Sketchbook look is the new default: everyone moves over once (🌙 on the menu or Settings > Look switches back to Dark)
+  if (settings.themeV < 2) { settings.theme = "sketch"; settings.themeV = 2; }
   settings.keys = { ...KEY_DEFAULTS, ...(settings.keys && typeof settings.keys === "object" ? settings.keys : {}) };
   const KEY = (a) => settings.keys[a] || KEY_DEFAULTS[a];
   const keyName = (code) => (!code ? "?" : code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) : code.startsWith("Numpad") ? "Num " + code.slice(6)
@@ -108,6 +112,8 @@
   const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
   function applySettings() {
     document.documentElement.dataset.theme = settings.theme;
+    { const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = settings.theme === "sketch" ? "#fbf7ec" : settings.theme === "light" ? "#e9ebef" : "#14161b"; }
+    { const b = document.getElementById("lookBtn"); if (b) { const sk = settings.theme === "sketch"; b.textContent = sk ? "🌙" : "✏️"; b.title = sk ? "Switch to the dark look" : "Switch to the Sketchbook look"; b.setAttribute("aria-label", b.title); } }
     // UI size: everything in the menus and HUD is sized in rem, so this scales it all
     const ui = { s: 82, m: 100, l: 115, xl: 130 }[settings.ui] || (isPhone() ? 88 : 100);
     document.documentElement.style.fontSize = ui + "%";
@@ -127,6 +133,8 @@
     }
     try { localStorage.setItem("tb-settings", JSON.stringify(settings)); } catch (e) {}
   }
+  // ✏️ / 🌙 on the menu: one tap between the Sketchbook look and the dark one
+  document.getElementById("lookBtn")?.addEventListener("click", () => { settings.theme = settings.theme === "sketch" ? "broadcast" : "sketch"; applySettings(); });
   let setTab = "general", rebinding = null;
   function renderSettings() {
     const body = $("setBody"); body.textContent = "";
@@ -1532,7 +1540,7 @@
     const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
     sc.onload = () => {
       google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (r) => socket.emit("auth:google", { credential: r.credential, backup: backupFor(lastAcct()) }) });
-      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
+      google.accounts.id.renderButton($("gsiBtn"), { theme: settings.theme === "light" || settings.theme === "sketch" ? "outline" : "filled_black", size: "large", shape: "pill", text: "signin_with" });
     };
     document.head.appendChild(sc);
   }).catch(() => {});
@@ -1786,6 +1794,7 @@
     const tb = tradesBlock(u); if (tb) box.appendChild(tb);
     const gb = ghostsBlock(u); if (gb) box.appendChild(gb);
     const bb = betsBlock(u); if (bb) box.appendChild(bb);
+    const rb = rivalsBlock(u); if (rb) box.appendChild(rb);
     if (!F2) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     const person = (f, buttons) => {
       const d = el("div", "friend");
@@ -1833,7 +1842,10 @@
       box.appendChild(el("p", "preset-note", T ? `🌟 ${T.name}: fastest laps this week (resets every Monday). Race it from the main menu, or 🌟 on the track tools.` : "This week's featured track."));
       const go = el("button", "btn go", "Race it now"); go.type = "button"; go.addEventListener("click", () => { closeHub(); $("totwRace").click(); }); if (!S.code) box.appendChild(go);
     }
-    if ((A.lbKind || "wins") === "ranked") box.appendChild(el("p", "preset-note", "The top ranked players by skill rating (SR)."));
+    if ((A.lbKind || "wins") === "ranked" || A.lbKind === "rankedTeam") {
+      box.appendChild(el("p", "preset-note", `The top ranked players by skill rating (SR)${L?.season ? ` in Season ${L.season}` : ""}. It starts empty every season (each month).`));
+      if (L?.prev?.list?.length) box.appendChild(el("p", "preset-note", `👑 Season ${L.prev.n} champions: ${L.prev.list.map((x, i) => `${["🥇", "🥈", "🥉"][i]} ${x.name}`).join("  ")}`));
+    }
     if (!L) { box.appendChild(el("p", "preset-note", "Loading...")); return; }
     if (!L.list.length) { box.appendChild(el("p", "preset-note", "No times yet. Be the first!")); return; }
     const ol = el("ol", "lb-list");
@@ -2516,6 +2528,14 @@
     if (was) { show("menu"); menuErr.textContent = "That room's gone (it ended while you were away)."; }
     S.restarting = false;
   });
+  // Sketchbook look: a new room you're the host of starts on the ✏️ Paper scenery (only once, and only if it's still on
+  // the default: pick anything else and it stays picked)
+  const PAPERED = new Set();
+  socket.on("lobby", (l) => {
+    if (!S.me || !l?.code) return;
+    if (settings.theme === "sketch" && l.hostId === S.me && !l.ranked && !l.raceNo && l.phase === "lobby" && l.settings?.theme === "night" && !PAPERED.has(l.code)) { PAPERED.add(l.code); socket.emit("settings", { theme: "paper" }); }
+    PAPERED.add(l.code);
+  });
   socket.on("lobby", (l) => {
     S.lobby = l; S.host = l.hostId === S.me && !l.ranked;
     if (l.phase === "lobby" && (S.screen === "results" && !S.resultsHold)) show("lobby");
@@ -2962,7 +2982,7 @@
   });
   // ---- party mode sabotage: oil slicks, storm clouds, ink ----
   S.hazards = [];
-  socket.on("race", () => { S.hazards = []; S.ink = null; });
+  socket.on("race", () => { S.hazards = []; S.ink = null; S.nemeses = null; });
   socket.on("hazard", (h) => {
     h.end = performance.now() + h.secs * 1000; h.born = performance.now();
     if (h.k === "ink") { if (h.car === S.myCar) { S.ink = { until: h.end, born: h.born, blobs: Array.from({ length: 7 }, () => ({ x: Math.random(), y: Math.random() * 0.8 + 0.1, r: 0.08 + Math.random() * 0.14, n: 5 + Math.floor(Math.random() * 5) })) }; sfx("jump"); } return; }
@@ -3036,6 +3056,13 @@
   // someone got a super rare card: everyone hears about it, and their car glows for the rest of the race
   // your rival for this race (arrives just before the race starts)
   socket.on("rival", (r) => { S.pendingRival = r; });
+  // real players you've raced before: your record against them (the one you've raced most gets a popup), ⚔️ on the board
+  socket.on("nemesis", (d) => {
+    S.nemeses = new Map((d?.list || []).map((x) => [x.car, x]));
+    const x = d?.list?.[0]; if (!x) return;
+    const l = x.n - x.w, streak = x.s >= 3 ? ` You've won the last ${x.s}!` : x.s <= -3 ? ` They've won the last ${-x.s}. Time to end that!` : "";
+    setTimeout(() => popup(`⚔️ Rivalry: you're ${x.w}–${l} against ${x.name} (${x.n} races).${streak}`), 4200);
+  });
   socket.on("rivalResult", (r) => {
     setTimeout(() => popup(r.beat ? `🎯 You beat your rival ${r.name}!${r.coins ? ` +${r.coins} coins` : ""}${r.xp ? ` +${r.xp} pass XP` : ""}` : `🎯 ${r.name} beat you this time. Get them next race!`, !r.beat), 1200);
   });
@@ -3743,7 +3770,13 @@
     boardDims();
     const c = bctx, dpr = B.dpr || 1;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h);
+    if (settings.theme === "sketch") {      // ✏️ the desk under the page: more graph paper
+      c.fillStyle = "#f3eee0"; c.fillRect(0, 0, B.w, B.h);
+      c.strokeStyle = "#e1e5ea"; c.lineWidth = 1; c.beginPath();
+      for (let x = 0.5; x < B.w; x += 28) { c.moveTo(x, 0); c.lineTo(x, B.h); }
+      for (let y = 0.5; y < B.h; y += 28) { c.moveTo(0, y); c.lineTo(B.w, y); }
+      c.stroke();
+    } else { c.fillStyle = "#1a1d23"; c.fillRect(0, 0, B.w, B.h); }
     const themeKey = S.lobby?.settings.theme || "grass", th = THEMES[themeKey]; th.key = themeKey;
     const T = S.track;
     // everyone else watches the host's drawing appear live
@@ -4216,18 +4249,63 @@
     if (S.pendingTour) { S.pendingTour = false; setTimeout(() => socket.emit("tour:load"), 300); }
   });
   $("predictBtn").addEventListener("click", () => socket.emit("predict:list"));
-  socket.on("predictList", (d) => {
-    const box = $("predictBox"), list = $("predictCars"); list.textContent = "";
-    if (!d) return;
-    box.classList.remove("hidden");
-    $("predictNote").textContent = d.mine ? `You picked ${d.mine.name}: 🪙 ${d.mine.coins} at ${d.mine.odds}x` : d.open ? "Who wins? Pay-outs by grid position: the further back, the more you win." : "Predictions are closed for this race.";
+  // the predict box: before the start the odds go by grid slot; once racing they're LIVE (they move with the race,
+  // and you lock in the odds you see when you pick). Closes on the final lap; a near-certain winner can't be picked.
+  const PB = { d: null };
+  function renderPredict() {
+    const d = PB.d, list = $("predictCars"); list.textContent = ""; if (!d) return;
+    $("predictNote").textContent = d.mine ? `You picked ${d.mine.name}: 🪙 ${d.mine.coins} at ${d.mine.odds}x` : !d.open ? "Predictions are closed for this race." : d.live ? "🔴 LIVE odds: they change as the race goes. You lock in the odds you pick at. Closes on the final lap." : "Who wins? Before the start, odds go by grid position: the further back, the more you win.";
     for (const c of d.cars) {
-      const b = el("button", "btn predict-car"); b.type = "button"; b.disabled = !d.open || !!d.mine;
-      const dot = el("span", "dot"); dot.style.background = c.color; b.append(dot, el("b", "", `P${c.grid} ${c.name}`), el("small", "", `${c.odds}x`));
+      const lock = !!c.lock;
+      const b = el("button", "btn predict-car" + (lock ? " locked" : "")); b.type = "button"; b.disabled = !d.open || !!d.mine || lock;
+      const dot = el("span", "dot"); dot.style.background = c.color;
+      b.append(dot, el("b", "", `P${c.pos} ${c.name}`), el("small", "", lock ? "🔒 too sure" : `${c.p != null ? Math.round(c.p * 100) + "% · " : ""}${c.odds}x`));
       b.addEventListener("click", () => { const coins = Math.floor(Number($("predictCoins").value) || 0); socket.emit("predict", { car: c.id, coins }); });
       list.appendChild(b);
     }
+  }
+  socket.on("predictList", (d) => {
+    PB.d = d; if (!d) { $("predictCars").textContent = ""; return; }
+    $("predictBox").classList.remove("hidden"); renderPredict();
   });
+  // live odds (every 2 race-seconds): the bar for people watching, and the predict box if it's open
+  const ODDS = { list: null };
+  function renderOddsBar() {
+    const bar = $("oddsBar"), L = ODDS.list;
+    if (!L?.length || S.myCar || S.replaying || !S.race || S.race.quali) { bar.classList.add("hidden"); return; }
+    bar.classList.remove("hidden"); bar.textContent = "";
+    const head = el("div", "ob-head"); head.append(el("b", "", "🎲 Win chances"), el("small", "", ODDS.open ? "● LIVE" : "● LIVE · closed")); bar.appendChild(head);
+    const track = el("div", "ob-track"); let rest = 1;
+    for (const x of L) {
+      const info = S.race.info?.get(x.id) || S.cars.get(x.id) || {};
+      const seg = el("i"); seg.style.flexGrow = String(Math.max(0.01, x.p)); seg.style.background = info.color || "#888"; seg.title = `${info.name || "?"} ${Math.round(x.p * 100)}%`;
+      track.appendChild(seg); rest -= x.p;
+    }
+    if (rest > 0.01) { const seg = el("i", "ob-rest"); seg.style.flexGrow = String(rest); track.appendChild(seg); }
+    bar.appendChild(track);
+    const rows = el("div", "ob-rows");
+    for (const x of L.slice(0, 4)) {
+      const info = S.race.info?.get(x.id) || S.cars.get(x.id) || {}, prev = ODDS.prev?.get(x.id);
+      const r = el("span", "ob-row"); const dot = el("span", "dot"); dot.style.background = info.color || "#888";
+      const tr = prev == null ? "" : x.p > prev + 0.03 ? " ▲" : x.p < prev - 0.03 ? " ▼" : "";
+      r.append(dot, el("b", "", info.name || "?"), el("small", tr === " ▲" ? "up" : tr === " ▼" ? "down" : "", `${Math.round(x.p * 100)}%${tr}`));
+      rows.appendChild(r);
+    }
+    bar.appendChild(rows);
+  }
+  socket.on("odds", (o) => {
+    ODDS.prev = ODDS.list ? new Map(ODDS.list.map((x) => [x.id, x.p])) : null; ODDS.list = o.list; ODDS.open = o.open;
+    renderOddsBar();
+    // keep an open predict box's odds fresh
+    if (PB.d && !$("predictBox").classList.contains("hidden")) {
+      const m = new Map(o.list.map((x) => [x.id, x]));
+      PB.d.open = PB.d.open && o.open; PB.d.live = true;
+      for (const c of PB.d.cars) { const x = m.get(c.id); c.p = x ? x.p : 0; c.odds = x ? x.odds : 25; c.lock = !!x?.lock; }
+      renderPredict();
+    }
+  });
+  socket.on("race", () => { ODDS.list = null; ODDS.prev = null; PB.d = null; $("oddsBar").classList.add("hidden"); });
+  socket.on("results", () => { ODDS.list = null; $("oddsBar").classList.add("hidden"); });
   socket.on("predictOk", (d) => { $("predictBox").classList.add("hidden"); popup(`🎲 ${d.coins} on ${d.name} at ${d.odds}x: win ${d.win.toLocaleString()} if they do it!`); });
   $("predictClose").addEventListener("click", () => $("predictBox").classList.add("hidden"));
   socket.on("ghostChallenge", (g) => { S.challenge = g; boardHint(`👻 ${g.from}'s lap: ${g.t.toFixed(3)}s. Press Start, then beat their ghost!`, false); });
@@ -5621,7 +5699,7 @@
     if (cur) { if (out.length && out[0][0] === 0) out[0] = [...cur, ...out[0]]; else out.push(cur); }
     return out;
   }
-  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150" };
+  const GRAVEL = { grass: "#d9c9a0", desert: "#caa06a", snow: "#cfd8df", night: "#5b5341", autumn: "#c9a877", beach: "#f5ebc8", city: "#a9adb3", volcano: "#5a4038", neon: "#2c2150", paper: "#efe6cf" };
   // The road is drawn as "runs": stretches where the width is (almost) the same, each stroked
   // with its own line width. Width changes are gradual, so the joins are invisible.
   function widthRuns(t, idxs, cum, closed) {
@@ -5720,6 +5798,10 @@
     const cv = document.createElement("canvas"); cv.width = cv.height = 256;
     const c = cv.getContext("2d");
     let seed = kind === "gravel" ? 7 : 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    if (kind === "pencil") {      // graphite grain for the paper road: short soft strokes, mostly one way
+      for (let i = 0; i < 1400; i++) { const x = rnd() * 256, y = rnd() * 256, l = 3 + rnd() * 9, a = 0.6 + (rnd() - 0.5) * 0.5; c.strokeStyle = `rgba(40,46,60,${0.05 + rnd() * 0.12})`; c.lineWidth = 0.8 + rnd() * 1.2; for (const [ox, oy] of [[0, 0], [256, 0], [0, 256], [-256, 0], [0, -256]]) { c.beginPath(); c.moveTo(x + ox, y + oy); c.lineTo(x + ox + Math.cos(a) * l, y + oy + Math.sin(a) * l); c.stroke(); } }
+      return (texCache[key] = cv);
+    }
     if (kind === "gravel") { c.fillStyle = GRAVEL[th.key] || GRAVEL.grass; c.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { c.fillStyle = i % 3 ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.12)"; c.fillRect(rnd() * 256, rnd() * 256, 2 + rnd() * 2, 2 + rnd() * 2); } }
     else {
       c.fillStyle = th.ground; c.fillRect(0, 0, 256, 256);
@@ -5729,6 +5811,7 @@
       if (T === "dunes") { c.strokeStyle = "rgba(120,80,30,0.13)"; c.lineWidth = 2.5; for (let y = 8; y < 256; y += 21) { c.beginPath(); for (let x = 0; x <= 256; x += 4) c.lineTo(x, y + Math.sin((x / 256) * Math.PI * 4 + y) * 5); c.stroke(); } }
       if (T === "drifts") { for (let i = 0; i < 26; i++) { const x = rnd() * 256, y = rnd() * 256, r = 14 + rnd() * 30; for (const [ox, oy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) { const g = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); } } }
       if (T === "slabs") { c.strokeStyle = "rgba(0,0,0,0.16)"; c.lineWidth = 2; for (let y = 0; y < 256; y += 32) { c.beginPath(); c.moveTo(0, y); c.lineTo(256, y); c.stroke(); for (let x = (y / 32) % 2 ? 0 : 32; x < 256; x += 64) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 32); c.stroke(); } } }
+      if (T === "paper") { c.strokeStyle = "#dde6f0"; c.lineWidth = 2; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v + 1, 0); c.lineTo(v + 1, 256); c.moveTo(0, v + 1); c.lineTo(256, v + 1); c.stroke(); } }
       if (T === "grid") { c.strokeStyle = "rgba(170,90,255,0.22)"; c.lineWidth = 1.5; for (let v = 0; v < 256; v += 32) { c.beginPath(); c.moveTo(v, 0); c.lineTo(v, 256); c.moveTo(0, v); c.lineTo(256, v); c.stroke(); } }
       if (T === "lava") { c.lineCap = "round"; for (let i = 0; i < 7; i++) { let x = rnd() * 256, y = rnd() * 256; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; c.lineTo(x, y); } c.strokeStyle = "rgba(255,80,10,0.18)"; c.lineWidth = 7; c.stroke(); c.strokeStyle = "rgba(255,170,40,0.55)"; c.lineWidth = 1.8; c.stroke(); } }
       if (T === "leaves") { for (let i = 0; i < 160; i++) { c.fillStyle = ["rgba(230,120,30,0.5)", "rgba(200,60,30,0.45)", "rgba(240,190,60,0.45)"][i % 3]; c.save(); c.translate(rnd() * 256, rnd() * 256); c.rotate(rnd() * 6.3); c.beginPath(); c.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.restore(); } }
@@ -5788,6 +5871,7 @@
       city:    { b: 0.75, bk: "office", t: ["tree", "car", "car"] },
       volcano: { b: 0.1, bk: "bunker", t: ["rock", "rock", "lava", "vent", "rock"] },
       neon:    { b: 0.8, bk: "cyber", t: ["holo", "lampNeon", "car"] },
+      paper:   { b: 0.08, bk: "farm", t: ["tree", "tree", "bush"] },
     }[theme] || { b: 0.15, bk: "farm", t: ["tree"] };
     const area = (t.W * t.H) / 1e6, tries = Math.round(area * (theme === "city" || theme === "neon" ? 700 : 300));
     if (theme === "volcano") for (let k = 0; k < 20; k++) { const r = 180 + R() * 120, x = r + R() * (t.W - 2 * r), y = r + R() * (t.H - 2 * r); if (free(x, y, r)) { put({ k: "volcano", x, y, r }); break; } }
@@ -5983,9 +6067,11 @@
     c.lineWidth = 50; c.strokeStyle = th.asphalt; c.stroke(G.lane);
     c.lineCap = "round";
     strokeRuns(c, G.runs, 24, th.runoff);
+    if (th.ink) strokeRuns(c, G.runs, 20, th.ink);             // (paper: an ink outline round the road)
     strokeRuns(c, G.runs, 14, th.curbA);
     c.lineCap = "butt"; strokeRuns(c, G.runs, 14, th.curbB, [22, 22]); c.lineCap = "round";
     strokeRuns(c, G.runs, 0, th.asphalt);
+    if (th.ink) { c.save(); c.globalAlpha = 0.5; strokeRuns(c, G.runs, 0, c.createPattern(tex("pencil", th), "repeat")); c.restore(); }
     c.lineCap = "butt"; c.lineWidth = 3; c.strokeStyle = th.line; c.setLineDash([26, 30]);
     for (const r of G.runs) { c.lineDashOffset = r.dash; c.stroke(r.p); }
     c.setLineDash([]); c.lineDashOffset = 0; c.lineCap = "round";
@@ -6675,9 +6761,16 @@
       if (showName) {
         const pos = S.standings ? S.standings.indexOf(c.id) + 1 : 0;
         const label = (pos ? (S.race?.multi && c.cls ? `${CLASSES[c.cls].short} P${classPos(c.id)} ` : `P${pos} `) : "") + (c.extras?.prest ? c.extras.prest + " " : "") + (c.extras?.badge ? c.extras.badge + " " : "") + (c.id === S.myCar ? `${c.name} (you)` : c.name) + (S.rival && c.name === S.rival ? " 🎯" : "");
-        ctx.font = "700 13px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
-        ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        if (THEMES[S.track?.theme]?.ink) {      // paper track: hand-written names in ink, with a white halo
+          ctx.font = "16px 'Patrick Hand', 'Chakra Petch', sans-serif";
+          ctx.lineWidth = 4; ctx.strokeStyle = "rgba(255,253,248,0.92)"; ctx.strokeText(label, c.x, c.y - 24);
+          ctx.fillStyle = c.id === S.myCar ? "#c2410c" : c.owner ? "#1d4ed8" : "#1f2633"; ctx.fillText(label, c.x, c.y - 24);
+        } else {
+          ctx.font = "700 13px 'Chakra Petch', sans-serif";
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(label, c.x, c.y - 24);
+          ctx.fillStyle = c.id === S.myCar ? "#ffcc1f" : c.owner ? "#9ad0ff" : "#fff"; ctx.fillText(label, c.x, c.y - 24);
+        }
       }
       const em = S.emotes && S.emotes.get(c.id);
       if (em && em.until > performance.now()) {
@@ -6780,13 +6873,14 @@
     const s = Math.min((mw - pad * 2) / t.W, (mh - pad * 2) / t.H), ox = (mw - t.W * s) / 2, oy = (mh - t.H * s) / 2;
     if (!S.geo) return;
     mctx.save(); mctx.translate(ox, oy); mctx.scale(s, s);
-    mctx.lineWidth = 5 / s; mctx.strokeStyle = "rgba(255,255,255,0.35)"; mctx.lineJoin = "round"; mctx.stroke(S.geo.trackPath);
+    const sk = settings.theme === "sketch";
+    mctx.lineWidth = (sk ? 6 : 5) / s; mctx.strokeStyle = sk ? "rgba(31,38,51,0.8)" : "rgba(255,255,255,0.35)"; mctx.lineJoin = "round"; mctx.stroke(S.geo.trackPath);
     mctx.restore();
     for (const c of S.cars.values()) {
       if (c.x === undefined) continue;
       mctx.beginPath(); mctx.arc(ox + c.x * s, oy + c.y * s, c.id === S.myCar ? 4.5 : 3.2, 0, Math.PI * 2);
       mctx.fillStyle = c.color; mctx.globalAlpha = c.ghost ? 0.45 : 1; mctx.fill(); mctx.globalAlpha = 1;
-      if (c.id === S.myCar) { mctx.lineWidth = 1.5; mctx.strokeStyle = "#fff"; mctx.stroke(); }
+      if (c.id === S.myCar || settings.theme === "sketch") { mctx.lineWidth = 1.5; mctx.strokeStyle = settings.theme === "sketch" ? "#1f2633" : "#fff"; mctx.stroke(); }
     }
   }
   // ---- Boost: hold the button (or Space / N). 100% tank, drains while held, refills slowly ----
@@ -7166,7 +7260,7 @@
         const li = document.createElement("li"); if (id === S.myCar) li.className = "me"; if (c.pit >= 0) li.className += " pit";
         const p = document.createElement("span"); p.className = "p"; p.textContent = S.race?.multi && c.cls ? classPos(id) : i + 1;
         const d = document.createElement("span"); d.className = "d"; d.style.background = c.color;
-        const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + c.name;
+        const n = document.createElement("span"); n.className = "n"; n.textContent = (S.rival === c.name ? "🎯 " : "") + (S.nemeses?.has(id) ? "⚔️ " : "") + c.name;
         if (S.race?.multi && c.cls) { d.style.boxShadow = `0 0 0 2px ${CLASSES[c.cls].col}`; d.title = CLASSES[c.cls].name; p.style.color = CLASSES[c.cls].col; }   // (class: a ring + coloured position, so names keep their room)
         const g = document.createElement("span"); const gv = S.gaps[i] ?? 0;
         g.className = "gap" + (i > 0 && gv >= 0 && gv < 1 ? " close" : "");     // within a second = in a fight!
@@ -7331,6 +7425,7 @@
     tx.appendChild(el("small", "", `Your next race: ${R.field.ai} ${AI_WORD[R.field.aiLevel] || R.field.aiLevel} AI, ${R.field.laps} laps${R.field.real ? ", a random track or a real circuit" : ", a random track"}`));
     const go = el("button", "btn go", "🏁 Play ranked"); go.type = "button"; go.addEventListener("click", playRanked);
     top.append(tx, go); box.appendChild(top);
+    if (R.season) box.appendChild(seasonCard(R));
     if (R.hist?.length) {
       box.appendChild(el("h3", "hub-h", "Last races"));
       const row = el("div", "rank-hist");
@@ -7360,6 +7455,45 @@
     const lb = el("button", "btn", "🏆 Ranked leaderboard"); lb.type = "button"; lb.addEventListener("click", () => { A.lbKind = "ranked"; A.lb = null; A.tab = "lb"; socket.emit("lb:get", { kind: "ranked" }); renderHub(); });
     box.appendChild(lb);
   }
+  // ---- ranked seasons: one a month, played in your league (the tier you started it in) ----
+  const SEASON_ZONE = { promotion: ["⬆️ Promotion zone", "You're above your league: finish the season here and you're promoted (+bonus coins)."],
+    safe: ["✅ Safe", "You're in your league. Climb a tier to get into the promotion zone."],
+    relegation: ["⬇️ Relegation zone", "You're below your league: climb back before the season ends or you'll be relegated."],
+    inactive: ["💤 Play to stay up", "Gold and up: play at least a few races this season or you'll drop a tier."] };
+  const daysLeft = (t) => { const d = Math.ceil((t - Date.now()) / 86400000); return d <= 1 ? "ends today" : `${d} days left`; };
+  function seasonCard(R) {
+    const Z = R.season, sec = el("section", "season-card zone-" + Z.zone); sec.style.setProperty("--rk", Z.league.color);
+    const head = el("div", "sc-head"); head.append(el("b", "", `🗓️ Season ${Z.n}`), el("small", "", daysLeft(Z.ends))); sec.appendChild(head);
+    sec.appendChild(el("div", "sc-league", `League: ${Z.league.icon} ${Z.league.name}`));
+    const [zt, zd] = SEASON_ZONE[Z.zone] || SEASON_ZONE.safe;
+    sec.append(el("b", "sc-zone", zt), el("small", "", zd));
+    const bits = [`${Z.games} race${Z.games === 1 ? "" : "s"} this season`, Z.wins ? `${Z.wins} win${Z.wins === 1 ? "" : "s"}` : "",
+      Z.promoteAt != null ? `promotion at ${Z.promoteAt} SR` : "", Z.relegateBelow != null ? `relegation below ${Z.relegateBelow} SR` : ""].filter(Boolean);
+    sec.appendChild(el("small", "", bits.join(" · ")));
+    sec.appendChild(el("small", "", Z.games >= Z.minGames ? `🪙 Season reward so far: ${Z.reward.toLocaleString()} coins (more for higher tiers, +${Z.promoBonus} if promoted)` : `🪙 Play ${Z.minGames - Z.games} more ranked race${Z.minGames - Z.games === 1 ? "" : "s"} to earn a season reward`));
+    if (Z.history?.length) {
+      const row = el("div", "rank-hist");
+      for (const h of Z.history.slice().reverse()) row.appendChild(el("span", "rh " + (h.outcome === "promoted" ? "up" : h.outcome === "relegated" ? "down" : ""), `S${h.n} ${h.outcome === "promoted" ? "⬆️" : h.outcome === "relegated" ? "⬇️" : "➖"} ${TIER_LADDER[h.fin]?.[1] || ""}`));
+      sec.append(el("small", "", "Past seasons"), row);
+    }
+    sec.appendChild(el("p", "preset-note", "Each month is a season. When it ends, you start the next one at the bottom of your new league (division III), with a fresh rank shield."));
+    return sec;
+  }
+  // the season you just finished: shown once, the first time you're back after it ends
+  function seasonRecap(u) {
+    for (const [mode, R] of [["solo", u?.ranked], ["team", u?.rankedTeam]]) {
+      const x = R?.season?.last; if (!x) continue;
+      const key = `tb-season-${mode}-${x.key}`;
+      try { if (localStorage.getItem(key)) continue; localStorage.setItem(key, "1"); } catch (e) { continue; }
+      const lg = TIER_LADDER[x.league], fin = TIER_LADDER[x.fin], what = mode === "team" ? "Team ranked " : "";
+      setTimeout(() => {
+        if (x.outcome === "promoted") { banner(`⬆️ PROMOTED! ${fin[1]} ${fin[0]}`, "#3ecf6a"); sfx("win"); }
+        else if (x.outcome === "relegated") banner(`⬇️ Relegated to ${fin[1]} ${fin[0]}`, "#ff6b61");
+        popup(`🗓️ ${what}Season ${x.n} is over: ${x.outcome === "promoted" ? `promoted from ${lg[0]} to ${fin[0]}!` : x.outcome === "relegated" ? (x.inactive ? `relegated to ${fin[0]} (too few races).` : `relegated from ${lg[0]} to ${fin[0]}.`) : `you stayed in ${fin[0]}.`}${x.coins ? ` +${x.coins.toLocaleString()} season coins!` : ""} The new season starts you at the bottom of ${fin[0]}.`);
+      }, 1500);
+    }
+  }
+  socket.on("account", (u) => seasonRecap(u));
   socket.on("rankedResult", (r) => {
     S.rankedRes = r; renderRankedRes();
     if (r.up) setTimeout(() => { banner(`RANK UP! ${r.after.icon} ${r.after.label}`, r.after.color); sfx("win"); }, 2400);
@@ -7406,7 +7540,7 @@
   // ======================= Track of the Week =======================
   socket.on("totwInfo", (t) => { S.totw = t; renderTotw(); });
   socket.on("connect", () => socket.emit("totw:info"));
-  const THEME_NAME = { grass: "Grass", desert: "Desert", snow: "Snow", night: "Night", autumn: "Autumn", beach: "Beach", city: "City", volcano: "Volcano", neon: "Neon night" };
+  const THEME_NAME = { grass: "Grass", desert: "Desert", snow: "Snow", night: "Night", autumn: "Autumn", beach: "Beach", city: "City", volcano: "Volcano", neon: "Neon night", paper: "Paper" };
   function renderTotw() {
     const t = S.totw; if (!t) return;
     const days = Math.max(1, Math.ceil((t.ends - Date.now()) / 86400000));
@@ -7738,6 +7872,20 @@
     }
     return sec;
   }
+  // ⚔️ Rivalries: the real players you've raced most (friends or not), your record and current streak
+  function rivalsBlock(u) {
+    const L = u?.rivals; if (!L?.length) return null;
+    const sec = el("section", "rivals"); sec.appendChild(el("h3", "hub-h", "⚔️ Rivalries"));
+    for (const r of L) {
+      const l = r.n - r.w, d = el("div", "rival-row" + (r.w > l ? " up" : r.w < l ? " down" : ""));
+      const tx = el("div"); tx.append(el("b", "", r.name + (r.friend ? " 🤝" : "")), el("small", "", `${r.n} races together${r.s >= 2 ? ` · 🔥 won your last ${r.s}` : r.s <= -2 ? ` · lost your last ${-r.s}` : ""}`));
+      const rec = el("b", "rival-rec", `${r.w}–${l}`); rec.title = "Your wins – their wins";
+      const bar = el("div", "rival-bar"); const f = el("i"); f.style.width = Math.round((r.w / Math.max(1, r.n)) * 100) + "%"; bar.appendChild(f);
+      d.append(tx, rec, bar); sec.appendChild(d);
+    }
+    sec.appendChild(el("p", "preset-note", "Every race with another signed-in player counts. Finish right behind or ahead of a rival and the whole room hears about it."));
+    return sec;
+  }
   function betsBlock(u) {
     const inc = u?.bets?.in || [], live = u?.bets?.live || [];
     if (!inc.length && !live.length) return null;
@@ -8014,6 +8162,16 @@
   // Players who've already played see it once on the menu or in a room; brand-new players don't.
   // Every update gets an entry here, even the tiny ones (v = an id players' browsers remember; date = what's shown)
   const WHATS_NEW = [
+    { v: "u-2026-11-02", date: "2 Nov", title: "✏️ The Sketchbook look", items: [
+      "✏️ A whole new look: the game is drawn in a notebook now. Graph paper, marker headings, sticky notes and tape, a notepad leaderboard and a highlighter boost bar.",
+      "📄 New ✏️ Paper scenery: a pencil-grey road with an ink edge on graph paper. Rooms you make start on it (pick any other scenery in the room as usual).",
+      "🌙 Prefer the dark look? Tap 🌙 next to ⚙ on the menu (or Settings › Look). ✏️ switches back. Your car's livery, colours, designs and all the race effects look the same in both.",
+    ] },
+    { v: "u-2026-11-01", date: "1 Nov", title: "Ranked seasons, rivalries and live odds", items: [
+      "🗓️ Ranked seasons: every month is a season, played in your league (the tier you start it in). Finish higher and you're PROMOTED (+300 bonus coins), lower and you're relegated. Season coins for the best tier you reach, and the ranked leaderboard starts fresh each season.",
+      "⚔️ Rivalries: every race with another signed-in player counts now (not just friends). See your record before the lights, ⚔️ marks them on the leaderboard, and the room hears about it when rivals finish side by side. Profile › Friends shows your biggest rivalries.",
+      "🎲 Live odds: spectators see everyone's win chances move all race, and predictions stay open until the final lap at the live odds (a near-certain winner can't be picked).",
+    ] },
     { v: "u-2026-10-06f", date: "6 Oct", title: "Faster loading", items: [
       "⚡ The game loads faster and uses much less data: its files come squashed, race updates are about 3x smaller, and the music streams straight from archive.org.",
     ] },

@@ -1278,16 +1278,98 @@ test("time trial: no AI, laps go on a leaderboard for the track", { timeout: 600
   assert.ok(r.tt && r.practice && r.cars.length === 1, "just you on track"); assert.ok(r.trackKey, "random tracks have a key too");
 });
 
-test("head-to-head: friends' records against each other add up race by race", async () => {
+test("rivalries: head-to-head records against every signed-in player, with streaks, shown on the profile", async () => {
   const a = (await accounts.signUp("HeadA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("HeadB", "Turbo-Fox-Lane-42")).u;
-  await accounts.recordH2H([{ uid: a.id, rank: 1 }, { uid: b.id, rank: 2 }]);
-  assert.equal(a.h2h, undefined, "only friends are tracked");
-  await accounts.friendAdd(a, "HeadB"); await accounts.friendAccept(b, a.id);
-  await accounts.recordH2H([{ uid: a.id, rank: 1 }, { uid: b.id, rank: 2 }]);
+  const pairs = await accounts.recordH2H([{ uid: a.id, rank: 1 }, { uid: b.id, rank: 2 }]);
+  assert.equal(a.h2h[b.id].n, 1, "strangers count too, not only friends");
+  assert.equal(pairs.length, 1); assert.equal(pairs[0].a, a.id, "returned once, from the winner's side");
   await accounts.recordH2H([{ uid: a.id, rank: 3 }, { uid: b.id, rank: 0 }]);
   await accounts.recordH2H([{ uid: a.id, rank: 0 }, { uid: b.id, rank: 5 }]);
-  assert.deepEqual(a.h2h[b.id], { n: 3, w: 2 }); assert.deepEqual(b.h2h[a.id], { n: 3, w: 1 });
-  const fl = await accounts.friendList(a, () => null); assert.deepEqual(fl.friends[0].h2h, { n: 3, w: 2 }, "shown on the friends list");
+  await accounts.recordH2H([{ uid: a.id, rank: 0 }, { uid: b.id, rank: Infinity }]);     // (b left the race)
+  assert.equal(a.h2h[b.id].n, 4); assert.equal(a.h2h[b.id].w, 3); assert.equal(a.h2h[b.id].s, 2, "won the last 2");
+  assert.equal(b.h2h[a.id].w, 1); assert.equal(b.h2h[a.id].s, -2, "lost the last 2");
+  assert.equal(b.h2h[a.id].name, "HeadA", "the name is kept for the profile");
+  assert.deepEqual(accounts.h2hWith(a, b.id), { n: 4, w: 3, s: 2 });
+  const pub = accounts.publicUser(a).rivals; assert.equal(pub[0].name, "HeadB"); assert.equal(pub[0].friend, false);
+  await accounts.friendAdd(a, "HeadB"); await accounts.friendAccept(b, a.id);
+  const fl = await accounts.friendList(a, () => null); assert.equal(fl.friends[0].h2h.w, 3, "shown on the friends list");
+  assert.equal(accounts.publicUser(a).rivals[0].friend, true);
+});
+
+test("rivalries in a race: your record before the lights, the room hears when rivals finish side by side", async () => {
+  const a = (await accounts.signUp("RivRoomA", "Turbo-Fox-Lane-42")).u, b = (await accounts.signUp("RivRoomB", "Turbo-Fox-Lane-42")).u;
+  for (let k = 0; k < 4; k++) await accounts.recordH2H([{ uid: a.id, rank: k % 2 }, { uid: b.id, rank: 1 - (k % 2) }]);
+  const r = new game.Room("RIVROOM", false); r.setRandomTrack("small", "regular");
+  r.players.set("pa", { id: "pa", name: "A", up: {}, level: 1, xp: 0, uid: a.id }); r.players.set("pb", { id: "pb", name: "B", up: {}, level: 1, xp: 0, uid: b.id });
+  Object.assign(r.settings, { ai: 2, quali: 0, laps: 1, weather: "sunny" }); r.ensureRoster(2);
+  const sent = []; const oe = r.emit.bind(r); r.emit = (k, d) => { sent.push([k, d]); return oe(k, d); };
+  r.startRace();
+  const ca = r.cars.find((c) => c.owner === "pa"), cb = r.cars.find((c) => c.owner === "pb");
+  assert.ok(ca && cb && ca.betUid === a.id && cb.betUid === b.id);
+  r.rivalryResults([{ a: a.id, aName: "A", b: b.id, bName: "B", aRank: 0, bRank: 1, n: 5, w: 3, s: 1 }]);
+  await new Promise((ok) => setTimeout(ok, 2700));
+  assert.ok(sent.some(([k, d]) => k === "toast" && /edges out rival B/.test(d) && /3–2/.test(d)), "called out to the room");
+  sent.length = 0; r.rivalryResults([{ a: a.id, aName: "A", b: b.id, bName: "B", aRank: 0, bRank: 4, n: 5, w: 3, s: 1 }]);
+  await new Promise((ok) => setTimeout(ok, 2700));
+  assert.ok(!sent.some(([k, d]) => k === "toast" && /edges out/.test(d)), "not next to each other: no call-out");
+  r.stopRace("test");
+});
+
+test("ranked seasons: promotion, relegation, inactivity, season coins and a soft reset to the bottom of the league", () => {
+  const mk = (sr) => ({ id: "u_s" + sr, ranked: { sr, peak: sr, games: 0, wins: 0 }, stats: {}, owned: [], ach: {}, coins: 0 });
+  const prev = "2026-10";
+  // first look: just joins the season, no reset
+  const u0 = mk(950); const p0 = accounts.rankedPublic(u0);
+  assert.equal(u0.ranked.sr, 950); assert.equal(p0.season.league.name, "Gold"); assert.equal(p0.season.zone, "inactive", "Gold+ needs a few races");
+  // promoted: started Silver, finished Gold II
+  const up = mk(1050); accounts.rankedPublic(up); Object.assign(up.ranked, { season: prev, sLeague: 2, sGames: 5, sWins: 2, sPeak: 1100 });
+  const pu = accounts.rankedPublic(up);
+  assert.equal(pu.season.last.outcome, "promoted"); assert.equal(up.ranked.sr, 900, "starts the new season at the bottom of Gold");
+  assert.equal(up.coins, 450 + 300, "Gold season coins + promotion bonus"); assert.equal(pu.season.league.name, "Gold"); assert.equal(pu.season.games, 0);
+  // relegated: started Platinum, ended Gold
+  const dn = mk(1000); accounts.rankedPublic(dn); Object.assign(dn.ranked, { season: prev, sLeague: 4, sGames: 6, sPeak: 1250, shieldUsed: 4 });
+  const pd = accounts.rankedPublic(dn);
+  assert.equal(pd.season.last.outcome, "relegated"); assert.equal(dn.ranked.sr, 900); assert.equal(dn.coins, 650, "paid for the best tier reached (Platinum)");
+  assert.equal(dn.ranked.shieldUsed, undefined, "a fresh rank shield each season");
+  // inactive at Diamond: down a tier, no coins
+  const idle = mk(1550); accounts.rankedPublic(idle); Object.assign(idle.ranked, { season: prev, sLeague: 5, sGames: 1, sPeak: 1550 });
+  const pi = accounts.rankedPublic(idle);
+  assert.equal(pi.season.last.outcome, "relegated"); assert.ok(pi.season.last.inactive); assert.equal(idle.ranked.sr, 1200); assert.equal(idle.coins, 0);
+  // stayed, low tier, inactive: no change beyond the division reset
+  const low = mk(250); accounts.rankedPublic(low); Object.assign(low.ranked, { season: prev, sLeague: 0, sGames: 0, sPeak: 250 });
+  accounts.rankedPublic(low); assert.equal(low.ranked.sr, 0); assert.equal(low.ranked.lastSeason, null, "nothing to report");
+  // a race running at the switch finishes first, in its own season
+  const live = mk(700); accounts.rankedPublic(live); accounts.rankedStart(live); live.ranked.season = prev;
+  accounts.rankedPublic(live); assert.equal(live.ranked.season, prev, "no roll mid-race");
+  accounts.rankedFinish(live, 1, 4, true); assert.equal(live.ranked.sGames, 1); accounts.rankedPublic(live); assert.notEqual(live.ranked.season, prev);
+  // season counters
+  const c = mk(300); accounts.rankedPublic(c); accounts.rankedStart(c); accounts.rankedFinish(c, 1, 4, true);
+  const pc = accounts.rankedPublic(c); assert.equal(pc.season.games, 1); assert.equal(pc.season.wins, 1); assert.ok(pc.season.n >= 1);
+});
+
+test("live odds: win chances add up, the leader's grow towards the flag, picks close on the final lap", { timeout: 120000 }, () => {
+  const r = new game.Room("LIVEODDS", false); r.setRandomTrack("normal", "regular");
+  Object.assign(r.settings, { ai: 6, quali: 0, laps: 3, weather: "sunny" }); r.ensureRoster(6);
+  r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
+  const seen = []; const oe = r.emit.bind(r); r.emit = (k, d) => { if (k === "odds") seen.push(d); return oe(k, d); };
+  assert.ok(r.predictOpen());
+  for (let n = 0; n < 60 * 20; n++) r.step(1 / 60);
+  assert.ok(seen.length >= 8, "about every 2 race-seconds");
+  const P = r.winChances(); const sum = [...P.values()].reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-6, "chances add up to 100%");
+  r.stepOdds(); const O = [...r.odds.values()], fav = O.reduce((a, x) => (x.p > a.p ? x : a));
+  assert.ok(O.every((x) => fav.odds <= x.odds), "the favourite pays least"); assert.ok(O.every((x) => x.odds >= 1.05 && x.odds <= 25), "1.05x to 25x");
+  // the same 0.1-lap lead is worth much more near the flag than with the whole race to go
+  const N = r.track.N, saved = r.cars.map((c) => [c, c.progress, c.skill]), [c1, c2] = r.cars;
+  const chanceAt = (lapsIn) => { for (const c of r.cars) { c.skill = 1; c.progress = (lapsIn - 0.5) * N; } c2.progress = (lapsIn - 0.1) * N; c1.progress = lapsIn * N; return r.winChances().get(c1.id); };
+  const early = chanceAt(0.3), late = chanceAt(2.9);
+  assert.ok(late > early + 0.2 && late > 0.75, `a lead near the flag is nearly safe (${early.toFixed(2)} -> ${late.toFixed(2)})`);
+  for (const [c, pr, sk] of saved) { c.progress = pr; c.skill = sk; }
+  while (r.phase === "race" && !r.lastLapCalled) r.step(1 / 60);
+  assert.equal(r.predictOpen(), false, "closed on the final lap");
+  while (r.phase === "race" && !r.cars.some((c) => c.finished)) r.step(1 / 60);
+  if (r.phase === "race") { const w = r.cars.find((c) => c.finished); assert.equal(r.winChances().get(w.id), 1, "the winner is certain"); }
+  r.stopRace("test");
 });
 
 test("predictions: spectators back a driver at grid odds, paid at the flag, refunded if the race is stopped", { timeout: 120000 }, async () => {
@@ -1914,6 +1996,9 @@ test("party mode sabotage: oil spins cars, a storm cloud makes a bit of track we
   r.startRace(); r.startLights(); r.phase = "race"; r.launchCars();
   for (let n = 0; n < 60 * 8; n++) r.step(1 / 60);
   assert.ok(r.partyOn());
+  // AI drivers play random sabotage cards during the warm-up too: wipe them so this test starts from a clean, dry track
+  r.hazards = []; for (const c of r.cars) { c.cloudWet = 0; c.oilAt = -99; c.slipT = 0; c.blindT = 0; c.inPit = false; }
+  r.stepHazards(1 / 60);
   const order = r.standings(), lead = order[0], second = order[1];
   r.sabotage(second, "__oil"); const oil = r.hazards.find((h) => h.k === "oil"); assert.ok(oil);
   const victim = order[2]; victim.x = oil.x; victim.y = oil.y; victim.speed = 300; victim.slipT = 0; r.time += 0.01; r.stepHazards(1 / 60);
@@ -1947,4 +2032,9 @@ test("party mode shortcuts: drive the dirt road and you're that much further rou
 test("100 thunderclaps can be asked for, and no more", async () => {
   const r = await fetch(base + "/sfx/thunder57"); assert.ok(r.status === 503 || r.status === 200);
   assert.equal((await fetch(base + "/sfx/thunder101")).status, 404);
+});
+
+test("paper scenery (the Sketchbook look): a room can use it and the track carries it", () => {
+  const r = new game.Room("PAPERSC", false); r.settings.theme = "paper"; r.setRandomTrack("normal", "regular");
+  assert.equal(r.trackMsg().theme, "paper");
 });

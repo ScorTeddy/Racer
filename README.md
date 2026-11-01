@@ -12,14 +12,32 @@ accounts.js        Google sign-in, saved stats, achievements, coins and the stor
 f1-tracks.json     42 real-world layouts under made-up names (e.g. "Old Airfield Circuit", "Eifel Northern Loop"), keep it next to server.js
 filter.js          bad-word filter for names, team names and usernames
 package.json       dependencies (express, socket.io, zxcvbn, qrcode) + "npm test"
-test/smoke.test.js automatic checks: pages, headers, filter, passwords and a whole race vs the AI
-public/index.html  the page itself (all the screens' HTML)
-public/game.js     the whole game client (menu, room, race view, HUD, settings, profile)
-public/game.css    all the styles
-public/faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
-public/og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
+smoke.test.js      automatic checks: pages, headers, filter, passwords and a whole race vs the AI
+index.html         the page itself (all the screens' HTML)
+game.js            the whole game client (menu, room, race view, HUD, settings, profile)
+game.css           all the styles
+faq.html, privacy.html, 404.html, site.css   small pages (served at /faq, /privacy and for any unknown URL)
+og-image.png, favicon.svg                    link-preview picture (1200x630) and tab icon
+music.json         your own songs list (see "Your own songs" below)
+public/commentary/ recorded commentary clips + lines.json
+.gitignore         keeps accounts, keys and node_modules off GitHub (the name MUST start with a dot)
                                                      (robots.txt and sitemap.xml are made by server.js)
 ```
+All of these sit in the main folder next to server.js. The server also finds them inside a `public/` folder
+(it looks there first), so either layout works.
+
+## Looks: ✏️ Sketchbook (default) and 🌙 Dark
+- **Settings › Look** (`settings.theme`, saved in `tb-settings`): `sketch` (default), `broadcast` (🌙 Dark), `dark` (classic),
+  `light`. The ✏️/🌙 button next to ⚙ on the menu (`#lookBtn`) flips between Sketchbook and Dark. Everyone was moved to
+  Sketchbook once (`themeV` 2); they can switch back any time.
+- **Sketchbook CSS** is the block at the end of game.css, all under `:root[data-theme="sketch"]`: graph paper, Permanent
+  Marker / Patrick Hand / Caveat fonts (Google Fonts link in index.html), white cards with an ink outline and hard shadow,
+  sticky-note Quick Play, tape ticker, notepad leaderboard, highlighter boost bar. Text that was yellow (for dark
+  backgrounds) is marker gold there (`--sk-gold`); yellow backgrounds stay bright.
+- **✏️ Paper scenery** (`THEMES.paper` in game.js, `paper` in `THEME_KEYS` in server.js): graph-paper ground, pencil-grey road
+  with an ink edge and graphite grain (`tex("pencil")`), red-and-white kerbs, hand-written car names. A Sketchbook host's
+  new room starts on it (only while it's still on the default Night). Cars, liveries, designs and effects are drawn
+  exactly the same on every scenery and in both looks.
 
 ## Before every update: run the tests
 `npm install` once, then `npm test`. It starts the server, checks the pages and security headers, and plays a
@@ -131,6 +149,22 @@ the update. Brand-new players don't. 📰 What's new in the menu footer opens it
   dry (`rankedLook`); night and fog never together.
   **Coins:** ranked races pay no race coins. Reaching a division for the first time does (`rankUpCoins`, compared
   with your peak): 150 per division, 600 per new tier, 3,000 for Overdrive Elite.
+- **Ranked seasons** (`seasonRoll` in accounts.js): every calendar month (UTC) is a season, Season 1 = November 2026.
+  You play it in a **league** = the tier you started it in (`R.sLeague`). At the end (worked out the first time the
+  player is seen afterwards, never mid-race): finish in a higher tier = **promoted** (+300 coins), lower = **relegated**;
+  Gold and up with fewer than 3 races = relegated one tier for being inactive. Season coins for the best tier reached
+  (`SEASON_COINS`, 3+ races). Then a soft reset to the bottom of the new league (division III) and a fresh rank shield.
+  The ranked boards start empty each season; last season's top 3 are kept (`B.rankedPrev`). Profile › Ranked shows the
+  league, the promotion / relegation zone and past seasons; the result pops up once (`tb-season-*` in localStorage).
+- **Rivalries** (`recordH2H` in accounts.js): every race between signed-in players records head-to-head (`u.h2h`:
+  races, wins, current streak, name), friends or not, ranked too. Before the lights each player hears their record
+  against the player they've raced most in the room (`nemesis` event, ⚔️ on the leaderboard) and the room hears its
+  biggest rivalry; at the flag, rivals who finished side by side get a room-wide call-out (`rivalryResults`), and
+  3/5/10/20/50-race winning streaks a toast. Profile › Friends lists your top rivalries (`rivalsPublic`).
+- **Live odds** (`winChances` / `stepOdds` in server.js): every 2 race-seconds the server works out everyone's win
+  chance (gap to the leader in laps against how much race is left, nudged by driver skill and damage) and sends
+  `odds` to the room. Spectators see a live bar under the minimap. Predictions stay open until the final lap at the
+  live odds (0.9 / chance, 1.05x to 25x, locked in when you pick); a car above 80% can't be picked.
 - **Daily challenges** (3 a day) next to the weekly ones (which are harder now), in the Achievements tab. Both pay
   coins and season pass XP. "Win on a VERY wonky track" uses the random track's wonkiness (`r.wonk`).
 - **Season pass** (`PASS_THEMES` in accounts.js): a new one every month (UTC), 12 themes (Frostbite, Heartbreaker...
@@ -385,7 +419,7 @@ It sleeps after 15 minutes with nobody on it (the first visitor then waits ~30 s
 (60 AI at 3x speed can stutter). If the game gets popular, Render's cheapest paid instance ("Starter") fixes both.
 
 ## Put it online (Render, free)
-1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, `index.html` inside `public/`.
+1. GitHub repo with `server.js`, `f1-tracks.json` and `package.json` in the main folder, next to `index.html`, `game.js` and `game.css`.
 2. render.com > New > Web Service > pick the repo. Language Node.
 3. Build command `npm install`, start command `npm start`, instance type Free.
 

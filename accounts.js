@@ -1431,7 +1431,7 @@ async function putTtLap(u, key, t) {
 async function getBoard(kind, track) {
   const B = await boards();
   if (kind === "tt") return { kind, track, list: ((B.tt || {})[String(track)] || []).map((x) => ({ name: x.name, v: x.v })) };
-  if (kind === "ranked" || kind === "rankedTeam") return { kind, list: (B[kind] || []).map((x) => ({ ...x, rank: rankOf(x.v).label })) };
+  if (kind === "ranked" || kind === "rankedTeam") { rankBoardsSeason(B); const P = B.rankedPrev; return { kind, season: seasonNo(), list: (B[kind] || []).map((x) => ({ ...x, rank: rankOf(x.v).label })), prev: P ? { n: P.n, list: (kind === "ranked" ? P.solo : P.team).map((x) => ({ name: x.name, rank: rankOf(x.v).label })) } : null }; }
   if (kind === "totw") return { kind, week: Number(track) || 0, list: B.totw && B.totw.week === Number(track) ? B.totw.list : [] };
   if (kind === "laps") return { kind, track, list: B.laps[String(track)] || [], tracks: Object.keys(B.laps) };
   return { kind, list: B[kind] || [] };
@@ -1673,7 +1673,49 @@ function rankedField(sr) { return { ...RANKED_FIELDS[rankOf(sr).i] }; }
 const RANKED_DNF = 45;
 // mode "solo" (u.ranked) or "team" (u.rankedTeam: team ranked with friends has its own rating)
 const RKEY = (mode) => (mode === "team" ? "rankedTeam" : "ranked");
-function rankedState(u, mode) { const k = RKEY(mode); u[k] = u[k] || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; return u[k]; }
+function rankedState(u, mode) { const k = RKEY(mode); u[k] = u[k] || { sr: 0, peak: 0, games: 0, wins: 0, hist: [] }; seasonRoll(u, u[k]); return u[k]; }
+
+// ======================= Ranked seasons (promotion and relegation) =======================
+// Every calendar month (UTC) is a ranked season. You play it in a LEAGUE: the tier you started the season in.
+// When it ends: finish in a higher tier = PROMOTED (+300 coin bonus), lower = RELEGATED. Gold and up, play fewer
+// than SEASON_MIN_GAMES races and you're relegated one tier for being inactive. Everyone then starts the new
+// season at the bottom of their new league (division III: the divisions get climbed again every month), with a
+// fresh rank shield, and gets season coins for the best tier they reached (if they played SEASON_MIN_GAMES).
+// (Rank-up coins only pay for divisions you've NEVER reached, so climbing back each season can't farm them.)
+const SEASON_MIN_GAMES = 3;
+const SEASON_COINS = [100, 200, 300, 450, 650, 900, 1200, 2000];        // by the best tier reached that season
+const SEASON_PROMO_COINS = 300;
+const seasonNo = (key = monthKey()) => Math.max(1, (Number(key.slice(0, 4)) - 2026) * 12 + Number(key.slice(5, 7)) - 10);
+const tierFloor = (i) => (i >= 7 ? OE_SR : i * 300);
+function seasonRoll(u, R) {
+  const cur = monthKey();
+  if (R.season === cur || R.live) return;                  // (a race running over midnight finishes in its own season)
+  if (!R.season) { R.season = cur; R.sLeague = rankOf(R.sr).i; R.sGames = 0; R.sWins = 0; R.sPeak = R.sr; return; }   // first look: no reset
+  const L = R.sLeague ?? rankOf(R.sr).i, fin = rankOf(R.sr).i, games = R.sGames || 0, peak = rankOf(Math.max(R.sPeak || 0, R.sr)).i;
+  let next = fin, outcome = fin > L ? "promoted" : fin < L ? "relegated" : "stayed";
+  if (games < SEASON_MIN_GAMES && L >= 3) { next = Math.min(fin, L - 1); outcome = "relegated"; }
+  const coins = games >= SEASON_MIN_GAMES ? SEASON_COINS[peak] + (outcome === "promoted" ? SEASON_PROMO_COINS : 0) : 0;
+  if (coins) { u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; }
+  const res = { key: R.season, n: seasonNo(R.season), league: L, fin: next, peak, games, wins: R.sWins || 0, outcome, coins, inactive: games < SEASON_MIN_GAMES };
+  if (games > 0 || outcome !== "stayed") R.seasons = [...(R.seasons || []), res].slice(-12);
+  R.lastSeason = games > 0 || outcome !== "stayed" ? res : null;
+  R.sr = Math.min(R.sr, tierFloor(next)); delete R.shieldUsed;
+  R.season = cur; R.sLeague = next; R.sGames = 0; R.sWins = 0; R.sPeak = R.sr;
+  if (outcome === "promoted") u.stats.promotions = (u.stats.promotions || 0) + 1;
+  saveSoon(u);
+}
+function seasonPublic(R) {
+  const L = R.sLeague ?? rankOf(R.sr).i, i = rankOf(R.sr).i;
+  const lg = rankOf(tierFloor(L));
+  return {
+    n: seasonNo(), key: R.season || monthKey(), ends: monthEnds(), league: { i: L, name: lg.name, icon: lg.icon, color: lg.color },
+    games: R.sGames || 0, wins: R.sWins || 0, minGames: SEASON_MIN_GAMES,
+    zone: i > L ? "promotion" : i < L ? "relegation" : (L >= 3 && (R.sGames || 0) < SEASON_MIN_GAMES) ? "inactive" : "safe",
+    promoteAt: L < 7 ? tierFloor(L + 1) : null, relegateBelow: L > 0 ? tierFloor(L) : null,
+    reward: SEASON_COINS[rankOf(Math.max(R.sPeak || 0, R.sr)).i], promoBonus: SEASON_PROMO_COINS,
+    last: R.lastSeason || null, history: (R.seasons || []).slice(-6),
+  };
+}
 // at the lights: charge the "left the race" loss up front, so quitting can't dodge it. The finish replaces it.
 function rankedStart(u, mode) {
   const R = rankedState(u, mode);
@@ -1723,6 +1765,7 @@ function rankedFinish(u, pos, of, finished, mode, won) {
   if (before.i > 0 && rankOf(R.sr).i < before.i && R.shieldUsed !== before.i) { R.sr = before.i * 300; R.shieldUsed = before.i; shield = true; }
   if (rankOf(R.sr).i > before.i) delete R.shieldUsed;
   R.peak = Math.max(peak0, R.sr); R.games++; if ((won ?? pos === 1) && finished) R.wins++;
+  R.sGames = (R.sGames || 0) + 1; if ((won ?? pos === 1) && finished) R.sWins = (R.sWins || 0) + 1; R.sPeak = Math.max(R.sPeak || 0, R.sr);
   const coins = rankUpCoins(peak0, R.sr);
   if (coins) { u.coins += coins; u.stats.coinsEarned = (u.stats.coinsEarned || 0) + coins; }
   R.hist = [...(R.hist || []), { d, pos: Math.round(pos * 10) / 10, of, at: Date.now() }].slice(-10);
@@ -1732,8 +1775,16 @@ function rankedFinish(u, pos, of, finished, mode, won) {
   return { mode: mode === "team" ? "team" : "solo", delta: R.sr - sr0, sr: R.sr, before, after, coins, shield, up: after.i > before.i || (after.i === before.i && after.div !== before.div && R.sr > sr0), down: after.i < before.i || (after.i === before.i && after.div !== before.div && R.sr < sr0) };
 }
 const shieldReady = (R) => { const i = rankOf(R.sr).i; return i > 0 && R.shieldUsed !== i; };
-function rankedPublic(u, mode) { const R = rankedState(u, mode); return { sr: R.sr, shield: shieldReady(R), peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [] }; }
-async function putRankBoard(u, mode) { const k = RKEY(mode), B = await boards(); B[k] = B[k] || []; putBoard(B[k], { id: u.id, name: u.name, v: u[k].sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
+function rankedPublic(u, mode) { const R = rankedState(u, mode); return { sr: R.sr, shield: shieldReady(R), peak: R.peak || 0, games: R.games, wins: R.wins, rank: rankOf(R.sr), peakRank: rankOf(R.peak || 0), field: rankedField(R.sr), hist: R.hist || [], season: seasonPublic(R) }; }
+// the ranked leaderboards start empty every season (last season's top 3 are kept as its champions)
+function rankBoardsSeason(B) {
+  const cur = monthKey();
+  if (B.rankSeason === cur) return;
+  if (B.rankSeason) B.rankedPrev = { key: B.rankSeason, n: seasonNo(B.rankSeason), solo: (B.ranked || []).slice(0, 3), team: (B.rankedTeam || []).slice(0, 3) };
+  if (B.rankSeason) { B.ranked = []; B.rankedTeam = []; }
+  B.rankSeason = cur; saveBoards();
+}
+async function putRankBoard(u, mode) { const k = RKEY(mode), B = await boards(); rankBoardsSeason(B); B[k] = B[k] || []; putBoard(B[k], { id: u.id, name: u.name, v: u[k].sr }, (a, b) => a.v > b.v, 25); saveBoards(); }
 
 // ======================= Track of the week =======================
 // Best laps on this week's featured track. The board starts empty every Monday.
@@ -1864,17 +1915,31 @@ function sendDm(u, o, text) {
   return { ok: true, m };
 }
 function dmThread(u, id) { return (u.dms || {})[id] || []; }
-// ---- head-to-head: how you do against each friend when you're in the same race ----
-// ranked = [{ uid, rank }] from one race (lower rank = finished ahead)
+// ---- head-to-head rivalries: how you do against every signed-in player you race (friend or not) ----
+// ranked = [{ uid, rank }] from one race (lower rank = finished ahead). Each record: n races, w won, s streak
+// (+3 = you've beaten them 3 in a row, -2 = they've beaten you twice in a row), the name, when you last met.
+// Returns the updated pairs (each once, a ahead of b) so the race can call out the rivalries.
+const H2H_MAX = 200;
 async function recordH2H(ranked) {
-  const us = await Promise.all(ranked.map((x) => getUser(x.uid)));
+  const us = await Promise.all(ranked.map((x) => getUser(x.uid))), out = [];
   for (let i = 0; i < ranked.length; i++) for (let j = 0; j < ranked.length; j++) {
-    const a = us[i], b = us[j]; if (i === j || !a || !b || !isFriend(a, b.id) || ranked[i].rank === ranked[j].rank) continue;
+    const a = us[i], b = us[j]; if (i === j || !a || !b || a.id === b.id || ranked[i].rank === ranked[j].rank) continue;
     a.h2h = a.h2h || {}; const R = (a.h2h[b.id] = a.h2h[b.id] || { n: 0, w: 0 });
-    R.n++; if (ranked[i].rank < ranked[j].rank) R.w++;
-    const ks = Object.keys(a.h2h); if (ks.length > 200) delete a.h2h[ks[0]];
+    const won = ranked[i].rank < ranked[j].rank;
+    R.n++; if (won) R.w++; R.s = won ? Math.max(0, R.s || 0) + 1 : Math.min(0, R.s || 0) - 1; R.name = b.name; R.at = Date.now();
+    const ks = Object.keys(a.h2h);
+    if (ks.length > H2H_MAX) { let old = ks[0]; for (const k of ks) if ((a.h2h[k].at || 0) < (a.h2h[old].at || 0)) old = k; delete a.h2h[old]; }
     saveSoon(a);
+    if (won) out.push({ a: a.id, aName: a.name, b: b.id, bName: b.name, aRank: ranked[i].rank, bRank: ranked[j].rank, n: R.n, w: R.w, s: R.s });
   }
+  return out;
+}
+// your record against these players (for the rivalry call-outs before a race)
+function h2hWith(u, id) { const R = u?.h2h?.[id]; return R ? { n: R.n, w: R.w, s: R.s || 0 } : null; }
+// your biggest rivalries: the players you've raced most (at least twice)
+function rivalsPublic(u) {
+  return Object.entries(u.h2h || {}).filter(([, R]) => R.n >= 2).sort((a, b) => b[1].n - a[1].n || (b[1].at || 0) - (a[1].at || 0)).slice(0, 8)
+    .map(([id, R]) => ({ id, name: R.name || "?", n: R.n, w: R.w, s: R.s || 0, at: R.at || 0, friend: isFriend(u, id) }));
 }
 // ---- ghost challenges: your best lap on a track, sent to a friend to beat ----
 function addGhostChallenge(u, o, c) {
@@ -2240,7 +2305,7 @@ function dailyReward(u) {
 function publicUser(u) {
   if (!u) return null;
   migrateAch(u); indexFriendCode(u);
-  return { id: u.id, name: u.name, suggestAdmin: isSuggestAdmin(u) ? { unread: suggestUnread(u) } : null, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), ghosts: ghostsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
+  return { id: u.id, name: u.name, suggestAdmin: isSuggestAdmin(u) ? { unread: suggestUnread(u) } : null, weekly: weeklyPublic(u), daily: dailyPublic(u), pass: passPublic(u), rivals: rivalsPublic(u), ranked: rankedPublic(u), rankedTeam: rankedPublic(u, "team"), crates: u.crates || {}, trades: tradesPublic(u), bets: betsPublic(u), ghosts: ghostsPublic(u), wheel: wheelPublic(u), bj: bjPublic(u), loginStreak: streakPublic(u), giftCd: giftCooldown(u), friendCode: friendCode(u.id), blocked: u.blocked || [], picture: u.picture, twoFA: !!u.totp?.on, backupLeft: u.totp?.backup?.length || 0, hasPassword: !!u.pass?.salt || !!u.pwLost, achAdjust: u.achAdjust || null, pwLost: !!u.pwLost, coins: u.coins, stats: u.stats, ach: u.ach, secrets: mySecrets(u), achProg: achProgress(u), owned: u.owned, equipped: u.equipped, backup: makeBackup(u) };
 }
 // ======================= Saved tracks (presets) =======================
 // Kept on the account (and in the player's browser). Max 30, each a simplified copy of the drawing.
@@ -2351,10 +2416,10 @@ module.exports = {
   setPasswordByOwner, makeBackup,
   fixUser: fix,
   config: () => ({ googleClientId: GOOGLE_CLIENT_ID || null, dev: DEV_LOGIN, persistent: !!UP_URL }),
-  contestState, contestWinner, contestEnter, contestVote, contestPublic, CONTEST_THEMES, saveSoon, saveCarPreset, deleteCarPreset, applyCarLook, putTtLap, recordH2H, addGhostChallenge, ghostsPublic, ghostBeat, GHOST_BEAT_COINS, tourState, tourJoin, tourLap, tourPublic, tourTimes, resolveTour, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
+  contestState, contestWinner, contestEnter, contestVote, contestPublic, CONTEST_THEMES, saveSoon, saveCarPreset, deleteCarPreset, applyCarLook, putTtLap, recordH2H, h2hWith, rivalsPublic, addGhostChallenge, ghostsPublic, ghostBeat, GHOST_BEAT_COINS, tourState, tourJoin, tourLap, tourPublic, tourTimes, resolveTour, offerBet, answerBet, settleBets, BET_MIN, BET_MAX, addNote, takeNotes, WHEEL, spinWheel, wheelPublic, slots, SLOT_SYMS, SLOT_PAY, SLOT_TWO_CHERRY, CASINO_MIN, CASINO_MAX, BJ_MAX, bjDeal, bjAct, bjPublic, bjTotal,
   signUp, logIn, signInGoogle, openBox, BOXES, sell, sellValue, plinko, PLINKO, PLINKO_MIN, PLINKO_MAX, deleteAccount, friendCode, cachedUser: (id) => cache.get(id) || null, getBoard, friendAdd, friendAccept, friendRemove, friendList, setBlocked, flush, weeklyPublic, checkPassword, setup2fa, enable2fa, disable2fa, verify2fa, changePassword, resetPassword, newBackupCodes, addSession, dropSession, dailyReward, bump, recheck, dropAllSessions, userBySessionOnly: userBySession, resumeOrRestore, restore, cleanPreset, savePreset, deletePreset, signInDev, userBySession, dropSession, getUser, recordRace, buy, equip, extrasOf, publicUser,
   ACH: ACH_PUBLIC, STORE, stash, unstash, voiceGet, voiceSet, saveSetPreset, deleteSetPreset,
-  rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedCancel, undoOldRankedCharges, rankedPublic, TIERS, sendGift, offerTrade, answerTrade, sendDm, dmThread,
+  rankUpCoins, buyPass, openCrate, passXp, rankOf, rankedField, rankedStart, rankedFinish, rankedCancel, undoOldRankedCharges, rankedPublic, TIERS, seasonNo, SEASON_MIN_GAMES, sendGift, offerTrade, answerTrade, sendDm, dmThread,
   shareCode, putShared, getShared, PASS_THEMES, dailyPublic, isFriend,
   addSuggestion, suggestionsOf, suggestUnread, suggestMark, suggestDelete, isSuggestAdmin, SUGGEST_ADMIN,
 };

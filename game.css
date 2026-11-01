@@ -29,7 +29,7 @@
     cursor: pointer; border: 1.5px solid var(--edge); border-radius: 0.75rem; padding: 0.55rem 0.9rem; font-weight: 700;
     background: rgba(255,255,255,0.08); transition: transform 120ms ease, background 120ms ease;
   }
-  :root[data-theme="light"] .btn { background: rgba(0,0,0,0.05); }
+  :root:is([data-theme="light"], [data-theme="sketch"]) .btn { background: rgba(0,0,0,0.05); }
   .btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.14); }
   .btn.go {
     background: var(--yellow); color: #1b1b1b; border-color: var(--yellow); font-family: "Russo One", sans-serif; font-weight: 400;
@@ -67,6 +67,7 @@
   #codeIn { text-transform: uppercase; letter-spacing: 0.2em; text-align: center; min-width: 0; }
   .gear { position: absolute; top: 0.9rem; right: 0.9rem; width: 2.3rem; height: 2.3rem; border-radius: 50%; cursor: pointer; border: 1.5px solid var(--edge); background: rgba(255,255,255,0.06); display: grid; place-items: center; padding: 0; transition: transform 200ms ease; }
   .gear:hover { transform: rotate(45deg); }
+  .look-btn { right: 3.6rem; font-size: 1.1rem; } .look-btn:hover { transform: rotate(-15deg) scale(1.08); }
   .menu-card { position: relative; }
   .screen { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .menu-card input, .menu-card .row > * { min-width: 0; }
@@ -651,7 +652,7 @@
       repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 6px),
       repeating-linear-gradient(-45deg, rgba(0,0,0,0.18) 0 2px, transparent 2px 6px), var(--bg); }
   .panel { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 3.5rem), var(--panel); box-shadow: 0 14px 34px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.06); }
-  :root[data-theme="light"] .panel { background: var(--panel); box-shadow: 0 10px 26px rgba(20,30,50,0.12); }
+  :root:is([data-theme="light"], [data-theme="sketch"]) .panel { background: var(--panel); box-shadow: 0 10px 26px rgba(20,30,50,0.12); }
   .btn { border-radius: 0.7rem; min-height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
   .btn:hover { border-color: var(--edge-2); }
   .btn.go { border-radius: 0.8rem; min-height: 3rem; }
@@ -1432,6 +1433,19 @@ body.touch .pg-pad { display: flex; }
 .predict-cars { display: grid; gap: 0.3rem; }
 .predict-car { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; text-align: left; }
 .predict-car .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; } .predict-car small { color: var(--yellow); font-weight: 800; }
+.predict-car.locked { opacity: 0.55; }
+/* live win chances (spectators): a stacked bar + the top 4 */
+.odds-bar { position: absolute; top: calc(2.4rem + 130px + 0.6rem + env(safe-area-inset-top, 0px)); right: 1rem; z-index: 6; width: 13rem; padding: 0.45rem 0.55rem; display: grid; gap: 0.35rem; pointer-events: none; font-size: 0.8rem; }
+.odds-bar .ob-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; white-space: nowrap; } .odds-bar .ob-head small { color: #ff6b61; font-weight: 800; font-size: 0.68rem; }
+.odds-bar .ob-track { display: flex; height: 0.55rem; border-radius: 0.3rem; overflow: hidden; background: rgba(255,255,255,0.08); }
+.odds-bar .ob-track i { display: block; min-width: 2px; transition: flex-grow 0.9s ease; } .odds-bar .ob-track i.ob-rest { background: rgba(255,255,255,0.18); }
+.odds-bar .ob-rows { display: grid; gap: 0.15rem; }
+.odds-bar .ob-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.35rem; }
+.odds-bar .ob-row .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; } .odds-bar .ob-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.odds-bar .ob-row small { font-weight: 800; font-variant-numeric: tabular-nums; } .odds-bar .ob-row small.up { color: #3ecf6a; } .odds-bar .ob-row small.down { color: #ff6b61; }
+body:not(.spectating) .odds-bar, body.replaying .odds-bar { display: none; }
+@media (max-width: 860px) { .odds-bar { top: calc(0.5rem + 80px + 0.4rem + env(safe-area-inset-top, 0px)); right: 0.5rem; width: 10rem; font-size: 0.72rem; padding: 0.35rem 0.45rem; } }
+@media (max-width: 1000px) and (max-height: 520px) and (orientation: landscape) { .odds-bar { top: calc(0.5rem + 70px + 0.4rem); } .odds-bar .ob-row:nth-child(n+3) { display: none; } }
 .tour-top { display: grid; gap: 0.4rem; padding: 0.8rem; border-radius: 0.6rem; background: rgba(255,255,255,0.04); margin-bottom: 0.8rem; } .tour-top small { color: var(--soft); }
 .bracket { display: flex; gap: 0.8rem; overflow-x: auto; padding-bottom: 0.5rem; }
 .br-col { display: flex; flex-direction: column; justify-content: space-around; gap: 0.5rem; min-width: 10rem; }
@@ -1951,3 +1965,201 @@ body:not(.spectating) .tv-caption { bottom: calc(15.5rem + env(safe-area-inset-b
 @media (prefers-reduced-motion: reduce) { .card.sab { animation: none; } }
 .clip-flash { position: fixed; inset: 0; pointer-events: none; z-index: 90; border: 6px solid #fff; animation: clipFlash 650ms ease-out forwards; }
 @keyframes clipFlash { 0% { background: rgba(255,255,255,.35); } 100% { background: transparent; opacity: 0; transform: scale(.97); } }
+
+/* ⚔️ rivalries (Profile › Friends) */
+.rivals { display: grid; gap: 0.35rem; }
+.rival-row { display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 0.6rem; align-items: center; padding: 0.45rem 0.6rem; border-radius: 0.6rem; background: rgba(255,255,255,0.05); }
+.rival-row > div:first-child { display: grid; min-width: 0; } .rival-row small { opacity: 0.75; }
+.rival-rec { font-size: 1.1rem; font-variant-numeric: tabular-nums; } .rival-row.up .rival-rec { color: #3ecf6a; } .rival-row.down .rival-rec { color: #ff6b61; }
+.rival-bar { grid-column: 1 / -1; height: 0.3rem; border-radius: 0.2rem; background: rgba(255,107,97,0.45); overflow: hidden; } .rival-bar i { display: block; height: 100%; background: #3ecf6a; }
+
+/* 🗓️ ranked season card (league, promotion / relegation zone) */
+.season-card { display: grid; gap: 0.25rem; padding: 0.7rem 0.8rem; margin: 0.6rem 0; border-radius: 0.8rem; background: rgba(255,255,255,0.05); border-left: 4px solid var(--rk, #ffcc1f); }
+.season-card .sc-head { display: flex; justify-content: space-between; align-items: baseline; } .season-card .sc-head small { opacity: 0.75; }
+.season-card .sc-league { font-weight: 800; color: var(--rk, #ffcc1f); }
+.season-card .sc-zone { font-size: 1.05rem; } .season-card small { opacity: 0.85; }
+.season-card.zone-promotion .sc-zone { color: #3ecf6a; } .season-card.zone-relegation .sc-zone, .season-card.zone-inactive .sc-zone { color: #ff6b61; }
+.season-card .rank-hist { margin-top: 0.1rem; }
+
+
+/* ======================= ✏️ Sketchbook look (Settings > Look, or ✏️/🌙 on the menu) =======================
+   The whole game drawn in a notebook: graph paper, marker headings, hand-written text, white cards with an ink
+   outline and a hard shadow, sticky notes and tape. Built on the light colours; the race view's track gets the
+   same look from the ✏️ Paper scenery (game.js THEMES.paper). Car liveries, designs and effects are untouched. */
+:root[data-theme="sketch"] {
+  --bg: #fbf7ec; --panel: #fffdf8; --panel-solid: #fffdf8; --edge: #1f2633; --ink: #1f2633; --soft: #5b6474;
+  --yellow: #ffd84a; --red: #e5483f; --green: #2fae61; --blue: #2f6fe4; --focus: #2f6fe4;
+  --paper: #fffdf7; --paper-grid: #dfe6ef;
+  --sk-grid: #dde6f0; --sk-ink: #1f2633; --sk-gold: #b88a00; --sk-sticky: #fff1a0; --sk-tape: rgba(236, 220, 170, 0.82);
+  --sk-r: 14px 20px 12px 22px / 20px 12px 22px 14px; --sk-r2: 10px 16px 9px 15px / 15px 9px 16px 10px;
+  --sk-marker: "Permanent Marker", "Russo One", cursive; --sk-hand: "Patrick Hand", "Chakra Petch", cursive; --sk-note: "Caveat", "Patrick Hand", cursive;
+  color-scheme: light;
+}
+:root[data-theme="sketch"] body {
+  font-family: var(--sk-hand); font-size: 1.04rem; color: var(--ink);
+  background-color: var(--bg); background-image: linear-gradient(var(--sk-grid) 1px, transparent 1px), linear-gradient(90deg, var(--sk-grid) 1px, transparent 1px); background-size: 28px 28px;
+}
+:root[data-theme="sketch"] :is(.display, h1, h2, h3, .logo, .menu-h, .sect, .hub-h, .rc-brand, .code, legend) { font-family: var(--sk-marker); font-weight: 400; letter-spacing: 0.02em; font-style: normal; }
+:root[data-theme="sketch"] :is(.logo span, .rc-brand span) { color: var(--red); }
+:root[data-theme="sketch"] .tag { color: var(--soft); font-family: var(--sk-note); font-size: 1.25rem; letter-spacing: 0; }
+:root[data-theme="sketch"] :is(b, strong) { font-weight: 700; }
+:root[data-theme="sketch"] .credit { font-family: var(--sk-note); font-size: 1.15rem; color: var(--soft); text-shadow: none; }
+
+/* cards: white paper with an ink outline and a hard shadow */
+:root[data-theme="sketch"] .panel { background: var(--panel); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); backdrop-filter: none; }
+/* buttons: stickers */
+:root[data-theme="sketch"] .btn { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05em; }
+:root[data-theme="sketch"] .btn:hover:not(:disabled) { background: #fffbe6; transform: translate(-1px, -1px); box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .btn:active:not(:disabled) { transform: translate(2px, 3px); box-shadow: 0 0 0 var(--sk-ink); }
+:root[data-theme="sketch"] .btn.go { background: var(--red); color: #fff; border-color: var(--sk-ink); font-family: var(--sk-marker); box-shadow: 3px 4px 0 var(--sk-ink); letter-spacing: 0.02em; }
+:root[data-theme="sketch"] .btn.go:hover:not(:disabled) { background: #ef5a51; }
+:root[data-theme="sketch"] .btn.go::after { display: none; }
+:root[data-theme="sketch"] .btn.ghost { background: transparent; box-shadow: none; border-style: dashed; }
+:root[data-theme="sketch"] .gear { background: #fff; border: 2px solid var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-ink); }
+/* inputs: written on the line */
+:root[data-theme="sketch"] :is(input[type="text"], input[type="password"], input[type="number"], input[type="email"], input:not([type]), select, textarea) {
+  background: #fff; border: 2px solid var(--sk-ink); border-radius: var(--sk-r2); color: var(--ink); font-family: var(--sk-hand); font-weight: 400; font-size: 1.05rem;
+}
+:root[data-theme="sketch"] ::placeholder { color: #a3abb8; }
+:root[data-theme="sketch"] label.f, :root[data-theme="sketch"] .f { color: var(--soft); font-weight: 400; font-size: 0.95rem; }
+:root[data-theme="sketch"] .err { color: var(--red); }
+/* chips and toggles: highlighter when picked */
+:root[data-theme="sketch"] .chip { border: 2px solid var(--sk-ink); background: #fff; color: var(--ink); font-family: var(--sk-hand); font-weight: 400; }
+:root[data-theme="sketch"] :is(.chip.on, .chip[aria-pressed="true"], .chip[aria-checked="true"], .chips button.on, .chips button[aria-pressed="true"]) { background: var(--yellow); color: var(--ink); border-color: var(--sk-ink); box-shadow: 2px 2px 0 var(--sk-ink); }
+/* tabs: notebook tabs */
+:root[data-theme="sketch"] .hub-tabs button, :root[data-theme="sketch"] .rc-tabs button { font-family: var(--sk-marker); font-weight: 400; font-style: normal; text-transform: none; letter-spacing: 0.02em; color: var(--soft); }
+:root[data-theme="sketch"] .hub-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--red); background: linear-gradient(transparent 60%, rgba(255, 216, 74, 0.7) 60%, rgba(255, 216, 74, 0.7) 92%, transparent 92%); }
+:root[data-theme="sketch"] .rc-tabs button[aria-selected="true"] { color: var(--ink); background: var(--yellow); box-shadow: inset 0 -3px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .sect::before { background: var(--red); }
+:root[data-theme="sketch"] .coins { font-family: var(--sk-marker); font-weight: 400; color: var(--ink); background: #fff; border: 2px solid var(--sk-ink); }
+:root[data-theme="sketch"] kbd { border-width: 2px; background: #fff; color: var(--ink); }
+:root[data-theme="sketch"] a { color: var(--blue); }
+:root[data-theme="sketch"] .site-links a, :root[data-theme="sketch"] .menu-foot a { color: var(--soft); }
+:root[data-theme="sketch"] .menu-foot { font-family: var(--sk-note); font-size: 1.15rem; }
+
+/* ---- menu ---- */
+:root[data-theme="sketch"] #menu .menu-card { background: rgba(255, 253, 248, 0.94); border-radius: 6px; animation: skFade 420ms ease both; }
+@keyframes skFade { from { opacity: 0; } }     /* (fade only: a transform would trap the fixed tape ticker inside the card) */
+:root[data-theme="sketch"] #menu .menu-card::before { content: ""; position: absolute; left: 50%; top: -14px; width: 120px; height: 28px; transform: translateX(-50%) rotate(-3deg); background: var(--sk-tape); box-shadow: 0 1px 2px rgba(0,0,0,0.08); z-index: 2; pointer-events: none; }
+:root[data-theme="sketch"] #menu .logo { font-size: 3.1rem; transform: rotate(-2deg); transform-origin: left; }
+:root[data-theme="sketch"] #menu .menu-h { font-size: 1.4rem; }
+:root[data-theme="sketch"] #menu .tip-day { font-family: var(--sk-note); font-size: 1.2rem; color: var(--soft); }
+:root[data-theme="sketch"] #quickBtn { background: var(--sk-sticky); color: var(--red); border: 0; border-radius: 2px; box-shadow: 0 10px 18px rgba(0,0,0,0.14), 0 2px 0 rgba(0,0,0,0.05); font-size: 2.3rem; min-height: 5.6rem; transform: rotate(1deg); position: relative; overflow: visible; }
+:root[data-theme="sketch"] #quickBtn:hover { background: #fff4b3; transform: rotate(0.4deg) translateY(-2px); box-shadow: 0 14px 22px rgba(0,0,0,0.16); }
+:root[data-theme="sketch"] #quickBtn::before { content: ""; position: absolute; left: 50%; top: -12px; width: 96px; height: 24px; transform: translateX(-50%) rotate(2deg); background: var(--sk-tape); }
+:root[data-theme="sketch"] #quickBtn::after { content: "start here! ↓"; display: block; position: absolute; inset: auto 0.6rem 100% auto; width: auto; height: auto; margin-bottom: 0.1rem; transform: rotate(-4deg); background: none; font-family: var(--sk-note); font-size: 1.45rem; color: var(--red); animation: none; opacity: 1; }
+:root[data-theme="sketch"] #soloBtn { background: var(--yellow); font-family: var(--sk-marker); }
+:root[data-theme="sketch"] #rankedBtn { background: var(--blue); color: #fff; }
+:root[data-theme="sketch"] #rankedBtn :is(small, span) { color: inherit; }
+:root[data-theme="sketch"] :is(.totw-card, .event-card) { background: #fff; border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .totw-card { transform: rotate(0.6deg); } :root[data-theme="sketch"] .event-card { transform: rotate(-0.5deg); }
+:root[data-theme="sketch"] :is(.totw-tx small, .ev-tx small) { color: var(--sk-gold); font-family: var(--sk-marker); font-weight: 400; }
+:root[data-theme="sketch"] #totwCv { background: var(--paper); border: 2px solid var(--sk-ink); border-radius: 8px; }
+:root[data-theme="sketch"] .lobbies { background: #fff; background-image: linear-gradient(transparent 31px, #b9d2ef 31px, #b9d2ef 33px); background-size: 100% 33px; border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .lob-empty { font-family: var(--sk-note); font-size: 1.25rem; color: var(--soft); border: 0; }
+:root[data-theme="sketch"] #codeIn { font-family: var(--sk-marker); letter-spacing: 0.4em; text-align: center; border-style: dashed; }
+:root[data-theme="sketch"] .sep-or { font-family: var(--sk-note); font-size: 1.25rem; }
+:root[data-theme="sketch"] #carPreview { background: radial-gradient(#cdd8ea 1.4px, transparent 1.5px) 0 0 / 14px 14px, #eef4ff; border: 2px solid var(--sk-ink); border-radius: 4px; box-shadow: 3px 4px 0 rgba(0,0,0,0.15); transform: rotate(1.5deg); }
+:root[data-theme="sketch"] .swatches button, :root[data-theme="sketch"] .swatch { border: 2px solid var(--sk-ink); }
+:root[data-theme="sketch"] .acct-av { border: 2px solid var(--sk-ink); background: #ffe2d6; }
+/* the old ticker comes back as a strip of masking tape along the bottom */
+:root[data-theme="sketch"] #menu .bc-ticker { display: flex; position: fixed; left: -10px; right: -10px; bottom: 0.6rem; z-index: 3; height: 2.4rem; align-items: center; background: var(--sk-tape); transform: rotate(-0.4deg); box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 1.05rem; }
+:root[data-theme="sketch"] .bc-live { align-self: stretch; display: flex; align-items: center; padding: 0 1rem 0 1.4rem; font-family: var(--sk-marker); color: var(--red); flex: none; text-transform: none; }
+:root[data-theme="sketch"] .bc-roll { overflow: hidden; flex: 1; min-width: 0; }
+:root[data-theme="sketch"] .bc-items { display: inline-flex; gap: 2.6rem; padding-left: 1rem; white-space: nowrap; color: var(--ink); animation: bcRoll 40s linear infinite; }
+:root[data-theme="sketch"] .bc-items b { color: var(--red); }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="sketch"] .bc-items { animation: none; } }
+@media (max-width: 899px) { :root[data-theme="sketch"] #menu .bc-ticker { position: static; transform: none; margin: 0.4rem -0.4rem 0; order: 7; } }
+@media (min-width: 900px) { :root[data-theme="sketch"] #menu { padding-bottom: 3.6rem; } :root[data-theme="sketch"] body:not(.in-race):not(.in-lobby) .chat-btn { bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px)); } }
+
+/* ---- dialogs and pop-ups ---- */
+:root[data-theme="sketch"] [role="dialog"]:not(#hud *) > .panel, :root[data-theme="sketch"] .hub > .panel { border-radius: 6px; }
+:root[data-theme="sketch"] :is(.ach-pop, .streak-pop, .toast, .popup) { background: #fff; color: var(--ink); border: 2.5px solid var(--sk-ink); border-radius: var(--sk-r); box-shadow: 4px 5px 0 var(--sk-ink); font-family: var(--sk-hand); }
+:root[data-theme="sketch"] .banner { font-family: var(--sk-marker); font-style: normal; }
+
+/* text that was yellow (made for dark backgrounds): marker gold on paper (yellow backgrounds stay highlighter-bright) */
+:root[data-theme="sketch"] .rc-code .code,
+:root[data-theme="sketch"] .plist .crown,
+:root[data-theme="sketch"] .sect,
+:root[data-theme="sketch"] .champ tr.me td,
+:root[data-theme="sketch"] .track-card b,
+:root[data-theme="sketch"] details.box summary,
+:root[data-theme="sketch"] .weather .fc,
+:root[data-theme="sketch"] .pos,
+:root[data-theme="sketch"] .standings li.me,
+:root[data-theme="sketch"] .standings li.pit .tw,
+:root[data-theme="sketch"] .garage h4,
+:root[data-theme="sketch"] .popup,
+:root[data-theme="sketch"] .cards h2,
+:root[data-theme="sketch"] .res-card h2 span,
+:root[data-theme="sketch"] table.res tr.me td,
+:root[data-theme="sketch"] .lob .cnt,
+:root[data-theme="sketch"] .range-row output,
+:root[data-theme="sketch"] .pp .life,
+:root[data-theme="sketch"] .grid-tag,
+:root[data-theme="sketch"] .season-box h3,
+:root[data-theme="sketch"] .fin-champ.big strong,
+:root[data-theme="sketch"] .fin-table li:first-child .fp,
+:root[data-theme="sketch"] .lb-list .lv,
+:root[data-theme="sketch"] .hstat.hl b,
+:root[data-theme="sketch"] .item .price,
+:root[data-theme="sketch"] .ach-pop small,
+:root[data-theme="sketch"] .qb-list li:first-child .pp,
+:root[data-theme="sketch"] .chat-list .m.me b,
+:root[data-theme="sketch"] .pt-lab.prem,
+:root[data-theme="sketch"] .big-code,
+:root[data-theme="sketch"] .rr-coins,
+:root[data-theme="sketch"] .key-btn.listening,
+:root[data-theme="sketch"] .pl-bal,
+:root[data-theme="sketch"] .predict-car small,
+:root[data-theme="sketch"] .streak-h,
+:root[data-theme="sketch"] .cal-n,
+:root[data-theme="sketch"] .cz-bal,
+:root[data-theme="sketch"] .ipick-n,
+:root[data-theme="sketch"] .ipick-item.on span::before,
+:root[data-theme="sketch"] .rc-step.on i,
+:root[data-theme="sketch"] .ctx-label,
+:root[data-theme="sketch"] .tp-link,
+:root[data-theme="sketch"] .tp-count { color: var(--sk-gold); text-shadow: none; }
+
+/* ---- ✏️ Sketchbook: track builder pop-outs, the race HUD ---- */
+:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools, .tp-start, .tp-objs) { background: #fffdf8; border: 2px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] body.builder :is(.board-pill, .ctx-bar, #stampPick, #cornerPick, #moreTools, #wonkTools) .tool:hover { background: #fffbe6; }
+:root[data-theme="sketch"] :is(#boardHint, .board-hint) { background: #fffdf8; color: var(--ink); border: 2px solid var(--sk-ink); }
+:root[data-theme="sketch"] .dock .tool { background: #fff; border: 2px solid var(--sk-ink); color: var(--ink); }
+:root[data-theme="sketch"] :is(.dock .tool[aria-pressed="true"], .dock .tool.on) { background: var(--yellow); box-shadow: 2px 3px 0 var(--sk-ink); transform: rotate(-2deg); }
+:root[data-theme="sketch"] .mode-chip { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-hand); }
+:root[data-theme="sketch"] .mode-chip.final { background: var(--yellow); }
+:root[data-theme="sketch"] .sectors span:not(.purple):not(.green):not(.yellow) { background: #eef2f7; color: var(--ink); border: 1px solid #c9d1de; }
+:root[data-theme="sketch"] .sectors span.live { background: #fff3c4; border-color: var(--sk-gold); }
+:root[data-theme="sketch"] .slow-why { color: #8a5300; background: #fff3c4; border: 1.5px solid #e2b23c; }
+:root[data-theme="sketch"] .slow-why.bad { color: #b42318; background: #ffe1dc; border-color: #e5483f; }
+:root[data-theme="sketch"] .badge { background: #fff; color: var(--ink); box-shadow: 0 0 0 1px var(--sk-ink); font-family: var(--sk-marker); font-weight: 400; }
+/* boost: a highlighter tube; defend: a sticker */
+:root[data-theme="sketch"] #boostBtn { background: #fff; color: var(--ink); border: 2.5px solid var(--sk-ink); box-shadow: 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] #boostBtn .bfill { background: repeating-linear-gradient(-45deg, #ffd84a 0 10px, #ffc800 10px 20px); opacity: 0.95; }
+:root[data-theme="sketch"] #boostBtn .blabel { font-family: var(--sk-marker); }
+:root[data-theme="sketch"] #boostBtn small { color: var(--ink); }
+:root[data-theme="sketch"] #boostBtn.on { border-color: var(--sk-ink); box-shadow: 0 0 0 4px rgba(255, 216, 74, 0.7), 3px 4px 0 var(--sk-ink); }
+:root[data-theme="sketch"] #boostBtn.empty .blabel { color: var(--red); }
+:root[data-theme="sketch"] #defendBtn { background: #fff; color: var(--ink); border: 2px solid var(--sk-ink); box-shadow: 2px 3px 0 var(--sk-ink); font-family: var(--sk-marker); }
+:root[data-theme="sketch"] #defendBtn.on { background: var(--blue); color: #fff; box-shadow: 0 0 0 4px rgba(47, 111, 228, 0.3), 2px 3px 0 var(--sk-ink); }
+/* standings: a notepad, your row in highlighter */
+:root[data-theme="sketch"] .standings li.me { color: var(--ink); background: linear-gradient(transparent 10%, rgba(255, 216, 74, 0.85) 10%, rgba(255, 216, 74, 0.85) 90%, transparent 90%); }
+:root[data-theme="sketch"] .pos { font-family: var(--sk-marker); color: var(--red); }
+:root[data-theme="sketch"] #hud :is(.big, #lapText) { font-family: var(--sk-marker); font-weight: 400; }
+
+:root[data-theme="sketch"] .intro-card { background: #fffdf8; color: var(--ink); border: 2.5px solid var(--sk-ink); border-left: 6px solid var(--red); box-shadow: 4px 5px 0 var(--sk-ink); }
+:root[data-theme="sketch"] .intro-card small { color: var(--red); font-family: var(--sk-marker); }
+:root[data-theme="sketch"] .intro-card b { font-family: var(--sk-marker); font-weight: 400; color: var(--ink); }
+:root[data-theme="sketch"] .intro-card span { color: var(--soft); }
+:root[data-theme="sketch"] .slip-tag { color: var(--ink); background: #e2f1ff; border: 2px solid var(--sk-ink); border-radius: 8px; padding: 0 0.4rem; text-shadow: none; }
+@media (max-width: 560px) {
+  :root[data-theme="sketch"] #menu .logo { font-size: 2.3rem; }
+  :root[data-theme="sketch"] #menu .menu-head { padding-right: 5.6rem; }
+}
+/* the upgrade cards: a hand of cards, a little fanned */
+:root[data-theme="sketch"] .cards .card:nth-of-type(odd) { transform: rotate(-1.2deg); } :root[data-theme="sketch"] .cards .card:nth-of-type(even) { transform: rotate(1deg); }
+:root[data-theme="sketch"] .cards .card:hover { transform: translateY(-4px) rotate(0deg) scale(1.03); }
+/* (the ✏️/🌙 look button sits left of the gear: keep the menu's top-right text clear of it) */
+:root[data-theme="broadcast"] #menu .tip-day { margin-right: 3rem; }

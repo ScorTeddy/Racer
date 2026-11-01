@@ -85,7 +85,8 @@ function strokeKey(stroke) { let h = 2166136261; for (let i = 0; i < Math.min(st
 const ENDURO_MINS = [10, 20, 30];
 const DECOR = ["stand", "banner", "tunnel", "bridge", "light", "tree", "pit", "board", "cut"], DECOR_SIDE = ["light", "tree", "pit", "board"], DECOR_LONG = ["tunnel", "stand", "cut"], DECOR_MAX_LEN = 140, DECOR_MAX = 30;      // track objects the host can place
 const HORNS = ["classic", "truck", "clown", "air", "tune", "bike"];
-const PREDICT_OPEN = 25;                         // predictions close 25 race-seconds after the start                 // endurance race lengths (minutes)
+// live odds: predictions stay open all race (until the final lap) at odds that move with the race
+const ODDS_EVERY = 2, ODDS_EDGE = 0.9, ODDS_MAX = 25, ODDS_LOCK = 0.8;   // seconds between updates, pay-out = 0.9 / chance, max 25x, no picks on a car above 80%
 const RF_ABANDON = 3, SC_ABANDON = 7;           // that many red flags / safety cars in one race and it's called off
 const RED_FLAG_CARS = 6, RED_FLAG_BIG = 2, RED_FLAG_TIME = 10;   // red flag: only a BIG pile-up (6+ cars crashing within 4 seconds, 2+ of them hard) stops the race for 10 seconds (everyone watches the crash again first)
 const AI_PIT_STOP = 0.72, AI_PIT_LANE = 1.15;   // AI pit stops: 28% shorter standing still, 15% faster down the pit lane
@@ -291,7 +292,7 @@ const AI_LEVELS = {
   // ranked only (Overdrive Elite): the fastest AI in the game
   elite:   { skill: [1.09, 1.14], power: 1.11, xp: 4, mistakes: 0.08, aggr: 1.5, react: [0.04, 0.09], rankedOnly: true },
 };
-const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon"];
+const THEME_KEYS = ["grass", "desert", "snow", "night", "autumn", "beach", "city", "volcano", "neon", "paper"];   // (paper: the Sketchbook look's notebook page)
 const WEATHERS = ["sunny", "rain", "dynamic", "fog"];
 // Math.random, but the same numbers every time for the same seed (Track of the Week is the same for everyone)
 function withSeed(seed, fn) {
@@ -1573,7 +1574,8 @@ class Room {
       // the ones that stand beside the road (floodlights, trees, the pit building, billboards) stay as far off it as
       // you put them; billboards show the host's team name
       if (DECOR_SIDE.includes(d.k)) {
-        const off = Math.round(Math.min(t.hw[i] + 320, Math.max(t.hw[i] + 45, Math.abs((wx - t.pts[i].x) * n.x + (wy - t.pts[i].y) * n.y))));
+        // (whole pixels, rounded INTO the allowed band: plain rounding could put it half a pixel too near the road)
+        const lo = Math.ceil(t.hw[i] + 45), hi = Math.floor(t.hw[i] + 320), off = Math.min(hi, Math.max(lo, Math.round(Math.abs((wx - t.pts[i].x) * n.x + (wy - t.pts[i].y) * n.y))));
         return { k: d.k, i, side, len, off, ...(d.k === "board" ? { txt: (this.players.get(this.hostId)?.team || this.hostName() + " Racing").slice(0, 24) } : {}) };
       }
       return { k: d.k, i, side, len };
@@ -2038,7 +2040,7 @@ class Room {
       }
     }
     this.bestSec = null;
-    this.time = 0; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false; this.bestPass = null; this.passCands = []; if (!this.qualifying) this.predictions = new Map(); this.rf = null; this.rfAt = null; this.rfCount = 0; this.scCount = 0; this.abandoned = null; this.crashLog = [];
+    this.time = 0; this.oddsAt = 0; this.odds = null; this.fastest = Infinity; this.finishDeadline = Infinity; this.lastLapCalled = false; this.lastFinish = null; this.sc = null; this.scDoneAt = -99; this.drsPass = []; this.drsOn = false; this.bestPass = null; this.passCands = []; if (!this.qualifying) this.predictions = new Map(); this.rf = null; this.rfAt = null; this.rfCount = 0; this.scCount = 0; this.abandoned = null; this.crashLog = [];
     // "calm zone": everyone stays in line until the field is through the first corner
     let fc = -1;
     for (let i = 0; i < t.N; i++) if (t.vmax[i] < MAX_SPEED * 0.8) { fc = i; break; }
@@ -2093,6 +2095,7 @@ class Room {
       for (const e of this.rankedEntries) accounts.getUser(e.uid).then((u) => { if (u) { accounts.rankedStart(u, mode); io.to(e.pid).emit("account", accounts.publicUser(u)); } }).catch(() => {});
     }
     for (const c of this.cars) c.betUid = (c.owner && this.players.get(c.owner)?.uid) || null;   // (1v1 bets: who started in which car)
+    if (!this.qualifying) this.callRivalries();
     for (const p of this.players.values()) this.resendOffer(p);
     if (this.qualifying) { this.sendLobby(); this.startLights(); return; }     // no tire pick: everyone goes out on the best tire
     this.emit("tirePick", { until: TIRE_PICK_TIME, raining: this.raining, weather: this.weatherSetting(), compounds: COMPOUNDS, perLap: this.perLapAll() });
@@ -2101,6 +2104,42 @@ class Room {
   }
   // Rivals: from the 3rd race of a season on, every player gets the driver closest to them in the
   // championship (ahead or behind) as their rival for this race. Beat them for a bonus.
+  // Rivalries with other real players (friends or not): before the lights, everyone hears their record against the
+  // player they've raced most in this room, and the room hears about its biggest rivalry. ⚔️ marks them on the board.
+  async callRivalries() {
+    const humans = this.cars.filter((c) => c.betUid && c.owner).map((c) => ({ car: c, pid: c.owner, uid: c.betUid }));
+    if (humans.length < 2) return;
+    const users = new Map(); for (const h of humans) users.set(h.uid, await accounts.getUser(h.uid).catch(() => null));
+    let big = null;
+    for (const h of humans) {
+      const u = users.get(h.uid); if (!u) continue;
+      const mine = [];
+      for (const o of humans) { if (o.uid === h.uid) continue; const R = accounts.h2hWith(u, o.uid); if (R && R.n >= 2) mine.push({ car: o.car.id, name: o.car.name, ...R }); }
+      if (!mine.length) continue;
+      mine.sort((a, b) => b.n - a.n);
+      io.to(h.pid).emit("nemesis", { list: mine });
+      const top = mine[0];
+      if (!big || top.n > big.n) big = { a: h.car.name, b: top.name, n: top.n, w: top.w };
+    }
+    if (big && big.n >= 3) setTimeout(() => {
+      if (this.phase === "lobby") return;
+      const l = big.n - big.w, txt = big.w === l ? `level at ${big.w}–${l}` : big.w > l ? `${big.a} leads ${big.w}–${l}` : `${big.b} leads ${l}–${big.w}`;
+      this.emit("feed", { t: "event", text: `⚔️ Rivalry on the grid: ${big.a} vs ${big.b} (${big.n} races, ${txt})` });
+    }, 3500);
+  }
+  // ...and at the flag: rivals who finished right next to each other get called out to the whole room, and long
+  // winning streaks are celebrated (to the winner)
+  rivalryResults(pairs) {
+    if (!pairs?.length) return;
+    const near = pairs.filter((x) => Number.isFinite(x.aRank) && Number.isFinite(x.bRank) && x.bRank - x.aRank === 1 && x.n >= 3).sort((a, b) => b.n - a.n).slice(0, 2);
+    near.forEach((x, k) => setTimeout(() => {
+      const l = x.n - x.w, rec = x.w === l ? `It's level at ${x.w}–${l}` : x.w > l ? `${x.aName} leads the rivalry ${x.w}–${l}` : `${x.bName} still leads it ${l}–${x.w}`;
+      this.emit("toast", `⚔️ ${x.aName} edges out rival ${x.bName}! ${rec}`);
+    }, 2500 + k * 2500));
+    for (const x of pairs) {
+      if ([3, 5, 10, 20, 50].includes(x.s)) for (const sid of online.get(x.a) || []) io.to(sid).emit("toast", `🔥 You've beaten ${x.bName} ${x.s} times in a row!`);
+    }
+  }
   pickRivals() {
     for (const p of this.players.values()) { p.rival = null; p.beatRival = false; }
     if (this.qualifying || this.history.length < 2) return;
@@ -2351,6 +2390,7 @@ class Room {
     }
     this.collide();
     this.stepHazards(dt);
+    if (this.phase === "race" && !this.qualifying && this.time >= (this.oddsAt || 0)) { this.oddsAt = this.time + ODDS_EVERY; this.stepOdds(); }
     const order = this.standings();
     if (!this.qualifying && (!this.orderHist || this.time - (this.orderHist.at(-1)?.t ?? -9) >= 0.5)) {
       this.orderHist = this.orderHist || []; this.orderHist.push({ t: this.time, ids: order.map((c) => c.id) });
@@ -3505,7 +3545,44 @@ class Room {
   }
   // stop the race where it is and go back to the lobby (no results, no stats)
   // ---- spectator predictions: pick the winner before the race gets going; paid at the flag by grid-position odds ----
-  predictOdds(c) { const g = c.rs?.grid || this.cars.length; return Math.round(Math.min(10, 1.5 + 0.7 * (g - 1)) * 10) / 10; }
+  // Before the start: by grid position. Once racing: LIVE odds from the win chances below (they move all race),
+  // locked in when you place your pick. A car that's already a near-certain winner can't be picked.
+  predictOdds(c) {
+    const L = this.phase === "race" && this.odds?.get(c.id);
+    if (L) return L.odds;
+    const g = c.rs?.grid || this.cars.length; return Math.round(Math.min(10, 1.5 + 0.7 * (g - 1)) * 10) / 10;
+  }
+  predictOpen() { return this.phase !== "race" || (!this.lastLapCalled && !this.cars?.some((c) => c.finished)); }
+  predictLocked(c) { return this.phase === "race" && (this.odds?.get(c.id)?.p || 0) > ODDS_LOCK; }
+  // Live win chances: how far behind the leader each car is (in laps), against how much race is left to make it
+  // up (the further from the flag, the more anything can happen), nudged by driver skill and damage.
+  winChances() {
+    const N = this.track.N, laps = this.settings.laps, out = new Map();
+    const first = this.cars.filter((c) => c.finished && !c.out).sort((a, b) => a.finishTime - b.finishTime)[0];
+    if (first) { for (const c of this.cars) out.set(c.id, c === first ? 1 : 0); return out; }
+    const run = this.cars.filter((c) => !c.out && !c.finished);
+    if (!run.length) return out;
+    const lead = run.reduce((a, c) => (c.progress > a.progress ? c : a), run[0]);
+    const rem = Math.max(0.05, laps - lead.progress / N), sig = 0.035 + 0.06 * Math.sqrt(rem);
+    const eff = run.map((c) => {
+      let gap = (lead.progress - c.progress) / N;
+      gap -= ((c.skill || 1) / (lead.skill || 1) - 1) * rem * 0.8;     // a quicker driver closes in over what's left
+      gap += (c.damage || 0) * 0.03 * rem;
+      return [c, gap];
+    });
+    const min = Math.min(...eff.map((e) => e[1]));
+    let tot = 0; for (const e of eff) { e[2] = Math.exp(-(e[1] - min) / sig); tot += e[2]; }
+    for (const c of this.cars) out.set(c.id, 0);
+    for (const [c, , w] of eff) out.set(c.id, w / tot);
+    return out;
+  }
+  stepOdds() {
+    const P = this.winChances(), m = new Map();
+    for (const [id, p] of P) m.set(id, { p, odds: Math.round(Math.min(ODDS_MAX, Math.max(1.05, ODDS_EDGE / Math.max(p, 1e-4))) * 10) / 10 });
+    this.odds = m;
+    const list = [...m].filter(([, x]) => x.p >= 0.005).sort((a, b) => b[1].p - a[1].p).slice(0, 6).map(([id, x]) => ({ id, p: Math.round(x.p * 1000) / 1000, odds: x.odds, lock: x.p > ODDS_LOCK }));
+    this.emit("odds", { open: this.predictOpen(), list });
+  }
   settlePredictions(winner, refund) {
     const P = this.predictions; if (!P || !P.size) return; this.predictions = new Map();
     for (const [pid, x] of P) accounts.getUser(x.uid).then((u) => {
@@ -3702,7 +3779,7 @@ class Room {
     }
     // 1v1 bets between friends: whoever finished ahead takes both stakes (leaving the race = losing)
     const betters = order.filter((c) => c.betUid).map((c) => ({ uid: c.betUid, rank: c.owner && this.players.get(c.owner)?.uid === c.betUid ? order.indexOf(c) : Infinity }));
-    if (betters.length > 1 && !this.ranked) accounts.recordH2H(betters).catch((e) => console.log("h2h error", e.message));
+    if (betters.length > 1) accounts.recordH2H(betters).then((pairs) => this.rivalryResults(pairs)).catch((e) => console.log("h2h error", e.message));
     if (betters.length > 1) accounts.settleBets(betters).then(async (done) => {
       for (const b of done) for (const [uid, msg] of [[b.winner, `⚔️ You beat ${b.loserName} and won the bet: +${(b.amount * 2).toLocaleString()} coins!`], [b.loser, `⚔️ ${b.winnerName} beat you: you lost the ${b.amount.toLocaleString()} coin bet`]]) {
         const u = await accounts.getUser(uid); if (!u) continue;
@@ -4536,17 +4613,19 @@ io.on("connection", (socket) => {
   // ---- spectator predictions ----
   socket.on("predict:list", () => {
     const r = room(), p = me(); if (!r || !p || !r.cars || r.qualifying) return socket.emit("predictList", null);
-    const open = !r.carOf(p.id) && (r.phase !== "race" || r.time < PREDICT_OPEN);
-    socket.emit("predictList", { open, mine: r.predictions?.get(p.id) || null, cars: r.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, grid: c.rs?.grid || 0, odds: r.predictOdds(c) })).sort((a, b) => a.grid - b.grid) });
+    const open = !r.carOf(p.id) && r.predictOpen(), live = r.phase === "race" && !!r.odds;
+    const pos = live ? new Map(r.standings().map((c, i) => [c.id, i + 1])) : null;
+    socket.emit("predictList", { open, live, mine: r.predictions?.get(p.id) || null, cars: r.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, grid: c.rs?.grid || 0, pos: pos ? pos.get(c.id) : c.rs?.grid || 0, odds: r.predictOdds(c), p: live ? Math.round((r.odds.get(c.id)?.p || 0) * 1000) / 1000 : null, lock: r.predictLocked(c) })).sort((a, b) => a.pos - b.pos) });
   });
   socket.on("predict", async (d) => {
     const r = room(), p = me(); if (!r || !p || !r.cars || r.qualifying || !["tires", "lights", "race"].includes(r.phase)) return;
     if (r.carOf(p.id)) return socket.emit("toast", "Predictions are for people watching the race");
-    if (r.phase === "race" && r.time >= PREDICT_OPEN) return socket.emit("toast", "Too late: predictions close a little into the race");
+    if (!r.predictOpen()) return socket.emit("toast", "Too late: predictions close on the final lap");
     const u = socket.data.uid && await accounts.getUser(socket.data.uid); if (!u) return socket.emit("toast", "Sign in to make a prediction");
     r.predictions = r.predictions || new Map(); if (r.predictions.has(p.id)) return socket.emit("toast", "You've already made a prediction this race");
     const c = r.cars.find((x) => x.id === Number(d?.car)), coins = Math.floor(Number(d?.coins) || 0);
     if (!c) return; if (!(coins >= 10 && coins <= 5000)) return socket.emit("toast", "Predictions are 10 to 5,000 coins");
+    if (r.predictLocked(c) || c.out || c.finished) return socket.emit("toast", `${c.name} is too sure a thing right now: pick someone else`);
     if (u.coins < coins) return socket.emit("toast", "Not enough coins");
     u.coins -= coins; accounts.saveSoon(u);
     const odds = r.predictOdds(c); r.predictions.set(p.id, { uid: u.id, car: c.id, name: c.name, coins, odds });
